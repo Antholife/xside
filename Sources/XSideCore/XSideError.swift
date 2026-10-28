@@ -13,6 +13,7 @@ public enum XSideError: Error, Equatable, Sendable {
     case provisioningFailed(String)
     case installFailed(String)
     case commandFailed(tool: String, status: Int32)
+    case recordNotFound
 
     /// Case name without payload, used to deduplicate notifications.
     public var key: String {
@@ -29,6 +30,7 @@ public enum XSideError: Error, Equatable, Sendable {
         case .provisioningFailed: "provisioningFailed"
         case .installFailed: "installFailed"
         case .commandFailed: "commandFailed"
+        case .recordNotFound: "recordNotFound"
         }
     }
 }

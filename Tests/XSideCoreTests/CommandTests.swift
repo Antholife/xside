@@ -25,4 +25,5 @@ import Foundation
 @Test func errorKeyIgnoresPayload() {
     #expect(XSideError.invalidIPA("a").key == XSideError.invalidIPA("b").key)
     #expect(XSideError.commandFailed(tool: "x", status: 1).key == "commandFailed")
+    #expect(XSideError.recordNotFound.key == "recordNotFound")
 }
