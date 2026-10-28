@@ -1,12 +1,13 @@
 import AppKit
 import os
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let logger = Logger(subsystem: "io.github.xside.XSide", category: "app")
 
     /// Called for each `.ipa` URL (Open With, double-click, Services, drag and drop).
     /// A later task assigns the real handler.
-    nonisolated(unsafe) var openIPA: (URL) -> Void = { url in
+    var openIPA: @MainActor (URL) -> Void = { url in
         AppDelegate.logger.notice("openIPA(\(url.path, privacy: .public))")
     }
 
@@ -24,7 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let urls = pboard.readObjects(forClasses: [NSURL.self],
                                       options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
         guard urls.contains(where: Self.isIPA) else {
-            error.pointee = "Aucun fichier .ipa" as NSString
+            error.pointee = L("services.noIPA") as NSString
             return
         }
         dispatch(urls)

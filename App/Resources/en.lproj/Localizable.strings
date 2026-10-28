@@ -1,0 +1,86 @@
+/* Popover */
+"popover.transport.usb" = "USB";
+"popover.transport.wifi" = "Wi-Fi";
+"popover.transport.unreachable" = "Out of range";
+"popover.expires.days" = "Expires in %d d";
+"popover.expires.today" = "Expires today";
+"popover.expired" = "Expired";
+"popover.nextRefresh" = "Next refresh: %@";
+"popover.install" = "＋ Install an app";
+"popover.settings" = "Settings";
+"popover.quit" = "Quit";
+"popover.appIDsRemaining" = "~%d/10 App IDs left this week · estimated from this Mac";
+"popover.unreachableHint" = "Not found on this network — plug it in over USB or switch networks";
+"popover.newDevice" = "New device found — Pair?";
+"popover.pair" = "Pair";
+"popover.empty" = "No apps installed — drop an .ipa here";
+"popover.noDevice" = "No device detected";
+
+/* Install sheet */
+"install.title" = "Install";
+"install.device" = "Device";
+"install.options" = "Options";
+"install.field.name" = "Name";
+"install.field.bundleID" = "Identifier";
+"install.field.version" = "Version";
+"install.field.icon" = "Icon";
+"install.field.iconChoose" = "Choose…";
+"install.field.fileSharing" = "File sharing";
+"install.field.iPadFullScreen" = "iPad full screen";
+"install.field.proMotion" = "ProMotion 120 Hz";
+"install.field.minOS" = "Minimum iOS";
+"install.warning.newBundleID" = "A different identifier uses up a new App ID.";
+"install.warning.minOS" = "The app may crash if it uses recent features.";
+"install.step.profile" = "Profile";
+"install.step.signing" = "Signing";
+"install.step.installing" = "Installing";
+"install.cancel" = "Cancel";
+"install.done" = "Done";
+
+/* First-install guide */
+"guide.title" = "First install";
+"guide.unlock" = "Keep the device unlocked during installation.";
+"guide.trust" = "Then, on the device: Settings > General > VPN & Device Management > %@ > Trust.";
+"guide.developerMode" = "If needed: Settings > Privacy & Security > Developer Mode.";
+
+/* Notifications */
+"notification.refreshFailed.title" = "Refresh failed: %@";
+"notification.openXcode" = "Open Xcode";
+
+/* Settings */
+"settings.launchAtLogin" = "Launch at login";
+"settings.language" = "Language";
+"settings.language.system" = "System";
+"settings.language.en" = "English";
+"settings.language.fr" = "Français";
+"settings.wakeMac" = "Wake Mac to refresh";
+"settings.wakeMac.warning" = "A laptop with the lid closed, on battery and with no external display may not wake up fully.";
+"settings.version" = "Version %@";
+"settings.github" = "GitHub repository";
+
+/* Onboarding */
+"onboarding.xcodeMissing.title" = "Xcode missing";
+"onboarding.xcodeMissing.body" = "XSide uses Xcode to sign and install your apps. Install it from the App Store, then come back here.";
+"onboarding.openAppStore" = "Open App Store";
+"onboarding.signIn.title" = "Apple account not signed in";
+"onboarding.signIn.steps" = "1. Xcode > Settings (⌘,)\n2. Accounts\n3. ＋ > Apple Account";
+"onboarding.openXcode" = "Open Xcode";
+"onboarding.recheck" = "Check again";
+
+/* Errors (one per XSideError case) */
+"error.xcodeMissing" = "Xcode couldn't be found. Install it from the App Store to continue.";
+"error.xcodeNotSignedIn" = "No Apple account is signed in. Sign in to your account in Xcode > Settings > Accounts.";
+"error.noSigningIdentity" = "No signing certificate is available. Open Xcode > Settings > Accounts and check your account.";
+"error.appIDLimitReached" = "The limit of 10 App IDs per week has been reached. Try again in a few days.";
+"error.deviceUnavailable" = "The device can't be reached. Unlock it, plug it in over USB or join the same Wi-Fi network.";
+"error.deviceLocked" = "The device is locked. Unlock it and try again.";
+"error.maxAppsReached" = "This device already has 3 apps installed with a free account. Delete one to continue.";
+"error.encryptedIPA" = "App Store IPAs are encrypted and can't be installed.";
+"error.invalidIPA" = "This file isn't a valid app.";
+"error.provisioningFailed" = "Couldn't create the provisioning profile. Check your account in Xcode and try again.";
+"error.installFailed" = "Installation failed. Make sure the device is unlocked and try again.";
+"error.commandFailed" = "An Xcode command failed. Try again, or open Xcode to check its state.";
+"error.recordNotFound" = "This app can't be found in XSide.";
+
+/* Services menu / Open With */
+"services.noIPA" = "No .ipa file";

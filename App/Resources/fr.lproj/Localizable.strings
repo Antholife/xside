@@ -1,0 +1,86 @@
+/* Popover */
+"popover.transport.usb" = "USB";
+"popover.transport.wifi" = "Wi-Fi";
+"popover.transport.unreachable" = "Hors de portée";
+"popover.expires.days" = "Expire dans %d j";
+"popover.expires.today" = "Expire aujourd'hui";
+"popover.expired" = "Expirée";
+"popover.nextRefresh" = "Prochain refresh : %@";
+"popover.install" = "＋ Installer une app";
+"popover.settings" = "Réglages";
+"popover.quit" = "Quitter";
+"popover.appIDsRemaining" = "~%d/10 App ID restants cette semaine · estimation d'après ce Mac";
+"popover.unreachableHint" = "Introuvable sur ce réseau — branche-le en USB ou change de réseau";
+"popover.newDevice" = "Nouvel appareil trouvé — Appairer ?";
+"popover.pair" = "Appairer";
+"popover.empty" = "Aucune app installée — glisse un .ipa ici";
+"popover.noDevice" = "Aucun appareil détecté";
+
+/* Install sheet */
+"install.title" = "Installer";
+"install.device" = "Appareil";
+"install.options" = "Options";
+"install.field.name" = "Nom";
+"install.field.bundleID" = "Identifiant";
+"install.field.version" = "Version";
+"install.field.icon" = "Icône";
+"install.field.iconChoose" = "Choisir…";
+"install.field.fileSharing" = "Partage de fichiers";
+"install.field.iPadFullScreen" = "Plein écran iPad";
+"install.field.proMotion" = "ProMotion 120 Hz";
+"install.field.minOS" = "iOS minimum";
+"install.warning.newBundleID" = "Un identifiant différent consomme un nouvel App ID.";
+"install.warning.minOS" = "L'app peut planter si elle utilise des fonctions récentes.";
+"install.step.profile" = "Profil";
+"install.step.signing" = "Signature";
+"install.step.installing" = "Installation";
+"install.cancel" = "Annuler";
+"install.done" = "Terminé";
+
+/* First-install guide */
+"guide.title" = "Première installation";
+"guide.unlock" = "Garde l'appareil déverrouillé pendant l'installation.";
+"guide.trust" = "Ensuite, sur l'appareil : Réglages > Général > VPN et gestion de l'appareil > %@ > Faire confiance.";
+"guide.developerMode" = "Si nécessaire : Réglages > Confidentialité et sécurité > Mode développeur.";
+
+/* Notifications */
+"notification.refreshFailed.title" = "Refresh impossible : %@";
+"notification.openXcode" = "Ouvrir Xcode";
+
+/* Settings */
+"settings.launchAtLogin" = "Lancer à l'ouverture de session";
+"settings.language" = "Langue";
+"settings.language.system" = "Système";
+"settings.language.en" = "English";
+"settings.language.fr" = "Français";
+"settings.wakeMac" = "Réveiller le Mac pour rafraîchir";
+"settings.wakeMac.warning" = "Un Mac portable capot fermé, sur batterie et sans écran externe peut ne pas se réveiller complètement.";
+"settings.version" = "Version %@";
+"settings.github" = "Dépôt GitHub";
+
+/* Onboarding */
+"onboarding.xcodeMissing.title" = "Xcode manquant";
+"onboarding.xcodeMissing.body" = "XSide utilise Xcode pour signer et installer tes apps. Installe-le depuis l'App Store, puis reviens ici.";
+"onboarding.openAppStore" = "Ouvrir l'App Store";
+"onboarding.signIn.title" = "Compte Apple non connecté";
+"onboarding.signIn.steps" = "1. Xcode > Réglages (⌘,)\n2. Comptes\n3. ＋ > Apple Account";
+"onboarding.openXcode" = "Ouvrir Xcode";
+"onboarding.recheck" = "Vérifier à nouveau";
+
+/* Errors (one per XSideError case) */
+"error.xcodeMissing" = "Xcode est introuvable. Installe-le depuis l'App Store pour continuer.";
+"error.xcodeNotSignedIn" = "Aucun compte Apple n'est connecté. Connecte ton compte dans Xcode > Réglages > Comptes.";
+"error.noSigningIdentity" = "Aucun certificat de signature disponible. Ouvre Xcode > Réglages > Comptes et vérifie ton compte.";
+"error.appIDLimitReached" = "La limite de 10 App ID par semaine est atteinte. Réessaie dans quelques jours.";
+"error.deviceUnavailable" = "L'appareil est injoignable. Déverrouille-le, branche-le en USB ou connecte-le au même Wi-Fi.";
+"error.deviceLocked" = "L'appareil est verrouillé. Déverrouille-le puis réessaie.";
+"error.maxAppsReached" = "Cet appareil a déjà 3 apps installées avec un compte gratuit. Supprimes-en une pour continuer.";
+"error.encryptedIPA" = "Les IPA de l'App Store sont chiffrés et ne peuvent pas être installés.";
+"error.invalidIPA" = "Ce fichier n'est pas une app valide.";
+"error.provisioningFailed" = "Impossible de créer le profil de provisionnement. Vérifie ton compte dans Xcode et réessaie.";
+"error.installFailed" = "L'installation a échoué. Vérifie que l'appareil est déverrouillé et réessaie.";
+"error.commandFailed" = "Une commande Xcode a échoué. Réessaie, ou ouvre Xcode pour vérifier son état.";
+"error.recordNotFound" = "Cette app est introuvable dans XSide.";
+
+/* Services menu / Open With */
+"services.noIPA" = "Aucun fichier .ipa";
