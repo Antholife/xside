@@ -78,6 +78,11 @@ final class AppModel {
         await probeEnvironment()
     }
 
+    var environmentFailed: Bool { if case .failure? = environment { true } else { false } }
+
+    /// Developer dir of the last good probe, to locate Xcode when it isn't found by bundle id.
+    var lastKnownDeveloperDir: URL? { pipelineEnv?.developerDir }
+
     func recheckEnvironment() {
         Task { await probeEnvironment() }
     }
@@ -86,6 +91,15 @@ final class AppModel {
         guard !isProbing else { return }
         isProbing = true
         defer { isProbing = false }
+        #if DEBUG
+        // Debug-only: XSIDE_FAKE_ENV_FILE names a file holding xcodeMissing / xcodeNotSignedIn /
+        // noSigningIdentity / ok, re-read at each probe, to exercise the onboarding.
+        if let fake = Self.fakeEnvironment() {
+            environment = fake
+            onNeedsEvaluation?()
+            return
+        }
+        #endif
         let result = await EnvironmentProbe(runner: runner).detect()
         environment = result
         if case .success(let env) = result, env != pipelineEnv {
@@ -99,6 +113,22 @@ final class AppModel {
         await updateAppIDCounter()
         onNeedsEvaluation?()
     }
+
+    #if DEBUG
+    private static func fakeEnvironment() -> Result<SigningEnvironment, XSideError>? {
+        guard let path = ProcessInfo.processInfo.environment["XSIDE_FAKE_ENV_FILE"],
+              let text = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
+        switch text.trimmingCharacters(in: .whitespacesAndNewlines) {
+        case "xcodeMissing": return .failure(.xcodeMissing)
+        case "xcodeNotSignedIn": return .failure(.xcodeNotSignedIn)
+        case "noSigningIdentity": return .failure(.noSigningIdentity)
+        case "ok":
+            let dir = URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer")
+            return .success(SigningEnvironment(developerDir: dir, identitySHA1: "0", identityName: "Fake", teamID: "FAKE"))
+        default: return nil
+        }
+    }
+    #endif
 
     var signingEnvironment: SigningEnvironment? { try? environment?.get() }
     var isPipelineReady: Bool { pipeline != nil }

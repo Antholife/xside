@@ -64,6 +64,9 @@
 "settings.language.fr" = "Français";
 "settings.wakeMac" = "Réveiller le Mac pour rafraîchir";
 "settings.wakeMac.warning" = "Un Mac portable capot fermé, sur batterie et sans écran externe peut ne pas se réveiller complètement.";
+"settings.launchAtLogin.approval" = "Autorisation requise dans Réglages Système > Général > Ouverture.";
+"settings.openLoginItems" = "Ouvrir les éléments d'ouverture";
+"settings.launchAtLogin.error" = "Impossible de modifier le lancement à l'ouverture de session.";
 "settings.version" = "Version %@";
 "settings.github" = "Dépôt GitHub";
 
@@ -74,6 +77,9 @@
 "onboarding.signIn.title" = "Compte Apple non connecté";
 "onboarding.signIn.steps" = "1. Xcode > Réglages (⌘,)\n2. Comptes\n3. ＋ > Apple Account";
 "onboarding.openXcode" = "Ouvrir Xcode";
+"onboarding.noIdentity.title" = "Certificat de signature manquant";
+"onboarding.window" = "Bienvenue dans XSide";
+"onboarding.autoDetect" = "XSide le détecte automatiquement dès que tout est prêt.";
 "onboarding.recheck" = "Vérifier à nouveau";
 
 /* Errors (one per XSideError case) */

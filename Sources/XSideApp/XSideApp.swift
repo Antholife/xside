@@ -13,6 +13,7 @@ struct XSideApp: App {
         _model = State(initialValue: model)
         _engine = State(initialValue: engine)
         engine.start() // idempotent
+        LaunchAtLogin.applyDefaultOnFirstLaunch()
     }
 
     var body: some Scene {
@@ -31,8 +32,16 @@ struct XSideApp: App {
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
 
+        // Shown at launch when the Mac isn't ready (see `MenuBarLabel`); closes itself once it is.
+        Window(L("onboarding.window"), id: OnboardingWindow.id) {
+            OnboardingWindowRoot(model: model)
+        }
+        .windowResizability(.contentSize)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
+
         Settings {
-            SettingsPlaceholderView()
+            SettingsView()
         }
     }
 }
@@ -43,11 +52,22 @@ private struct MenuBarLabel: View {
     let model: AppModel
     let appDelegate: AppDelegate
     @Environment(\.openWindow) private var openWindow
+    @State private var onboardingShown = false
+
+    /// Opens the onboarding window the first time a probe fails in this launch.
+    private func showOnboardingIfNeeded() {
+        guard model.environmentFailed, !onboardingShown else { return }
+        onboardingShown = true
+        openWindow(id: OnboardingWindow.id)
+        NSApp.activate()
+    }
 
     var body: some View {
         Image(systemName: "arrow.triangle.2.circlepath")
+            .onChange(of: model.environmentFailed) { showOnboardingIfNeeded() }
             .onAppear {
                 appDelegate.openIPA = { url in openWindow.presentInstall(url, model: model) }
+                showOnboardingIfNeeded()
                 model.showInstallWindow = {
                     openWindow(id: InstallWindow.id)
                     NSApp.activate()

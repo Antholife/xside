@@ -64,6 +64,9 @@
 "settings.language.fr" = "Français";
 "settings.wakeMac" = "Wake Mac to refresh";
 "settings.wakeMac.warning" = "A laptop with the lid closed, on battery and with no external display may not wake up fully.";
+"settings.launchAtLogin.approval" = "Approval needed in System Settings > General > Login Items.";
+"settings.openLoginItems" = "Open Login Items";
+"settings.launchAtLogin.error" = "Couldn't change the launch-at-login setting.";
 "settings.version" = "Version %@";
 "settings.github" = "GitHub repository";
 
@@ -74,6 +77,9 @@
 "onboarding.signIn.title" = "Apple account not signed in";
 "onboarding.signIn.steps" = "1. Xcode > Settings (⌘,)\n2. Accounts\n3. ＋ > Apple Account";
 "onboarding.openXcode" = "Open Xcode";
+"onboarding.noIdentity.title" = "Signing certificate missing";
+"onboarding.window" = "Welcome to XSide";
+"onboarding.autoDetect" = "XSide detects it automatically once everything is ready.";
 "onboarding.recheck" = "Check again";
 
 /* Errors (one per XSideError case) */

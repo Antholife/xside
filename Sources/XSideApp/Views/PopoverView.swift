@@ -24,7 +24,7 @@ private struct PopoverContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if case .failure(let error)? = model.environment {
-                EnvironmentIssue(error: error, isChecking: model.isProbing, onRecheck: model.recheckEnvironment)
+                OnboardingView(model: model, error: error, compact: true)
             }
             ForEach(model.unpairedDevices) { device in
                 PairPrompt(device: device, isPairing: model.pairing.contains(device.id),
@@ -74,36 +74,6 @@ private struct PopoverContent: View {
                 }
             }
         }
-    }
-}
-
-/// Xcode missing / not signed in / no identity. Full onboarding comes later; for now: message + recheck.
-private struct EnvironmentIssue: View {
-    let error: XSideError
-    let isChecking: Bool
-    let onRecheck: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label {
-                Text(error.localizedMessage)
-                    .font(.system(size: 12))
-                    .fixedSize(horizontal: false, vertical: true)
-            } icon: {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Color(nsColor: .systemOrange))
-            }
-            HStack {
-                Spacer()
-                if isChecking { ProgressView().controlSize(.small) }
-                Button(L("onboarding.recheck"), action: onRecheck)
-                    .controlSize(.small)
-                    .disabled(isChecking)
-            }
-        }
-        .padding(10)
-        .background(Color(nsColor: .systemOrange).opacity(0.1),
-                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
 

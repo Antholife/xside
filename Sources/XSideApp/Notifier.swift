@@ -78,23 +78,7 @@ final class Notifier: NSObject {
     }
 
     func openXcode() {
-        let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.dt.Xcode")
-            ?? developerDir().flatMap(Self.enclosingApp)
-        guard let url else {
-            Self.logger.error("Xcode not found")
-            return
-        }
-        NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
-    }
-
-    /// `/Applications/Xcode-beta.app/Contents/Developer` → `/Applications/Xcode-beta.app`.
-    private static func enclosingApp(_ dir: URL) -> URL? {
-        var url = dir.standardizedFileURL
-        while url.path != "/" {
-            if url.pathExtension == "app" { return url }
-            url.deleteLastPathComponent()
-        }
-        return nil
+        XcodeLauncher.open(developerDir: developerDir())
     }
 }
 
