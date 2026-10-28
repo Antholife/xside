@@ -1,0 +1,36 @@
+{
+  "info": {
+    "commandType": "devicectl.list.devices",
+    "jsonVersion": 4,
+    "outcome": "success",
+    "version": "629.3"
+  },
+  "result": {
+    "devices": [
+      {
+        "connectionProperties": {
+          "authenticationType": "manualPairing",
+          "pairingState": "paired",
+          "tunnelState": "connected",
+          "transportType": "localNetwork",
+          "lastConnectionDate": "2026-10-20T10:00:00.000Z"
+        },
+        "deviceProperties": {
+          "name": "iPad de Test",
+          "osVersionNumber": "27.2",
+          "developerModeStatus": "enabled"
+        },
+        "hardwareProperties": {
+          "deviceType": "iPad",
+          "marketingName": "iPad Air (5th generation)",
+          "productType": "iPad13,16",
+          "reality": "physical",
+          "platform": "iOS",
+          "udid": "00008150-000AAAAAAAAAAA02"
+        },
+        "identifier": "AAAAAAAA-0000-0000-0000-000000000002",
+        "visibilityClass": "default"
+      }
+    ]
+  }
+}

@@ -1,0 +1,325 @@
+{
+  "info": {
+    "arguments": [
+      "devicectl",
+      "list",
+      "devices",
+      "--json-output",
+      "out.json"
+    ],
+    "commandType": "devicectl.list.devices",
+    "jsonVersion": 4,
+    "outcome": "success",
+    "version": "629.3"
+  },
+  "result": {
+    "devices": [
+      {
+        "capabilities": [
+          {
+            "featureIdentifier": "com.apple.coredevice.feature.default.user.credentials",
+            "name": "Modify Credentials for Default Users for a Device"
+          },
+          {
+            "featureIdentifier": "com.apple.coredevice.feature.tags",
+            "name": "Modify Tags"
+          },
+          {
+            "featureIdentifier": "com.apple.coredevice.feature.unpairdevice",
+            "name": "Unpair Device"
+          }
+        ],
+        "connectionProperties": {
+          "authenticationType": "manualPairing",
+          "isMobileDeviceOnly": false,
+          "lastConnectionDate": "2026-09-12T02:41:00.000Z",
+          "pairingState": "paired",
+          "potentialHostnames": [],
+          "tunnelState": "unavailable"
+        },
+        "deviceProperties": {
+          "ddiServicesAvailable": false,
+          "developerModeStatus": "enabled",
+          "hasInternalOSBuild": false,
+          "name": "Alex’s iPad Air 5 📱",
+          "osBuildUpdate": "24B119",
+          "osVersionNumber": "27.2",
+          "releaseType": "Beta"
+        },
+        "hardwareProperties": {
+          "cpuType": {
+            "name": "arm64e",
+            "subType": -2147483646,
+            "type": 16777228
+          },
+          "deviceType": "iPad",
+          "ecid": 1234567890,
+          "hardwareModel": "J407AP",
+          "isProductionFused": true,
+          "marketingName": "iPad Air (5th generation)",
+          "platform": "iOS",
+          "productType": "iPad13,16",
+          "reality": "physical",
+          "serialNumber": "SERIAL0000",
+          "supportedCPUTypes": [
+            {
+              "name": "arm64e",
+              "subType": -2147483646,
+              "type": 16777228
+            },
+            {
+              "name": "arm64",
+              "subType": 0,
+              "type": 16777228
+            }
+          ],
+          "supportedDeviceFamilies": [
+            1,
+            2
+          ],
+          "thinningProductType": "iPad13,16",
+          "udid": "00008150-000AAAAAAAAAAA04"
+        },
+        "identifier": "AAAAAAAA-0000-0000-0000-000000000004",
+        "properties": {
+          "connection": {
+            "lastConnectionDate": 810873660,
+            "pairingState": "paired"
+          },
+          "hardware": {
+            "cpuType": {
+              "subtype": 18446744071562067970,
+              "type": 16777228
+            },
+            "ecid": 1234567890,
+            "marketingName": "iPad Air (5th generation)",
+            "productType": "iPad13,16",
+            "reality": "physical",
+            "serialNumber": "SERIAL0000",
+            "udid": "00008150-000AAAAAAAAAAA04"
+          },
+          "software": {
+            "osBuildVersions": {
+              "buildVersion": {
+                "majorLetterComponent": "B",
+                "majorNumberComponent": 24,
+                "name": "24B119",
+                "revisionVersion": {
+                  "components": [
+                    24,
+                    2,
+                    119,
+                    0,
+                    0
+                  ],
+                  "originalComponentsCount": 5,
+                  "stringValue": "24.2.119.0.0"
+                },
+                "trainProgram": "iOS",
+                "updateNumberComponent": 119
+              },
+              "supplementalBuildVersion": {
+                "majorLetterComponent": "B",
+                "majorNumberComponent": 24,
+                "name": "24B119",
+                "revisionVersion": {
+                  "components": [
+                    24,
+                    2,
+                    119,
+                    0,
+                    0
+                  ],
+                  "originalComponentsCount": 5,
+                  "stringValue": "24.2.119.0.0"
+                },
+                "trainProgram": "iOS",
+                "updateNumberComponent": 119
+              }
+            },
+            "osVersionNumber": {
+              "components": [
+                27,
+                2,
+                0,
+                0,
+                0
+              ],
+              "originalComponentsCount": 2,
+              "stringValue": "27.2"
+            }
+          },
+          "state": {
+            "developerModeStatus": {
+              "enabled": {
+                "mode": 1
+              }
+            },
+            "name": "Alex’s iPad Air 5 📱"
+          }
+        },
+        "propertyDisplayNames": null,
+        "tags": [],
+        "visibilityClass": "default"
+      },
+      {
+        "capabilities": [
+          {
+            "featureIdentifier": "com.apple.coredevice.feature.default.user.credentials",
+            "name": "Modify Credentials for Default Users for a Device"
+          },
+          {
+            "featureIdentifier": "com.apple.coredevice.feature.tags",
+            "name": "Modify Tags"
+          },
+          {
+            "featureIdentifier": "com.apple.coredevice.feature.unpairdevice",
+            "name": "Unpair Device"
+          }
+        ],
+        "connectionProperties": {
+          "authenticationType": "manualPairing",
+          "isMobileDeviceOnly": false,
+          "lastConnectionDate": "2026-10-02T12:08:00.000Z",
+          "pairingState": "paired",
+          "potentialHostnames": [],
+          "tunnelState": "unavailable"
+        },
+        "deviceProperties": {
+          "bootedFromSnapshot": true,
+          "bootedSnapshotName": "com.apple.os.update-7E076E2FAD68A55868B98854997DE3D3F9CEF12BF54E1257A46D4906175E1DDD",
+          "ddiServicesAvailable": false,
+          "developerModeStatus": "enabled",
+          "hasInternalOSBuild": false,
+          "name": "iPhone de Alex",
+          "osBuildUpdate": "24B119",
+          "osVersionNumber": "27.2",
+          "releaseType": "Beta",
+          "rootFileSystemIsWritable": false,
+          "supportsCheckedAllocations": true
+        },
+        "hardwareProperties": {
+          "cpuType": {
+            "name": "arm64e",
+            "subType": -2147483646,
+            "type": 16777228
+          },
+          "deviceType": "iPhone",
+          "ecid": 1234567890,
+          "hardwareModel": "V54AP",
+          "internalStorageCapacity": 256000000000,
+          "isProductionFused": true,
+          "marketingName": "iPhone 17 Pro Max",
+          "platform": "iOS",
+          "productType": "iPhone18,2",
+          "reality": "physical",
+          "serialNumber": "SERIAL0000",
+          "supportedCPUTypes": [
+            {
+              "name": "arm64e",
+              "subType": -2147483646,
+              "type": 16777228
+            },
+            {
+              "name": "arm64",
+              "subType": 0,
+              "type": 16777228
+            }
+          ],
+          "supportedDeviceFamilies": [
+            1
+          ],
+          "thinningProductType": "iPhone18,2",
+          "udid": "00008150-000AAAAAAAAAAA05"
+        },
+        "identifier": "AAAAAAAA-0000-0000-0000-000000000005",
+        "properties": {
+          "connection": {
+            "lastConnectionDate": 812635680,
+            "pairingState": "paired"
+          },
+          "hardware": {
+            "cpuCount": {
+              "logicalCores": 6,
+              "packages": 1,
+              "physicalCores": 6
+            },
+            "cpuType": {
+              "subtype": 18446744071562067970,
+              "type": 16777228
+            },
+            "ecid": 1234567890,
+            "internalStorageCapacity": 256000000000,
+            "marketingName": "iPhone 17 Pro Max",
+            "productType": "iPhone18,2",
+            "reality": "physical",
+            "serialNumber": "SERIAL0000",
+            "udid": "00008150-000AAAAAAAAAAA05"
+          },
+          "software": {
+            "osBuildVersions": {
+              "buildVersion": {
+                "majorLetterComponent": "B",
+                "majorNumberComponent": 24,
+                "name": "24B119",
+                "revisionVersion": {
+                  "components": [
+                    24,
+                    2,
+                    119,
+                    0,
+                    0
+                  ],
+                  "originalComponentsCount": 5,
+                  "stringValue": "24.2.119.0.0"
+                },
+                "trainProgram": "iOS",
+                "updateNumberComponent": 119
+              },
+              "supplementalBuildVersion": {
+                "majorLetterComponent": "B",
+                "majorNumberComponent": 24,
+                "name": "24B119",
+                "revisionVersion": {
+                  "components": [
+                    24,
+                    2,
+                    119,
+                    0,
+                    0
+                  ],
+                  "originalComponentsCount": 5,
+                  "stringValue": "24.2.119.0.0"
+                },
+                "trainProgram": "iOS",
+                "updateNumberComponent": 119
+              }
+            },
+            "osVersionNumber": {
+              "components": [
+                27,
+                2,
+                0,
+                0,
+                0
+              ],
+              "originalComponentsCount": 2,
+              "stringValue": "27.2"
+            }
+          },
+          "state": {
+            "developerModeStatus": {
+              "enabled": {
+                "mode": 1
+              }
+            },
+            "name": "iPhone de Alex"
+          }
+        },
+        "propertyDisplayNames": null,
+        "tags": [],
+        "visibilityClass": "default"
+      }
+    ]
+  }
+}

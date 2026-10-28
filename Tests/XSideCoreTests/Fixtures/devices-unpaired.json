@@ -1,0 +1,34 @@
+{
+  "info": {
+    "commandType": "devicectl.list.devices",
+    "jsonVersion": 4,
+    "outcome": "success",
+    "version": "629.3"
+  },
+  "result": {
+    "devices": [
+      {
+        "connectionProperties": {
+          "authenticationType": "manualPairing",
+          "pairingState": "unpaired",
+          "tunnelState": "unavailable",
+          "lastConnectionDate": "2026-10-20T10:00:00.000Z"
+        },
+        "deviceProperties": {
+          "name": "iPhone Decouvert",
+          "osVersionNumber": "27.2"
+        },
+        "hardwareProperties": {
+          "deviceType": "iPhone",
+          "marketingName": "iPhone 17 Pro Max",
+          "productType": "iPhone18,2",
+          "reality": "physical",
+          "platform": "iOS",
+          "udid": "00008150-000AAAAAAAAAAA03"
+        },
+        "identifier": "AAAAAAAA-0000-0000-0000-000000000003",
+        "visibilityClass": "default"
+      }
+    ]
+  }
+}

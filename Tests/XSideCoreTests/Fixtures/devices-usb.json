@@ -1,0 +1,60 @@
+{
+  "info": {
+    "commandType": "devicectl.list.devices",
+    "jsonVersion": 4,
+    "outcome": "success",
+    "version": "629.3"
+  },
+  "result": {
+    "devices": [
+      {
+        "connectionProperties": {
+          "authenticationType": "manualPairing",
+          "pairingState": "paired",
+          "tunnelState": "connected",
+          "transportType": "wired",
+          "lastConnectionDate": "2026-10-20T10:00:00.000Z"
+        },
+        "deviceProperties": {
+          "name": "iPhone de Test",
+          "osVersionNumber": "27.2",
+          "developerModeStatus": "enabled"
+        },
+        "hardwareProperties": {
+          "deviceType": "iPhone",
+          "marketingName": "iPhone 17 Pro Max",
+          "productType": "iPhone18,2",
+          "reality": "physical",
+          "platform": "iOS",
+          "udid": "00008150-000AAAAAAAAAAA01"
+        },
+        "identifier": "AAAAAAAA-0000-0000-0000-000000000001",
+        "visibilityClass": "default"
+      },
+      {
+        "connectionProperties": {
+          "authenticationType": "manualPairing",
+          "pairingState": "paired",
+          "tunnelState": "connected",
+          "transportType": "wired",
+          "lastConnectionDate": "2026-10-20T10:00:00.000Z"
+        },
+        "deviceProperties": {
+          "name": "Simulateur de Test",
+          "osVersionNumber": "27.2",
+          "developerModeStatus": "enabled"
+        },
+        "hardwareProperties": {
+          "deviceType": "iPhone",
+          "marketingName": "iPhone 17 Pro Max",
+          "productType": "iPhone18,2",
+          "reality": "simulated",
+          "platform": "iOS",
+          "udid": "SIMULATOR-0000-0001"
+        },
+        "identifier": "AAAAAAAA-0000-0000-0000-0000000000F1",
+        "visibilityClass": "default"
+      }
+    ]
+  }
+}

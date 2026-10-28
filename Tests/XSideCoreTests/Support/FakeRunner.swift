@@ -7,16 +7,17 @@ struct FakeRunnerError: Error, CustomStringConvertible {
 }
 
 final class FakeRunner: CommandRunning, @unchecked Sendable {
-    private struct Stub { let executable: String; let firstArg: String?; let result: CommandResult }
+    private struct Stub { let executable: String; let firstArg: String?; let result: CommandResult; let effect: (@Sendable ([String]) -> Void)? }
     private let lock = NSLock()
     private var stubs: [Stub] = []
     private var _calls: [[String]] = []
 
     init() {}
 
-    func stub(_ executable: String, firstArg: String? = nil, result: CommandResult) {
+    func stub(_ executable: String, firstArg: String? = nil, result: CommandResult,
+              effect: (@Sendable ([String]) -> Void)? = nil) {
         lock.lock(); defer { lock.unlock() }
-        stubs.append(Stub(executable: executable, firstArg: firstArg, result: result))
+        stubs.append(Stub(executable: executable, firstArg: firstArg, result: result, effect: effect))
     }
 
     var calls: [[String]] {
@@ -25,12 +26,12 @@ final class FakeRunner: CommandRunning, @unchecked Sendable {
     }
 
     func run(_ executable: String, _ arguments: [String], cwd: URL?) async throws -> CommandResult {
-        let match: CommandResult? = lock.withLock {
+        let match: Stub? = lock.withLock {
             _calls.append([executable] + arguments)
             // Most recent matching stub wins.
-            return stubs.last(where: { $0.executable == executable && ($0.firstArg == nil || $0.firstArg == arguments.first) })?.result
+            return stubs.last(where: { $0.executable == executable && ($0.firstArg == nil || $0.firstArg == arguments.first) })
         }
-        if let match { return match }
+        if let match { match.effect?(arguments); return match.result }
         throw FakeRunnerError(command: [executable] + arguments)
     }
 }
