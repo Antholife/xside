@@ -44,6 +44,7 @@
 "install.done" = "Done";
 "install.success" = "Installed on %@";
 "install.noAvailableDevice" = "No reachable device. Unlock it, plug it in over USB or join the same Wi-Fi.";
+"install.queued" = "Next: %@";
 
 /* First-install guide */
 "guide.title" = "First install";

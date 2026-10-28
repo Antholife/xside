@@ -40,10 +40,11 @@ final class AppModel {
     private(set) var pairing: Set<String> = []
     private(set) var pairErrors: [String: String] = [:]
 
-    /// The `.ipa` waiting in the install window. Setting it (even to the same file again) starts a
-    /// new install flow, unless an install is running.
+    /// The `.ipa` shown in the install window. Setting it requests an install of that file: it
+    /// starts a new flow, or is queued while an install is running.
     var pendingIPA: URL? {
-        didSet { beginFlow() }
+        get { install?.ipa }
+        set { if let newValue { request(newValue) } }
     }
     private(set) var install: InstallFlow?
 
@@ -193,16 +194,25 @@ final class AppModel {
             info = try await IPAImporter.inspect(ipa: ipa, runner: runner)
         }
         let record = try await library.importIPA(ipa, info: info, teamID: env.teamID)
+        // Claimed with no await since the import, so a refresh can't start in between.
+        let key = JobKey(recordID: record.id, deviceID: device.id)
+        claim(key)
+        defer { release(key) }
         if let options { try await library.setOptions(options, for: record.id) }
         await reloadRecords()
-        try await run(pipeline, recordID: record.id, device: device, progress: progress)
+        try await run(pipeline, key: key, device: device, progress: progress)
         return record
     }
 
     func refreshNow(_ job: RefreshJob) {
-        guard let pipeline, jobs[JobKey(recordID: job.recordID, deviceID: job.deviceID)] == nil,
+        let key = JobKey(recordID: job.recordID, deviceID: job.deviceID)
+        guard let pipeline, jobs[key] == nil,
               let device = devices.first(where: { $0.id == job.deviceID }) else { return }
-        Task { try? await run(pipeline, recordID: job.recordID, device: device) }
+        claim(key) // before the task starts, so the row can't be claimed twice
+        Task {
+            defer { release(key) }
+            try? await run(pipeline, key: key, device: device)
+        }
     }
 
     func canRefresh(_ entry: AppEntry) -> Bool {
@@ -210,13 +220,25 @@ final class AppModel {
             && devices.contains { $0.id == entry.installation.deviceID && $0.isAvailable }
     }
 
-    private func run(_ pipeline: SideloadPipeline, recordID: UUID, device: Device,
+    /// Row job ownership is counted: the row's state clears only when the last holder releases it.
+    private var claims: [JobKey: Int] = [:]
+
+    private func claim(_ key: JobKey) {
+        claims[key, default: 0] += 1
+        if jobs[key] == nil { jobs[key] = .profile }
+    }
+
+    private func release(_ key: JobKey) {
+        let left = (claims[key] ?? 1) - 1
+        claims[key] = left > 0 ? left : nil
+        if left <= 0 { jobs[key] = nil }
+    }
+
+    /// The caller must hold a claim on `key`.
+    private func run(_ pipeline: SideloadPipeline, key: JobKey, device: Device,
                      progress: @escaping @MainActor @Sendable (InstallStep) -> Void = { _ in }) async throws {
-        let key = JobKey(recordID: recordID, deviceID: device.id)
-        jobs[key] = .profile
-        defer { jobs[key] = nil }
         do {
-            _ = try await pipeline.install(recordID: recordID, device: device) { step in
+            _ = try await pipeline.install(recordID: key.recordID, device: device) { step in
                 await MainActor.run {
                     self.jobs[key] = step
                     progress(step)
@@ -232,9 +254,23 @@ final class AppModel {
 
     // MARK: - Install window flow
 
-    private func beginFlow() {
-        if let current = install, current.isRunning { return }
-        guard let url = pendingIPA else { install = nil; return }
+    /// Requested `.ipa` files waiting for the current install to finish (oldest first).
+    private(set) var queuedIPAs: [URL] = []
+    /// Set by the menu-bar label (which has `openWindow`): shows and activates the install window.
+    var showInstallWindow: (() -> Void)?
+    private var isInstallWindowOpen = false
+
+    /// A request (Finder, drop, button). While an install runs, or its guide is still unseen, the
+    /// request is queued, never dropped; otherwise it replaces a flow that hasn't started.
+    private func request(_ url: URL) {
+        if let current = install, current.isBusy {
+            if current.ipa != url && !queuedIPAs.contains(url) { queuedIPAs.append(url) }
+            return
+        }
+        beginFlow(url)
+    }
+
+    private func beginFlow(_ url: URL) {
         let flow = InstallFlow(ipa: url)
         install = flow
         autoselectDevice()
@@ -253,6 +289,13 @@ final class AppModel {
             }
         }
         refreshDevices()
+    }
+
+    /// Starts the next queued request, if any.
+    private func advanceQueue() -> Bool {
+        guard !queuedIPAs.isEmpty else { return false }
+        beginFlow(queuedIPAs.removeFirst())
+        return true
     }
 
     /// Identifier the app is signed with when no custom one is set.
@@ -282,29 +325,67 @@ final class AppModel {
               let device = devices.first(where: { $0.id == flow.deviceID && $0.isAvailable }) else { return }
         let options = flow.draft.options
         flow.phase = .running(.profile)
+        // Re-install of a known app: claim its row now, before any await.
+        let existingKey = flow.existing.map { JobKey(recordID: $0.id, deviceID: device.id) }
+        if let existingKey { claim(existingKey) }
         Task {
+            defer { if let existingKey { release(existingKey) } }
             do {
                 try await importAndInstall(flow.ipa, on: device, options: options) { flow.phase = .running($0) }
                 flow.phase = .succeeded(deviceName: device.name, guide: guideIfFirstInstall(on: device))
             } catch {
                 flow.phase = .editing(error: localizedMessage(error))
             }
+            flowFinished(flow)
         }
     }
 
-    /// The guide shows once per device, after its first successful install.
-    private func guideIfFirstInstall(on device: Device) -> FirstInstallGuide? {
-        let key = "guideShown.\(device.id)"
-        guard !UserDefaults.standard.bool(forKey: key) else { return nil }
-        UserDefaults.standard.set(true, forKey: key)
-        let account = (try? environment?.get())?.identityName ?? "Apple Development"
-        return FirstInstallGuide(accountName: account, needsDeveloperMode: device.developerModeEnabled == false)
+    /// The window may have been closed during the job: bring it back when there is something to
+    /// see (an error, the first-install guide, or the next queued file).
+    private func flowFinished(_ flow: InstallFlow) {
+        guard install === flow, !isInstallWindowOpen else { return }
+        if case .succeeded(_, nil) = flow.phase {
+            if !advanceQueue() { install = nil; return }
+        }
+        showInstallWindow?()
     }
 
-    /// The install window closed or was dismissed. A running install keeps going (its row shows progress).
-    func closeInstall() {
-        guard install?.isRunning != true else { return }
-        pendingIPA = nil
+    /// The guide is due after the first successful install on a device. It is marked as shown only
+    /// when it is actually displayed (`guideDisplayed`).
+    private func guideIfFirstInstall(on device: Device) -> FirstInstallGuide? {
+        guard !UserDefaults.standard.bool(forKey: Self.guideKey(device.id)) else { return nil }
+        let account = (try? environment?.get())?.identityName ?? "Apple Development"
+        return FirstInstallGuide(deviceID: device.id, accountName: account,
+                                 needsDeveloperMode: device.developerModeEnabled == false)
+    }
+
+    func guideDisplayed(_ guide: FirstInstallGuide) {
+        UserDefaults.standard.set(true, forKey: Self.guideKey(guide.deviceID))
+        if case .succeeded(_, let shown?)? = install?.phase, shown == guide { install?.guideSeen = true }
+    }
+
+    private static func guideKey(_ deviceID: String) -> String { "guideShown.\(deviceID)" }
+
+    /// "Done" / "Cancel": moves to the next queued file. Returns false when the window can close.
+    func dismissFlow() -> Bool {
+        guard install?.isRunning != true else { return true }
+        if advanceQueue() { return true }
+        install = nil
+        return false
+    }
+
+    func installWindowAppeared() { isInstallWindowOpen = true }
+
+    /// Closed with the window button. A running install keeps going (its row shows progress) and
+    /// reopens the window when it ends if needed; queued files are never dropped.
+    func installWindowDisappeared() {
+        isInstallWindowOpen = false
+        guard install?.isBusy != true else { return }
+        if advanceQueue() {
+            showInstallWindow?()
+        } else {
+            install = nil
+        }
     }
 }
 

@@ -26,14 +26,25 @@ final class InstallFlow {
 
     init(ipa: URL) { self.ipa = ipa }
 
+    /// True once the first-install guide of this flow has been displayed.
+    var guideSeen = false
+
     var isRunning: Bool {
         if case .running = phase { return true }
+        return false
+    }
+
+    /// Running, or succeeded with a guide the user hasn't seen yet: must not be replaced.
+    var isBusy: Bool {
+        if isRunning { return true }
+        if case .succeeded(_, _?) = phase { return !guideSeen }
         return false
     }
 }
 
 /// What the first-install guide must say for a device.
 struct FirstInstallGuide: Equatable {
+    let deviceID: String
     let accountName: String
     let needsDeveloperMode: Bool
 }

@@ -44,6 +44,7 @@
 "install.done" = "Terminé";
 "install.success" = "Installée sur %@";
 "install.noAvailableDevice" = "Aucun appareil joignable. Déverrouille-le, branche-le en USB ou connecte-le au même Wi-Fi.";
+"install.queued" = "Ensuite : %@";
 
 /* First-install guide */
 "guide.title" = "Première installation";

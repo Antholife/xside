@@ -13,7 +13,9 @@ struct InstallWindowRoot: View {
     var body: some View {
         Group {
             if let flow = model.install {
-                InstallSheet(model: model, flow: flow) { dismissWindow(id: InstallWindow.id) }
+                InstallSheet(model: model, flow: flow) {
+                    if !model.dismissFlow() { dismissWindow(id: InstallWindow.id) }
+                }
             } else {
                 Button(L("popover.install")) {
                     if let url = chooseIPA() { openWindow.presentInstall(url, model: model) }
@@ -26,7 +28,8 @@ struct InstallWindowRoot: View {
         .fixedSize(horizontal: false, vertical: true)
         .navigationTitle(L("install.title"))
         .id(language)
-        .onDisappear(perform: model.closeInstall)
+        .onAppear(perform: model.installWindowAppeared)
+        .onDisappear(perform: model.installWindowDisappeared)
     }
 }
 
@@ -59,8 +62,12 @@ struct InstallSheet: View {
                 Label(L("install.success", deviceName), systemImage: "checkmark.circle.fill")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Color(nsColor: .systemGreen))
-                if let guide { FirstInstallGuideView(guide: guide) }
+                if let guide {
+                    FirstInstallGuideView(guide: guide)
+                        .onAppear { model.guideDisplayed(guide) }
+                }
             }
+            if !model.queuedIPAs.isEmpty { QueueLine(files: model.queuedIPAs) }
             buttons
         }
         .padding(20)
@@ -118,6 +125,20 @@ struct InstallSheet: View {
     private var canInstall: Bool {
         guard !flow.isRunning, case .success? = model.environment else { return false }
         return model.devices.contains { $0.id == flow.deviceID && $0.isAvailable }
+    }
+}
+
+/// "Next: Foo.ipa, Bar.ipa" — files requested while this install runs.
+private struct QueueLine: View {
+    let files: [URL]
+
+    var body: some View {
+        Label(L("install.queued", files.map(\.lastPathComponent).joined(separator: ", ")),
+              systemImage: "clock")
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+            .truncationMode(.middle)
     }
 }
 

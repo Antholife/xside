@@ -39,6 +39,10 @@ private struct MenuBarLabel: View {
         Image(systemName: "arrow.triangle.2.circlepath")
             .onAppear {
                 appDelegate.openIPA = { url in openWindow.presentInstall(url, model: model) }
+                model.showInstallWindow = {
+                    openWindow(id: InstallWindow.id)
+                    NSApp.activate()
+                }
             }
     }
 }
