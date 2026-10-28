@@ -240,6 +240,21 @@ final class AppModel {
         return true
     }
 
+    /// Records a failed attempt on an unreachable device without running the pipeline: the row
+    /// shows the unreachable hint and the 30-min retry delay applies. Expiry is kept.
+    func recordUnreachable(_ job: RefreshJob, at date: Date) async {
+        guard !busyJobs.contains(job), let record = records.first(where: { $0.id == job.recordID }),
+              var installation = record.installations.first(where: { $0.deviceID == job.deviceID }) else { return }
+        installation.lastAttempt = date
+        installation.lastErrorKey = XSideError.deviceUnavailable.key
+        do {
+            try await library.upsert(installation, for: job.recordID)
+        } catch {
+            Self.logger.error("recording unreachable failed: \(String(describing: error), privacy: .public)")
+        }
+        await reloadRecords()
+    }
+
     /// Rows with an install or refresh running.
     var busyJobs: Set<RefreshJob> {
         Set(jobs.keys.map { RefreshJob(recordID: $0.recordID, deviceID: $0.deviceID) })

@@ -108,3 +108,41 @@ public struct NotificationGateStore: Sendable {
         try encoder.encode(gate).write(to: url, options: .atomic)
     }
 }
+
+/// Finds due installations whose device can't be reached (missing from the list or unavailable),
+/// so they are reported instead of expiring silently. A device must be seen unreachable on two
+/// evaluations at least `confirmDelay` apart (avoids alerts right after wake or on a stale list),
+/// and an installation is reported at most once per `RefreshPlanner.retryDelay`.
+public struct UnreachableTracker: Sendable {
+    public static let confirmDelay: TimeInterval = 5 * 60
+    private var firstSeen: [RefreshJob: Date] = [:]
+
+    public init() {}
+
+    /// Installations to mark unreachable now. Call on every evaluation.
+    public mutating func evaluate(_ records: [AppRecord], devices: [Device], now: Date,
+                                  threshold: TimeInterval = RefreshPlanner.threshold) -> [RefreshJob] {
+        let available = Set(devices.filter(\.isAvailable).map(\.id))
+        var seen: [RefreshJob: Date] = [:]
+        var result: [(expiresAt: Date, job: RefreshJob)] = []
+        for record in records {
+            for i in record.installations
+            where i.expiresAt.timeIntervalSince(now) <= threshold && !available.contains(i.deviceID) {
+                let job = RefreshJob(recordID: record.id, deviceID: i.deviceID)
+                let first = firstSeen[job] ?? now
+                seen[job] = first
+                guard now.timeIntervalSince(first) >= Self.confirmDelay else { continue }
+                if let last = i.lastAttempt, now.timeIntervalSince(last) < RefreshPlanner.retryDelay { continue }
+                result.append((i.expiresAt, job))
+            }
+        }
+        // Anything not seen unreachable this time (device back, refreshed, removed) starts over.
+        firstSeen = seen
+        result.sort {
+            if $0.expiresAt != $1.expiresAt { return $0.expiresAt < $1.expiresAt }
+            if $0.job.recordID != $1.job.recordID { return $0.job.recordID.uuidString < $1.job.recordID.uuidString }
+            return $0.job.deviceID < $1.job.deviceID
+        }
+        return result.map(\.job)
+    }
+}

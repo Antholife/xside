@@ -126,4 +126,58 @@ struct PlannerTests {
         try Data("not json".utf8).write(to: store.url)
         #expect(store.load() == NotificationGate())
     }
+
+    // MARK: UnreachableTracker
+
+    private let min: TimeInterval = 60
+
+    @Test func unreachableNeedsTwoSightingsFiveMinutesApart() {
+        var t = UnreachableTracker()
+        let r = record([inst(expiresIn: hour)])
+        let job = RefreshJob(recordID: r.id, deviceID: "D1")
+        #expect(t.evaluate([r], devices: [], now: now).isEmpty) // first sighting (device missing)
+        #expect(t.evaluate([r], devices: [], now: now.addingTimeInterval(4 * min)).isEmpty)
+        #expect(t.evaluate([r], devices: [], now: now.addingTimeInterval(5 * min)) == [job])
+    }
+
+    @Test func unreachableCountsUnavailableDevices() {
+        var t = UnreachableTracker()
+        let r = record([inst(expiresIn: -hour)]) // already expired: still reported
+        let off = [device("D1", available: false)]
+        _ = t.evaluate([r], devices: off, now: now)
+        #expect(t.evaluate([r], devices: off, now: now.addingTimeInterval(6 * min))
+                == [RefreshJob(recordID: r.id, deviceID: "D1")])
+    }
+
+    @Test func unreachableIgnoresNotDueAndAvailable() {
+        var t = UnreachableTracker()
+        let notDue = record([inst(expiresIn: 3 * 86_400)])
+        let due = record([inst(expiresIn: hour)])
+        _ = t.evaluate([notDue, due], devices: [device("D1")], now: now)
+        #expect(t.evaluate([notDue, due], devices: [device("D1")], now: now.addingTimeInterval(10 * min)).isEmpty)
+        _ = t.evaluate([notDue], devices: [], now: now)
+        #expect(t.evaluate([notDue], devices: [], now: now.addingTimeInterval(10 * min)).isEmpty)
+        // The debug threshold applies too.
+        _ = t.evaluate([notDue], devices: [], now: now, threshold: 7 * 86_400)
+        #expect(t.evaluate([notDue], devices: [], now: now.addingTimeInterval(10 * min), threshold: 7 * 86_400).count == 1)
+    }
+
+    @Test func unreachableRespectsRetryDelay() {
+        var t = UnreachableTracker()
+        let t2 = now.addingTimeInterval(10 * min)
+        let recent = record([inst(expiresIn: hour, lastAttempt: t2.addingTimeInterval(-29 * min))])
+        let old = record([inst(expiresIn: hour, lastAttempt: t2.addingTimeInterval(-31 * min))])
+        _ = t.evaluate([recent, old], devices: [], now: now)
+        #expect(t.evaluate([recent, old], devices: [], now: t2) == [RefreshJob(recordID: old.id, deviceID: "D1")])
+    }
+
+    @Test func unreachableClearsWhenDeviceComesBack() {
+        var t = UnreachableTracker()
+        let r = record([inst(expiresIn: hour)])
+        _ = t.evaluate([r], devices: [], now: now)
+        _ = t.evaluate([r], devices: [device("D1")], now: now.addingTimeInterval(3 * min)) // back: cleared
+        // Unreachable again: needs a fresh 5-min confirmation.
+        #expect(t.evaluate([r], devices: [], now: now.addingTimeInterval(6 * min)).isEmpty)
+        #expect(t.evaluate([r], devices: [], now: now.addingTimeInterval(11 * min)).count == 1)
+    }
 }

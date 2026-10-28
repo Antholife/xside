@@ -47,8 +47,17 @@ final class Notifier: NSObject {
         }
     }
 
+    /// True when a notification posted now would be shown (authorized or provisional). Without a
+    /// bundle (`swift run`) the failure is only logged, which counts as delivered.
+    func canDeliver() async -> Bool {
+        guard let center else { return true }
+        let status = await center.notificationSettings().authorizationStatus
+        return status == .authorized || status == .provisional
+    }
+
     /// One refresh failure: title names the app, body is the friendly error message.
-    func refreshFailed(appName: String, errorKey: String, message: String, id: String) {
+    /// Returns false when the system refused the notification.
+    func refreshFailed(appName: String, errorKey: String, message: String, id: String) async -> Bool {
         let content = UNMutableNotificationContent()
         content.title = L("notification.refreshFailed.title", appName)
         content.body = message
@@ -56,13 +65,15 @@ final class Notifier: NSObject {
         if Self.xcodeErrorKeys.contains(errorKey) { content.categoryIdentifier = Self.xcodeCategory }
         guard let center else {
             Self.logger.notice("would notify: \(content.title, privacy: .public) — \(errorKey, privacy: .public)")
-            return
+            return true
         }
-        let request = UNNotificationRequest(identifier: id, content: content, trigger: nil)
-        center.add(request) { error in
-            if let error {
-                Self.logger.error("notification failed: \(String(describing: error), privacy: .public)")
-            }
+        do {
+            try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+            Self.logger.notice("notified \(errorKey, privacy: .public)")
+            return true
+        } catch {
+            Self.logger.error("notification failed: \(String(describing: error), privacy: .public)")
+            return false
         }
     }
 

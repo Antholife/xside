@@ -19,6 +19,7 @@ final class BackgroundEngine {
     private let notifier: Notifier
     private let gateStore: NotificationGateStore
     private var gate: NotificationGate
+    private var unreachable = UnreachableTracker()
     private var started = false
     private var tasks: [Task<Void, Never>] = []
     private var wakeObserver: NSObjectProtocol?
@@ -101,6 +102,7 @@ final class BackgroundEngine {
     }
 
     private func evaluate(reason: String) {
+        reportUnreachable()
         let due = RefreshPlanner.startable(dueJobs(), busy: model.busyJobs)
         guard !due.isEmpty else { return }
         Self.logger.notice("\(reason, privacy: .public): \(due.count, privacy: .public) job(s) due")
@@ -115,6 +117,23 @@ final class BackgroundEngine {
         }
         for job in due where model.refreshNow(job, automatic: true) {
             Self.logger.notice("refresh started \(job.recordID.uuidString, privacy: .public) on \(job.deviceID, privacy: .public)")
+        }
+    }
+
+    /// Due installations whose device stays unreachable can't be attempted: record the attempt
+    /// (row hint, 30-min cadence) and notify once, so the app never expires silently.
+    private func reportUnreachable() {
+        let now = Date()
+        let jobs = RefreshPlanner.startable(
+            unreachable.evaluate(model.records, devices: model.devices, now: now, threshold: Self.threshold),
+            busy: model.busyJobs)
+        for job in jobs {
+            Self.logger.notice("device unreachable for due \(job.recordID.uuidString, privacy: .public) on \(job.deviceID, privacy: .public)")
+            Task {
+                await model.recordUnreachable(job, at: now)
+                let error = XSideError.deviceUnavailable
+                notifyFailure(job, errorKey: error.key, message: error.localizedMessage)
+            }
         }
     }
 
@@ -138,12 +157,24 @@ final class BackgroundEngine {
         notifyFailure(job, errorKey: key, message: (error as? XSideError)?.localizedMessage ?? localizedRowError(key: key))
     }
 
+    /// The gate is consumed only for a notification the system accepted: with notifications
+    /// denied, the cause is still notified once the user enables them.
     private func notifyFailure(_ job: RefreshJob, errorKey: String, message: String) {
-        guard gate.shouldNotify(recordID: job.recordID, deviceID: job.deviceID, errorKey: errorKey) else { return }
-        persistGate()
-        let name = model.records.first { $0.id == job.recordID }?.displayName ?? "XSide"
-        notifier.refreshFailed(appName: name, errorKey: errorKey, message: message,
-                               id: "refresh.\(job.recordID.uuidString).\(job.deviceID)")
+        Task {
+            guard await notifier.canDeliver() else {
+                Self.logger.notice("notifications not authorized: \(errorKey, privacy: .public) not notified")
+                return
+            }
+            guard gate.shouldNotify(recordID: job.recordID, deviceID: job.deviceID, errorKey: errorKey) else { return }
+            persistGate()
+            let name = model.records.first { $0.id == job.recordID }?.displayName ?? "XSide"
+            let posted = await notifier.refreshFailed(appName: name, errorKey: errorKey, message: message,
+                                                      id: "refresh.\(job.recordID.uuidString).\(job.deviceID)")
+            if !posted {
+                gate.reset(recordID: job.recordID, deviceID: job.deviceID)
+                persistGate()
+            }
+        }
     }
 
     private func persistGate() {
