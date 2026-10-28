@@ -1,4 +1,5 @@
 import AppKit
+import os
 import SwiftUI
 import XSideCore
 
@@ -7,14 +8,35 @@ enum OnboardingWindow {
 }
 
 enum XcodeLauncher {
+    private static let logger = Logger(subsystem: "io.github.xside.XSide", category: "app")
     static let appStoreURL = URL(string: "macappstore://apps.apple.com/app/xcode/id497799835")!
 
     /// Xcode by bundle identifier, else the app enclosing the detected developer directory.
     @MainActor static func open(developerDir: URL?) {
         let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.dt.Xcode")
-            ?? developerDir.flatMap(enclosingApp)
-        guard let url else { return }
+            ?? (developerDir ?? selectedDeveloperDir()).flatMap(enclosingApp)
+        guard let url else {
+            logger.error("Xcode not found (bundle id, developer dir, xcode-select)")
+            return
+        }
         NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+    }
+
+    /// `xcode-select -p`: can succeed even when the signing probe fails (not signed in).
+    private static func selectedDeveloperDir() -> URL? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/xcode-select")
+        process.arguments = ["-p"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        guard (try? process.run()) != nil else { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0,
+              let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !path.isEmpty else { return nil }
+        return URL(fileURLWithPath: path)
     }
 
     /// `/Applications/Xcode-beta.app/Contents/Developer` becomes `/Applications/Xcode-beta.app`.
@@ -28,8 +50,8 @@ enum XcodeLauncher {
     }
 }
 
-/// What to tell a user whose Mac isn't ready. Re-probes every 5 s while on screen, so it goes away
-/// by itself (the parent stops showing it) once the environment is OK.
+/// What to tell a user whose Mac isn't ready. The model's single poller re-probes every 5 s while it is
+/// visible, so it goes away by itself once the environment is OK.
 struct OnboardingView: View {
     let model: AppModel
     let error: XSideError
@@ -84,12 +106,6 @@ struct OnboardingView: View {
                 .multilineTextAlignment(.center)
         }
         .padding(compact ? 12 : 28)
-        .task {
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(5))
-                if !Task.isCancelled { model.recheckEnvironment() }
-            }
-        }
     }
 }
 
@@ -111,6 +127,8 @@ struct OnboardingWindowRoot: View {
         .fixedSize(horizontal: false, vertical: true)
         .navigationTitle(L("onboarding.window"))
         .id(language)
+        .onAppear { model.onboardingWindowVisibilityChanged(true) }
+        .onDisappear { model.onboardingWindowVisibilityChanged(false) }
         .onChange(of: model.environmentFailed) { _, failed in
             if !failed, model.environment != nil { dismissWindow(id: OnboardingWindow.id) }
         }

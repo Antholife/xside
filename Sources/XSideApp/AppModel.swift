@@ -78,6 +78,37 @@ final class AppModel {
         await probeEnvironment()
     }
 
+    // MARK: Onboarding poller
+
+    /// One poller for every onboarding surface: it runs only while the environment fails AND the
+    /// popover is open or the onboarding window is visible, and re-probes every 5 s.
+    private(set) var isOnboardingWindowOpen = false
+    @ObservationIgnored private var onboardingPoller: Task<Void, Never>?
+
+    func onboardingWindowVisibilityChanged(_ visible: Bool) {
+        guard visible != isOnboardingWindowOpen else { return }
+        isOnboardingWindowOpen = visible
+        updateOnboardingPoller()
+    }
+
+    private func updateOnboardingPoller() {
+        let shouldRun = environmentFailed && (isPopoverOpen || isOnboardingWindowOpen)
+        if shouldRun, onboardingPoller == nil {
+            Self.logger.notice("onboarding poller started")
+            onboardingPoller = Task { [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(5))
+                    guard !Task.isCancelled, let self else { return }
+                    await self.probeEnvironment()
+                }
+            }
+        } else if !shouldRun, let poller = onboardingPoller {
+            Self.logger.notice("onboarding poller stopped")
+            poller.cancel()
+            onboardingPoller = nil
+        }
+    }
+
     var environmentFailed: Bool { if case .failure? = environment { true } else { false } }
 
     /// Developer dir of the last good probe, to locate Xcode when it isn't found by bundle id.
@@ -96,12 +127,14 @@ final class AppModel {
         // noSigningIdentity / ok, re-read at each probe, to exercise the onboarding.
         if let fake = Self.fakeEnvironment() {
             environment = fake
+            updateOnboardingPoller()
             onNeedsEvaluation?()
             return
         }
         #endif
         let result = await EnvironmentProbe(runner: runner).detect()
         environment = result
+        updateOnboardingPoller()
         if case .success(let env) = result, env != pipelineEnv {
             pipelineEnv = env
             pipeline = SideloadPipeline(
@@ -139,6 +172,7 @@ final class AppModel {
     func popoverVisibilityChanged(_ visible: Bool) {
         guard visible != isPopoverOpen else { return }
         isPopoverOpen = visible
+        updateOnboardingPoller()
         if visible {
             refreshDevices()
             Task { await reloadRecords() }
