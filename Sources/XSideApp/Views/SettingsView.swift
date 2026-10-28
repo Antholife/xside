@@ -48,11 +48,9 @@ final class LaunchAtLogin {
 
 /// The Settings window.
 struct SettingsView: View {
-    /// Task 18 (wake the Mac to refresh) is gated: flip this once it is validated, and bind the toggle.
-    private static let showWakeSetting = false
-
     @AppStorage(AppLanguage.storageKey) private var language = AppLanguage.system.rawValue
     @State private var login = LaunchAtLogin()
+    private let wake = WakeController.shared
 
     private var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–"
@@ -80,9 +78,20 @@ struct SettingsView: View {
                     Text(L("settings.language.en")).tag(AppLanguage.en.rawValue)
                     Text(L("settings.language.fr")).tag(AppLanguage.fr.rawValue)
                 }
-                if Self.showWakeSetting {
-                    // Task 18: Toggle(L("settings.wakeMac")) + Text(L("settings.wakeMac.warning")).
+            }
+            Section {
+                Toggle(L("settings.wakeMac"), isOn: Binding(get: { wake.isOn }, set: wake.set))
+                if wake.needsApproval {
+                    WakeApprovalPanel(afterUpdate: wake.approvedOnce)
                 }
+                if wake.failed {
+                    Label(L("settings.wakeMac.error"), systemImage: "exclamationmark.triangle.fill")
+                        .font(.callout)
+                        .foregroundStyle(.orange)
+                }
+                Label(L("settings.wakeMac.warning"), systemImage: "battery.25percent")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
             Section {
                 Text(L("settings.version", version)).foregroundStyle(.secondary)
@@ -94,9 +103,42 @@ struct SettingsView: View {
         .fixedSize(horizontal: false, vertical: true)
         .navigationTitle(L("popover.settings"))
         .id(language)
-        .onAppear(perform: login.refresh)
+        .onAppear {
+            login.refresh()
+            wake.refreshStatus()
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             login.refresh()
+            wake.refreshStatus()
         }
+        // Approval happens in System Settings while XSide stays in the background: poll the status
+        // while it's pending so the panel goes away as soon as it is allowed.
+        .task(id: wake.needsApproval) {
+            while wake.needsApproval, !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                wake.refreshStatus()
+            }
+        }
+    }
+}
+
+/// Explains the System Settings approval the wake helper needs (first time, or again after an update).
+private struct WakeApprovalPanel: View {
+    let afterUpdate: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(L("settings.wakeMac.approval.title"), systemImage: "lock.shield")
+                .font(.callout.weight(.semibold))
+            if afterUpdate {
+                Text(L("settings.wakeMac.approval.again"))
+            }
+            Text(L("settings.wakeMac.approval"))
+            Button(L("settings.wakeMac.openSettings")) { SMAppService.openSystemSettingsLoginItems() }
+        }
+        .font(.callout)
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
     }
 }

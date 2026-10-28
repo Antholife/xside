@@ -64,6 +64,11 @@
 "settings.language.fr" = "Français";
 "settings.wakeMac" = "Wake Mac to refresh";
 "settings.wakeMac.warning" = "A laptop with the lid closed, on battery and with no external display may not wake up fully.";
+"settings.wakeMac.approval.title" = "macOS needs your permission";
+"settings.wakeMac.approval" = "Waking the Mac uses a small XSide helper. In System Settings > General > Login Items & Extensions > Allow in the Background, turn on XSide, then confirm with your password. No wake is scheduled until then.";
+"settings.wakeMac.approval.again" = "macOS asks again after an XSide update.";
+"settings.wakeMac.openSettings" = "Open Settings";
+"settings.wakeMac.error" = "Couldn't set up the wake helper.";
 "settings.launchAtLogin.approval" = "Approval needed in System Settings > General > Login Items.";
 "settings.openLoginItems" = "Open Login Items";
 "settings.launchAtLogin.error" = "Couldn't change the launch-at-login setting.";
