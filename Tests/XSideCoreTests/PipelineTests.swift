@@ -48,11 +48,19 @@ private struct FakeProvisioner: Provisioning {
     let log: CallLog
     var error: (any Error)?
     var dir: URL?
+    var gauge: ConcurrencyGauge?
+    var delay: Duration = .zero
+    /// nil: `expiry` for the first call, one second later for each following call (a renewal).
+    var expires: Date?
     func profile(bundleID: String, env: SigningEnvironment,
                  deviceUDIDs: [String]) async throws -> (url: URL, profile: ProvisioningProfile) {
+        await gauge?.enter()
+        if delay > .zero { try? await Task.sleep(for: delay) }
+        await gauge?.leave()
         await log.provision(deviceUDIDs)
         if let error { throw error }
-        let profile = makeProfile(udids: deviceUDIDs)
+        let calls = await log.provisionUDIDs.count
+        let profile = makeProfile(expires: expires ?? expiry.addingTimeInterval(Double(calls - 1)), udids: deviceUDIDs)
         guard let dir else { return (URL(fileURLWithPath: "/nonexistent/profile.mobileprovision"), profile) }
         let url = dir.appendingPathComponent("\(bundleID)-\(UUID().uuidString).mobileprovision")
         try Data(profile.uuid.utf8).write(to: url)
@@ -396,5 +404,58 @@ struct PipelineTests {
         #expect(results.allSatisfy { $0 == nil })
         #expect(await gauge.maximum == 1)
         #expect(await f.log.installs.count == 2)
+    }
+
+    @Test func provisioningIsSerializedAcrossDevices() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let provisioning = ConcurrencyGauge(), installing = ConcurrencyGauge()
+        let pipeline = f.pipeline(
+            provisioner: FakeProvisioner(log: f.log, gauge: provisioning, delay: .milliseconds(150)),
+            installer: FakeInstaller(log: f.log, gauge: installing, rendezvous: 2))
+        let id = f.record.id
+        async let a = pipeline.install(recordID: id, device: device("dev-1", udid: "UDID-1"))
+        async let b = pipeline.install(recordID: id, device: device("dev-2", udid: "UDID-2"))
+        _ = try await (a, b)
+        #expect(await provisioning.maximum == 1)
+        #expect(await installing.maximum == 2) // installs still overlap across devices
+        #expect(await f.log.provisionUDIDs.count == 2)
+    }
+
+    @Test func refreshWithoutLaterExpiryFails() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let installed = Date(timeIntervalSince1970: 1_799_000_000)
+        try await f.library.upsert(Installation(deviceID: "dev-1", installedAt: installed, expiresAt: expiry),
+                                   for: f.record.id)
+        // Xcode handed back the profile already installed (same expiry).
+        let pipeline = f.pipeline(provisioner: FakeProvisioner(log: f.log, expires: expiry))
+        await #expect(throws: XSideError.profileNotRenewed) {
+            try await pipeline.install(recordID: f.record.id, device: device())
+        }
+        let stored = try #require(await f.library.records().first?.installations.first)
+        #expect(stored.expiresAt == expiry)
+        #expect(stored.installedAt == installed)
+        #expect(stored.lastAttempt == fixedNow)
+        #expect(stored.lastErrorKey == "profileNotRenewed")
+        #expect(await f.log.resignArgs.isEmpty)
+        #expect(await f.log.installs.isEmpty)
+        #expect(workRootIsEmpty(f.workRoot))
+    }
+
+    @Test func refreshWithEarlierExpiryFails() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        try await f.library.upsert(Installation(deviceID: "dev-1", installedAt: fixedNow,
+                                                expiresAt: expiry.addingTimeInterval(60)), for: f.record.id)
+        await #expect(throws: XSideError.profileNotRenewed) {
+            try await f.pipeline().install(recordID: f.record.id, device: device())
+        }
+    }
+
+    @Test func refreshWithLaterExpirySucceeds() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        try await f.library.upsert(Installation(deviceID: "dev-1", installedAt: fixedNow,
+                                                expiresAt: expiry.addingTimeInterval(-1)), for: f.record.id)
+        let result = try await f.pipeline().install(recordID: f.record.id, device: device())
+        #expect(result.expiresAt == expiry)
+        #expect(result.lastErrorKey == nil)
     }
 }

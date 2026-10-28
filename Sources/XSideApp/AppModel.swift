@@ -178,7 +178,8 @@ final class AppModel {
             pipelineEnv = env
             pipeline = SideloadPipeline(
                 library: library,
-                provisioner: Provisioner(runner: runner, templateDir: paths.template, workDir: paths.provisioningWork),
+                provisioner: Provisioner(runner: runner, templateDir: paths.template, workDir: paths.provisioningWork,
+                                         cacheDirs: paths.xcodeProfileDirs),
                 resigner: Resigner(runner: runner), installer: Installer(runner: runner),
                 env: env, workRoot: paths.jobsWork, now: { Date() })
         }
@@ -296,7 +297,8 @@ final class AppModel {
     private func updateAppIDCounter() async {
         guard case .success(let env) = environment else { appIDsRemaining = nil; return }
         let profiles = await ProfileReader(runner: runner).scan(paths.xcodeProfileDirs)
-        appIDsRemaining = AppIDCounter.remaining(profiles, teamID: env.teamID, now: Date())
+        let firstUse = AppIDCounter.firstUses(await library.records())
+        appIDsRemaining = AppIDCounter.remaining(profiles, teamID: env.teamID, now: Date(), firstUse: firstUse)
     }
 
     /// Resolves an icon path from `InstallOptions` (library-relative once saved, absolute when just chosen).

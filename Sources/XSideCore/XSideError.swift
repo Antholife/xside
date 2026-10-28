@@ -14,6 +14,8 @@ public enum XSideError: Error, Equatable, Sendable {
     case installFailed(String)
     case commandFailed(tool: String, status: Int32)
     case recordNotFound
+    /// A refresh got back a profile that doesn't expire later than the installed one.
+    case profileNotRenewed
 
     /// Case name without payload, used to deduplicate notifications.
     public var key: String {
@@ -31,6 +33,7 @@ public enum XSideError: Error, Equatable, Sendable {
         case .installFailed: "installFailed"
         case .commandFailed: "commandFailed"
         case .recordNotFound: "recordNotFound"
+        case .profileNotRenewed: "profileNotRenewed"
         }
     }
 }

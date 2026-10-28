@@ -76,6 +76,49 @@ private func profile(_ team: String, _ bundle: String, daysAgo: Double, now: Dat
         #expect(AppIDCounter.remaining(ps, teamID: "T1", now: now) == 10)
     }
 
+    @Test func longKnownXSideAppIDsExcluded() throws {
+        let ps = [
+            // Re-provisioned yesterday after the cache purge, but XSide first used it 10 days ago.
+            try profile("T1", "com.renewed.T1", daysAgo: 1, now: now),
+            // XSide app first installed 2 days ago: its App ID is still within the week.
+            try profile("T1", "com.recent.T1", daysAgo: 1, now: now),
+            // Not an XSide app: counted on its profile date as before.
+            try profile("T1", "com.other", daysAgo: 1, now: now),
+        ]
+        let firstUse: [String: Date] = [
+            "com.renewed.T1": now.addingTimeInterval(-10 * 86_400),
+            "com.recent.T1": now.addingTimeInterval(-2 * 86_400),
+            "com.not-cached.T1": now.addingTimeInterval(-1 * 86_400),
+        ]
+        #expect(AppIDCounter.remaining(ps, teamID: "T1", now: now) == 7)
+        #expect(AppIDCounter.remaining(ps, teamID: "T1", now: now, firstUse: firstUse) == 8)
+    }
+
+    @Test func firstUsesMergesRecords() {
+        func record(_ signed: String, firstUse: [String: Date]?, installedDaysAgo: [Double]) -> AppRecord {
+            var r = AppRecord(id: UUID(), displayName: "X", originalBundleID: "com.x", signedBundleID: signed,
+                              ipaPath: "a", options: InstallOptions(), installations: [], teamID: "T1")
+            r.installations = installedDaysAgo.enumerated().map { i, d in
+                Installation(deviceID: "d\(i)", installedAt: now.addingTimeInterval(-d * 86_400), expiresAt: now)
+            }
+            r.appIDFirstUse = firstUse
+            return r
+        }
+        let uses = AppIDCounter.firstUses([
+            record("com.a.T1", firstUse: ["com.a.T1": now.addingTimeInterval(-9 * 86_400),
+                                          "com.old.T1": now.addingTimeInterval(-20 * 86_400)],
+                   installedDaysAgo: [0]),
+            // Legacy record (no first-use dates): earliest installation.
+            record("com.legacy.T1", firstUse: nil, installedDaysAgo: [3, 5]),
+            record("com.none.T1", firstUse: nil, installedDaysAgo: []),
+        ])
+        #expect(uses == [
+            "com.a.T1": now.addingTimeInterval(-9 * 86_400),
+            "com.old.T1": now.addingTimeInterval(-20 * 86_400),
+            "com.legacy.T1": now.addingTimeInterval(-5 * 86_400),
+        ])
+    }
+
     @Test func readerRunsSecurityCMS() async throws {
         let runner = FakeRunner()
         let data = plist(team: "T1", bundle: "com.a.b", created: now)

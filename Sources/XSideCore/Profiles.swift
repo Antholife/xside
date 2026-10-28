@@ -22,6 +22,12 @@ public struct ProvisioningProfile: Equatable, Sendable {
         self.entitlements = entitlements
     }
 
+    /// Full `application-identifier` entitlement (`TEAM.bundle`), decoded from `entitlements`.
+    public var applicationIdentifier: String? {
+        let ents = try? PropertyListSerialization.propertyList(from: entitlements, format: nil) as? [String: Any]
+        return ents?["application-identifier"] as? String
+    }
+
     public static func parse(plist: Data) throws -> ProvisioningProfile {
         func fail(_ why: String) -> XSideError { .provisioningFailed(why) }
         guard let root = try? PropertyListSerialization.propertyList(from: plist, format: nil) as? [String: Any] else {

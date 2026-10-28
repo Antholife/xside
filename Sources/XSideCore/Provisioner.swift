@@ -1,16 +1,24 @@
 import Foundation
+import os
 
 /// Obtains a development provisioning profile by letting Xcode (already signed in) build
 /// a tiny template project with automatic signing. XSide never talks to Apple itself.
 public struct Provisioner: Sendable {
+    private static let logger = Logger(subsystem: "io.github.xside.XSide", category: "provisioning")
+
     private let runner: CommandRunning
     private let templateDir: URL
     private let workDir: URL
+    private let cacheDirs: [URL]
 
-    public init(runner: CommandRunning, templateDir: URL, workDir: URL) {
+    /// `cacheDirs`: Xcode's provisioning profile cache directories. Before each build, the cached
+    /// profiles for exactly `<TEAM>.<bundleID>` are removed there, otherwise Xcode keeps reusing a
+    /// still-valid profile and the expiry never moves forward. Nothing else in them is touched.
+    public init(runner: CommandRunning, templateDir: URL, workDir: URL, cacheDirs: [URL]) {
         self.runner = runner
         self.templateDir = templateDir
         self.workDir = workDir
+        self.cacheDirs = cacheDirs
     }
 
     /// Builds the template for `bundleID` targeting `deviceUDIDs[0]`. Returns a uniquely named copy of the
@@ -23,6 +31,8 @@ public struct Provisioner: Sendable {
         try fm.createDirectory(at: workDir, withIntermediateDirectories: true)
         try fm.copyItem(at: templateDir, to: buildDir)
         defer { try? fm.removeItem(at: buildDir) }
+
+        await purgeCachedProfiles(applicationIdentifier: "\(env.teamID).\(bundleID)", teamID: env.teamID)
 
         let derivedData = buildDir.appendingPathComponent("DerivedData", isDirectory: true)
         let args = Self.arguments(
@@ -57,6 +67,27 @@ public struct Provisioner: Sendable {
             throw XSideError.provisioningFailed("target device not in provisioning profile")
         }
         return (stable, profile)
+    }
+
+    /// Removes the cached `*.mobileprovision` files whose team is `teamID` and whose decoded
+    /// `application-identifier` is exactly `applicationIdentifier`. Unreadable files and missing
+    /// directories are skipped; a failed removal is logged and doesn't stop the build.
+    private func purgeCachedProfiles(applicationIdentifier: String, teamID: String) async {
+        let fm = FileManager.default
+        let reader = ProfileReader(runner: runner)
+        for dir in cacheDirs {
+            guard let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { continue }
+            for file in files where file.pathExtension == "mobileprovision" {
+                guard let cached = try? await reader.read(file), cached.teamID == teamID,
+                      cached.applicationIdentifier == applicationIdentifier else { continue }
+                do {
+                    try fm.removeItem(at: file)
+                    Self.logger.notice("removed cached profile \(cached.uuid, privacy: .public)")
+                } catch {
+                    Self.logger.error("could not remove cached profile \(cached.uuid, privacy: .public)")
+                }
+            }
+        }
     }
 
     public static func arguments(project: URL, derivedData: URL, bundleID: String, teamID: String,

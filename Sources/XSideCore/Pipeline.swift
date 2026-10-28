@@ -28,8 +28,28 @@ public enum InstallStep: Int, CaseIterable, Sendable {
     case profile, signing, installing
 }
 
+/// FIFO async mutex: `run` bodies execute one at a time, in arrival order.
+actor AsyncLock {
+    private var busy = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func run<T: Sendable>(_ body: @Sendable () async throws -> T) async throws -> T {
+        if busy {
+            await withCheckedContinuation { waiters.append($0) }
+        } else {
+            busy = true
+        }
+        defer {
+            if waiters.isEmpty { busy = false } else { waiters.removeFirst().resume() }
+        }
+        return try await body()
+    }
+}
+
 /// Provision -> resign -> install -> record. Jobs targeting the same `device.id` run one after
-/// another; jobs for different devices may run concurrently.
+/// another; jobs for different devices may run concurrently, except provisioning: only one
+/// provisioning (Xcode cache purge + xcodebuild) runs at a time across all jobs, since they share
+/// the team's account and Xcode's profile cache.
 public actor SideloadPipeline {
     private let library: AppLibrary
     private let provisioner: any Provisioning
@@ -38,6 +58,7 @@ public actor SideloadPipeline {
     private let env: SigningEnvironment
     private let workRoot: URL
     private let now: @Sendable () -> Date
+    private let provisioningLock = AsyncLock()
 
     /// Last queued job per device id. Read and replaced without any `await` in between, so the
     /// chain stays ordered even though the actor is reentrant.
@@ -99,9 +120,16 @@ public actor SideloadPipeline {
             try fm.createDirectory(at: workDir, withIntermediateDirectories: true)
 
             await progress(.profile)
-            let provisioned = try await provisioner.profile(
-                bundleID: record.signedBundleID, env: env, deviceUDIDs: [udid])
+            let provisioned = try await provisioningLock.run { [provisioner, env] in
+                try Task.checkCancellation()
+                return try await provisioner.profile(bundleID: record.signedBundleID, env: env, deviceUDIDs: [udid])
+            }
             profileURL = provisioned.url
+            // A refresh must push the expiry forward; otherwise Xcode reused the cached profile and
+            // reinstalling would only reset the 7 days we don't actually have.
+            if let previous, provisioned.profile.expirationDate <= previous.expiresAt {
+                throw XSideError.profileNotRenewed
+            }
             await progress(.signing)
             let app = try await resigner.resign(
                 ipa: ipa, workDir: workDir, bundleID: record.signedBundleID, options: record.options,

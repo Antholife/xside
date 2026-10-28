@@ -126,4 +126,44 @@ struct LibraryTests {
         _ = try await fresh.importIPA(try makeIPA(in: tmp), info: info, teamID: "TEAM123456")
         #expect(await AppLibrary(root: root).records().count == 1)
     }
+
+    @Test func recordsFirstSuccessfulUsePerSignedID() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let root = tmp.appendingPathComponent("lib")
+        let lib = AppLibrary(root: root)
+        let rec = try await lib.importIPA(try makeIPA(in: tmp), info: info, teamID: "TEAM123456")
+        let t0 = Date(timeIntervalSince1970: 2_000_000), t1 = t0.addingTimeInterval(86_400)
+        let t2 = t1.addingTimeInterval(86_400)
+        func ok(_ at: Date) -> Installation { Installation(deviceID: "dev1", installedAt: at, expiresAt: at) }
+
+        try await lib.upsert(ok(t0), for: rec.id)
+        try await lib.upsert(ok(t1), for: rec.id) // a refresh doesn't move the first use
+        var failed = ok(t0); failed.lastErrorKey = "deviceUnavailable"; failed.lastAttempt = t2
+        try await lib.upsert(failed, for: rec.id)
+        #expect(await lib.records().first?.appIDFirstUse == ["com.example.demo.TEAM123456": t0])
+
+        // A new signed id is a new App ID: tracked from its own first successful install.
+        try await lib.setOptions(InstallOptions(customBundleID: "com.custom.demo"), for: rec.id)
+        var failedNew = ok(t1); failedNew.lastErrorKey = "provisioningFailed"
+        try await lib.upsert(failedNew, for: rec.id)
+        #expect(await lib.records().first?.appIDFirstUse?["com.custom.demo"] == nil)
+        try await lib.upsert(ok(t2), for: rec.id)
+        let expected: [String: Date] = ["com.example.demo.TEAM123456": t0, "com.custom.demo": t2]
+        #expect(await lib.records().first?.appIDFirstUse == expected)
+        #expect(await AppLibrary(root: root).records().first?.appIDFirstUse == expected)
+    }
+
+    @Test func legacyRecordFirstUseStartsAtEarliestInstallation() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let lib = AppLibrary(root: tmp.appendingPathComponent("lib"))
+        let rec = try await lib.importIPA(try makeIPA(in: tmp), info: info, teamID: "TEAM123456")
+        let old = Date(timeIntervalSince1970: 1_000_000), now = Date(timeIntervalSince1970: 3_000_000)
+        // Simulates state written before first-use tracking: an installation but no dates.
+        var failed = Installation(deviceID: "dev1", installedAt: old, expiresAt: old)
+        failed.lastErrorKey = "deviceLocked"
+        try await lib.upsert(failed, for: rec.id)
+        #expect(await lib.records().first?.appIDFirstUse == nil)
+        try await lib.upsert(Installation(deviceID: "dev2", installedAt: now, expiresAt: now), for: rec.id)
+        #expect(await lib.records().first?.appIDFirstUse == ["com.example.demo.TEAM123456": old])
+    }
 }

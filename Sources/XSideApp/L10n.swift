@@ -65,6 +65,7 @@ extension XSideError {
         case .installFailed: return L("error.installFailed")
         case .commandFailed: return L("error.commandFailed")
         case .recordNotFound: return L("error.recordNotFound")
+        case .profileNotRenewed: return L("error.profileNotRenewed")
         }
     }
 }

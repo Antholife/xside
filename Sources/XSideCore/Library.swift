@@ -28,6 +28,10 @@ public struct AppRecord: Codable, Identifiable, Equatable, Sendable {
     public var installations: [Installation]
     /// Team id used at import, needed to derive `signedBundleID`.
     public var teamID: String
+    /// First successful install per signed bundle id (each one is an App ID). Lets the App ID
+    /// counter date an App ID even after its cached profiles were replaced. nil in state written
+    /// before this was tracked.
+    public var appIDFirstUse: [String: Date]?
 }
 
 public actor AppLibrary {
@@ -124,6 +128,14 @@ public actor AppLibrary {
     public func upsert(_ installation: Installation, for id: UUID) throws {
         let index = try indexOf(id)
         let previous = items
+        if installation.lastErrorKey == nil, items[index].appIDFirstUse?[items[index].signedBundleID] == nil {
+            // Nothing tracked yet (new or pre-tracking record): the earliest known installation.
+            let since = items[index].appIDFirstUse == nil
+                ? items[index].installations.map(\.installedAt).reduce(installation.installedAt, min)
+                : installation.installedAt
+            items[index].appIDFirstUse = (items[index].appIDFirstUse ?? [:])
+                .merging([items[index].signedBundleID: since]) { old, _ in old }
+        }
         if let i = items[index].installations.firstIndex(where: { $0.deviceID == installation.deviceID }) {
             items[index].installations[i] = installation
         } else {

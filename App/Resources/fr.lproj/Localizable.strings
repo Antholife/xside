@@ -92,6 +92,7 @@
 "error.installFailed" = "L'installation a échoué. Vérifie que l'appareil est déverrouillé et réessaie.";
 "error.commandFailed" = "Une commande Xcode a échoué. Réessaie, ou ouvre Xcode pour vérifier son état.";
 "error.recordNotFound" = "Cette app est introuvable dans XSide.";
+"error.profileNotRenewed" = "Xcode a renvoyé le même profil de provisionnement : l'app n'a pas été renouvelée. Ouvre Xcode, vérifie ton compte dans Réglages > Comptes, puis réessaie.";
 "error.generic" = "Une erreur inattendue est survenue. Réessaie.";
 
 /* Services menu / Open With */

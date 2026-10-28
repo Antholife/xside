@@ -92,6 +92,7 @@
 "error.installFailed" = "Installation failed. Make sure the device is unlocked and try again.";
 "error.commandFailed" = "An Xcode command failed. Try again, or open Xcode to check its state.";
 "error.recordNotFound" = "This app can't be found in XSide.";
+"error.profileNotRenewed" = "Xcode returned the same provisioning profile, so the app wasn't renewed. Open Xcode, check your account in Settings > Accounts, then try again.";
 "error.generic" = "Something went wrong. Please try again.";
 
 /* Services menu / Open With */
