@@ -31,7 +31,7 @@ public struct AppRecord: Codable, Identifiable, Equatable, Sendable {
 }
 
 public actor AppLibrary {
-    private let root: URL
+    public nonisolated let root: URL
     private var items: [AppRecord] = []
     private var stateURL: URL { root.appendingPathComponent("state.json") }
 
