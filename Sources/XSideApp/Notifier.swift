@@ -3,7 +3,7 @@ import os
 import UserNotifications
 import XSideCore
 
-/// Posts XSide's own notifications (refresh failures). Only failures are notified; deduplication
+/// Posts XSide's own notifications (refresh failures and successes); deduplication
 /// is the engine's job (`NotificationGate`).
 @MainActor
 final class Notifier: NSObject {
@@ -70,6 +70,27 @@ final class Notifier: NSObject {
         do {
             try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
             Self.logger.notice("notified \(errorKey, privacy: .public)")
+            return true
+        } catch {
+            Self.logger.error("notification failed: \(String(describing: error), privacy: .public)")
+            return false
+        }
+    }
+
+    /// UserDefaults key of the "notify successful refreshes" setting (default on).
+    nonisolated static let notifyRefreshSuccessKey = "notifyRefreshSuccess"
+
+    /// A successful refresh: plain notification (no "Open Xcode" action). False when refused.
+    func refreshSucceeded(appName: String, deviceName: String, date: String, id: String) async -> Bool {
+        let content = UNMutableNotificationContent()
+        content.title = L("notification.refreshed.title", appName)
+        content.body = L("notification.refreshed.body", deviceName, date)
+        guard let center else {
+            Self.logger.notice("would notify: \(content.title, privacy: .public)")
+            return true
+        }
+        do {
+            try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
             return true
         } catch {
             Self.logger.error("notification failed: \(String(describing: error), privacy: .public)")

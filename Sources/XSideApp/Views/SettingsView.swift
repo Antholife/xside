@@ -49,6 +49,7 @@ final class LaunchAtLogin {
 /// The Settings window.
 struct SettingsView: View {
     @AppStorage(AppLanguage.storageKey) private var language = AppLanguage.system.rawValue
+    @AppStorage(Notifier.notifyRefreshSuccessKey) private var notifyRefreshSuccess = true
     @State private var login = LaunchAtLogin()
 
     private var version: String {
@@ -77,6 +78,9 @@ struct SettingsView: View {
                     Text(L("settings.language.en")).tag(AppLanguage.en.rawValue)
                     Text(L("settings.language.fr")).tag(AppLanguage.fr.rawValue)
                 }
+            }
+            Section(L("settings.notifications")) {
+                Toggle(L("settings.notifyRefreshSuccess"), isOn: $notifyRefreshSuccess)
             }
             Section {
                 Text(L("settings.version", version)).foregroundStyle(.secondary)

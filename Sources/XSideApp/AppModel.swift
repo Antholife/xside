@@ -60,7 +60,8 @@ final class AppModel {
     /// Something the due evaluation depends on changed (device list, signing environment).
     var onNeedsEvaluation: (() -> Void)?
     /// Every pipeline run that ends (install, manual or automatic refresh), with its error if it failed.
-    var onJobFinished: ((_ job: RefreshJob, _ error: (any Error)?, _ automatic: Bool) -> Void)?
+    var onJobFinished: ((_ job: RefreshJob, _ error: (any Error)?, _ automatic: Bool,
+                               _ wasRefresh: Bool) -> Void)?
     /// True while the menu-bar popover is on screen (drives the device polling rate).
     private(set) var isPopoverOpen = false
 
@@ -239,7 +240,7 @@ final class AppModel {
     }
 
     private static let namesKey = "deviceNames"
-    private var cachedNames: [String: String] {
+    var cachedNames: [String: String] {
         UserDefaults.standard.dictionary(forKey: Self.namesKey) as? [String: String] ?? [:]
     }
     private func rememberNames(_ list: [Device]) {
@@ -347,6 +348,9 @@ final class AppModel {
     private func run(_ pipeline: SideloadPipeline, key: JobKey, device: Device, automatic: Bool = false,
                      progress: @escaping @MainActor @Sendable (InstallStep) -> Void = { _ in }) async throws {
         let job = RefreshJob(recordID: key.recordID, deviceID: key.deviceID)
+        // A refresh renews an existing installation; a first install is shown by the install window.
+        let wasRefresh = records.first { $0.id == key.recordID }?
+            .installations.contains { $0.deviceID == key.deviceID } ?? false
         do {
             _ = try await pipeline.install(recordID: key.recordID, device: device) { step in
                 await MainActor.run {
@@ -356,11 +360,11 @@ final class AppModel {
             }
         } catch {
             await reloadRecords()
-            onJobFinished?(job, error, automatic)
+            onJobFinished?(job, error, automatic, wasRefresh)
             throw error
         }
         await reloadRecords()
-        onJobFinished?(job, nil, automatic)
+        onJobFinished?(job, nil, automatic, wasRefresh)
         await updateAppIDCounter()
     }
 

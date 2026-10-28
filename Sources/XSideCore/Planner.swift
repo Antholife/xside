@@ -72,6 +72,29 @@ public struct NotificationGate: Codable, Equatable, Sendable {
     }
 }
 
+/// Remembers, per (app, device), the `expiresAt` of the last success notified, so one renewal is
+/// notified at most once even if two successes report the same expiry.
+public struct SuccessNotificationGate: Equatable, Sendable {
+    private var notified: [String: Date] = [:]
+
+    public init() {}
+
+    /// True (and remembered) when this success is a refresh of an existing installation and its
+    /// `expiresAt` differs from the last one notified for the pair.
+    public mutating func shouldNotify(recordID: UUID, deviceID: String, expiresAt: Date, wasRefresh: Bool) -> Bool {
+        guard wasRefresh else { return false }
+        let k = "\(recordID.uuidString)|\(deviceID)"
+        if notified[k] == expiresAt { return false }
+        notified[k] = expiresAt
+        return true
+    }
+
+    /// Forgets a notification the system refused, so the next success can retry.
+    public mutating func forget(recordID: UUID, deviceID: String) {
+        notified["\(recordID.uuidString)|\(deviceID)"] = nil
+    }
+}
+
 /// Persists a `NotificationGate` as JSON (written atomically). A missing or unreadable file
 /// loads as an empty gate: at worst a cause is notified once more.
 public struct NotificationGateStore: Sendable {

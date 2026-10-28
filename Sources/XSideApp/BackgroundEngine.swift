@@ -19,6 +19,7 @@ final class BackgroundEngine {
     private let notifier: Notifier
     private let gateStore: NotificationGateStore
     private var gate: NotificationGate
+    private var successGate = SuccessNotificationGate()
     private var unreachable = UnreachableTracker()
     private var started = false
     private var tasks: [Task<Void, Never>] = []
@@ -40,8 +41,8 @@ final class BackgroundEngine {
         notifier.start()
 
         model.onNeedsEvaluation = { [weak self] in self?.evaluate(reason: "change") }
-        model.onJobFinished = { [weak self] job, error, automatic in
-            self?.jobFinished(job, error: error, automatic: automatic)
+        model.onJobFinished = { [weak self] job, error, automatic, wasRefresh in
+            self?.jobFinished(job, error: error, automatic: automatic, wasRefresh: wasRefresh)
         }
 
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -139,13 +140,14 @@ final class BackgroundEngine {
 
     // MARK: - Outcomes
 
-    private func jobFinished(_ job: RefreshJob, error: (any Error)?, automatic: Bool) {
+    private func jobFinished(_ job: RefreshJob, error: (any Error)?, automatic: Bool, wasRefresh: Bool) {
         guard let error else {
             // Any success (install, manual or automatic refresh) re-arms notifications for the row.
             Self.logger.notice("refresh succeeded \(job.recordID.uuidString, privacy: .public)")
             var updated = gate
             updated.reset(recordID: job.recordID, deviceID: job.deviceID)
             if updated != gate { gate = updated; persistGate() }
+            notifySuccess(job, wasRefresh: wasRefresh)
             return
         }
         // Manual actions show their error in the UI; only background failures notify.
@@ -155,6 +157,27 @@ final class BackgroundEngine {
         let key = installation?.lastErrorKey ?? (error as? XSideError)?.key ?? "unknown"
         Self.logger.notice("refresh failed \(job.recordID.uuidString, privacy: .public): \(key, privacy: .public)")
         notifyFailure(job, errorKey: key, message: (error as? XSideError)?.localizedMessage ?? localizedRowError(key: key))
+    }
+
+    /// Success of a refresh of an existing installation (automatic or manual), unless disabled in
+    /// Settings. At most one per (app, device, expiresAt).
+    private func notifySuccess(_ job: RefreshJob, wasRefresh: Bool) {
+        guard wasRefresh, UserDefaults.standard.object(forKey: Notifier.notifyRefreshSuccessKey) as? Bool ?? true,
+              let record = model.records.first(where: { $0.id == job.recordID }),
+              let installation = record.installations.first(where: { $0.deviceID == job.deviceID }) else { return }
+        let deviceName = model.devices.first { $0.id == job.deviceID }?.name
+            ?? model.cachedNames[job.deviceID] ?? L("notification.refreshed.genericDevice")
+        Task {
+            guard await notifier.canDeliver() else { return }
+            guard successGate.shouldNotify(recordID: job.recordID, deviceID: job.deviceID,
+                                           expiresAt: installation.expiresAt, wasRefresh: wasRefresh) else { return }
+            let date = installation.expiresAt.formatted(
+                Date.FormatStyle(date: .abbreviated, time: .omitted).locale(appLocale))
+            let posted = await notifier.refreshSucceeded(
+                appName: record.displayName, deviceName: deviceName, date: date,
+                id: "refreshed.\(job.recordID.uuidString).\(job.deviceID)")
+            if !posted { successGate.forget(recordID: job.recordID, deviceID: job.deviceID) }
+        }
     }
 
     /// The gate is consumed only for a notification the system accepted: with notifications

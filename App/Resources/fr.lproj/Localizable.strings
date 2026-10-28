@@ -98,3 +98,9 @@
 
 /* Services menu / Open With */
 "services.noIPA" = "Aucun fichier .ipa";
+
+"notification.refreshed.title" = "%@ rafraîchie";
+"notification.refreshed.body" = "Sur %@ · valable jusqu'au %@";
+"notification.refreshed.genericDevice" = "ton appareil";
+"settings.notifications" = "Notifications";
+"settings.notifyRefreshSuccess" = "Notifier les refresh réussis";
