@@ -6,9 +6,11 @@ let package = Package(
     platforms: [.macOS(.v15)],
     products: [
         .library(name: "XSideCore", targets: ["XSideCore"]),
+        .executable(name: "XSideApp", targets: ["XSideApp"]),
     ],
     targets: [
         .target(name: "XSideCore"),
+        .executableTarget(name: "XSideApp", dependencies: ["XSideCore"]),
         .testTarget(name: "XSideCoreTests", dependencies: ["XSideCore"]),
     ]
 )
