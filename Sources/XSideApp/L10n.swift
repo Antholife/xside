@@ -68,3 +68,20 @@ extension XSideError {
         }
     }
 }
+
+/// Friendly message for any error: `XSideError` cases have their own text, anything else is generic.
+func localizedMessage(_ error: any Error) -> String {
+    (error as? XSideError)?.localizedMessage ?? L("error.generic")
+}
+
+/// Message for a persisted `Installation.lastErrorKey` (an `XSideError.key`), shown on an app row.
+/// An unreachable device gets the network hint (isolating networks, CoreDeviceError 4016).
+func localizedRowError(key: String) -> String {
+    if key == "deviceUnavailable" { return L("popover.unreachableHint") }
+    let lookup = "error.\(key)"
+    let text = L(lookup)
+    return text == lookup ? L("error.generic") : text
+}
+
+/// Locale matching the in-app language, for dates.
+var appLocale: Locale { Locale(identifier: AppLanguage.current.resolvedCode) }

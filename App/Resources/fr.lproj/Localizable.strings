@@ -15,6 +15,12 @@
 "popover.pair" = "Appairer";
 "popover.empty" = "Aucune app installée — glisse un .ipa ici";
 "popover.noDevice" = "Aucun appareil détecté";
+"popover.ring.days" = "%dj";
+"popover.refreshPending" = "Refresh en attente";
+"popover.refreshNow" = "Rafraîchir maintenant";
+"popover.unknownDevice" = "Appareil inconnu";
+"popover.dropHint" = "Dépose le .ipa pour l'installer";
+"popover.pairing" = "Confirme sur l'appareil…";
 
 /* Install sheet */
 "install.title" = "Installer";
@@ -36,6 +42,8 @@
 "install.step.installing" = "Installation";
 "install.cancel" = "Annuler";
 "install.done" = "Terminé";
+"install.success" = "Installée sur %@";
+"install.noAvailableDevice" = "Aucun appareil joignable. Déverrouille-le, branche-le en USB ou connecte-le au même Wi-Fi.";
 
 /* First-install guide */
 "guide.title" = "Première installation";
@@ -81,6 +89,7 @@
 "error.installFailed" = "L'installation a échoué. Vérifie que l'appareil est déverrouillé et réessaie.";
 "error.commandFailed" = "Une commande Xcode a échoué. Réessaie, ou ouvre Xcode pour vérifier son état.";
 "error.recordNotFound" = "Cette app est introuvable dans XSide.";
+"error.generic" = "Une erreur inattendue est survenue. Réessaie.";
 
 /* Services menu / Open With */
 "services.noIPA" = "Aucun fichier .ipa";

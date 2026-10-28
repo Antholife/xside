@@ -23,6 +23,11 @@ extension Installer: Installing {}
 
 // MARK: - Pipeline
 
+/// Phase reported by `SideloadPipeline.install(recordID:device:progress:)` as each step starts.
+public enum InstallStep: Int, CaseIterable, Sendable {
+    case profile, signing, installing
+}
+
 /// Provision -> resign -> install -> record. Jobs targeting the same `device.id` run one after
 /// another; jobs for different devices may run concurrently.
 public actor SideloadPipeline {
@@ -50,13 +55,15 @@ public actor SideloadPipeline {
         self.now = now
     }
 
-    public func install(recordID: UUID, device: Device) async throws -> Installation {
+    /// `progress` is awaited as each step starts (profile, signing, installing), in that order.
+    public func install(recordID: UUID, device: Device,
+                        progress: @escaping @Sendable (InstallStep) async -> Void = { _ in }) async throws -> Installation {
         let previous = tails[device.id]?.task
         let token = UUID()
         let job = Task<Installation, Error> {
             await previous?.value
             try Task.checkCancellation()
-            return try await self.perform(recordID: recordID, device: device)
+            return try await self.perform(recordID: recordID, device: device, progress: progress)
         }
         tails[device.id] = (token, Task { _ = try? await job.value })
         defer {
@@ -69,7 +76,8 @@ public actor SideloadPipeline {
         }
     }
 
-    private nonisolated func perform(recordID: UUID, device: Device) async throws -> Installation {
+    private nonisolated func perform(recordID: UUID, device: Device,
+                                     progress: @Sendable (InstallStep) async -> Void) async throws -> Installation {
         guard let udid = device.udid else { throw XSideError.deviceUnavailable }
         guard let record = await library.records().first(where: { $0.id == recordID }) else {
             throw XSideError.recordNotFound
@@ -89,13 +97,16 @@ public actor SideloadPipeline {
             let icon = try record.options.iconPath.flatMap { $0.isEmpty ? nil : try resolve($0) }
             try fm.createDirectory(at: workDir, withIntermediateDirectories: true)
 
+            await progress(.profile)
             let provisioned = try await provisioner.profile(
                 bundleID: record.signedBundleID, env: env, deviceUDIDs: [udid])
             profileURL = provisioned.url
+            await progress(.signing)
             let app = try await resigner.resign(
                 ipa: ipa, workDir: workDir, bundleID: record.signedBundleID, options: record.options,
                 iconURL: icon, profileURL: provisioned.url, profile: provisioned.profile,
                 identitySHA1: env.identitySHA1)
+            await progress(.installing)
             try await installer.install(app: app, deviceID: device.id)
 
             let date = now()

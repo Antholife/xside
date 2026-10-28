@@ -91,6 +91,11 @@ private struct FakeInstaller: Installing {
 
 private struct OpaqueError: Error {}
 
+private actor StepLog {
+    private(set) var items: [InstallStep] = []
+    func add(_ step: InstallStep) { items.append(step) }
+}
+
 // MARK: - Helpers
 
 private func tempDir() throws -> URL {
@@ -154,6 +159,25 @@ struct PipelineTests {
         #expect(stored.deviceID == "dev-1")
         #expect(stored.expiresAt == expiry)
         #expect(stored.lastErrorKey == nil)
+    }
+
+    @Test func reportsStepsInOrder() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let steps = StepLog()
+        _ = try await f.pipeline().install(recordID: f.record.id, device: device()) { await steps.add($0) }
+        #expect(await steps.items == [.profile, .signing, .installing])
+    }
+
+    @Test func stopsReportingAtFailedStep() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let steps = StepLog()
+        let failing = FakeProvisioner(log: f.log, error: XSideError.provisioningFailed("x"))
+        await #expect(throws: XSideError.self) {
+            _ = try await f.pipeline(provisioner: failing).install(recordID: f.record.id, device: device()) {
+                await steps.add($0)
+            }
+        }
+        #expect(await steps.items == [.profile])
     }
 
     @Test func passesExpectedArgumentsToEachStep() async throws {

@@ -15,6 +15,12 @@
 "popover.pair" = "Pair";
 "popover.empty" = "No apps installed — drop an .ipa here";
 "popover.noDevice" = "No device detected";
+"popover.ring.days" = "%dd";
+"popover.refreshPending" = "Refresh pending";
+"popover.refreshNow" = "Refresh now";
+"popover.unknownDevice" = "Unknown device";
+"popover.dropHint" = "Drop the .ipa to install it";
+"popover.pairing" = "Confirm on the device…";
 
 /* Install sheet */
 "install.title" = "Install";
@@ -36,6 +42,8 @@
 "install.step.installing" = "Installing";
 "install.cancel" = "Cancel";
 "install.done" = "Done";
+"install.success" = "Installed on %@";
+"install.noAvailableDevice" = "No reachable device. Unlock it, plug it in over USB or join the same Wi-Fi.";
 
 /* First-install guide */
 "guide.title" = "First install";
@@ -81,6 +89,7 @@
 "error.installFailed" = "Installation failed. Make sure the device is unlocked and try again.";
 "error.commandFailed" = "An Xcode command failed. Try again, or open Xcode to check its state.";
 "error.recordNotFound" = "This app can't be found in XSide.";
+"error.generic" = "Something went wrong. Please try again.";
 
 /* Services menu / Open With */
 "services.noIPA" = "No .ipa file";
