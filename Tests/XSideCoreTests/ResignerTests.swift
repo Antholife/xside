@@ -30,9 +30,11 @@ private struct Fixture {
 }
 
 private func fixture(encrypted: Bool = false, extensions: [String] = ["PlugIns", "Extensions", "Watch"],
-                     withIcons: Bool = false) async throws -> Fixture {
+                     withIcons: Bool = false, appName: String = "Demo", work: URL? = nil,
+                     prepare: (URL) throws -> Void = { _ in }) async throws -> Fixture {
     let src = try tempDir("src")
-    let app = try FakeIPA.makeApp(at: src, extensions: extensions, encrypted: encrypted)
+    let app = try FakeIPA.makeApp(at: src, name: appName, extensions: extensions, encrypted: encrypted)
+    try prepare(app)
     if withIcons { try addAssetCatalogIcons(app) }
     // stale signatures
     for dir in [app, app.appendingPathComponent("Frameworks/X.framework")] {
@@ -51,7 +53,7 @@ private func fixture(encrypted: Bool = false, extensions: [String] = ["PlugIns",
     try Data("PROFILE-BYTES".utf8).write(to: profileURL)
     let fake = FakeRunner()
     fake.stub("/usr/bin/codesign", result: ok)
-    return Fixture(work: try tempDir("work"), ipa: ipa, profileURL: profileURL, fake: fake)
+    return Fixture(work: try work ?? tempDir("work"), ipa: ipa, profileURL: profileURL, fake: fake)
 }
 
 private func run(_ f: Fixture, options: InstallOptions = InstallOptions(), iconURL: URL? = nil) async throws -> URL {
@@ -172,6 +174,96 @@ private func plist(_ app: URL) throws -> [String: Any] {
         #expect(ipadPrimary["CFBundleIconFiles"] as? [String] == ["XSideIcon60x60", "XSideIcon76x76"])
     }
 
+    @Test func reusedWorkDirStartsClean() async throws {
+        let first = try await fixture(appName: "Old") { app in
+            try Data("x".utf8).write(to: app.appendingPathComponent("stale.txt"))
+        }
+        let a1 = try await run(first)
+        #expect(a1.lastPathComponent == "Old.app")
+        let second = try await fixture(appName: "New", work: first.work)
+        let a2 = try await run(second)
+        #expect(a2.lastPathComponent == "New.app")
+        let fm = FileManager.default
+        #expect(!fm.fileExists(atPath: first.work.appendingPathComponent("Payload/Old.app").path))
+        #expect(!fm.fileExists(atPath: a2.appendingPathComponent("stale.txt").path))
+        let leftovers = try fm.contentsOfDirectory(atPath: first.work.path).filter { $0.hasPrefix("entitlements-") }
+        #expect(leftovers.count == 1)
+    }
+
+    @Test func sameAppNameDropsFilesMissingFromNewIPA() async throws {
+        let first = try await fixture { app in
+            try Data("x".utf8).write(to: app.appendingPathComponent("stale.txt"))
+        }
+        _ = try await run(first)
+        let second = try await fixture(work: first.work)
+        let app = try await run(second)
+        #expect(!FileManager.default.fileExists(atPath: app.appendingPathComponent("stale.txt").path))
+    }
+
+    @Test func rejectsInfoPlistSymlinkOutsideWorkDir() async throws {
+        let outside = try tempDir("outside").appendingPathComponent("victim.plist")
+        let original = Data("precious".utf8)
+        try original.write(to: outside)
+        let f = try await fixture { app in
+            let info = app.appendingPathComponent("Info.plist")
+            try FileManager.default.removeItem(at: info)
+            try FileManager.default.createSymbolicLink(at: info, withDestinationURL: outside)
+        }
+        await #expect(throws: (any Error).self) { _ = try await run(f) }
+        do { _ = try await run(f) } catch let e as XSideError {
+            guard case .invalidIPA = e else { Issue.record("wrong error \(e)"); return }
+        }
+        #expect(try Data(contentsOf: outside) == original)
+        #expect(f.fake.calls.isEmpty)
+    }
+
+    @Test func rejectsDirectorySymlinkOutsideBundle() async throws {
+        let outsideDir = try tempDir("outsidedir")
+        let f = try await fixture(extensions: []) { app in
+            try FileManager.default.createSymbolicLink(at: app.appendingPathComponent("PlugIns"),
+                                                       withDestinationURL: outsideDir)
+        }
+        do { _ = try await run(f); Issue.record("expected failure") } catch let e as XSideError {
+            guard case .invalidIPA = e else { Issue.record("wrong error \(e)"); return }
+        }
+        #expect(FileManager.default.fileExists(atPath: outsideDir.path))
+    }
+
+    @Test func allowsInBundleFrameworkSymlinks() async throws {
+        let f = try await fixture { app in
+            let fm = FileManager.default
+            let fw = app.appendingPathComponent("Frameworks/Y.framework")
+            try fm.createDirectory(at: fw.appendingPathComponent("Versions/A"), withIntermediateDirectories: true)
+            try FakeIPA.thinMachO(cryptid: 0).write(to: fw.appendingPathComponent("Versions/A/Y"))
+            try fm.createSymbolicLink(atPath: fw.appendingPathComponent("Versions/Current").path, withDestinationPath: "A")
+            try fm.createSymbolicLink(atPath: fw.appendingPathComponent("Y").path, withDestinationPath: "Versions/Current/Y")
+        }
+        let app = try await run(f)
+        let targets = f.fake.calls.map { $0.last! }
+        #expect(targets.contains(app.appendingPathComponent("Frameworks/Y.framework").path))
+        #expect(targets.last == app.path)
+    }
+
+    @Test func iconOutputSymlinkDoesNotWriteThrough() async throws {
+        let outside = try tempDir("outside").appendingPathComponent("victim.png")
+        let original = Data("precious".utf8)
+        try original.write(to: outside)
+        let f = try await fixture { app in
+            // In-bundle link (an outside link is rejected earlier): sips must not write through it.
+            try Data("inbundle".utf8).write(to: app.appendingPathComponent("target.bin"))
+            try FileManager.default.createSymbolicLink(atPath: app.appendingPathComponent("XSideIcon60x60@2x.png").path,
+                                                       withDestinationPath: "target.bin")
+        }
+        let png = try tempDir("icon").appendingPathComponent("big.png")
+        try writePNG(size: 1024, to: png)
+        let app = try await run(f, iconURL: png)
+        let icon = app.appendingPathComponent("XSideIcon60x60@2x.png")
+        #expect(!isLink(icon))
+        #expect(try pixelWidth(icon) == 120)
+        #expect(try Data(contentsOf: app.appendingPathComponent("target.bin")) == Data("inbundle".utf8))
+        #expect(try Data(contentsOf: outside) == original)
+    }
+
     @Test func rejectsEncryptedBinary() async throws {
         let f = try await fixture(encrypted: true)
         await #expect(throws: XSideError.encryptedIPA) { _ = try await run(f) }
@@ -222,4 +314,8 @@ private func addAssetCatalogIcons(_ app: URL) throws {
     p["CFBundleIcons"] = icons
     p["CFBundleIcons~ipad"] = icons
     try PropertyListSerialization.data(fromPropertyList: p, format: .binary, options: 0).write(to: url)
+}
+
+private func isLink(_ url: URL) -> Bool {
+    (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true
 }

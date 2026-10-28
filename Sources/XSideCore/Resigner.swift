@@ -37,30 +37,34 @@ public struct Resigner: Sendable {
                        identitySHA1: String) async throws -> URL {
         let fm = FileManager.default
         try fm.createDirectory(at: workDir, withIntermediateDirectories: true)
+        try cleanPreviousRun(in: workDir)
         let unzip = try await runner.run("/usr/bin/ditto", ["-x", "-k", ipa.path, workDir.path], cwd: nil)
         guard unzip.status == 0 else {
             throw XSideError.invalidIPA("Impossible de décompresser l'IPA")
         }
 
+        try validateExtraction(in: workDir)
         let app = try IPAInspector.appBundle(in: workDir)
+        try validateBundle(app, in: workDir)
         let info = try IPAInspector.info(of: app)
         if try IPAInspector.isEncrypted(app.appendingPathComponent(info.executable)) {
             throw XSideError.encryptedIPA
         }
 
         for dir in ["PlugIns", "Extensions", "Watch"] {
-            try? fm.removeItem(at: app.appendingPathComponent(dir))
+            let url = app.appendingPathComponent(dir)
+            if exists(url) { try fm.removeItem(at: url) } // removes a link itself, never its target
         }
 
         try editInfoPlist(app: app, bundleID: bundleID, options: options)
-        if let iconURL { try await applyIcon(iconURL, to: app) }
+        if let iconURL { try await applyIcon(iconURL, to: app, workDir: workDir) }
 
-        for url in allFiles(under: app) where url.lastPathComponent == "_CodeSignature" && !isSymlink(url) {
+        for url in allFiles(under: app) where url.lastPathComponent == "_CodeSignature" {
             try? fm.removeItem(at: url)
         }
 
         let embedded = app.appendingPathComponent("embedded.mobileprovision")
-        try? fm.removeItem(at: embedded)
+        if exists(embedded) { try fm.removeItem(at: embedded) }
         try fm.copyItem(at: profileURL, to: embedded)
 
         let entitlements = workDir.appendingPathComponent("entitlements-\(UUID().uuidString).plist")
@@ -71,6 +75,61 @@ public struct Resigner: Sendable {
         }
         try await sign(app, identity: identitySHA1, entitlements: entitlements)
         return app
+    }
+
+    // MARK: - Untrusted archive handling
+
+    /// True if something exists at `url`, including a dangling symlink (does not follow links).
+    private func exists(_ url: URL) -> Bool {
+        (try? FileManager.default.attributesOfItem(atPath: url.path)) != nil
+    }
+
+    /// Removes what a previous run left in `workDir` so extraction starts from a clean state.
+    private func cleanPreviousRun(in workDir: URL) throws {
+        let fm = FileManager.default
+        let payload = workDir.appendingPathComponent("Payload")
+        if exists(payload) { try fm.removeItem(at: payload) }
+        for item in (try? fm.contentsOfDirectory(atPath: workDir.path)) ?? []
+        where (item.hasPrefix("entitlements-") && item.hasSuffix(".plist"))
+            || (item.hasPrefix("xside-icon-") && item.hasSuffix(".png")) {
+            try? fm.removeItem(at: workDir.appendingPathComponent(item))
+        }
+    }
+
+    private func validateExtraction(in workDir: URL) throws {
+        if isSymlink(workDir.appendingPathComponent("Payload")) {
+            throw XSideError.invalidIPA("IPA invalide : lien symbolique suspect (Payload)")
+        }
+    }
+
+    /// Rejects archives whose entries escape the bundle (symlinks pointing outside it).
+    private func validateBundle(_ app: URL, in workDir: URL) throws {
+        func bad(_ what: String) -> XSideError { .invalidIPA("IPA invalide : lien symbolique suspect (\(what))") }
+        let root = app.resolvingSymlinksInPath().standardizedFileURL.pathComponents
+        let work = workDir.resolvingSymlinksInPath().standardizedFileURL.pathComponents
+        func inside(_ path: [String], _ base: [String]) -> Bool {
+            path.count >= base.count && Array(path.prefix(base.count)) == base
+        }
+        if isSymlink(app) { throw bad(app.lastPathComponent) }
+        guard inside(root, work) else { throw bad("hors du dossier de travail") }
+        for name in ["Info.plist", "embedded.mobileprovision"] where isSymlink(app.appendingPathComponent(name)) {
+            throw bad(name)
+        }
+        guard let en = FileManager.default.enumerator(at: app, includingPropertiesForKeys: nil) else { return }
+        for case let url as URL in en where isSymlink(url) {
+            en.skipDescendants()
+            guard let dest = try? FileManager.default.destinationOfSymbolicLink(atPath: url.path) else {
+                throw bad(url.lastPathComponent)
+            }
+            let target = dest.hasPrefix("/")
+                ? URL(fileURLWithPath: dest)
+                : url.deletingLastPathComponent().appendingPathComponent(dest)
+            // Both the lexical and the fully resolved target must stay inside the bundle.
+            let lexical = target.standardizedFileURL.pathComponents
+            let resolved = target.resolvingSymlinksInPath().standardizedFileURL.pathComponents
+            guard inside(lexical, app.standardizedFileURL.pathComponents) || inside(lexical, root),
+                  inside(resolved, root) else { throw bad(url.lastPathComponent) }
+        }
     }
 
     // MARK: - Info.plist
@@ -105,14 +164,19 @@ public struct Resigner: Sendable {
 
     // MARK: - Icon
 
-    private func applyIcon(_ source: URL, to app: URL) async throws {
+    private func applyIcon(_ source: URL, to app: URL, workDir: URL) async throws {
         let outputs: [(file: String, px: Int)] = [("XSideIcon60x60@2x.png", 120), ("XSideIcon76x76@2x~ipad.png", 152)]
         for (file, px) in outputs {
             let dst = app.appendingPathComponent(file)
-            let r = try await runner.run("/usr/bin/sips", ["-z", "\(px)", "\(px)", source.path, "--out", dst.path], cwd: nil)
-            guard r.status == 0, FileManager.default.fileExists(atPath: dst.path) else {
+            // sips writes outside the bundle; the result is then moved over any pre-existing item.
+            let tmp = workDir.appendingPathComponent("xside-icon-\(UUID().uuidString).png")
+            defer { try? FileManager.default.removeItem(at: tmp) }
+            let r = try await runner.run("/usr/bin/sips", ["-z", "\(px)", "\(px)", source.path, "--out", tmp.path], cwd: nil)
+            guard r.status == 0, FileManager.default.fileExists(atPath: tmp.path) else {
                 throw XSideError.commandFailed(tool: "sips", status: r.status)
             }
+            if exists(dst) { try FileManager.default.removeItem(at: dst) }
+            try FileManager.default.moveItem(at: tmp, to: dst)
         }
         let url = app.appendingPathComponent("Info.plist")
         var format = PropertyListSerialization.PropertyListFormat.binary
