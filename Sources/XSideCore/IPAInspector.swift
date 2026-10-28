@@ -39,6 +39,9 @@ public enum IPAInspector {
         guard let executable = plist["CFBundleExecutable"] as? String, !executable.isEmpty else {
             throw XSideError.invalidIPA("Info.plist sans CFBundleExecutable")
         }
+        guard !executable.contains("/"), executable != ".", executable != ".." else {
+            throw XSideError.invalidIPA("CFBundleExecutable invalide")
+        }
         let name = (plist["CFBundleDisplayName"] as? String).flatMap { $0.isEmpty ? nil : $0 }
             ?? (plist["CFBundleName"] as? String).flatMap { $0.isEmpty ? nil : $0 }
             ?? app.deletingPathExtension().lastPathComponent

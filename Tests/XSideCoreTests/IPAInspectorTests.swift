@@ -22,6 +22,17 @@ struct IPAInspectorTests {
         #expect(try IPAInspector.info(of: a2).name == "Affiché")
     }
 
+    @Test(arguments: ["../evil", "/etc/passwd", "a/b", "..", "."])
+    func rejectsUnsafeExecutableName(name: String) throws {
+        let root = try tempDir(); defer { try? FileManager.default.removeItem(at: root) }
+        let app = try FakeIPA.makeApp(at: root)
+        let url = app.appendingPathComponent("Info.plist")
+        var p = try PropertyListSerialization.propertyList(from: Data(contentsOf: url), format: nil) as! [String: Any]
+        p["CFBundleExecutable"] = name
+        try PropertyListSerialization.data(fromPropertyList: p, format: .binary, options: 0).write(to: url)
+        #expect(throws: XSideError.self) { _ = try IPAInspector.info(of: app) }
+    }
+
     @Test func detectsEncryption() throws {
         let root = try tempDir(); defer { try? FileManager.default.removeItem(at: root) }
         let enc = try FakeIPA.makeApp(at: root, encrypted: true)

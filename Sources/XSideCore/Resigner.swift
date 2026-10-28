@@ -47,7 +47,9 @@ public struct Resigner: Sendable {
         let app = try IPAInspector.appBundle(in: workDir)
         try validateBundle(app, in: workDir)
         let info = try IPAInspector.info(of: app)
-        if try IPAInspector.isEncrypted(app.appendingPathComponent(info.executable)) {
+        let executableURL = app.appendingPathComponent(info.executable)
+        try requireType(.typeRegular, executableURL)
+        if try IPAInspector.isEncrypted(executableURL) {
             throw XSideError.encryptedIPA
         }
 
@@ -71,6 +73,7 @@ public struct Resigner: Sendable {
         try profile.entitlements.write(to: entitlements)
 
         for target in signTargets(in: app) {
+            try requireType(target.pathExtension == "dylib" ? .typeRegular : .typeDirectory, target)
             try await sign(target, identity: identitySHA1, entitlements: nil)
         }
         try await sign(app, identity: identitySHA1, entitlements: entitlements)
@@ -82,6 +85,14 @@ public struct Resigner: Sendable {
     /// True if something exists at `url`, including a dangling symlink (does not follow links).
     private func exists(_ url: URL) -> Bool {
         (try? FileManager.default.attributesOfItem(atPath: url.path)) != nil
+    }
+
+    /// lstat-style check: the item itself (not a link target) must be of the given type.
+    private func requireType(_ type: FileAttributeType, _ url: URL) throws {
+        let actual = try? FileManager.default.attributesOfItem(atPath: url.path)[.type] as? FileAttributeType
+        guard actual == type else {
+            throw XSideError.invalidIPA("IPA invalide : \(url.lastPathComponent) n'est pas du type attendu")
+        }
     }
 
     /// Removes what a previous run left in `workDir` so extraction starts from a clean state.

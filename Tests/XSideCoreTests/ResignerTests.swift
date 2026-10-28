@@ -264,6 +264,18 @@ private func plist(_ app: URL) throws -> [String: Any] {
         #expect(try Data(contentsOf: outside) == original)
     }
 
+    @Test func rejectsSymlinkedMainExecutable() async throws {
+        let f = try await fixture { app in
+            let fm = FileManager.default
+            try fm.moveItem(at: app.appendingPathComponent("Demo"), to: app.appendingPathComponent("real.bin"))
+            try fm.createSymbolicLink(atPath: app.appendingPathComponent("Demo").path, withDestinationPath: "real.bin")
+        }
+        do { _ = try await run(f); Issue.record("expected failure") } catch let e as XSideError {
+            guard case .invalidIPA = e else { Issue.record("wrong error \(e)"); return }
+        }
+        #expect(f.fake.calls.isEmpty)
+    }
+
     @Test func rejectsEncryptedBinary() async throws {
         let f = try await fixture(encrypted: true)
         await #expect(throws: XSideError.encryptedIPA) { _ = try await run(f) }
