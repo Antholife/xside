@@ -11,6 +11,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/XSide"
 cp App/Info.plist "$APP/Contents/Info.plist"
 cp -R App/Resources/*.lproj "$APP/Contents/Resources/"
+cp App/Resources/MenuBarIcon.pdf App/Resources/AppIcon.icns "$APP/Contents/Resources/"
 cp -R Resources/ProvisioningTemplate "$APP/Contents/Resources/ProvisioningTemplate"
 
 codesign -s - --force --deep "$APP"

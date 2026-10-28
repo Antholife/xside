@@ -46,13 +46,24 @@ struct XSideApp: App {
     }
 }
 
-/// The menu-bar icon (placeholder until the final one is chosen). It exists from launch, so it is
+/// The menu-bar icon. It exists from launch, so it is
 /// where Finder's "Open With" / Services get wired to the install window.
 private struct MenuBarLabel: View {
     let model: AppModel
     let appDelegate: AppDelegate
     @Environment(\.openWindow) private var openWindow
     @State private var onboardingShown = false
+
+    /// The template glyph from the bundle's `MenuBarIcon.pdf`; falls back to an SF Symbol when it
+    /// isn't bundled (e.g. under `swift run`).
+    private static var icon: Image {
+        guard let image = NSImage(named: "MenuBarIcon") else {
+            return Image(systemName: "arrow.triangle.2.circlepath")
+        }
+        image.isTemplate = true
+        image.size = NSSize(width: 18, height: 18)
+        return Image(nsImage: image)
+    }
 
     /// Opens the onboarding window the first time a probe fails in this launch.
     private func showOnboardingIfNeeded() {
@@ -63,7 +74,7 @@ private struct MenuBarLabel: View {
     }
 
     var body: some View {
-        Image(systemName: "arrow.triangle.2.circlepath")
+        Self.icon
             .onChange(of: model.environmentFailed) { showOnboardingIfNeeded() }
             .onAppear {
                 appDelegate.openIPA = { url in openWindow.presentInstall(url, model: model) }
