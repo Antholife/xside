@@ -7,13 +7,10 @@ let package = Package(
     products: [
         .library(name: "XSideCore", targets: ["XSideCore"]),
         .executable(name: "XSideApp", targets: ["XSideApp"]),
-        .executable(name: "XSideWakeHelper", targets: ["XSideWakeHelper"]),
     ],
     targets: [
         .target(name: "XSideCore"),
-        .target(name: "XSideWakeProtocol"),
-        .executableTarget(name: "XSideApp", dependencies: ["XSideCore", "XSideWakeProtocol"]),
-        .executableTarget(name: "XSideWakeHelper", dependencies: ["XSideWakeProtocol"]),
+        .executableTarget(name: "XSideApp", dependencies: ["XSideCore"]),
         .testTarget(name: "XSideCoreTests", dependencies: ["XSideCore"]),
     ]
 )

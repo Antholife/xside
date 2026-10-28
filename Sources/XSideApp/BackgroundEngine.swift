@@ -102,7 +102,6 @@ final class BackgroundEngine {
     }
 
     private func evaluate(reason: String) {
-        WakeController.shared.update(records: model.records, threshold: Self.threshold)
         reportUnreachable()
         let due = RefreshPlanner.startable(dueJobs(), busy: model.busyJobs)
         guard !due.isEmpty else { return }

@@ -55,13 +55,6 @@ struct PlannerTests {
         #expect(RefreshPlanner.dueJobs([a], devices: [device("D1")], now: now, threshold: hour).isEmpty)
     }
 
-    @Test func nextWakeIsBeforeEarliestThreshold() {
-        let r = record([inst(expiresIn: 72 * hour), inst("D2", expiresIn: 100 * hour), inst("D3", expiresIn: hour)])
-        let expected = now.addingTimeInterval(72 * hour - 2 * 86_400 - 600)
-        #expect(RefreshPlanner.nextWake([r], now: now) == expected)
-        #expect(RefreshPlanner.nextWake([record([inst(expiresIn: hour)])], now: now) == nil)
-    }
-
     @Test func gateNotifiesOncePerCause() throws {
         var gate = NotificationGate()
         let id = UUID()

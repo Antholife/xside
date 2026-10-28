@@ -15,8 +15,6 @@ public enum RefreshPlanner {
     public static let threshold: TimeInterval = 2 * 86_400
     /// Minimum delay between two attempts on the same installation.
     public static let retryDelay: TimeInterval = 30 * 60
-    /// The Mac wakes this long before an installation crosses the threshold.
-    static let wakeLead: TimeInterval = 10 * 60
 
     /// Installations to refresh now. Already-expired ones are still due.
     public static func dueJobs(_ records: [AppRecord], devices: [Device], now: Date,
@@ -48,16 +46,6 @@ public enum RefreshPlanner {
     /// Due jobs that can start now: those whose row isn't already running, in `due` order.
     public static func startable(_ due: [RefreshJob], busy: Set<RefreshJob>) -> [RefreshJob] {
         due.filter { !busy.contains($0) }
-    }
-
-    /// Earliest future wake time (10 min before an installation crosses the
-    /// threshold). Installations already under it are handled by `dueJobs`.
-    public static func nextWake(_ records: [AppRecord], now: Date,
-                                threshold: TimeInterval = RefreshPlanner.threshold) -> Date? {
-        records.flatMap(\.installations)
-            .map { $0.expiresAt.addingTimeInterval(-threshold - wakeLead) }
-            .filter { $0 > now }
-            .min()
     }
 }
 

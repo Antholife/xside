@@ -8,9 +8,6 @@ struct XSideApp: App {
     @State private var engine: BackgroundEngine
 
     init() {
-        #if DEBUG
-        WakeDebug.runIfRequested()
-        #endif
         let model = AppModel()
         let engine = BackgroundEngine(model: model)
         _model = State(initialValue: model)

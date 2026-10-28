@@ -62,13 +62,6 @@
 "settings.language.system" = "Système";
 "settings.language.en" = "English";
 "settings.language.fr" = "Français";
-"settings.wakeMac" = "Réveiller le Mac pour rafraîchir";
-"settings.wakeMac.warning" = "Un Mac portable capot fermé, sur batterie et sans écran externe peut ne pas se réveiller complètement.";
-"settings.wakeMac.approval.title" = "macOS demande votre autorisation";
-"settings.wakeMac.approval" = "Le réveil du Mac passe par un petit assistant de XSide. Dans Réglages Système > Général > Ouverture et extensions > Autoriser en arrière-plan, activez XSide, puis confirmez avec votre mot de passe. Aucun réveil n'est programmé d'ici là.";
-"settings.wakeMac.approval.again" = "macOS redemande l'autorisation après une mise à jour de XSide.";
-"settings.wakeMac.openSettings" = "Ouvrir les réglages";
-"settings.wakeMac.error" = "Impossible d'installer l'assistant de réveil.";
 "settings.launchAtLogin.approval" = "Autorisation requise dans Réglages Système > Général > Ouverture.";
 "settings.openLoginItems" = "Ouvrir les éléments d'ouverture";
 "settings.launchAtLogin.error" = "Impossible de modifier le lancement à l'ouverture de session.";
