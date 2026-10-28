@@ -11,6 +11,8 @@ struct PopoverView: View {
     var body: some View {
         PopoverContent(model: model)
             .id(language)
+            // Outside `.id` so a language change doesn't report a close/open.
+            .background(WindowVisibilityReader { model.popoverVisibilityChanged($0) })
     }
 }
 
@@ -44,7 +46,6 @@ private struct PopoverContent: View {
             openWindow.presentInstall(url, model: model)
             return true
         } isTargeted: { isDropTargeted = $0 }
-        .onAppear(perform: model.popoverAppeared)
     }
 
     @ViewBuilder private var devices: some View {

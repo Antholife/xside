@@ -77,4 +77,53 @@ struct PlannerTests {
         let afterReset = gate.shouldNotify(recordID: id, deviceID: "D1", errorKey: "b")
         #expect(afterReset)
     }
+
+    @Test func debugThresholdOverride() {
+        #expect(RefreshPlanner.threshold(debugDays: 0) == RefreshPlanner.threshold)
+        #expect(RefreshPlanner.threshold(debugDays: -3) == RefreshPlanner.threshold)
+        #expect(RefreshPlanner.threshold(debugDays: 7) == 7 * 86_400)
+        // A 7-day override makes a fresh 7-day install due right away.
+        let r = record([inst(expiresIn: 7 * 86_400 - hour)])
+        #expect(RefreshPlanner.dueJobs([r], devices: [device("D1")], now: now).isEmpty)
+        #expect(RefreshPlanner.dueJobs([r], devices: [device("D1")], now: now,
+                                       threshold: RefreshPlanner.threshold(debugDays: 7)).count == 1)
+    }
+
+    @Test func startableSkipsBusyRows() {
+        let a = RefreshJob(recordID: UUID(), deviceID: "D1")
+        let b = RefreshJob(recordID: UUID(), deviceID: "D1")
+        let c = RefreshJob(recordID: UUID(), deviceID: "D2")
+        #expect(RefreshPlanner.startable([a, b, c], busy: [b]) == [a, c])
+        #expect(RefreshPlanner.startable([a], busy: []) == [a])
+    }
+
+    @Test func gateStoreRoundTrip() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("xside-gate-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = NotificationGateStore(libraryRoot: dir)
+        #expect(store.url.lastPathComponent == "notifications.json")
+        #expect(store.load() == NotificationGate()) // missing file
+
+        var gate = NotificationGate()
+        let id = UUID()
+        _ = gate.shouldNotify(recordID: id, deviceID: "D1", errorKey: "deviceUnavailable")
+        try store.save(gate)
+        var loaded = store.load()
+        #expect(loaded == gate)
+        let again = loaded.shouldNotify(recordID: id, deviceID: "D1", errorKey: "deviceUnavailable")
+        #expect(!again) // survives a relaunch: no second notification
+
+        loaded.reset(recordID: id, deviceID: "D1")
+        try store.save(loaded)
+        #expect(store.load() == NotificationGate())
+    }
+
+    @Test func gateStoreCorruptFileLoadsEmpty() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("xside-gate-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let store = NotificationGateStore(libraryRoot: dir)
+        try Data("not json".utf8).write(to: store.url)
+        #expect(store.load() == NotificationGate())
+    }
 }

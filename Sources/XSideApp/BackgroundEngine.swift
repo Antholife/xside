@@ -1,0 +1,156 @@
+import AppKit
+import os
+import XSideCore
+
+/// Keeps installed apps alive without user action: polls devices, starts the refreshes
+/// `RefreshPlanner` says are due, and notifies a failure once per (app, device, cause).
+@MainActor
+final class BackgroundEngine {
+    private static let logger = Logger(subsystem: "io.github.xside.XSide", category: "engine")
+    /// Device polling while the popover is open / closed.
+    static let fastPoll: Duration = .seconds(15)
+    static let slowPoll: Duration = .seconds(60)
+    /// Periodic due evaluation (also run on device changes and on wake).
+    static let evaluationInterval: Duration = .seconds(5 * 60)
+    /// Hidden debug setting (days): `defaults write io.github.xside.XSide debugThresholdDays 7`.
+    static let debugThresholdKey = "debugThresholdDays"
+
+    private let model: AppModel
+    private let notifier: Notifier
+    private let gateStore: NotificationGateStore
+    private var gate: NotificationGate
+    private var started = false
+    private var tasks: [Task<Void, Never>] = []
+    private var wakeObserver: NSObjectProtocol?
+    private var lastPoll = ContinuousClock.now
+
+    init(model: AppModel) {
+        self.model = model
+        notifier = Notifier(developerDir: { [weak model] in model?.signingEnvironment?.developerDir })
+        gateStore = NotificationGateStore(libraryRoot: model.library.root)
+        gate = gateStore.load()
+    }
+
+    /// Idempotent: the first call wires everything, later calls do nothing.
+    func start() {
+        guard !started else { return }
+        started = true
+        Self.logger.notice("engine started (threshold \(Self.threshold / 86_400, privacy: .public) d)")
+        notifier.start()
+
+        model.onNeedsEvaluation = { [weak self] in self?.evaluate(reason: "change") }
+        model.onJobFinished = { [weak self] job, error, automatic in
+            self?.jobFinished(job, error: error, automatic: automatic)
+        }
+
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.didWake() }
+        }
+
+        // Ticks every 15 s; lists devices every tick while the popover is open, every 60 s otherwise.
+        tasks.append(Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.fastPoll)
+                await self?.pollTick()
+            }
+        })
+        tasks.append(Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.evaluationInterval)
+                self?.periodicTick()
+            }
+        })
+    }
+
+    /// Default 2 days, or the hidden debug override. Never shown in the UI.
+    static var threshold: TimeInterval {
+        RefreshPlanner.threshold(debugDays: UserDefaults.standard.double(forKey: debugThresholdKey))
+    }
+
+    // MARK: - Triggers
+
+    private func pollTick() async {
+        let interval = model.isPopoverOpen ? Self.fastPoll : Self.slowPoll
+        // Small tolerance so a 60 s poll isn't pushed to 75 s by tick jitter.
+        guard ContinuousClock.now - lastPoll >= interval - .seconds(1) else { return }
+        lastPoll = .now
+        await model.listDevices() // a change calls `evaluate` through `onNeedsEvaluation`
+    }
+
+    private func periodicTick() {
+        // A broken signing environment (Xcode signed out…) blocks every refresh: re-check it so a
+        // fix in Xcode is picked up without user action.
+        if case .failure? = model.environment, !dueJobs().isEmpty { model.recheckEnvironment() }
+        evaluate(reason: "timer")
+    }
+
+    private func didWake() {
+        Self.logger.notice("wake: re-listing devices")
+        Task {
+            await model.listDevices()
+            lastPoll = .now
+            evaluate(reason: "wake")
+        }
+    }
+
+    // MARK: - Evaluation
+
+    private func dueJobs() -> [RefreshJob] {
+        RefreshPlanner.dueJobs(model.records, devices: model.devices, now: Date(), threshold: Self.threshold)
+    }
+
+    private func evaluate(reason: String) {
+        let due = RefreshPlanner.startable(dueJobs(), busy: model.busyJobs)
+        guard !due.isEmpty else { return }
+        Self.logger.notice("\(reason, privacy: .public): \(due.count, privacy: .public) job(s) due")
+
+        // No pipeline: the environment probe failed (or hasn't finished). Notify the cause once
+        // per row so an app can't expire silently.
+        guard model.isPipelineReady else {
+            if case .failure(let error)? = model.environment {
+                for job in due { notifyFailure(job, errorKey: error.key, message: error.localizedMessage) }
+            }
+            return
+        }
+        for job in due where model.refreshNow(job, automatic: true) {
+            Self.logger.notice("refresh started \(job.recordID.uuidString, privacy: .public) on \(job.deviceID, privacy: .public)")
+        }
+    }
+
+    // MARK: - Outcomes
+
+    private func jobFinished(_ job: RefreshJob, error: (any Error)?, automatic: Bool) {
+        guard let error else {
+            // Any success (install, manual or automatic refresh) re-arms notifications for the row.
+            Self.logger.notice("refresh succeeded \(job.recordID.uuidString, privacy: .public)")
+            var updated = gate
+            updated.reset(recordID: job.recordID, deviceID: job.deviceID)
+            if updated != gate { gate = updated; persistGate() }
+            return
+        }
+        // Manual actions show their error in the UI; only background failures notify.
+        guard automatic else { return }
+        let installation = model.records.first { $0.id == job.recordID }?
+            .installations.first { $0.deviceID == job.deviceID }
+        let key = installation?.lastErrorKey ?? (error as? XSideError)?.key ?? "unknown"
+        Self.logger.notice("refresh failed \(job.recordID.uuidString, privacy: .public): \(key, privacy: .public)")
+        notifyFailure(job, errorKey: key, message: (error as? XSideError)?.localizedMessage ?? localizedRowError(key: key))
+    }
+
+    private func notifyFailure(_ job: RefreshJob, errorKey: String, message: String) {
+        guard gate.shouldNotify(recordID: job.recordID, deviceID: job.deviceID, errorKey: errorKey) else { return }
+        persistGate()
+        let name = model.records.first { $0.id == job.recordID }?.displayName ?? "XSide"
+        notifier.refreshFailed(appName: name, errorKey: errorKey, message: message,
+                               id: "refresh.\(job.recordID.uuidString).\(job.deviceID)")
+    }
+
+    private func persistGate() {
+        do {
+            try gateStore.save(gate)
+        } catch {
+            Self.logger.error("saving notifications.json failed: \(String(describing: error), privacy: .public)")
+        }
+    }
+}

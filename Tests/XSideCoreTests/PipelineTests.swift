@@ -270,6 +270,19 @@ struct PipelineTests {
         #expect(await f.log.total == 0)
     }
 
+    @Test func missingUDIDOnRefreshRecordsAttempt() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let old = Date(timeIntervalSince1970: 1_700_000_000)
+        try await f.library.upsert(Installation(deviceID: "dev-1", installedAt: old, expiresAt: old), for: f.record.id)
+        await #expect(throws: XSideError.deviceUnavailable) {
+            try await f.pipeline().install(recordID: f.record.id, device: device(udid: nil))
+        }
+        let stored = try #require(await f.library.records().first?.installations.first)
+        #expect(stored.lastAttempt == fixedNow) // so the 30-min retry delay applies
+        #expect(stored.lastErrorKey == "deviceUnavailable")
+        #expect(await f.log.total == 0)
+    }
+
     @Test func unknownRecordThrows() async throws {
         let f = try await Fixture(); defer { f.cleanup() }
         await #expect(throws: XSideError.recordNotFound) {

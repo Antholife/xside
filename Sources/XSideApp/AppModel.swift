@@ -55,6 +55,15 @@ final class AppModel {
     private var pipelineEnv: SigningEnvironment?
     private var listingDevices = false
 
+    // MARK: Background engine hooks
+
+    /// Something the due evaluation depends on changed (device list, signing environment).
+    var onNeedsEvaluation: (() -> Void)?
+    /// Every pipeline run that ends (install, manual or automatic refresh), with its error if it failed.
+    var onJobFinished: ((_ job: RefreshJob, _ error: (any Error)?, _ automatic: Bool) -> Void)?
+    /// True while the menu-bar popover is on screen (drives the device polling rate).
+    private(set) var isPopoverOpen = false
+
     init() {
         paths = Paths()
         library = AppLibrary(root: paths.root)
@@ -88,29 +97,42 @@ final class AppModel {
                 env: env, workRoot: paths.jobsWork, now: { Date() })
         }
         await updateAppIDCounter()
+        onNeedsEvaluation?()
     }
+
+    var signingEnvironment: SigningEnvironment? { try? environment?.get() }
+    var isPipelineReady: Bool { pipeline != nil }
 
     // MARK: - Devices
 
-    /// Called when the popover appears and after actions. Periodic polling comes later.
-    func popoverAppeared() {
-        refreshDevices()
-        Task { await reloadRecords() }
+    /// The popover window was shown or hidden (see `WindowVisibilityReader`).
+    func popoverVisibilityChanged(_ visible: Bool) {
+        guard visible != isPopoverOpen else { return }
+        isPopoverOpen = visible
+        if visible {
+            refreshDevices()
+            Task { await reloadRecords() }
+        }
     }
 
     func refreshDevices() {
+        Task { await listDevices() }
+    }
+
+    /// Lists devices now. Returns at once when a listing is already running (that one reports the change).
+    func listDevices() async {
         guard !listingDevices else { return }
         listingDevices = true
-        Task {
-            defer { listingDevices = false }
-            do {
-                let listed = try await DeviceService(runner: runner).list()
-                devices = listed.filter { $0.kind != .other }
-                rememberNames(devices)
-                autoselectDevice()
-            } catch {
-                Self.logger.error("device list failed: \(String(describing: error), privacy: .public)")
-            }
+        defer { listingDevices = false }
+        do {
+            let listed = try await DeviceService(runner: runner).list().filter { $0.kind != .other }
+            let changed = listed != devices
+            devices = listed
+            rememberNames(devices)
+            autoselectDevice()
+            if changed { onNeedsEvaluation?() }
+        } catch {
+            Self.logger.error("device list failed: \(String(describing: error), privacy: .public)")
         }
     }
 
@@ -204,15 +226,23 @@ final class AppModel {
         return record
     }
 
-    func refreshNow(_ job: RefreshJob) {
+    /// Starts a refresh of one row unless it is already running. Returns false when nothing started.
+    @discardableResult
+    func refreshNow(_ job: RefreshJob, automatic: Bool = false) -> Bool {
         let key = JobKey(recordID: job.recordID, deviceID: job.deviceID)
         guard let pipeline, jobs[key] == nil,
-              let device = devices.first(where: { $0.id == job.deviceID }) else { return }
+              let device = devices.first(where: { $0.id == job.deviceID }) else { return false }
         claim(key) // before the task starts, so the row can't be claimed twice
         Task {
             defer { release(key) }
-            try? await run(pipeline, key: key, device: device)
+            try? await run(pipeline, key: key, device: device, automatic: automatic)
         }
+        return true
+    }
+
+    /// Rows with an install or refresh running.
+    var busyJobs: Set<RefreshJob> {
+        Set(jobs.keys.map { RefreshJob(recordID: $0.recordID, deviceID: $0.deviceID) })
     }
 
     func canRefresh(_ entry: AppEntry) -> Bool {
@@ -235,8 +265,9 @@ final class AppModel {
     }
 
     /// The caller must hold a claim on `key`.
-    private func run(_ pipeline: SideloadPipeline, key: JobKey, device: Device,
+    private func run(_ pipeline: SideloadPipeline, key: JobKey, device: Device, automatic: Bool = false,
                      progress: @escaping @MainActor @Sendable (InstallStep) -> Void = { _ in }) async throws {
+        let job = RefreshJob(recordID: key.recordID, deviceID: key.deviceID)
         do {
             _ = try await pipeline.install(recordID: key.recordID, device: device) { step in
                 await MainActor.run {
@@ -246,9 +277,11 @@ final class AppModel {
             }
         } catch {
             await reloadRecords()
+            onJobFinished?(job, error, automatic)
             throw error
         }
         await reloadRecords()
+        onJobFinished?(job, nil, automatic)
         await updateAppIDCounter()
     }
 

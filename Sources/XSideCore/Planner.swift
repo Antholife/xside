@@ -1,6 +1,6 @@
 import Foundation
 
-public struct RefreshJob: Equatable, Sendable {
+public struct RefreshJob: Hashable, Sendable {
     public let recordID: UUID
     public let deviceID: String
 
@@ -39,6 +39,17 @@ public enum RefreshPlanner {
         return due.map(\.job)
     }
 
+    /// Threshold to use given the hidden debug setting (`debugThresholdDays`, in days):
+    /// a positive value replaces the default, anything else keeps it.
+    public static func threshold(debugDays: Double) -> TimeInterval {
+        debugDays > 0 && debugDays.isFinite ? debugDays * 86_400 : threshold
+    }
+
+    /// Due jobs that can start now: those whose row isn't already running, in `due` order.
+    public static func startable(_ due: [RefreshJob], busy: Set<RefreshJob>) -> [RefreshJob] {
+        due.filter { !busy.contains($0) }
+    }
+
     /// Earliest future wake time (10 min before an installation crosses the
     /// threshold). Installations already under it are handled by `dueJobs`.
     public static func nextWake(_ records: [AppRecord], now: Date,
@@ -70,5 +81,30 @@ public struct NotificationGate: Codable, Equatable, Sendable {
 
     public mutating func reset(recordID: UUID, deviceID: String) {
         notified[Self.key(recordID, deviceID)] = nil
+    }
+}
+
+/// Persists a `NotificationGate` as JSON (written atomically). A missing or unreadable file
+/// loads as an empty gate: at worst a cause is notified once more.
+public struct NotificationGateStore: Sendable {
+    public let url: URL
+
+    public init(url: URL) { self.url = url }
+
+    public init(libraryRoot: URL) {
+        self.init(url: libraryRoot.appendingPathComponent("notifications.json"))
+    }
+
+    public func load() -> NotificationGate {
+        guard let data = try? Data(contentsOf: url),
+              let gate = try? JSONDecoder().decode(NotificationGate.self, from: data) else { return NotificationGate() }
+        return gate
+    }
+
+    public func save(_ gate: NotificationGate) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        try encoder.encode(gate).write(to: url, options: .atomic)
     }
 }

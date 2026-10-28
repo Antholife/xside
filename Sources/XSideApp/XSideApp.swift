@@ -4,7 +4,16 @@ import SwiftUI
 @main
 struct XSideApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @State private var model = AppModel()
+    @State private var model: AppModel
+    @State private var engine: BackgroundEngine
+
+    init() {
+        let model = AppModel()
+        let engine = BackgroundEngine(model: model)
+        _model = State(initialValue: model)
+        _engine = State(initialValue: engine)
+        engine.start() // idempotent
+    }
 
     var body: some Scene {
         MenuBarExtra {

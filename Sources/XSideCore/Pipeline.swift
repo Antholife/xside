@@ -78,7 +78,6 @@ public actor SideloadPipeline {
 
     private nonisolated func perform(recordID: UUID, device: Device,
                                      progress: @Sendable (InstallStep) async -> Void) async throws -> Installation {
-        guard let udid = device.udid else { throw XSideError.deviceUnavailable }
         guard let record = await library.records().first(where: { $0.id == recordID }) else {
             throw XSideError.recordNotFound
         }
@@ -93,6 +92,8 @@ public actor SideloadPipeline {
         }
 
         do {
+            // Inside the `do` so the failure is recorded (`lastAttempt` drives the retry delay).
+            guard let udid = device.udid else { throw XSideError.deviceUnavailable }
             let ipa = try resolve(record.ipaPath)
             let icon = try record.options.iconPath.flatMap { $0.isEmpty ? nil : try resolve($0) }
             try fm.createDirectory(at: workDir, withIntermediateDirectories: true)
