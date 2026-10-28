@@ -1,4 +1,5 @@
 import AppKit
+import Observation
 import os
 import UserNotifications
 import XSideCore
@@ -21,12 +22,17 @@ final class Notifier: NSObject {
 
     init(developerDir: @escaping @MainActor () -> URL?) {
         self.developerDir = developerDir
-        let bundled = Bundle.main.bundleIdentifier != nil && Bundle.main.bundleURL.pathExtension == "app"
-        center = bundled ? UNUserNotificationCenter.current() : nil
+        center = Self.isBundled ? UNUserNotificationCenter.current() : nil
         super.init()
     }
 
-    /// Installs the delegate and category, then asks for permission (the system prompts only once).
+    /// True when running from an app bundle (`UNUserNotificationCenter` crashes otherwise).
+    nonisolated static var isBundled: Bool {
+        Bundle.main.bundleIdentifier != nil && Bundle.main.bundleURL.pathExtension == "app"
+    }
+
+    /// Installs the delegate and category. Permission is asked by the welcome journey (or from
+    /// Settings), never at launch, so the system prompt comes with its explanation.
     func start() {
         guard let center else {
             Self.logger.notice("not running from an app bundle: notifications disabled")
@@ -38,13 +44,6 @@ final class Notifier: NSObject {
         center.setNotificationCategories([
             UNNotificationCategory(identifier: Self.xcodeCategory, actions: [open], intentIdentifiers: []),
         ])
-        center.requestAuthorization(options: [.alert, .sound]) { granted, error in
-            if let error {
-                Self.logger.error("notification authorization failed: \(String(describing: error), privacy: .public)")
-            } else {
-                Self.logger.notice("notification authorization granted=\(granted, privacy: .public)")
-            }
-        }
     }
 
     /// True when a notification posted now would be shown (authorized or provisional). Without a
@@ -115,5 +114,47 @@ extension Notifier: UNUserNotificationCenterDelegate {
                                             didReceive response: UNNotificationResponse) async {
         guard response.actionIdentifier == Self.openXcodeAction else { return }
         await openXcode()
+    }
+}
+
+/// The real notification authorization, for the welcome journey and Settings.
+@MainActor @Observable
+final class NotificationPermission {
+    private static let logger = Logger(subsystem: "io.github.xside.XSide", category: "app")
+    static let systemSettingsURL = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")!
+
+    enum State { case checking, unavailable, notDetermined, denied, authorized }
+
+    private(set) var state: State
+    private let center: UNUserNotificationCenter?
+
+    init() {
+        center = Notifier.isBundled ? UNUserNotificationCenter.current() : nil
+        state = center == nil ? .unavailable : .checking
+    }
+
+    func refresh() async {
+        guard let center else { return }
+        switch await center.notificationSettings().authorizationStatus {
+        case .notDetermined: state = .notDetermined
+        case .denied: state = .denied
+        default: state = .authorized // authorized, provisional, ephemeral
+        }
+    }
+
+    /// Shows the one-time system prompt (does nothing once the user has answered it).
+    func request() async {
+        guard let center else { return }
+        do {
+            let granted = try await center.requestAuthorization(options: [.alert, .sound])
+            Self.logger.notice("notification authorization granted=\(granted, privacy: .public)")
+        } catch {
+            Self.logger.error("notification authorization failed: \(String(describing: error), privacy: .public)")
+        }
+        await refresh()
+    }
+
+    func openSystemSettings() {
+        NSWorkspace.shared.open(Self.systemSettingsURL)
     }
 }

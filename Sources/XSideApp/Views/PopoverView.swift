@@ -19,12 +19,13 @@ struct PopoverView: View {
 private struct PopoverContent: View {
     let model: AppModel
     @Environment(\.openWindow) private var openWindow
+    @AppStorage(JourneyStep.completedKey) private var journeyCompleted = false
     @State private var isDropTargeted = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if case .failure(let error)? = model.environment {
-                OnboardingView(model: model, error: error, compact: true)
+            if model.environmentFailed || !journeyCompleted {
+                SetupRow(error: model.environmentError) { openWindow.presentJourney(model) }
             }
             ForEach(model.unpairedDevices) { device in
                 PairPrompt(device: device, isPairing: model.pairing.contains(device.id),
@@ -74,6 +75,43 @@ private struct PopoverContent: View {
                 }
             }
         }
+    }
+}
+
+/// "Finish setting up": opens the welcome journey at the step that needs attention.
+private struct SetupRow: View {
+    let error: XSideError?
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: error == nil ? "sparkles" : "exclamationmark.triangle.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 28, height: 28)
+                    .background(error == nil ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(Color.orange),
+                                in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(L("journey.popover.title")).font(.system(size: 12.5, weight: .semibold))
+                    Text(error?.setupTitle ?? L("journey.popover.subtitle"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(10)
+            .background(isHovering ? Color.primary.opacity(0.09) : Theme.cardFill,
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
     }
 }
 

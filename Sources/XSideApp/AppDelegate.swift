@@ -20,6 +20,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.servicesProvider = self
         NSUpdateDynamicServices()
+        #if DEBUG
+        // Debug-only: XSIDE_APPEARANCE=dark|light forces the appearance, to check both looks.
+        switch ProcessInfo.processInfo.environment["XSIDE_APPEARANCE"] {
+        case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
+        case "light": NSApp.appearance = NSAppearance(named: .aqua)
+        default: break
+        }
+        #endif
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {

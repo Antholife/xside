@@ -79,10 +79,47 @@ final class AppModel {
         await probeEnvironment()
     }
 
-    // MARK: Onboarding poller
+    // MARK: Welcome journey
 
-    /// One poller for every onboarding surface: it runs only while the environment fails AND the
-    /// popover is open or the onboarding window is visible, and re-probes every 5 s.
+    /// Step shown by the welcome window. Saved so a journey left halfway resumes where it stopped.
+    var journeyStep: JourneyStep = JourneyStep(
+        rawValue: UserDefaults.standard.integer(forKey: JourneyStep.savedStepKey)) ?? .welcome {
+        didSet { UserDefaults.standard.set(journeyStep.rawValue, forKey: JourneyStep.savedStepKey) }
+    }
+
+    /// The first blocking step the environment fails (Xcode, then the account), nil when it is OK
+    /// or not probed yet.
+    var firstBlockingStep: JourneyStep? {
+        guard case .failure(let error)? = environment else { return nil }
+        if case .xcodeMissing = error { return .xcode }
+        return .account
+    }
+
+    /// True once `step` lets the user continue (always for non-blocking steps).
+    func isJourneyStepDone(_ step: JourneyStep) -> Bool {
+        guard step.isBlocking else { return true }
+        guard environment != nil else { return false }
+        return firstBlockingStep.map { $0 > step } ?? true
+    }
+
+    /// Where the journey (re)opens: the saved step, never past a failing blocking step. A finished
+    /// journey only reopens for a failing step (or from the start).
+    func prepareJourney() {
+        if UserDefaults.standard.bool(forKey: JourneyStep.completedKey) {
+            journeyStep = firstBlockingStep ?? .welcome
+        } else {
+            capJourneyAtBlockingStep()
+        }
+    }
+
+    func capJourneyAtBlockingStep() {
+        if let blocking = firstBlockingStep, journeyStep > blocking { journeyStep = blocking }
+    }
+
+    // MARK: Environment poller
+
+    /// One poller for every setup surface: it runs only while the environment fails AND the
+    /// popover is open or the welcome window is visible, and re-probes every 5 s.
     private(set) var isOnboardingWindowOpen = false
     @ObservationIgnored private var onboardingPoller: Task<Void, Never>?
 
@@ -110,7 +147,8 @@ final class AppModel {
         }
     }
 
-    var environmentFailed: Bool { if case .failure? = environment { true } else { false } }
+    var environmentFailed: Bool { environmentError != nil }
+    var environmentError: XSideError? { if case .failure(let error)? = environment { error } else { nil } }
 
     /// Developer dir of the last good probe, to locate Xcode when it isn't found by bundle id.
     var lastKnownDeveloperDir: URL? { pipelineEnv?.developerDir }
@@ -125,7 +163,7 @@ final class AppModel {
         defer { isProbing = false }
         #if DEBUG
         // Debug-only: XSIDE_FAKE_ENV_FILE names a file holding xcodeMissing / xcodeNotSignedIn /
-        // noSigningIdentity / ok, re-read at each probe, to exercise the onboarding.
+        // noSigningIdentity / ok, re-read at each probe, to exercise the welcome journey.
         if let fake = Self.fakeEnvironment() {
             environment = fake
             updateOnboardingPoller()

@@ -32,16 +32,19 @@ struct XSideApp: App {
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
 
-        // Shown at launch when the Mac isn't ready (see `MenuBarLabel`); closes itself once it is.
-        Window(L("onboarding.window"), id: OnboardingWindow.id) {
-            OnboardingWindowRoot(model: model)
+        // The first-launch journey (see `MenuBarLabel` for when it opens by itself).
+        Window(L("onboarding.window"), id: WelcomeWindow.id) {
+            WelcomeWindowRoot(model: model)
         }
+        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
+        .windowBackgroundDragBehavior(.enabled)
+        .defaultPosition(.center)
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
 
         Settings {
-            SettingsView()
+            SettingsView(model: model)
         }
     }
 }
@@ -52,7 +55,8 @@ private struct MenuBarLabel: View {
     let model: AppModel
     let appDelegate: AppDelegate
     @Environment(\.openWindow) private var openWindow
-    @State private var onboardingShown = false
+    @AppStorage(JourneyStep.completedKey) private var journeyCompleted = false
+    @State private var journeyShown = false
 
     /// The template glyph from the bundle's `MenuBarIcon.pdf`; falls back to an SF Symbol when it
     /// isn't bundled (e.g. under `swift run`).
@@ -65,20 +69,20 @@ private struct MenuBarLabel: View {
         return Image(nsImage: image)
     }
 
-    /// Opens the onboarding window the first time a probe fails in this launch.
-    private func showOnboardingIfNeeded() {
-        guard model.environmentFailed, !onboardingShown else { return }
-        onboardingShown = true
-        openWindow(id: OnboardingWindow.id)
-        NSApp.activate()
+    /// Opens the welcome journey once per launch: at once while it was never finished, else the
+    /// first time a probe fails (it then opens at the failing step).
+    private func showJourneyIfNeeded() {
+        guard !journeyShown, !journeyCompleted || model.environmentFailed else { return }
+        journeyShown = true
+        openWindow.presentJourney(model)
     }
 
     var body: some View {
         Self.icon
-            .onChange(of: model.environmentFailed) { showOnboardingIfNeeded() }
+            .onChange(of: model.environmentFailed) { showJourneyIfNeeded() }
             .onAppear {
                 appDelegate.openIPA = { url in openWindow.presentInstall(url, model: model) }
-                showOnboardingIfNeeded()
+                showJourneyIfNeeded()
                 model.showInstallWindow = {
                     openWindow(id: InstallWindow.id)
                     NSApp.activate()
