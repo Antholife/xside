@@ -13,7 +13,7 @@ public struct Provisioner: Sendable {
         self.workDir = workDir
     }
 
-    /// Builds the template for `bundleID` targeting `deviceUDIDs[0]`. Returns a stable copy of the
+    /// Builds the template for `bundleID` targeting `deviceUDIDs[0]`. Returns a uniquely named copy of the
     /// profile inside `workDir` (the per-build directory is removed).
     public func profile(bundleID: String, env: SigningEnvironment,
                         deviceUDIDs: [String]) async throws -> (url: URL, profile: ProvisioningProfile) {
@@ -41,11 +41,17 @@ public struct Provisioner: Sendable {
         guard fm.fileExists(atPath: built.path) else {
             throw XSideError.provisioningFailed("embedded.mobileprovision not produced")
         }
-        let stable = workDir.appendingPathComponent("\(bundleID).mobileprovision")
-        try? fm.removeItem(at: stable)
+        // Unique per call: concurrent jobs for the same app on different devices must not share it.
+        let stable = workDir.appendingPathComponent("\(bundleID)-\(UUID().uuidString).mobileprovision")
         try fm.copyItem(at: built, to: stable)
 
-        let profile = try await ProfileReader(runner: runner).read(stable)
+        let profile: ProvisioningProfile
+        do {
+            profile = try await ProfileReader(runner: runner).read(stable)
+        } catch {
+            try? fm.removeItem(at: stable)
+            throw error
+        }
         guard profile.deviceUDIDs.contains(target) else {
             try? fm.removeItem(at: stable)
             throw XSideError.provisioningFailed("target device not in provisioning profile")

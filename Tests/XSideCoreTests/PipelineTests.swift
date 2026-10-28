@@ -7,10 +7,10 @@ import Foundation
 private let fixedNow = Date(timeIntervalSince1970: 1_800_000_000)
 private let expiry = Date(timeIntervalSince1970: 1_800_000_000 + 7 * 86400)
 
-private func makeProfile(expires: Date = expiry) -> ProvisioningProfile {
-    ProvisioningProfile(uuid: "U-1", teamID: "TEAM123456", bundleID: "com.example.demo.TEAM123456",
-                        creationDate: fixedNow, expirationDate: expires,
-                        deviceUDIDs: ["UDID-1"], entitlements: Data())
+private func makeProfile(expires: Date = expiry, udids: [String] = ["UDID-1"]) -> ProvisioningProfile {
+    ProvisioningProfile(uuid: "U-\(udids.joined(separator: ","))", teamID: "TEAM123456",
+                        bundleID: "com.example.demo.TEAM123456", creationDate: fixedNow, expirationDate: expires,
+                        deviceUDIDs: udids, entitlements: Data())
 }
 
 /// Tracks how many calls are in flight and the maximum ever observed.
@@ -19,29 +19,44 @@ private actor ConcurrencyGauge {
     private(set) var maximum = 0
     func enter() { current += 1; maximum = max(maximum, current) }
     func leave() { current -= 1 }
+    /// Waits until `count` calls have been in flight at once, or the timeout elapses.
+    func rendezvous(_ count: Int, timeout: Duration = .seconds(5)) async {
+        let deadline = ContinuousClock.now + timeout
+        while maximum < count, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+    }
 }
 
 private actor CallLog {
     private(set) var provisionUDIDs: [[String]] = []
-    private(set) var resignArgs: [(ipa: URL, workDir: URL, bundleID: String, icon: URL?)] = []
+    private(set) var resignArgs: [(ipa: URL, workDir: URL, bundleID: String, icon: URL?,
+                                   profileURL: URL, profile: ProvisioningProfile)] = []
     private(set) var installs: [(app: URL, deviceID: String)] = []
     func provision(_ udids: [String]) { provisionUDIDs.append(udids) }
-    func resign(_ ipa: URL, _ workDir: URL, _ bundleID: String, _ icon: URL?) {
-        resignArgs.append((ipa, workDir, bundleID, icon))
+    func resign(_ ipa: URL, _ workDir: URL, _ bundleID: String, _ icon: URL?,
+                _ profileURL: URL, _ profile: ProvisioningProfile) {
+        resignArgs.append((ipa, workDir, bundleID, icon, profileURL, profile))
     }
     func install(_ app: URL, _ id: String) { installs.append((app, id)) }
     var total: Int { provisionUDIDs.count + resignArgs.count + installs.count }
 }
 
+/// Returns a profile listing exactly the requested UDIDs. With `dir`, writes a real per-call
+/// profile file there (like `Provisioner` does); otherwise returns a path that does not exist.
 private struct FakeProvisioner: Provisioning {
     let log: CallLog
-    var profile = makeProfile()
     var error: (any Error)?
+    var dir: URL?
     func profile(bundleID: String, env: SigningEnvironment,
                  deviceUDIDs: [String]) async throws -> (url: URL, profile: ProvisioningProfile) {
         await log.provision(deviceUDIDs)
         if let error { throw error }
-        return (URL(fileURLWithPath: "/nonexistent/profile.mobileprovision"), profile)
+        let profile = makeProfile(udids: deviceUDIDs)
+        guard let dir else { return (URL(fileURLWithPath: "/nonexistent/profile.mobileprovision"), profile) }
+        let url = dir.appendingPathComponent("\(bundleID)-\(UUID().uuidString).mobileprovision")
+        try Data(profile.uuid.utf8).write(to: url)
+        return (url, profile)
     }
 }
 
@@ -49,7 +64,7 @@ private struct FakeResigner: Resigning {
     let log: CallLog
     func resign(ipa: URL, workDir: URL, bundleID: String, options: InstallOptions, iconURL: URL?,
                 profileURL: URL, profile: ProvisioningProfile, identitySHA1: String) async throws -> URL {
-        await log.resign(ipa, workDir, bundleID, iconURL)
+        await log.resign(ipa, workDir, bundleID, iconURL, profileURL, profile)
         // Simulate unpacking into the work dir.
         let app = workDir.appendingPathComponent("Payload/Demo.app", isDirectory: true)
         try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
@@ -62,8 +77,11 @@ private struct FakeInstaller: Installing {
     var error: (any Error)?
     var gauge: ConcurrencyGauge?
     var delay: Duration = .zero
+    /// When set, each call waits (bounded) until this many calls are in flight together.
+    var rendezvous: Int?
     func install(app: URL, deviceID: String) async throws {
         await gauge?.enter()
+        if let rendezvous { await gauge?.rendezvous(rendezvous) }
         if delay > .zero { try? await Task.sleep(for: delay) }
         await gauge?.leave()
         await log.install(app, deviceID)
@@ -278,13 +296,55 @@ struct PipelineTests {
     @Test func differentDevicesRunConcurrently() async throws {
         let f = try await Fixture(); defer { f.cleanup() }
         let gauge = ConcurrencyGauge()
-        let pipeline = f.pipeline(installer: FakeInstaller(log: f.log, gauge: gauge, delay: .milliseconds(300)))
+        // Each call waits until both are in flight: passes only if the devices really overlap
+        // (otherwise the first call times out alone and the maximum stays 1).
+        let pipeline = f.pipeline(installer: FakeInstaller(log: f.log, gauge: gauge, rendezvous: 2))
         let id = f.record.id
         async let a = pipeline.install(recordID: id, device: device("dev-1", udid: "UDID-1"))
         async let b = pipeline.install(recordID: id, device: device("dev-2", udid: "UDID-2"))
         _ = try await (a, b)
         #expect(await gauge.maximum == 2)
         #expect(await f.library.records().first?.installations.count == 2)
+    }
+
+    @Test func concurrentDevicesEachEmbedTheirOwnProfile() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let provisionDir = f.tmp.appendingPathComponent("provisioning")
+        try FileManager.default.createDirectory(at: provisionDir, withIntermediateDirectories: true)
+        let gauge = ConcurrencyGauge()
+        let pipeline = f.pipeline(provisioner: FakeProvisioner(log: f.log, dir: provisionDir),
+                                  installer: FakeInstaller(log: f.log, gauge: gauge, rendezvous: 2))
+        let id = f.record.id
+        async let a = pipeline.install(recordID: id, device: device("dev-1", udid: "UDID-1"))
+        async let b = pipeline.install(recordID: id, device: device("dev-2", udid: "UDID-2"))
+        _ = try await (a, b)
+
+        #expect(await gauge.maximum == 2)
+        let resigns = await f.log.resignArgs
+        #expect(resigns.count == 2)
+        #expect(Set(resigns.map(\.profileURL)).count == 2)
+        #expect(Set(resigns.map(\.profile.deviceUDIDs)) == [["UDID-1"], ["UDID-2"]])
+        let installs = await f.log.installs
+        for r in resigns {
+            // The app installed on a device came from the job whose profile lists that device.
+            let target = try #require(installs.first { $0.app.path.hasPrefix(r.workDir.path) })
+            #expect(r.profile.deviceUDIDs == [target.deviceID == "dev-1" ? "UDID-1" : "UDID-2"])
+        }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: provisionDir.path).isEmpty)
+        #expect(workRootIsEmpty(f.workRoot))
+    }
+
+    @Test func profileFileRemovedAfterFailure() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let provisionDir = f.tmp.appendingPathComponent("provisioning")
+        try FileManager.default.createDirectory(at: provisionDir, withIntermediateDirectories: true)
+        let pipeline = f.pipeline(provisioner: FakeProvisioner(log: f.log, dir: provisionDir),
+                                  installer: FakeInstaller(log: f.log, error: XSideError.deviceLocked))
+        await #expect(throws: XSideError.deviceLocked) {
+            try await pipeline.install(recordID: f.record.id, device: device())
+        }
+        #expect(await f.log.resignArgs.count == 1)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: provisionDir.path).isEmpty)
     }
 
     @Test func serializationSurvivesFailure() async throws {

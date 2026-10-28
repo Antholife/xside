@@ -87,6 +87,29 @@ private final class Box: @unchecked Sendable {
         // Per-build copy cleaned up.
         let left = try FileManager.default.contentsOfDirectory(atPath: work.path)
         #expect(left == [r.url.lastPathComponent])
+        #expect(r.url.deletingLastPathComponent().standardizedFileURL == work.standardizedFileURL)
+        #expect(r.url.lastPathComponent.hasPrefix("com.example.app-"))
+        #expect(r.url.lastPathComponent.hasSuffix(".mobileprovision"))
+    }
+
+    @Test func eachCallWritesItsOwnProfileFile() async throws {
+        let template = try makeTemplate(), work = try tempDir("work")
+        let runner = FakeRunner()
+        runner.stub("/usr/bin/xcrun", firstArg: "xcodebuild", result: CommandResult(status: 0, stdout: Data(), stderr: ""),
+                    effect: writeProfile)
+        runner.stub("/usr/bin/security", result: CommandResult(
+            status: 0, stdout: profilePlist(bundle: "com.example.app", devices: [udid]), stderr: ""))
+        let p = Provisioner(runner: runner, templateDir: template, workDir: work)
+        let a = try await p.profile(bundleID: "com.example.app", env: env(), deviceUDIDs: [udid])
+        let b = try await p.profile(bundleID: "com.example.app", env: env(), deviceUDIDs: [udid])
+        #expect(a.url != b.url)
+        #expect(FileManager.default.fileExists(atPath: a.url.path))
+        #expect(FileManager.default.fileExists(atPath: b.url.path))
+        for r in [a, b] {
+            #expect(r.url.deletingLastPathComponent().standardizedFileURL == work.standardizedFileURL)
+            #expect(r.url.lastPathComponent.hasPrefix("com.example.app-"))
+            #expect(r.url.lastPathComponent.hasSuffix(".mobileprovision"))
+        }
     }
 
     @Test func emptyDevicesThrowsBeforeRunning() async throws {

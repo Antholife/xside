@@ -78,7 +78,11 @@ public actor SideloadPipeline {
 
         let fm = FileManager.default
         let workDir = workRoot.appendingPathComponent("job-\(UUID().uuidString)", isDirectory: true)
-        defer { try? fm.removeItem(at: workDir) }
+        var profileURL: URL?
+        defer {
+            try? fm.removeItem(at: workDir)
+            if let profileURL { try? fm.removeItem(at: profileURL) }
+        }
 
         do {
             let ipa = try resolve(record.ipaPath)
@@ -87,6 +91,7 @@ public actor SideloadPipeline {
 
             let provisioned = try await provisioner.profile(
                 bundleID: record.signedBundleID, env: env, deviceUDIDs: [udid])
+            profileURL = provisioned.url
             let app = try await resigner.resign(
                 ipa: ipa, workDir: workDir, bundleID: record.signedBundleID, options: record.options,
                 iconURL: icon, profileURL: provisioned.url, profile: provisioned.profile,
