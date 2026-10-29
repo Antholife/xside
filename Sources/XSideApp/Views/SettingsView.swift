@@ -36,7 +36,7 @@ struct SettingsView: View {
                 }
             }
             Section {
-                Button(L("settings.replayJourney")) { openWindow.presentJourney(model, at: .welcome) }
+                Button(L("settings.replayJourney")) { openWindow.presentJourney(model, at: .language) }
                 Text(L("settings.version", version)).foregroundStyle(.secondary)
                 Link(L("settings.github"), destination: AppLinks.repository)
             }

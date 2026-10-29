@@ -11,7 +11,7 @@ struct WelcomeWindowRoot: View {
     var body: some View {
         WelcomeJourneyView(model: model)
             .id(language)
-            .frame(width: 560, height: 460)
+            .frame(width: 600, height: 560)
             // Outside `.id` so a language change doesn't report a close/open.
             .background(WindowVisibilityReader { model.onboardingWindowVisibilityChanged($0) })
     }
@@ -34,9 +34,13 @@ private struct WelcomeJourneyView: View {
             ProgressDots(current: step)
                 .padding(.top, 6)
             ZStack {
-                page
-                    .id(step)
-                    .transition(.push(from: forward ? .trailing : .leading))
+                // Only the step scrolls: the dots above and the buttons below stay in view.
+                ScrollView(.vertical) {
+                    page
+                }
+                .scrollBounceBehavior(.basedOnSize)
+                .id(step)
+                .transition(.push(from: forward ? .trailing : .leading))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()
@@ -52,6 +56,7 @@ private struct WelcomeJourneyView: View {
 
     @ViewBuilder private var page: some View {
         switch step {
+        case .language: LanguageStepView()
         case .welcome: WelcomeStepView()
         case .howItWorks: HowItWorksStepView()
         case .goodToKnow: GoodToKnowStepView()
@@ -108,7 +113,7 @@ private struct WelcomeJourneyView: View {
             go(to: next)
         } else {
             completed = true
-            model.journeyStep = .welcome
+            model.journeyStep = .language
             Self.logger.notice("welcome journey completed")
             dismissWindow(id: WelcomeWindow.id)
         }

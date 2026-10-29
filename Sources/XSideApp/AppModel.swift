@@ -95,10 +95,17 @@ final class AppModel {
     // MARK: Welcome journey
 
     /// Step shown by the welcome window. Saved so a journey left halfway resumes where it stopped.
-    var journeyStep: JourneyStep = JourneyStep(
-        rawValue: UserDefaults.standard.integer(forKey: JourneyStep.savedStepKey)) ?? .welcome {
-        didSet { UserDefaults.standard.set(journeyStep.rawValue, forKey: JourneyStep.savedStepKey) }
+    var journeyStep: JourneyStep = JourneyStep.saved() {
+        didSet { UserDefaults.standard.set(journeyStep.id, forKey: JourneyStep.savedStepKey) }
     }
+
+    /// True until the journey is finished and the environment is OK: the popover then only offers setup.
+    var setupIncomplete: Bool {
+        !UserDefaults.standard.bool(forKey: JourneyStep.completedKey) || environmentFailed
+    }
+
+    /// An .ipa received during setup (drop, Open With, Services), opened once setup is done.
+    var queuedIPA: URL?
 
     /// The first blocking step the environment fails (Xcode, then the account), nil when it is OK
     /// or not probed yet.
@@ -119,7 +126,7 @@ final class AppModel {
     /// journey only reopens for a failing step (or from the start).
     func prepareJourney() {
         if UserDefaults.standard.bool(forKey: JourneyStep.completedKey) {
-            journeyStep = firstBlockingStep ?? .welcome
+            journeyStep = firstBlockingStep ?? .language
         } else {
             capJourneyAtBlockingStep()
         }

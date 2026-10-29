@@ -115,6 +115,8 @@
 
 /* Welcome journey */
 "journey.progress" = "Step %d of %d";
+"journey.language.title" = "Choose your language";
+"journey.language.subtitle" = "XSide follows your Mac by default. You can change this any time in Settings.";
 "journey.back" = "Back";
 "journey.skip" = "Skip";
 "journey.continue" = "Continue";
@@ -171,6 +173,8 @@
 "journey.ready.openWith" = "Or right-click an .ipa > Open With > XSide.";
 "journey.ready.auto" = "XSide then refreshes it by itself, as long as your Mac is on.";
 "journey.popover.title" = "Finish setting up";
+"journey.popover.text" = "Pick up where you left off and XSide will be ready in a minute.";
+"journey.popover.button" = "Continue setup";
 "journey.popover.subtitle" = "A few steps and you're ready";
 "settings.replayJourney" = "Replay the welcome journey…";
 

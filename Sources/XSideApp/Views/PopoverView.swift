@@ -23,10 +23,25 @@ private struct PopoverContent: View {
     @State private var isDropTargeted = false
 
     var body: some View {
+        if model.environmentFailed || !journeyCompleted {
+            setupBody
+        } else {
+            mainBody
+        }
+    }
+
+    /// Until setup is done: only the setup card and the minimal footer.
+    private var setupBody: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if model.environmentFailed || !journeyCompleted {
-                SetupRow(error: model.environmentError) { openWindow.presentJourney(model) }
-            }
+            SetupCard { openWindow.presentJourney(model) }
+            PopoverFooter(appIDsRemaining: nil, showsSettings: false)
+        }
+        .padding(12)
+        .frame(width: 320)
+    }
+
+    private var mainBody: some View {
+        VStack(alignment: .leading, spacing: 10) {
             ForEach(model.unpairedDevices) { device in
                 PairPrompt(device: device, isPairing: model.pairing.contains(device.id),
                            error: model.pairErrors[device.id]) { model.pair(device) }
@@ -81,40 +96,31 @@ private struct PopoverContent: View {
     }
 }
 
-/// "Finish setting up": opens the welcome journey at the step that needs attention.
-private struct SetupRow: View {
-    let error: XSideError?
+/// "Finish setting up": a welcoming card whose button reopens the journey where it left off.
+struct SetupCard: View {
     let action: () -> Void
-    @State private var isHovering = false
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: error == nil ? "sparkles" : "exclamationmark.triangle.fill")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 28, height: 28)
-                    .background(error == nil ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(Color.orange),
-                                in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(L("journey.popover.title")).font(.system(size: 12.5, weight: .semibold))
-                    Text(error?.setupTitle ?? L("journey.popover.subtitle"))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 4)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(10)
-            .background(isHovering ? Color.primary.opacity(0.09) : Theme.cardFill,
-                        in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        VStack(spacing: 10) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 48, height: 48)
+                .background(Theme.brand, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .shadow(color: Theme.violet.opacity(0.3), radius: 8, y: 3)
+            Text(L("journey.popover.title")).font(.system(size: 14, weight: .semibold))
+            Text(L("journey.popover.text"))
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(L("journey.popover.button"), action: action)
+                .buttonStyle(GradientButtonStyle())
+                .padding(.top, 4)
         }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
+        .padding(16)
+        .frame(maxWidth: .infinity)
+        .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 
@@ -161,6 +167,7 @@ private struct DropHighlight: View {
 /// "~N/10 App IDs left…" then "Settings · Quit".
 private struct PopoverFooter: View {
     let appIDsRemaining: Int?
+    var showsSettings = true
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
@@ -174,9 +181,11 @@ private struct PopoverFooter: View {
                     .padding(.horizontal, 4)
             }
             HStack {
-                Button(L("popover.settings")) {
-                    NSApp.activate()
-                    openSettings()
+                if showsSettings {
+                    Button(L("popover.settings")) {
+                        NSApp.activate()
+                        openSettings()
+                    }
                 }
                 Spacer()
                 Button(L("popover.quit")) { NSApp.terminate(nil) }

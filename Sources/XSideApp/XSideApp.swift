@@ -77,11 +77,29 @@ private struct MenuBarLabel: View {
         openWindow.presentJourney(model)
     }
 
+    /// Opens the .ipa received during setup, once the journey is finished and the environment OK.
+    private func openQueuedIPA() {
+        guard journeyCompleted, !model.environmentFailed, let url = model.queuedIPA else { return }
+        model.queuedIPA = nil
+        openWindow.presentInstall(url, model: model)
+    }
+
     var body: some View {
         Self.icon
-            .onChange(of: model.environmentFailed) { showJourneyIfNeeded() }
+            .onChange(of: model.environmentFailed) {
+                showJourneyIfNeeded()
+                openQueuedIPA()
+            }
+            .onChange(of: journeyCompleted) { openQueuedIPA() }
             .onAppear {
-                appDelegate.openIPA = { url in openWindow.presentInstall(url, model: model) }
+                appDelegate.openIPA = { url in
+                    if journeyCompleted && !model.environmentFailed {
+                        openWindow.presentInstall(url, model: model)
+                    } else {
+                        model.queuedIPA = url
+                        openWindow.presentJourney(model)
+                    }
+                }
                 showJourneyIfNeeded()
                 model.showInstallWindow = {
                     openWindow(id: InstallWindow.id)

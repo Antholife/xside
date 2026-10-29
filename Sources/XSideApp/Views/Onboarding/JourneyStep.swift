@@ -8,11 +8,28 @@ enum WelcomeWindow {
 
 /// The steps of the first-launch journey, in order: the concepts first, then the checks.
 enum JourneyStep: Int, CaseIterable, Comparable {
-    case welcome, howItWorks, goodToKnow, xcode, account, notifications, launchAtLogin, device, ready
+    case language, welcome, howItWorks, goodToKnow, xcode, account, notifications, launchAtLogin, device, ready
 
     /// `@AppStorage` key: true once "Finish" was pressed.
     static let completedKey = "onboardingCompleted"
-    static let savedStepKey = "onboardingStep"
+    /// Saved step, by stable name (the order of the cases may change).
+    static let savedStepKey = "onboardingStepID"
+    /// Legacy key: the index in the order before `language` was added.
+    private static let legacyStepKey = "onboardingStep"
+    private static let legacyOrder: [JourneyStep] = [
+        .welcome, .howItWorks, .goodToKnow, .xcode, .account, .notifications, .launchAtLogin, .device, .ready]
+
+    var id: String { String(describing: self) }
+
+    /// The saved step; falls back to the legacy index, then to the first step.
+    static func saved(in defaults: UserDefaults = .standard) -> JourneyStep {
+        if let id = defaults.string(forKey: savedStepKey), let step = allCases.first(where: { $0.id == id }) {
+            return step
+        }
+        let old = defaults.integer(forKey: legacyStepKey)
+        return legacyOrder.indices.contains(old) && defaults.object(forKey: legacyStepKey) != nil
+            ? legacyOrder[old] : .language
+    }
 
     /// The environment must be OK before going further: no "Skip", "Continue" waits for it.
     var isBlocking: Bool { self == .xcode || self == .account }
