@@ -77,6 +77,7 @@ public actor SideloadPipeline {
     }
 
     /// `progress` is awaited as each step starts (profile, signing, installing), in that order.
+    /// `.profile` fires once the provisioning lock is held, not while waiting for it.
     public func install(recordID: UUID, device: Device,
                         progress: @escaping @Sendable (InstallStep) async -> Void = { _ in }) async throws -> Installation {
         let previous = tails[device.id]?.task
@@ -119,9 +120,10 @@ public actor SideloadPipeline {
             let icon = try record.options.iconPath.flatMap { $0.isEmpty ? nil : try resolve($0) }
             try fm.createDirectory(at: workDir, withIntermediateDirectories: true)
 
-            await progress(.profile)
+            // Reported once the lock is held: a job queued behind another provisioning is still waiting.
             let provisioned = try await provisioningLock.run { [provisioner, env] in
                 try Task.checkCancellation()
+                await progress(.profile)
                 return try await provisioner.profile(bundleID: record.signedBundleID, env: env, deviceUDIDs: [udid])
             }
             profileURL = provisioned.url

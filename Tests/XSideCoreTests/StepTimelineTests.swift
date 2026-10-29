@@ -60,6 +60,14 @@ import Testing
         #expect(t.completedCount == 4)
     }
 
+    @Test func skippedStepKeepsTheTotalAndCountsAsPassed() {
+        let t = StepTimeline(steps: five, current: nil, skipped: [.wifiCheck])
+        #expect(t.status(of: .wifiCheck) == .skipped)
+        #expect(t.status(of: .installing) == .done)
+        #expect(t.total == 5)
+        #expect(t.completedCount == 5)
+    }
+
     @Test func missingCurrentStepSkipsForward() {
         let t = StepTimeline(steps: four, current: .wifiCheck)
         #expect(t.current == nil)

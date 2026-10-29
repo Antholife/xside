@@ -29,6 +29,8 @@ public enum ProgressStep: Int, CaseIterable, Sendable {
 
 public enum StepStatus: Equatable, Sendable {
     case done, active, waiting, failed, pending
+    /// Passed over on purpose (e.g. the Wi-Fi check was skipped); counts as passed in the bar.
+    case skipped
 }
 
 /// Per-step status of an ordered list, given the current step. Pure: no I/O, no localization.
@@ -39,11 +41,14 @@ public struct StepTimeline: Equatable, Sendable {
     public let isFailed: Bool
     /// The current step hasn't started yet (queued): shown as "waiting" instead of "active".
     public let isWaiting: Bool
+    public let skipped: Set<ProgressStep>
 
     /// `current` not in `steps` (a skipped optional step) resolves to the first later step, or to
     /// "everything done" when none is left.
-    public init(steps: [ProgressStep], current: ProgressStep?, failed: Bool = false, waiting: Bool = false) {
+    public init(steps: [ProgressStep], current: ProgressStep?, failed: Bool = false, waiting: Bool = false,
+                skipped: Set<ProgressStep> = []) {
         self.steps = steps
+        self.skipped = skipped
         self.current = current.flatMap { c in steps.first { $0.rawValue >= c.rawValue } }
         self.isFailed = failed && self.current != nil
         self.isWaiting = waiting && !self.isFailed && self.current != nil
@@ -60,6 +65,7 @@ public struct StepTimeline: Equatable, Sendable {
     }
 
     public func status(of step: ProgressStep) -> StepStatus {
+        if skipped.contains(step) && (current.map { step.rawValue < $0.rawValue } ?? true) { return .skipped }
         guard let current else { return .done }
         if step.rawValue < current.rawValue { return .done }
         if step != current { return .pending }

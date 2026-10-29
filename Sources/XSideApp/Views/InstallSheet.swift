@@ -63,7 +63,7 @@ struct InstallSheet: View {
                 if case .failure(let error)? = model.environment { ErrorText(error.localizedMessage) }
             case .succeeded(let deviceName, let guide):
                 InstallProgressView(timeline: StepTimeline(
-                    steps: steps, current: flow.wifiCheck != nil ? .wifiCheck : nil))
+                    steps: steps, current: flow.wifiCheck != nil ? .wifiCheck : nil, skipped: skippedSteps))
                 Label(L("install.success", deviceName), systemImage: "checkmark.circle.fill")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Color(nsColor: .systemGreen))
@@ -86,11 +86,14 @@ struct InstallSheet: View {
         .animation(.smooth(duration: 0.25), value: flow.phase)
     }
 
-    /// Steps of the run: Wi-Fi verification only when the run ends with it and it wasn't skipped.
-    private var steps: [ProgressStep] {
-        var includesWifi = flow.wifiStepPlanned
-        if case .succeeded = flow.phase { includesWifi = includesWifi && (flow.wifiCheck != nil || flow.wifiVerified) }
-        return ProgressStep.list(includingWifiCheck: includesWifi)
+    /// Steps of the run, fixed up front: Wi-Fi verification is planned or not, never added later.
+    private var steps: [ProgressStep] { ProgressStep.list(includingWifiCheck: flow.wifiStepPlanned) }
+
+    /// The Wi-Fi check ended without success (skipped, USB chosen or window closed).
+    private var skippedSteps: Set<ProgressStep> {
+        guard flow.wifiStepPlanned, case .succeeded = flow.phase,
+              flow.wifiCheck == nil, !flow.wifiVerified else { return [] }
+        return [.wifiCheck]
     }
 
     private var header: some View {

@@ -45,6 +45,7 @@
 "install.status.waiting" = "en attente";
 "install.status.failed" = "échec";
 "install.status.pending" = "à venir";
+"install.status.skipped" = "ignorée";
 "install.step.profile" = "Profil";
 "install.step.signing" = "Signature";
 "install.step.installing" = "Installation";

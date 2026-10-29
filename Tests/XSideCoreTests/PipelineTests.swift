@@ -104,6 +104,11 @@ private actor StepLog {
     func add(_ step: InstallStep) { items.append(step) }
 }
 
+private actor TimeLog {
+    private(set) var items: [String: Duration] = [:]
+    func add(_ key: String, _ t: Duration) { items[key] = t }
+}
+
 // MARK: - Helpers
 
 private func tempDir() throws -> URL {
@@ -419,6 +424,26 @@ struct PipelineTests {
         #expect(await provisioning.maximum == 1)
         #expect(await installing.maximum == 2) // installs still overlap across devices
         #expect(await f.log.provisionUDIDs.count == 2)
+    }
+
+    @Test func profileStepIsReportedOnlyOnceTheLockIsHeld() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let pipeline = f.pipeline(provisioner: FakeProvisioner(log: f.log, delay: .milliseconds(300)))
+        let id = f.record.id
+        let clock = ContinuousClock()
+        let start = clock.now
+        let times = TimeLog()
+        async let a = pipeline.install(recordID: id, device: device("dev-1", udid: "UDID-1")) { step in
+            if step == .profile { await times.add("a", clock.now - start) }
+        }
+        try await Task.sleep(for: .milliseconds(50)) // A takes the lock first
+        async let b = pipeline.install(recordID: id, device: device("dev-2", udid: "UDID-2")) { step in
+            if step == .profile { await times.add("b", clock.now - start) }
+        }
+        _ = try await (a, b)
+        let t = await times.items
+        let gap = try #require(t["b"]) - (try #require(t["a"]))
+        #expect(gap >= .milliseconds(250)) // B's .profile came after A released the lock
     }
 
     @Test func refreshWithoutLaterExpiryFails() async throws {

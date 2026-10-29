@@ -35,6 +35,8 @@ struct InstallProgressView: View {
                 Text(step.label)
                     .font(.system(size: 13, weight: status == .active || status == .waiting || status == .failed ? .semibold : .regular))
                     .foregroundStyle(titleStyle(status))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
                 if status == .waiting {
                     Text(L("install.step.waiting") + "…")
                         .font(.system(size: 12))
@@ -55,7 +57,7 @@ struct InstallProgressView: View {
     }
 
     private func titleStyle(_ status: StepStatus) -> HierarchicalShapeStyle {
-        status == .pending ? .secondary : .primary
+        status == .pending || status == .skipped ? .secondary : .primary
     }
 
     @ViewBuilder private func indicator(_ status: StepStatus) -> some View {
@@ -71,6 +73,9 @@ struct InstallProgressView: View {
         case .failed:
             Image(systemName: "xmark.octagon.fill")
                 .foregroundStyle(Color(nsColor: .systemRed))
+        case .skipped:
+            Image(systemName: "minus.circle")
+                .foregroundStyle(.secondary)
         case .pending:
             Image(systemName: "circle")
                 .foregroundStyle(.tertiary)
@@ -98,6 +103,7 @@ extension StepStatus {
         case .waiting: L("install.status.waiting")
         case .failed: L("install.status.failed")
         case .pending: L("install.status.pending")
+        case .skipped: L("install.status.skipped")
         }
     }
 }

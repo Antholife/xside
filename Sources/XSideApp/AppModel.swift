@@ -395,7 +395,7 @@ final class AppModel {
         // Preparation is over: until the pipeline reports its first step the job may be queued
         // (provisioning lock, or another job on the same device).
         if jobs[key] == .preparing { jobs[key] = .waiting }
-        progress(.waiting)
+        progress(jobs[key] ?? .waiting) // never replaces a real step another holder already reported
         try await run(pipeline, key: key, device: device, progress: progress)
         return record
     }
