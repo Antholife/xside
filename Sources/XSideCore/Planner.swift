@@ -18,8 +18,9 @@ public enum RefreshPlanner {
 
     /// Installations to refresh now. Already-expired ones are still due.
     public static func dueJobs(_ records: [AppRecord], devices: [Device], now: Date,
-                               threshold: TimeInterval = RefreshPlanner.threshold) -> [RefreshJob] {
-        let available = Set(devices.filter(\.isAvailable).map(\.id))
+                               threshold: TimeInterval = RefreshPlanner.threshold,
+                               prefs: DevicePrefs = DevicePrefs()) -> [RefreshJob] {
+        let available = Set(devices.filter(prefs.canRefresh).map(\.id))
         var due: [(expiresAt: Date, job: RefreshJob)] = []
         for record in records {
             for i in record.installations {
@@ -70,6 +71,11 @@ public struct NotificationGate: Codable, Equatable, Sendable {
     public mutating func reset(recordID: UUID, deviceID: String) {
         notified[Self.key(recordID, deviceID)] = nil
     }
+
+    /// Forgets every entry of a device (it was removed from XSide).
+    public mutating func forgetDevice(_ deviceID: String) {
+        notified = notified.filter { !$0.key.hasSuffix("|\(deviceID)") }
+    }
 }
 
 /// Remembers, per (app, device), the `expiresAt` of the last success notified, so one renewal is
@@ -92,6 +98,11 @@ public struct SuccessNotificationGate: Equatable, Sendable {
     /// Forgets a notification the system refused, so the next success can retry.
     public mutating func forget(recordID: UUID, deviceID: String) {
         notified["\(recordID.uuidString)|\(deviceID)"] = nil
+    }
+
+    /// Forgets every entry of a device (it was removed from XSide).
+    public mutating func forgetDevice(_ deviceID: String) {
+        notified = notified.filter { !$0.key.hasSuffix("|\(deviceID)") }
     }
 }
 
@@ -133,6 +144,9 @@ public struct UnreachableTracker: Sendable {
     /// Installations to mark unreachable now. Call on every evaluation.
     public mutating func evaluate(_ records: [AppRecord], devices: [Device], now: Date,
                                   threshold: TimeInterval = RefreshPlanner.threshold) -> [RefreshJob] {
+        // A device present and available (even Wi-Fi only with Wi-Fi refresh off, see
+        // `DevicePrefs.isWifiBlocked`) isn't "unreachable": the row asks for a USB cable instead,
+        // without a notification.
         let available = Set(devices.filter(\.isAvailable).map(\.id))
         var seen: [RefreshJob: Date] = [:]
         var result: [(expiresAt: Date, job: RefreshJob)] = []

@@ -41,6 +41,7 @@ final class BackgroundEngine {
         notifier.start()
 
         model.onNeedsEvaluation = { [weak self] in self?.evaluate(reason: "change") }
+        model.onDeviceRemoved = { [weak self] id in self?.forgetDevice(id) }
         model.onJobFinished = { [weak self] job, error, automatic, wasRefresh in
             self?.jobFinished(job, error: error, automatic: automatic, wasRefresh: wasRefresh)
         }
@@ -99,7 +100,8 @@ final class BackgroundEngine {
     // MARK: - Evaluation
 
     private func dueJobs() -> [RefreshJob] {
-        RefreshPlanner.dueJobs(model.records, devices: model.devices, now: Date(), threshold: Self.threshold)
+        RefreshPlanner.dueJobs(model.records, devices: model.devices, now: Date(), threshold: Self.threshold,
+                                prefs: model.devicePrefs)
     }
 
     private func evaluate(reason: String) {
@@ -139,6 +141,13 @@ final class BackgroundEngine {
     }
 
     // MARK: - Outcomes
+
+    /// The device was removed from XSide: its causes and renewals can be notified afresh if it comes back.
+    private func forgetDevice(_ deviceID: String) {
+        gate.forgetDevice(deviceID)
+        persistGate()
+        successGate.forgetDevice(deviceID)
+    }
 
     private func jobFinished(_ job: RefreshJob, error: (any Error)?, automatic: Bool, wasRefresh: Bool) {
         guard let error else {

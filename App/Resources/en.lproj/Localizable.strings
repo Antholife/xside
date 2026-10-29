@@ -175,3 +175,10 @@
 "install.newDevice.detected" = "✅ %@ detected";
 "journey.how.pairing.title" = "First time over USB";
 "journey.how.pairing.text" = "Plug your iPhone or iPad in with USB, unlock it and tap “Trust”. After that, Wi-Fi is enough (same network). A device that was never plugged in isn't visible over Wi-Fi.";
+"popover.plugInUSB" = "Plug it in over USB to refresh";
+"popover.device.menu" = "Device options";
+"popover.device.wifiRefresh" = "Refresh over Wi-Fi";
+"popover.device.remove" = "Remove this device";
+"popover.device.removeBusy" = "An install is running on this device";
+"popover.device.removeTitle" = "Remove this device?";
+"popover.device.removeMessage" = "XSide will stop refreshing this device's apps. They stay installed until they expire.";

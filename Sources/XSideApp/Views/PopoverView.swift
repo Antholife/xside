@@ -58,7 +58,9 @@ private struct PopoverContent: View {
         } else {
             ForEach(groups) { group in
                 VStack(alignment: .leading, spacing: 2) {
-                    DeviceCard(group: group)
+                    DeviceCard(group: group,
+                               onWifiRefresh: { model.setWifiRefresh($0, for: group.id) },
+                               onRemove: { Task { await model.removeDevice(group.id) } })
                     if group.apps.isEmpty {
                         Text(L("popover.empty"))
                             .font(.system(size: 11))
@@ -67,7 +69,8 @@ private struct PopoverContent: View {
                             .padding(.vertical, 6)
                     } else {
                         ForEach(group.apps) { entry in
-                            AppRow(entry: entry, step: model.jobs[entry.id], canRefresh: model.canRefresh(entry)) {
+                            AppRow(entry: entry, step: model.jobs[entry.id], canRefresh: model.canRefresh(entry),
+                                   needsUSB: group.needsUSB) {
                                 model.refreshNow(entry.job)
                             }
                         }

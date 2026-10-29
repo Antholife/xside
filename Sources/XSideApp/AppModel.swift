@@ -24,6 +24,10 @@ struct DeviceGroup: Identifiable {
     let name: String
     let kind: DeviceKind
     let apps: [AppEntry]
+    var wifiRefresh = true
+    /// Reachable only over Wi-Fi while Wi-Fi refresh is off: due apps need a USB cable.
+    var needsUSB = false
+    var canRemove = true
 }
 
 @MainActor @Observable
@@ -54,11 +58,16 @@ final class AppModel {
     private var pipeline: SideloadPipeline?
     private var pipelineEnv: SigningEnvironment?
     private var listingDevices = false
+    private let prefsStore: DevicePrefsStore
+    /// Per-device settings (Wi-Fi refresh), persisted in `devices.json`.
+    private(set) var devicePrefs = DevicePrefs()
 
     // MARK: Background engine hooks
 
     /// Something the due evaluation depends on changed (device list, signing environment).
     var onNeedsEvaluation: (() -> Void)?
+    /// A device was removed from XSide: forget what is kept per (app, device).
+    var onDeviceRemoved: ((_ deviceID: String) -> Void)?
     /// Every pipeline run that ends (install, manual or automatic refresh), with its error if it failed.
     var onJobFinished: ((_ job: RefreshJob, _ error: (any Error)?, _ automatic: Bool,
                                _ wasRefresh: Bool) -> Void)?
@@ -68,6 +77,8 @@ final class AppModel {
     init() {
         paths = Paths()
         library = AppLibrary(root: paths.root)
+        prefsStore = DevicePrefsStore(libraryRoot: paths.root)
+        devicePrefs = prefsStore.load()
         Task { await start() }
     }
 
@@ -263,7 +274,9 @@ final class AppModel {
         let entries = records.flatMap { r in r.installations.map { AppEntry(record: r, installation: $0) } }
         var groups = pairedDevices.map { d in
             DeviceGroup(id: d.id, device: d, name: d.name, kind: d.kind,
-                        apps: entries.filter { $0.installation.deviceID == d.id })
+                        apps: entries.filter { $0.installation.deviceID == d.id },
+                        wifiRefresh: devicePrefs.wifiRefresh(for: d.id),
+                        needsUSB: devicePrefs.isWifiBlocked(d), canRemove: canRemoveDevice(d.id))
         }
         let known = Set(groups.map(\.id))
         var orphanIDs: [String] = []
@@ -273,7 +286,8 @@ final class AppModel {
         let names = cachedNames
         for id in orphanIDs {
             groups.append(DeviceGroup(id: id, device: nil, name: names[id] ?? L("popover.unknownDevice"),
-                                      kind: .iPhone, apps: entries.filter { $0.installation.deviceID == id }))
+                                      kind: .iPhone, apps: entries.filter { $0.installation.deviceID == id },
+                                      wifiRefresh: devicePrefs.wifiRefresh(for: id), canRemove: canRemoveDevice(id)))
         }
         return groups
     }
@@ -286,6 +300,51 @@ final class AppModel {
         var names = cachedNames
         for d in list where d.isPaired { names[d.id] = d.name }
         UserDefaults.standard.set(names, forKey: Self.namesKey)
+    }
+
+    // MARK: Per-device settings
+
+    func setWifiRefresh(_ on: Bool, for deviceID: String) {
+        var updated = devicePrefs
+        updated.setWifiRefresh(on, for: deviceID)
+        savePrefs(updated)
+        onNeedsEvaluation?()
+    }
+
+    private func savePrefs(_ prefs: DevicePrefs) {
+        devicePrefs = prefs
+        do { try prefsStore.save(prefs) } catch {
+            Self.logger.error("saving devices.json failed: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    /// False while an install or refresh targets the device.
+    func canRemoveDevice(_ deviceID: String) -> Bool {
+        !jobs.keys.contains { $0.deviceID == deviceID }
+            && !(install?.isRunning == true && install?.deviceID == deviceID)
+    }
+
+    /// Stops managing a device: forgets its installations (apps without any installation left are
+    /// deleted), settings, remembered name and notification state. Nothing is uninstalled from
+    /// the device. If it is still paired it simply shows again, without apps.
+    func removeDevice(_ deviceID: String) async {
+        guard canRemoveDevice(deviceID) else { return }
+        do {
+            try await library.removeDevice(deviceID)
+        } catch {
+            Self.logger.error("removing device failed: \(String(describing: error), privacy: .public)")
+            return
+        }
+        var prefs = devicePrefs
+        prefs.forget(deviceID)
+        savePrefs(prefs)
+        var names = cachedNames
+        names[deviceID] = nil
+        UserDefaults.standard.set(names, forKey: Self.namesKey)
+        UserDefaults.standard.removeObject(forKey: Self.guideKey(deviceID))
+        onDeviceRemoved?(deviceID)
+        await reloadRecords()
+        await updateAppIDCounter()
     }
 
     // MARK: - Library

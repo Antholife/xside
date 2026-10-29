@@ -152,6 +152,30 @@ public actor AppLibrary {
         try? FileManager.default.removeItem(at: root.appendingPathComponent("apps/\(id.uuidString)"))
     }
 
+    /// Forgets a device: drops its installations from every record and deletes the records left
+    /// with none (with their files). One atomic save. Returns the number of installations removed.
+    /// Nothing is uninstalled from the device itself.
+    @discardableResult
+    public func removeDevice(_ deviceID: String) throws -> Int {
+        let previous = items
+        var removed = 0
+        var emptied: [UUID] = []
+        for index in items.indices {
+            let before = items[index].installations.count
+            items[index].installations.removeAll { $0.deviceID == deviceID }
+            let dropped = before - items[index].installations.count
+            removed += dropped
+            if dropped > 0, items[index].installations.isEmpty { emptied.append(items[index].id) }
+        }
+        guard removed > 0 else { return 0 }
+        items.removeAll { emptied.contains($0.id) }
+        do { try save() } catch { items = previous; throw error }
+        for id in emptied {
+            try? FileManager.default.removeItem(at: root.appendingPathComponent("apps/\(id.uuidString)"))
+        }
+        return removed
+    }
+
     private func indexOf(_ id: UUID) throws -> Int {
         guard let i = items.firstIndex(where: { $0.id == id }) else { throw XSideError.recordNotFound }
         return i

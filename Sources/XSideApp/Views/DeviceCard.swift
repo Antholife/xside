@@ -8,8 +8,18 @@ struct DeviceCard: View {
     let detail: String
     let symbolName: String
     let isReachable: Bool
+    let wifiRefresh: Bool
+    let canRemove: Bool
+    let onWifiRefresh: @MainActor @Sendable (Bool) -> Void
+    let onRemove: () -> Void
 
-    init(group: DeviceGroup) {
+    @State private var confirmingRemoval = false
+
+    init(group: DeviceGroup, onWifiRefresh: @escaping @MainActor @Sendable (Bool) -> Void, onRemove: @escaping () -> Void) {
+        wifiRefresh = group.wifiRefresh
+        canRemove = group.canRemove
+        self.onWifiRefresh = onWifiRefresh
+        self.onRemove = onRemove
         name = group.name
         symbolName = group.device?.symbolName ?? "iphone"
         isReachable = group.device?.isAvailable ?? false
@@ -34,11 +44,33 @@ struct DeviceCard: View {
             Image(systemName: symbolName)
                 .font(.system(size: 17, weight: .regular))
                 .foregroundStyle(.secondary)
+            Menu {
+                Toggle(L("popover.device.wifiRefresh"), isOn: Binding(get: { wifiRefresh }, set: onWifiRefresh))
+                Divider()
+                Button(L("popover.device.remove"), role: .destructive) { confirmingRemoval = true }
+                    .disabled(!canRemove)
+                if !canRemove { Text(L("popover.device.removeBusy")) }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .accessibilityLabel(L("popover.device.menu"))
+        }
+        .alert(L("popover.device.removeTitle"), isPresented: $confirmingRemoval) {
+            Button(L("popover.device.remove"), role: .destructive, action: onRemove)
+            Button(L("install.cancel"), role: .cancel) {}
+        } message: {
+            Text(L("popover.device.removeMessage"))
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .accessibilityElement(children: .combine)
     }
 }
 

@@ -7,6 +7,8 @@ struct AppRow: View {
     /// Step of a running refresh or reinstall, if any.
     let step: InstallStep?
     let canRefresh: Bool
+    /// Wi-Fi refresh is off and the device is only on Wi-Fi.
+    let needsUSB: Bool
     let onRefresh: () -> Void
 
     @State private var isHovering = false
@@ -38,7 +40,13 @@ struct AppRow: View {
                     .font(.system(size: 11))
                     .foregroundStyle(validity.isExpired && step == nil ? Color(nsColor: .systemRed) : .secondary)
                     .lineLimit(1)
-                if step == nil, let key = entry.installation.lastErrorKey {
+                if step == nil, needsUSB,
+                   entry.installation.expiresAt.timeIntervalSince(now) <= BackgroundEngine.threshold {
+                    Text(L("popover.plugInUSB"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color(nsColor: .systemOrange))
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if step == nil, let key = entry.installation.lastErrorKey {
                     Text(localizedRowError(key: key))
                         .font(.system(size: 11))
                         .foregroundStyle(Color(nsColor: .systemRed))

@@ -166,4 +166,27 @@ struct LibraryTests {
         try await lib.upsert(Installation(deviceID: "dev2", installedAt: now, expiresAt: now), for: rec.id)
         #expect(await lib.records().first?.appIDFirstUse == ["com.example.demo.TEAM123456": old])
     }
+
+    @Test func removeDeviceDropsInstallationsAndEmptyRecords() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let root = tmp.appendingPathComponent("lib")
+        let lib = AppLibrary(root: root)
+        let both = try await lib.importIPA(try makeIPA(in: tmp), info: info, teamID: "TEAM123456")
+        try await lib.upsert(inst("a"), for: both.id)
+        try await lib.upsert(inst("b"), for: both.id)
+        let other = AppInfo(bundleID: "com.example.other", name: "Other", version: "1", executable: "O")
+        let onlyA = try await lib.importIPA(try makeIPA(in: tmp), info: other, teamID: "TEAM123456")
+        try await lib.upsert(inst("a"), for: onlyA.id)
+
+        let changed = try await lib.removeDevice("a")
+        #expect(changed == 2)
+        let left = await lib.records()
+        #expect(left.count == 1)
+        #expect(left[0].id == both.id)
+        #expect(left[0].installations == [inst("b")])
+        #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("apps/\(onlyA.id.uuidString)").path))
+        #expect(FileManager.default.fileExists(atPath: root.appendingPathComponent("apps/\(both.id.uuidString)").path))
+        #expect(await AppLibrary(root: root).records() == left) // persisted
+        #expect(try await lib.removeDevice("a") == 0)
+    }
 }
