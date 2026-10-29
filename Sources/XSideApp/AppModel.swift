@@ -554,7 +554,15 @@ final class AppModel {
             defer { if let existingKey { release(existingKey) } }
             do {
                 try await importAndInstall(flow.ipa, on: device, options: options) { flow.phase = .running($0) }
-                flow.phase = .succeeded(deviceName: device.name, guide: guideIfFirstInstall(on: device))
+                let guide = guideIfFirstInstall(on: device)
+                if guide != nil, devicePrefs.wifiRefresh(for: device.id) {
+                    if device.transport == .usb {
+                        flow.wifiCheck = WifiCheck(startedAt: Date())
+                    } else {
+                        flow.wifiVerified = true // already installed over Wi-Fi
+                    }
+                }
+                flow.phase = .succeeded(deviceName: device.name, guide: guide)
             } catch {
                 flow.phase = .editing(error: localizedMessage(error))
             }
@@ -566,7 +574,7 @@ final class AppModel {
     /// see (an error, the first-install guide, or the next queued file).
     private func flowFinished(_ flow: InstallFlow) {
         guard install === flow, !isInstallWindowOpen else { return }
-        if case .succeeded(_, nil) = flow.phase {
+        if case .succeeded(_, nil) = flow.phase, flow.wifiCheck == nil {
             if !advanceQueue() { install = nil; return }
         }
         showInstallWindow?()
@@ -581,6 +589,46 @@ final class AppModel {
                                  needsDeveloperMode: device.developerModeEnabled == false)
     }
 
+    // MARK: Wi-Fi check
+
+    /// Polls the device list once and feeds the check; called every ~3 s by the visible step.
+    func pollWifiCheck(_ flow: InstallFlow) async {
+        await listDevices()
+        evaluateWifiCheck(flow)
+    }
+
+    func evaluateWifiCheck(_ flow: InstallFlow) {
+        guard install === flow, var check = flow.wifiCheck else { return }
+        let device = devices.first { $0.id == flow.deviceID }
+        check.observe(device, at: Date())
+        if check.status == .ok {
+            flow.wifiCheck = nil
+            flow.wifiVerified = true
+        } else {
+            flow.wifiCheck = check
+        }
+    }
+
+    /// "Retry": a new 60 s window.
+    func retryWifiCheck(_ flow: InstallFlow) {
+        guard install === flow, flow.wifiCheck != nil else { return }
+        flow.wifiCheck = WifiCheck(startedAt: Date())
+        evaluateWifiCheck(flow)
+    }
+
+    /// "Skip" (or the window closing): the step ends, settings untouched.
+    func skipWifiCheck(_ flow: InstallFlow) {
+        guard install === flow else { return }
+        flow.wifiCheck = nil
+    }
+
+    /// "I'll refresh over USB": Wi-Fi refresh off for this device, the step ends.
+    func chooseUSBRefresh(_ flow: InstallFlow) {
+        guard install === flow else { return }
+        if let id = flow.deviceID { setWifiRefresh(false, for: id) }
+        flow.wifiCheck = nil
+    }
+
     func guideDisplayed(_ guide: FirstInstallGuide) {
         UserDefaults.standard.set(true, forKey: Self.guideKey(guide.deviceID))
         if case .succeeded(_, let shown?)? = install?.phase, shown == guide { install?.guideSeen = true }
@@ -590,7 +638,7 @@ final class AppModel {
 
     /// "Done" / "Cancel": moves to the next queued file. Returns false when the window can close.
     func dismissFlow() -> Bool {
-        guard install?.isRunning != true else { return true }
+        guard install?.isRunning != true, install?.wifiCheck == nil else { return true }
         if advanceQueue() { return true }
         install = nil
         return false
@@ -602,6 +650,7 @@ final class AppModel {
     /// reopens the window when it ends if needed; queued files are never dropped.
     func installWindowDisappeared() {
         isInstallWindowOpen = false
+        install?.wifiCheck = nil // closing the window skips the Wi-Fi step
         guard install?.isBusy != true else { return }
         if advanceQueue() {
             showInstallWindow?()

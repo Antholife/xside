@@ -29,6 +29,11 @@ final class InstallFlow {
     /// True once the first-install guide of this flow has been displayed.
     var guideSeen = false
 
+    /// The Wi-Fi reachability step, while the user hasn't finished or skipped it.
+    var wifiCheck: WifiCheck?
+    /// The device answered over Wi-Fi (or the install itself went over Wi-Fi).
+    var wifiVerified = false
+
     var isRunning: Bool {
         if case .running = phase { return true }
         return false
@@ -36,7 +41,7 @@ final class InstallFlow {
 
     /// Running, or succeeded with a guide the user hasn't seen yet: must not be replaced.
     var isBusy: Bool {
-        if isRunning { return true }
+        if isRunning || wifiCheck != nil { return true }
         if case .succeeded(_, _?) = phase { return !guideSeen }
         return false
     }

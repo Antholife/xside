@@ -184,3 +184,17 @@
 "popover.device.removeMessage" = "XSide will stop refreshing this device's apps. They stay installed until they expire.";
 "notification.needsUSB.title" = "%@: plug in your device";
 "notification.needsUSB.body" = "Plug %1$@ in over USB to refresh %2$@, otherwise it will expire on %3$@.";
+
+/* Wi-Fi check */
+"wifi.title" = "Wi-Fi check";
+"wifi.unplug" = "Unplug the cable to test Wi-Fi.";
+"wifi.nudge" = "Still plugged in? Unplug the cable, or skip this step.";
+"wifi.skip" = "Skip";
+"wifi.checking" = "Looking for the device on Wi-Fi…";
+"wifi.ok" = "The device answers over Wi-Fi: automatic refreshes will work without a cable.";
+"wifi.failed.title" = "The device doesn't answer over Wi-Fi";
+"wifi.failed.sameNetwork" = "Make sure the iPhone or iPad is on the same Wi-Fi network as your Mac.";
+"wifi.failed.isolation" = "The network must not isolate devices: office, school and hotel networks often do.";
+"wifi.failed.unlocked" = "Keep the device unlocked, with Wi-Fi turned on.";
+"wifi.retry" = "Retry";
+"wifi.useUSB" = "I'll refresh over USB";

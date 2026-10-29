@@ -184,3 +184,17 @@
 "popover.device.removeMessage" = "XSide arrêtera de rafraîchir les apps de cet appareil. Elles resteront installées jusqu'à leur expiration.";
 "notification.needsUSB.title" = "%@ : branche ton appareil";
 "notification.needsUSB.body" = "Branche %1$@ en USB pour rafraîchir %2$@, sinon elle expirera le %3$@.";
+
+/* Wi-Fi check */
+"wifi.title" = "Vérification Wi-Fi";
+"wifi.unplug" = "Débranche le câble pour tester le Wi-Fi.";
+"wifi.nudge" = "Toujours branché ? Débranche le câble, ou passe cette étape.";
+"wifi.skip" = "Passer";
+"wifi.checking" = "Recherche de l'appareil sur le Wi-Fi…";
+"wifi.ok" = "L'appareil répond en Wi-Fi : les rafraîchissements automatiques fonctionneront sans câble.";
+"wifi.failed.title" = "L'appareil ne répond pas en Wi-Fi";
+"wifi.failed.sameNetwork" = "Vérifie que l'iPhone ou l'iPad est sur le même réseau Wi-Fi que ton Mac.";
+"wifi.failed.isolation" = "Ce réseau ne doit pas isoler les appareils : les réseaux de bureau, d'école et d'hôtel le font souvent.";
+"wifi.failed.unlocked" = "Garde l'appareil déverrouillé, avec le Wi-Fi activé.";
+"wifi.retry" = "Réessayer";
+"wifi.useUSB" = "Je rafraîchirai en USB";

@@ -62,7 +62,14 @@ struct InstallSheet: View {
                 Label(L("install.success", deviceName), systemImage: "checkmark.circle.fill")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Color(nsColor: .systemGreen))
-                if let guide {
+                if let check = flow.wifiCheck {
+                    WifiCheckView(model: model, flow: flow, check: check)
+                } else if flow.wifiVerified {
+                    Label(L("wifi.ok"), systemImage: "wifi")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color(nsColor: .systemGreen))
+                }
+                if let guide, flow.wifiCheck == nil {
                     FirstInstallGuideView(guide: guide)
                         .onAppear { model.guideDisplayed(guide) }
                 }
@@ -104,6 +111,7 @@ struct InstallSheet: View {
                 Button(L("install.done"), action: close)
                     .keyboardShortcut(.defaultAction)
                     .controlSize(.large)
+                    .disabled(flow.wifiCheck != nil)
             case .inspecting, .rejected:
                 Button(L("install.cancel"), action: close)
                     .keyboardShortcut(.cancelAction)
