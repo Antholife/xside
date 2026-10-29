@@ -40,7 +40,7 @@ final class AppModel {
     private(set) var records: [AppRecord] = []
     private(set) var appIDsRemaining: Int?
     /// Current step of each running install/refresh, per app row.
-    private(set) var jobs: [JobKey: InstallStep] = [:]
+    private(set) var jobs: [JobKey: JobStage] = [:]
     private(set) var pairing: Set<String> = []
     private(set) var pairErrors: [String: String] = [:]
 
@@ -376,7 +376,7 @@ final class AppModel {
     /// `options == nil` keeps the options remembered for this app.
     @discardableResult
     func importAndInstall(_ ipa: URL, on device: Device, options: InstallOptions? = nil,
-                          progress: @escaping @MainActor @Sendable (InstallStep) -> Void = { _ in }) async throws -> AppRecord {
+                          progress: @escaping @MainActor @Sendable (JobStage) -> Void = { _ in }) async throws -> AppRecord {
         guard let env = try environment?.get(), let pipeline else { throw XSideError.xcodeMissing }
         guard !removingDevices.contains(device.id) else { throw XSideError.deviceUnavailable }
         let info: AppInfo
@@ -392,6 +392,10 @@ final class AppModel {
         defer { release(key) }
         if let options { try await library.setOptions(options, for: record.id) }
         await reloadRecords()
+        // Preparation is over: until the pipeline reports its first step the job may be queued
+        // (provisioning lock, or another job on the same device).
+        if jobs[key] == .preparing { jobs[key] = .waiting }
+        progress(.waiting)
         try await run(pipeline, key: key, device: device, progress: progress)
         return record
     }
@@ -438,9 +442,9 @@ final class AppModel {
     /// Row job ownership is counted: the row's state clears only when the last holder releases it.
     private var claims: [JobKey: Int] = [:]
 
-    private func claim(_ key: JobKey) {
+    private func claim(_ key: JobKey, stage: JobStage = .waiting) {
         claims[key, default: 0] += 1
-        if jobs[key] == nil { jobs[key] = .profile }
+        if jobs[key] == nil { jobs[key] = stage }
     }
 
     private func release(_ key: JobKey) {
@@ -451,7 +455,7 @@ final class AppModel {
 
     /// The caller must hold a claim on `key`.
     private func run(_ pipeline: SideloadPipeline, key: JobKey, device: Device, automatic: Bool = false,
-                     progress: @escaping @MainActor @Sendable (InstallStep) -> Void = { _ in }) async throws {
+                     progress: @escaping @MainActor @Sendable (JobStage) -> Void = { _ in }) async throws {
         let job = RefreshJob(recordID: key.recordID, deviceID: key.deviceID)
         // A refresh renews an existing installation; a first install is shown by the install window.
         let wasRefresh = records.first { $0.id == key.recordID }?
@@ -459,8 +463,8 @@ final class AppModel {
         do {
             _ = try await pipeline.install(recordID: key.recordID, device: device) { step in
                 await MainActor.run {
-                    self.jobs[key] = step
-                    progress(step)
+                    self.jobs[key] = .step(step)
+                    progress(.step(step))
                 }
             }
         } catch {
@@ -546,14 +550,23 @@ final class AppModel {
               !removingDevices.contains(flow.deviceID ?? ""),
               let device = devices.first(where: { $0.id == flow.deviceID && $0.isAvailable }) else { return }
         let options = flow.draft.options
-        flow.phase = .running(.profile)
+        flow.phase = .running(.preparing)
+        flow.lastStage = .preparing
+        flow.failure = nil
+        flow.wifiVerified = false
+        // The Wi-Fi check follows a first install over USB (see `guideIfFirstInstall`, below).
+        flow.wifiStepPlanned = guideIfFirstInstall(on: device) != nil
+            && devicePrefs.wifiRefresh(for: device.id) && device.transport == .usb
         // Re-install of a known app: claim its row now, before any await.
         let existingKey = flow.existing.map { JobKey(recordID: $0.id, deviceID: device.id) }
-        if let existingKey { claim(existingKey) }
+        if let existingKey { claim(existingKey, stage: .preparing) }
         Task {
             defer { if let existingKey { release(existingKey) } }
             do {
-                try await importAndInstall(flow.ipa, on: device, options: options) { flow.phase = .running($0) }
+                try await importAndInstall(flow.ipa, on: device, options: options) {
+                    flow.lastStage = $0
+                    flow.phase = .running($0)
+                }
                 let guide = guideIfFirstInstall(on: device)
                 if guide != nil, devicePrefs.wifiRefresh(for: device.id) {
                     if device.transport == .usb {
@@ -564,7 +577,9 @@ final class AppModel {
                 }
                 flow.phase = .succeeded(deviceName: device.name, guide: guide)
             } catch {
-                flow.phase = .editing(error: localizedMessage(error))
+                let message = localizedMessage(error)
+                flow.failure = StepFailure(stage: flow.lastStage, message: message)
+                flow.phase = .editing(error: message)
             }
             flowFinished(flow)
         }

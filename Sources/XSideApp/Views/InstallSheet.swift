@@ -52,13 +52,18 @@ struct InstallSheet: View {
             case .editing, .running:
                 DevicePicker(model: model, flow: flow)
                 InstallOptionsSection(model: model, flow: flow)
-                if case .running(let step) = flow.phase {
-                    StepProgress(current: step)
+                if case .running(let stage) = flow.phase {
+                    InstallProgressView(timeline: StepTimeline(steps: steps, stage: stage))
+                } else if let failure = flow.failure, case .editing = flow.phase {
+                    InstallProgressView(timeline: StepTimeline(steps: steps, stage: failure.stage, failed: true),
+                                        failureMessage: failure.message)
+                } else if case .editing(let error?) = flow.phase {
+                    ErrorText(error)
                 }
-                if case .editing(let error?) = flow.phase { ErrorText(error) }
                 if case .failure(let error)? = model.environment { ErrorText(error.localizedMessage) }
             case .succeeded(let deviceName, let guide):
-                StepProgress(current: nil)
+                InstallProgressView(timeline: StepTimeline(
+                    steps: steps, current: flow.wifiCheck != nil ? .wifiCheck : nil))
                 Label(L("install.success", deviceName), systemImage: "checkmark.circle.fill")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Color(nsColor: .systemGreen))
@@ -79,6 +84,13 @@ struct InstallSheet: View {
         }
         .padding(20)
         .animation(.smooth(duration: 0.25), value: flow.phase)
+    }
+
+    /// Steps of the run: Wi-Fi verification only when the run ends with it and it wasn't skipped.
+    private var steps: [ProgressStep] {
+        var includesWifi = flow.wifiStepPlanned
+        if case .succeeded = flow.phase { includesWifi = includesWifi && (flow.wifiCheck != nil || flow.wifiVerified) }
+        return ProgressStep.list(includingWifiCheck: includesWifi)
     }
 
     private var header: some View {
@@ -273,54 +285,6 @@ private struct DeviceChoice: View {
             .opacity(isEnabled ? 1 : 0.5)
         }
         .buttonStyle(.plain)
-    }
-}
-
-/// Profile → Signing → Installing. `current == nil` means everything is done.
-private struct StepProgress: View {
-    let current: InstallStep?
-
-    var body: some View {
-        HStack(spacing: 8) {
-            ForEach(InstallStep.allCases, id: \.self) { step in
-                HStack(spacing: 5) {
-                    indicator(for: step)
-                        .frame(width: 14, height: 14)
-                    Text(step.label)
-                        .font(.system(size: 12, weight: step == current ? .semibold : .regular))
-                        .foregroundStyle(state(of: step) == .pending ? .secondary : .primary)
-                }
-                if step != InstallStep.allCases.last {
-                    Image(systemName: "chevron.compact.right")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(10)
-        .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-    }
-
-    private enum StepState { case done, active, pending }
-
-    private func state(of step: InstallStep) -> StepState {
-        guard let current else { return .done }
-        if step.rawValue < current.rawValue { return .done }
-        return step == current ? .active : .pending
-    }
-
-    @ViewBuilder private func indicator(for step: InstallStep) -> some View {
-        switch state(of: step) {
-        case .done:
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(Color(nsColor: .systemGreen))
-        case .active:
-            ProgressView().controlSize(.mini)
-        case .pending:
-            Image(systemName: "circle")
-                .foregroundStyle(.tertiary)
-        }
     }
 }
 

@@ -12,7 +12,7 @@ final class InstallFlow {
         case rejected(String)
         /// Ready for input; `error` is the localized message of the last failed attempt.
         case editing(error: String?)
-        case running(InstallStep)
+        case running(JobStage)
         case succeeded(deviceName: String, guide: FirstInstallGuide?)
     }
 
@@ -22,6 +22,12 @@ final class InstallFlow {
     var existing: AppRecord?
     var phase: Phase = .inspecting
     var deviceID: String?
+    /// Last stage reported by the running install, to place a failure.
+    var lastStage: JobStage = .preparing
+    /// Where the last attempt failed, with the localized message.
+    var failure: StepFailure?
+    /// The run ends with the Wi-Fi check (first install over USB with Wi-Fi refresh on).
+    var wifiStepPlanned = false
     var draft = OptionsDraft()
 
     init(ipa: URL) { self.ipa = ipa }
@@ -88,4 +94,10 @@ struct OptionsDraft: Equatable {
                               iconPath: iconPath, fileSharing: fileSharing, iPadFullScreen: iPadFullScreen,
                               proMotion: proMotion, minimumOSVersion: clean(minOS))
     }
+}
+
+/// A failed install attempt: the stage it stopped at and the localized message.
+struct StepFailure: Equatable {
+    let stage: JobStage
+    let message: String
 }

@@ -5,7 +5,7 @@ import XSideCore
 struct AppRow: View {
     let entry: AppEntry
     /// Step of a running refresh or reinstall, if any.
-    let step: InstallStep?
+    let step: JobStage?
     let canRefresh: Bool
     /// Wi-Fi refresh is off and the device is only on Wi-Fi.
     let needsUSB: Bool
@@ -69,21 +69,11 @@ struct AppRow: View {
     }
 
     private func subtitle(validity: Validity, now: Date) -> String {
-        if let step { return step.label + "…" }
+        if let step { return step.rowText }
         if validity.isExpired { return L("popover.expired") }
         let next = entry.installation.expiresAt.addingTimeInterval(-RefreshPlanner.threshold)
         guard next > now else { return L("popover.refreshPending") }
         let when = next.formatted(.dateTime.weekday(.wide).hour().minute().locale(appLocale))
         return L("popover.nextRefresh", when)
-    }
-}
-
-extension InstallStep {
-    var label: String {
-        switch self {
-        case .profile: L("install.step.profile")
-        case .signing: L("install.step.signing")
-        case .installing: L("install.step.installing")
-        }
     }
 }

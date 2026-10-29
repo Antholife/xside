@@ -37,6 +37,14 @@
 "install.field.minOS" = "iOS minimum";
 "install.warning.newBundleID" = "Un identifiant différent consomme un nouvel App ID.";
 "install.warning.minOS" = "L'app peut planter si elle utilise des fonctions récentes.";
+"install.step.preparing" = "Préparation";
+"install.step.waiting" = "En attente";
+"install.progress.accessibility" = "Étape %1$d sur %2$d : %3$@, %4$@";
+"install.status.done" = "terminée";
+"install.status.active" = "en cours";
+"install.status.waiting" = "en attente";
+"install.status.failed" = "échec";
+"install.status.pending" = "à venir";
 "install.step.profile" = "Profil";
 "install.step.signing" = "Signature";
 "install.step.installing" = "Installation";
