@@ -152,9 +152,9 @@
 "journey.login.title" = "Always ready";
 "journey.login.subtitle" = "XSide refreshes your apps in the background. Open it at login so it never misses one: it stays quietly in the menu bar.";
 "journey.device.title" = "Your iPhone";
-"journey.device.subtitle" = "Plug it in with USB or put it on the same Wi-Fi as this Mac.";
+"journey.device.subtitle" = "The first time, plug it in with USB. After that, Wi-Fi is enough.";
 "journey.device.searching" = "Looking for your devices…";
-"journey.device.searching.detail" = "Unlock it and tap “Trust” if it asks.";
+"journey.device.searching.detail" = "Plug it in with USB, unlock it and tap “Trust”. A device that was never plugged in isn't visible over Wi-Fi.";
 "journey.device.developerMode" = "Turn on Developer Mode on %@: Settings > Privacy & Security > Developer Mode.";
 "journey.ready.title" = "You're all set!";
 "journey.ready.subtitle" = "To install your first app:";
@@ -164,3 +164,14 @@
 "journey.popover.title" = "Finish setting up";
 "journey.popover.subtitle" = "A few steps and you're ready";
 "settings.replayJourney" = "Replay the welcome journey…";
+
+/* First USB pairing */
+"install.newDevice" = "＋ New device";
+"install.newDevice.intro" = "A device that was never plugged into this Mac isn't visible over Wi-Fi. The first time needs USB.";
+"install.newDevice.step1" = "Plug your iPhone or iPad into this Mac with USB, then unlock it.";
+"install.newDevice.step2" = "Tap “Trust” on the device, then enter its passcode.";
+"install.newDevice.step3" = "Turn on Developer Mode: Settings > Privacy & Security > Developer Mode.";
+"install.newDevice.waiting" = "Waiting for the device… After that, Wi-Fi is enough.";
+"install.newDevice.detected" = "✅ %@ detected";
+"journey.how.pairing.title" = "First time over USB";
+"journey.how.pairing.text" = "Plug your iPhone or iPad in with USB, unlock it and tap “Trust”. After that, Wi-Fi is enough (same network). A device that was never plugged in isn't visible over Wi-Fi.";

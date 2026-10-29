@@ -2,8 +2,7 @@ import AppKit
 import SwiftUI
 
 enum AppLinks {
-    // TODO: set the public repository URL once it is decided (placeholder, not a real project page).
-    static let repository = URL(string: "https://github.com/")!
+    static let repository = URL(string: "https://github.com/Antholife/xside")!
 }
 
 /// The Settings window.

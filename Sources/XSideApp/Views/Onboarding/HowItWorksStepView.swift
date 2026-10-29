@@ -9,6 +9,8 @@ struct HowItWorksStepView: View {
                             text: L("journey.how.sideload.text"))
                 ConceptCard(symbol: "clock.arrow.2.circlepath", title: L("journey.how.refresh.title"),
                             text: L("journey.how.refresh.text"))
+                ConceptCard(symbol: "cable.connector", title: L("journey.how.pairing.title"),
+                            text: L("journey.how.pairing.text"))
             }
         }
     }

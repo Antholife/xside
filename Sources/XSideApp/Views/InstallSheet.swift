@@ -142,41 +142,92 @@ private struct QueueLine: View {
     }
 }
 
-/// The paired devices; only reachable ones can be chosen.
+/// The paired devices; only reachable ones can be chosen. "＋ New device" (or no reachable device
+/// at all) shows the first-pairing helper, which watches the list and selects the new device.
 private struct DevicePicker: View {
     let model: AppModel
     let flow: InstallFlow
+    @State private var helperRequested = false
+    @State private var knownIDs: Set<String>?
+    @State private var detectedName: String?
+
+    private var devices: [Device] { model.pairedDevices }
+    private var showHelper: Bool { helperRequested || !devices.contains(where: \.isAvailable) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             SectionTitle(L("install.device"))
-            let devices = model.pairedDevices
-            if devices.isEmpty {
-                Text(L("popover.noDevice"))
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(10)
-                    .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            } else {
-                VStack(spacing: 0) {
-                    ForEach(devices) { device in
-                        DeviceChoice(device: device, isSelected: flow.deviceID == device.id) {
-                            flow.deviceID = device.id
-                        }
-                        .disabled(!device.isAvailable || flow.isRunning)
-                        if device.id != devices.last?.id { Divider().padding(.leading, 38) }
+            VStack(spacing: 0) {
+                ForEach(devices) { device in
+                    DeviceChoice(device: device, isSelected: flow.deviceID == device.id) {
+                        flow.deviceID = device.id
                     }
+                    .disabled(!device.isAvailable || flow.isRunning)
+                    Divider().padding(.leading, 38)
                 }
-                .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                if !devices.contains(where: \.isAvailable) {
-                    Text(L("install.noAvailableDevice"))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                NewDeviceRow(isOpen: showHelper) { helperRequested.toggle() }
+                    .disabled(flow.isRunning)
+            }
+            .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            if let detectedName {
+                Label(L("install.newDevice.detected", detectedName), systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color(nsColor: .systemGreen))
+            }
+            if showHelper && !flow.isRunning { NewDeviceHelp() }
+        }
+        .onAppear { if knownIDs == nil { knownIDs = availableIDs } }
+        .onChange(of: model.devices) { _, _ in checkForNewDevice() }
+        // Visibility-gated: refreshes only while the helper is on screen (the task ends with the view).
+        .task(id: showHelper && !flow.isRunning) {
+            guard showHelper, !flow.isRunning else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(3))
+                guard !Task.isCancelled else { return }
+                await model.listDevices()
             }
         }
+    }
+
+    private var availableIDs: Set<String> { Set(devices.filter(\.isAvailable).map(\.id)) }
+
+    private func checkForNewDevice() {
+        let known = knownIDs ?? []
+        defer { knownIDs = availableIDs }
+        guard showHelper, !flow.isRunning,
+              let device = devices.first(where: { $0.isAvailable && !known.contains($0.id) }) else { return }
+        flow.deviceID = device.id
+        helperRequested = false
+        detectedName = device.name
+        Task {
+            try? await Task.sleep(for: .seconds(4))
+            if detectedName == device.name { detectedName = nil }
+        }
+    }
+}
+
+private struct NewDeviceRow: View {
+    let isOpen: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 16))
+                    .frame(width: 18)
+                    .foregroundStyle(Theme.violet)
+                Text(L("install.newDevice")).font(.system(size: 13, weight: .medium))
+                Spacer()
+                Image(systemName: isOpen ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 

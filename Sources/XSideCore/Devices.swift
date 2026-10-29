@@ -65,11 +65,9 @@ public struct DeviceService: Sendable {
             let transport = DevicectlValues.transport(conn?.transportType)
             let paired = conn?.pairingState == DevicectlValues.pairedState
             let available = paired && transport != .none && conn?.tunnelState != DevicectlValues.unavailableTunnel
-            let kind: DeviceKind = switch hw?.deviceType {
-            case "iPhone": .iPhone
-            case "iPad": .iPad
-            default: .other
-            }
+            // Right after a first pairing `deviceType` can be missing; `productType` ("iPhone18,2") still tells.
+            let kindHint = hw?.deviceType ?? hw?.productType ?? ""
+            let kind: DeviceKind = kindHint.hasPrefix("iPhone") ? .iPhone : kindHint.hasPrefix("iPad") ? .iPad : .other
             return Device(
                 id: raw.identifier,
                 udid: hw?.udid,

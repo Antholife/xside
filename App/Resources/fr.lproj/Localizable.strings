@@ -152,9 +152,9 @@
 "journey.login.title" = "Toujours prêt";
 "journey.login.subtitle" = "XSide rafraîchit tes apps en arrière-plan. Lance-le à l'ouverture de session pour qu'il n'en rate aucune : il reste discret dans la barre des menus.";
 "journey.device.title" = "Ton iPhone";
-"journey.device.subtitle" = "Branche-le en USB ou mets-le sur le même Wi-Fi que ce Mac.";
+"journey.device.subtitle" = "La première fois, branche-le en USB. Ensuite, le Wi-Fi suffit.";
 "journey.device.searching" = "Recherche de tes appareils…";
-"journey.device.searching.detail" = "Déverrouille-le et touche « Se fier » s'il te le demande.";
+"journey.device.searching.detail" = "Branche-le en USB, déverrouille-le et touche « Se fier ». Un appareil jamais branché n'est pas visible en Wi-Fi.";
 "journey.device.developerMode" = "Active le mode développeur sur %@ : Réglages > Confidentialité et sécurité > Mode développeur.";
 "journey.ready.title" = "C'est prêt !";
 "journey.ready.subtitle" = "Pour installer ta première app :";
@@ -164,3 +164,14 @@
 "journey.popover.title" = "Termine la configuration";
 "journey.popover.subtitle" = "Quelques étapes et c'est parti";
 "settings.replayJourney" = "Revoir le parcours de bienvenue…";
+
+/* First USB pairing */
+"install.newDevice" = "＋ Nouvel appareil";
+"install.newDevice.intro" = "Un appareil jamais branché à ce Mac n'est pas visible en Wi-Fi. La première fois, il faut l'USB.";
+"install.newDevice.step1" = "Branche ton iPhone ou ton iPad à ce Mac en USB, puis déverrouille-le.";
+"install.newDevice.step2" = "Touche « Se fier » sur l'appareil, puis entre ton code.";
+"install.newDevice.step3" = "Active le mode développeur : Réglages > Confidentialité et sécurité > Mode développeur.";
+"install.newDevice.waiting" = "En attente de l'appareil… Ensuite, le Wi-Fi suffira.";
+"install.newDevice.detected" = "✅ %@ détecté";
+"journey.how.pairing.title" = "La première fois, en USB";
+"journey.how.pairing.text" = "Branche ton iPhone ou ton iPad en USB, déverrouille-le et touche « Se fier ». Ensuite, le Wi-Fi suffit (même réseau). Un appareil jamais branché n'est pas visible en Wi-Fi.";
