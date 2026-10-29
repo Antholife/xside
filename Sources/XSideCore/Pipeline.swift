@@ -142,13 +142,13 @@ public actor SideloadPipeline {
             let installation = Installation(deviceID: device.id, installedAt: date,
                                             expiresAt: provisioned.profile.expirationDate,
                                             lastAttempt: date, lastErrorKey: nil)
-            try await library.upsert(installation, for: recordID)
+            try await library.upsert(installation, for: recordID, requireExisting: previous != nil)
             return installation
         } catch {
             if var failed = previous {
                 failed.lastAttempt = now()
                 failed.lastErrorKey = (error as? XSideError)?.key ?? "unknown"
-                try? await library.upsert(failed, for: recordID)
+                try? await library.upsert(failed, for: recordID, requireExisting: true)
             }
             throw error
         }

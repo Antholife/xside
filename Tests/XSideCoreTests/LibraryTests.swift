@@ -189,4 +189,18 @@ struct LibraryTests {
         #expect(await AppLibrary(root: root).records() == left) // persisted
         #expect(try await lib.removeDevice("a") == 0)
     }
+
+    @Test func requireExistingUpsertDoesNotRevive() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let lib = AppLibrary(root: tmp.appendingPathComponent("lib"))
+        let rec = try await lib.importIPA(try makeIPA(in: tmp), info: info, teamID: "TEAM123456")
+        try await lib.upsert(inst("a"), for: rec.id)
+        try await lib.upsert(inst("a", 3), for: rec.id, requireExisting: true)
+        try await lib.upsert(inst("b"), for: rec.id) // another device's installation keeps the record alive
+        try await lib.removeDevice("a")
+        await #expect(throws: XSideError.recordNotFound) {
+            try await lib.upsert(inst("a"), for: rec.id, requireExisting: true)
+        }
+        #expect(try #require(await lib.records().first).installations == [inst("b")])
+    }
 }

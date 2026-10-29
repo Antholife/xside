@@ -38,6 +38,28 @@ public enum RefreshPlanner {
         return due.map(\.job)
     }
 
+    /// Due installations that only the Wi-Fi preference keeps from refreshing: the device is
+    /// reachable over Wi-Fi alone and its Wi-Fi refresh is off. The user must plug it in, so
+    /// these are warned about (once, by the caller's gate) instead of expiring silently.
+    public static func blockedByWifiPref(_ records: [AppRecord], devices: [Device], now: Date,
+                                         threshold: TimeInterval = RefreshPlanner.threshold,
+                                         prefs: DevicePrefs) -> [RefreshJob] {
+        let blocked = Set(devices.filter(prefs.isWifiBlocked).map(\.id))
+        var due: [(expiresAt: Date, job: RefreshJob)] = []
+        for record in records {
+            for i in record.installations
+            where i.expiresAt.timeIntervalSince(now) <= threshold && blocked.contains(i.deviceID) {
+                due.append((i.expiresAt, RefreshJob(recordID: record.id, deviceID: i.deviceID)))
+            }
+        }
+        due.sort {
+            if $0.expiresAt != $1.expiresAt { return $0.expiresAt < $1.expiresAt }
+            if $0.job.recordID != $1.job.recordID { return $0.job.recordID.uuidString < $1.job.recordID.uuidString }
+            return $0.job.deviceID < $1.job.deviceID
+        }
+        return due.map(\.job)
+    }
+
     /// Threshold to use given the hidden debug setting (`debugThresholdDays`, in days):
     /// a positive value replaces the default, anything else keeps it.
     public static func threshold(debugDays: Double) -> TimeInterval {

@@ -76,6 +76,25 @@ final class Notifier: NSObject {
         }
     }
 
+    /// A due app that can't be refreshed because the device is on Wi-Fi only and Wi-Fi refresh is off.
+    func needsUSB(appName: String, deviceName: String, date: String, id: String) async -> Bool {
+        let content = UNMutableNotificationContent()
+        content.title = L("notification.needsUSB.title", appName)
+        content.body = L("notification.needsUSB.body", deviceName, appName, date)
+        content.sound = .default
+        guard let center else {
+            Self.logger.notice("would notify: \(content.title, privacy: .public)")
+            return true
+        }
+        do {
+            try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+            return true
+        } catch {
+            Self.logger.error("notification failed: \(String(describing: error), privacy: .public)")
+            return false
+        }
+    }
+
     /// UserDefaults key of the "notify successful refreshes" setting (default on).
     nonisolated static let notifyRefreshSuccessKey = "notifyRefreshSuccess"
 

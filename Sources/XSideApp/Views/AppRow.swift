@@ -41,12 +41,13 @@ struct AppRow: View {
                     .foregroundStyle(validity.isExpired && step == nil ? Color(nsColor: .systemRed) : .secondary)
                     .lineLimit(1)
                 if step == nil, needsUSB,
-                   entry.installation.expiresAt.timeIntervalSince(now) <= BackgroundEngine.threshold {
+                   entry.installation.expiresAt.timeIntervalSince(now) <= RefreshPlanner.threshold {
                     Text(L("popover.plugInUSB"))
                         .font(.system(size: 11))
                         .foregroundStyle(Color(nsColor: .systemOrange))
                         .fixedSize(horizontal: false, vertical: true)
-                } else if step == nil, let key = entry.installation.lastErrorKey {
+                }
+                if step == nil, let key = entry.installation.lastErrorKey {
                     Text(localizedRowError(key: key))
                         .font(.system(size: 11))
                         .foregroundStyle(Color(nsColor: .systemRed))

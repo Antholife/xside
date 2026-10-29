@@ -61,6 +61,8 @@ final class AppModel {
     private let prefsStore: DevicePrefsStore
     /// Per-device settings (Wi-Fi refresh), persisted in `devices.json`.
     private(set) var devicePrefs = DevicePrefs()
+    /// Devices being removed right now: no job may start on them.
+    private(set) var removingDevices: Set<String> = []
 
     // MARK: Background engine hooks
 
@@ -320,7 +322,7 @@ final class AppModel {
 
     /// False while an install or refresh targets the device.
     func canRemoveDevice(_ deviceID: String) -> Bool {
-        !jobs.keys.contains { $0.deviceID == deviceID }
+        !removingDevices.contains(deviceID) && !jobs.keys.contains { $0.deviceID == deviceID }
             && !(install?.isRunning == true && install?.deviceID == deviceID)
     }
 
@@ -329,6 +331,9 @@ final class AppModel {
     /// the device. If it is still paired it simply shows again, without apps.
     func removeDevice(_ deviceID: String) async {
         guard canRemoveDevice(deviceID) else { return }
+        // Set before the first await: no refresh or install can start on it meanwhile.
+        removingDevices.insert(deviceID)
+        defer { removingDevices.remove(deviceID) }
         do {
             try await library.removeDevice(deviceID)
         } catch {
@@ -373,6 +378,7 @@ final class AppModel {
     func importAndInstall(_ ipa: URL, on device: Device, options: InstallOptions? = nil,
                           progress: @escaping @MainActor @Sendable (InstallStep) -> Void = { _ in }) async throws -> AppRecord {
         guard let env = try environment?.get(), let pipeline else { throw XSideError.xcodeMissing }
+        guard !removingDevices.contains(device.id) else { throw XSideError.deviceUnavailable }
         let info: AppInfo
         if let flow = install, flow.ipa == ipa, let known = flow.info {
             info = known
@@ -394,7 +400,7 @@ final class AppModel {
     @discardableResult
     func refreshNow(_ job: RefreshJob, automatic: Bool = false) -> Bool {
         let key = JobKey(recordID: job.recordID, deviceID: job.deviceID)
-        guard let pipeline, jobs[key] == nil,
+        guard let pipeline, jobs[key] == nil, !removingDevices.contains(job.deviceID),
               let device = devices.first(where: { $0.id == job.deviceID }) else { return false }
         claim(key) // before the task starts, so the row can't be claimed twice
         Task {
@@ -425,7 +431,7 @@ final class AppModel {
     }
 
     func canRefresh(_ entry: AppEntry) -> Bool {
-        pipeline != nil && jobs[entry.id] == nil
+        pipeline != nil && jobs[entry.id] == nil && !removingDevices.contains(entry.installation.deviceID)
             && devices.contains { $0.id == entry.installation.deviceID && $0.isAvailable }
     }
 
@@ -537,6 +543,7 @@ final class AppModel {
 
     func startInstall() {
         guard let flow = install, !flow.isRunning,
+              !removingDevices.contains(flow.deviceID ?? ""),
               let device = devices.first(where: { $0.id == flow.deviceID && $0.isAvailable }) else { return }
         let options = flow.draft.options
         flow.phase = .running(.profile)

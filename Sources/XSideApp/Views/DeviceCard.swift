@@ -62,6 +62,7 @@ struct DeviceCard: View {
             .fixedSize()
             .accessibilityLabel(L("popover.device.menu"))
         }
+        .accessibilityElement(children: .contain)
         .alert(L("popover.device.removeTitle"), isPresented: $confirmingRemoval) {
             Button(L("popover.device.remove"), role: .destructive, action: onRemove)
             Button(L("install.cancel"), role: .cancel) {}

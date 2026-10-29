@@ -125,8 +125,13 @@ public actor AppLibrary {
         do { try save() } catch { items = previous; throw error }
     }
 
-    public func upsert(_ installation: Installation, for id: UUID) throws {
+    /// `requireExisting`: a refresh result. It throws `recordNotFound` when the installation was
+    /// removed meanwhile (device removed from XSide), instead of bringing it back.
+    public func upsert(_ installation: Installation, for id: UUID, requireExisting: Bool = false) throws {
         let index = try indexOf(id)
+        if requireExisting, !items[index].installations.contains(where: { $0.deviceID == installation.deviceID }) {
+            throw XSideError.recordNotFound
+        }
         let previous = items
         if installation.lastErrorKey == nil, items[index].appIDFirstUse?[items[index].signedBundleID] == nil {
             // Nothing tracked yet (new or pre-tracking record): the earliest known installation.

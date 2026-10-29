@@ -101,11 +101,13 @@ final class BackgroundEngine {
 
     private func dueJobs() -> [RefreshJob] {
         RefreshPlanner.dueJobs(model.records, devices: model.devices, now: Date(), threshold: Self.threshold,
-                                prefs: model.devicePrefs)
+                               prefs: model.devicePrefs)
+            .filter { !model.removingDevices.contains($0.deviceID) }
     }
 
     private func evaluate(reason: String) {
         reportUnreachable()
+        reportNeedsUSB()
         let due = RefreshPlanner.startable(dueJobs(), busy: model.busyJobs)
         guard !due.isEmpty else { return }
         Self.logger.notice("\(reason, privacy: .public): \(due.count, privacy: .public) job(s) due")
@@ -140,6 +142,37 @@ final class BackgroundEngine {
         }
     }
 
+    /// Due installations whose device is on Wi-Fi only with Wi-Fi refresh off: nothing can be
+    /// attempted, so ask once (gate key `needsUSB`) for a USB cable before the app expires.
+    private func reportNeedsUSB() {
+        let jobs = RefreshPlanner.blockedByWifiPref(
+            model.records, devices: model.devices, now: Date(), threshold: Self.threshold, prefs: model.devicePrefs)
+            .filter { !model.removingDevices.contains($0.deviceID) && !model.busyJobs.contains($0) }
+        for job in jobs { notifyNeedsUSB(job) }
+    }
+
+    private func notifyNeedsUSB(_ job: RefreshJob) {
+        guard let record = model.records.first(where: { $0.id == job.recordID }),
+              let installation = record.installations.first(where: { $0.deviceID == job.deviceID }) else { return }
+        let deviceName = model.devices.first { $0.id == job.deviceID }?.name
+            ?? model.cachedNames[job.deviceID] ?? L("notification.refreshed.genericDevice")
+        let date = installation.expiresAt.formatted(
+            Date.FormatStyle(date: .abbreviated, time: .omitted).locale(appLocale))
+        Task {
+            guard await notifier.canDeliver() else { return }
+            guard gate.shouldNotify(recordID: job.recordID, deviceID: job.deviceID, errorKey: Self.needsUSBKey) else { return }
+            persistGate()
+            let posted = await notifier.needsUSB(appName: record.displayName, deviceName: deviceName, date: date,
+                                                 id: "refresh.\(job.recordID.uuidString).\(job.deviceID)")
+            if !posted {
+                gate.reset(recordID: job.recordID, deviceID: job.deviceID)
+                persistGate()
+            }
+        }
+    }
+
+    static let needsUSBKey = "needsUSB"
+
     // MARK: - Outcomes
 
     /// The device was removed from XSide: its causes and renewals can be notified afresh if it comes back.
@@ -161,6 +194,9 @@ final class BackgroundEngine {
         }
         // Manual actions show their error in the UI; only background failures notify.
         guard automatic else { return }
+        // The device was removed from XSide meanwhile: nothing to report.
+        guard model.records.first(where: { $0.id == job.recordID })?
+            .installations.contains(where: { $0.deviceID == job.deviceID }) == true else { return }
         let installation = model.records.first { $0.id == job.recordID }?
             .installations.first { $0.deviceID == job.deviceID }
         let key = installation?.lastErrorKey ?? (error as? XSideError)?.key ?? "unknown"

@@ -86,6 +86,27 @@ struct DevicePrefsTests {
         #expect(store.load() == DevicePrefs())
     }
 
+    @Test func blockedByWifiPrefListsOnlyDueWifiOnlyBlocked() {
+        var prefs = DevicePrefs()
+        prefs.setWifiRefresh(false, for: "D1")
+        prefs.setWifiRefresh(false, for: "D3")
+        let due = record("D1"), later = record("D3"), other = record("D2")
+        let far = AppRecord(id: later.id, displayName: "App", originalBundleID: "com.x", signedBundleID: "com.x.t",
+                            ipaPath: "a.ipa", options: InstallOptions(),
+                            installations: [Installation(deviceID: "D3", installedAt: now,
+                                                         expiresAt: now.addingTimeInterval(5 * 86_400))], teamID: "T")
+        let devices = [device("D1", .network), device("D2", .network), device("D3", .network)]
+        #expect(RefreshPlanner.blockedByWifiPref([due, far, other], devices: devices, now: now, prefs: prefs)
+                == [RefreshJob(recordID: due.id, deviceID: "D1")])
+        // On USB, absent or unavailable: not this case.
+        #expect(RefreshPlanner.blockedByWifiPref([due], devices: [device("D1", .usb)], now: now, prefs: prefs).isEmpty)
+        #expect(RefreshPlanner.blockedByWifiPref([due], devices: [], now: now, prefs: prefs).isEmpty)
+        #expect(RefreshPlanner.blockedByWifiPref([due], devices: [device("D1", .network, available: false)],
+                                                 now: now, prefs: prefs).isEmpty)
+        // Debug threshold override.
+        #expect(RefreshPlanner.blockedByWifiPref([far], devices: devices, now: now, threshold: 6 * 86_400, prefs: prefs).count == 1)
+    }
+
     @Test func gatesForgetADevice() {
         let a = UUID(), b = UUID()
         var gate = NotificationGate()
