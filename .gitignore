@@ -1,3 +1,5 @@
 .build/
 /build/
 /spikes/
+.superpowers/
+docs/superpowers/
