@@ -7,9 +7,16 @@ struct WifiCheckView: View {
     let model: AppModel
     let flow: InstallFlow
     let check: WifiCheck
+    /// Shown above the step when several devices were installed (one check each, in turn).
+    var deviceName: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if let deviceName {
+                Text(deviceName)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
             switch check.status {
             case .waitingForUnplug:
                 Label(L("wifi.title"), systemImage: "cable.connector.slash")

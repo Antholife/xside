@@ -24,6 +24,8 @@ private struct WelcomeJourneyView: View {
     @AppStorage(JourneyStep.completedKey) private var completed = false
     @Environment(\.dismissWindow) private var dismissWindow
     @State private var forward = true
+    /// The step's content goes on below the visible area.
+    @State private var moreBelow = false
     @State private var notifications = NotificationPermission()
     @State private var login = LaunchAtLogin()
 
@@ -39,6 +41,16 @@ private struct WelcomeJourneyView: View {
                     page
                 }
                 .scrollBounceBehavior(.basedOnSize)
+                .scrollIndicators(.visible)
+                // More below: a fade and a chevron say so (overlay scrollbars stay hidden at rest).
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    geometry.contentOffset.y + geometry.containerSize.height < geometry.contentSize.height - 4
+                } action: { _, more in
+                    withAnimation(.easeOut(duration: 0.2)) { moreBelow = more }
+                }
+                .overlay(alignment: .bottom) {
+                    if moreBelow { MoreBelowHint() }
+                }
                 .id(step)
                 .transition(.push(from: forward ? .trailing : .leading))
             }
@@ -62,6 +74,7 @@ private struct WelcomeJourneyView: View {
         case .goodToKnow: GoodToKnowStepView()
         case .xcode: XcodeStepView(model: model)
         case .account: AccountStepView(model: model)
+        case .certificate: CertificateStepView(model: model)
         case .notifications: NotificationsStepView(permission: notifications)
         case .launchAtLogin: LaunchAtLoginStepView(login: login)
         case .device: DeviceStepView(model: model)
@@ -71,16 +84,9 @@ private struct WelcomeJourneyView: View {
 
     // MARK: Footer
 
-    /// "Skip" on the explainers (to the checks), and on optional steps whose goal isn't reached yet.
-    private var showsSkip: Bool {
-        switch step {
-        case .howItWorks, .goodToKnow: true
-        case .notifications: notifications.state == .notDetermined || notifications.state == .denied
-        case .launchAtLogin: !login.isEnabled
-        case .device: !model.pairedDevices.contains(where: \.isAvailable)
-        default: false
-        }
-    }
+    /// "Skip" only on the explainers, straight to the checks. Optional steps need none: "Continue"
+    /// already moves on, and leaving one off (launch at login, notifications) is a choice.
+    private var showsSkip: Bool { step.isExplainer }
 
     private var footer: some View {
         HStack(spacing: 8) {
@@ -136,5 +142,23 @@ private struct Backdrop: View {
             RadialGradient(colors: [Theme.violet.opacity(0.16), Theme.pink.opacity(0.05), .clear],
                            center: .top, startRadius: 10, endRadius: 380)
         }
+    }
+}
+
+/// Bottom fade with a bouncing chevron: the step scrolls.
+private struct MoreBelowHint: View {
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            LinearGradient(colors: [Color(nsColor: .windowBackgroundColor).opacity(0), Color(nsColor: .windowBackgroundColor)],
+                           startPoint: .top, endPoint: .bottom)
+                .frame(height: 44)
+            Image(systemName: "chevron.compact.down")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .symbolEffect(.bounce, options: .repeat(.periodic(delay: 1.5)))
+                .padding(.bottom, 4)
+        }
+        .allowsHitTesting(false)
+        .transition(.opacity)
     }
 }

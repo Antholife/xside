@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 // MARK: - Step abstractions (the concrete structs conform; tests inject fakes)
 
@@ -51,6 +52,7 @@ actor AsyncLock {
 /// provisioning (Xcode cache purge + xcodebuild) runs at a time across all jobs, since they share
 /// the team's account and Xcode's profile cache.
 public actor SideloadPipeline {
+    private static let logger = Logger(subsystem: "io.github.xside.XSide", category: "pipeline")
     private let library: AppLibrary
     private let provisioner: any Provisioning
     private let resigner: any Resigning
@@ -58,6 +60,8 @@ public actor SideloadPipeline {
     private let env: SigningEnvironment
     private let workRoot: URL
     private let now: @Sendable () -> Date
+    /// The Mac runs a macOS beta: failures with a release Xcode are explained as such.
+    private let macIsBeta: Bool
     private let provisioningLock = AsyncLock()
 
     /// Last queued job per device id. Read and replaced without any `await` in between, so the
@@ -66,7 +70,7 @@ public actor SideloadPipeline {
 
     public init(library: AppLibrary, provisioner: any Provisioning, resigner: any Resigning,
                 installer: any Installing, env: SigningEnvironment, workRoot: URL,
-                now: @escaping @Sendable () -> Date) {
+                now: @escaping @Sendable () -> Date, macIsBeta: Bool = false) {
         self.library = library
         self.provisioner = provisioner
         self.resigner = resigner
@@ -74,6 +78,7 @@ public actor SideloadPipeline {
         self.env = env
         self.workRoot = workRoot
         self.now = now
+        self.macIsBeta = macIsBeta
     }
 
     /// `progress` is awaited as each step starts (profile, signing, installing), in that order.
@@ -147,12 +152,23 @@ public actor SideloadPipeline {
             try await library.upsert(installation, for: recordID, requireExisting: previous != nil)
             return installation
         } catch {
+            let releaseXcode = XcodeCompat.xcodeVersion(developerDir: env.developerDir).map { !$0.isBeta } ?? false
+            let explained = XcodeCompat.explain(error, deviceOS: device.osVersion,
+                                                sdkVersion: XcodeCompat.iOSSDKVersion(developerDir: env.developerDir),
+                                                macBetaWithReleaseXcode: macIsBeta && releaseXcode)
+            if let replaced = explained as? XSideError, replaced != error as? XSideError {
+                // The likely cause is shown; keep the actual failure for diagnosis.
+                Self.logger.error("""
+                    \(replaced.key, privacy: .public) (device iOS \(device.osVersion ?? "?", privacy: .public)) \
+                    explains: \(String(describing: error), privacy: .public)
+                    """)
+            }
             if var failed = previous {
                 failed.lastAttempt = now()
-                failed.lastErrorKey = (error as? XSideError)?.key ?? "unknown"
+                failed.lastErrorKey = (explained as? XSideError)?.key ?? "unknown"
                 try? await library.upsert(failed, for: recordID, requireExisting: true)
             }
-            throw error
+            throw explained
         }
     }
 

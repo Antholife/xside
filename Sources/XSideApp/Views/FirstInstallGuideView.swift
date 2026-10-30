@@ -4,10 +4,12 @@ import SwiftUI
 /// and enable Developer Mode when the device reports it off.
 struct FirstInstallGuideView: View {
     let guide: FirstInstallGuide
+    /// Named in the title when several devices were installed (one guide each).
+    var deviceName: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label(L("guide.title"), systemImage: "hand.raised.fill")
+            Label(deviceName.map { L("guide.titleDevice", $0) } ?? L("guide.title"), systemImage: "hand.raised.fill")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Theme.violet)
             step(1, symbol: "lock.open", L("guide.unlock"))

@@ -35,7 +35,24 @@ final class AppModel {
     private static let logger = Logger(subsystem: "io.github.xside.XSide", category: "model")
 
     private(set) var environment: Result<SigningEnvironment, XSideError>?
+    /// Signed out of Xcode AND no signing certificate either: both are reported (two banners).
+    private(set) var certificateMissingToo = false
+
+    /// Every current environment problem, in fixing order (one popover banner each).
+    var environmentProblems: [XSideError] {
+        guard let environmentError else { return [] }
+        return certificateMissingToo ? [environmentError, .noSigningIdentity] : [environmentError]
+    }
     private(set) var isProbing = false
+    /// The probe running now, awaited by callers that need its result.
+    @ObservationIgnored private var probeTask: Task<Void, Never>?
+    /// Who is signed in to Xcode: the Apple ID e-mail from the certificate, else the Personal
+    /// Team's name (Xcode's preferences hold no e-mail). Read once per probe, not per render.
+    private(set) var accountName: String?
+    /// "Create the certificate" is running (an Xcode build, up to a minute).
+    private(set) var isCreatingCertificate = false
+    /// Why the last "Create the certificate" left no certificate, nil otherwise.
+    private(set) var certificateCreationError: String?
     private(set) var devices: [Device] = []
     private(set) var records: [AppRecord] = []
     private(set) var appIDsRemaining: Int?
@@ -50,7 +67,12 @@ final class AppModel {
         get { install?.ipa }
         set { if let newValue { request(newValue) } }
     }
-    private(set) var install: InstallFlow?
+    private(set) var install: InstallFlow? {
+        // A flow ended or was replaced: its extracted icon is no longer shown anywhere.
+        didSet { if oldValue !== install { oldValue?.removeAppIcon() } }
+    }
+    /// Where the icons pulled out of `.ipa` files go (one per flow, deleted with it).
+    private static let iconsDir = FileManager.default.temporaryDirectory.appendingPathComponent("xside-icons")
 
     let library: AppLibrary
     private let runner = ProcessRunner()
@@ -81,6 +103,8 @@ final class AppModel {
         library = AppLibrary(root: paths.root)
         prefsStore = DevicePrefsStore(libraryRoot: paths.root)
         devicePrefs = prefsStore.load()
+        // Icons pulled out of earlier sessions' `.ipa` files.
+        try? FileManager.default.removeItem(at: Self.iconsDir)
         Task { await start() }
     }
 
@@ -107,12 +131,15 @@ final class AppModel {
     /// An .ipa received during setup (drop, Open With, Services), opened once setup is done.
     var queuedIPA: URL?
 
-    /// The first blocking step the environment fails (Xcode, then the account), nil when it is OK
-    /// or not probed yet.
+    /// The first blocking step the environment fails (Xcode, the account, then the certificate),
+    /// nil when it is OK or not probed yet.
     var firstBlockingStep: JourneyStep? {
         guard case .failure(let error)? = environment else { return nil }
-        if case .xcodeMissing = error { return .xcode }
-        return .account
+        switch error {
+        case .xcodeMissing: return .xcode
+        case .noSigningIdentity: return .certificate
+        default: return .account
+        }
     }
 
     /// True once `step` lets the user continue (always for non-blocking steps).
@@ -173,26 +200,88 @@ final class AppModel {
     /// Developer dir of the last good probe, to locate Xcode when it isn't found by bundle id.
     var lastKnownDeveloperDir: URL? { pipelineEnv?.developerDir }
 
+    /// Lets Xcode create the signing certificate (see `Provisioner.createCertificate`), then
+    /// re-probes: the steps turn ✅ by themselves when it worked.
+    func createCertificate() {
+        guard !isCreatingCertificate else { return }
+        guard let teamID = EnvironmentProbe.personalTeamID(EnvironmentProbe.savedXcodeTeams()) else {
+            certificateCreationError = L("error.xcodeNotSignedIn")
+            return
+        }
+        isCreatingCertificate = true
+        certificateCreationError = nil
+        Task {
+            let provisioner = Provisioner(runner: runner, templateDir: paths.template,
+                                          workDir: paths.provisioningWork, cacheDirs: [])
+            let failure: (any Error)?
+            do { failure = try await provisioner.createCertificate(teamID: teamID) } catch { failure = error }
+            // A probe started before the certificate existed would report it missing: wait for it.
+            await probeEnvironmentAfresh()
+            isCreatingCertificate = false
+            if case .failure(.noSigningIdentity)? = environment {
+                certificateCreationError = failure.map(localizedMessage) ?? L("error.generic")
+            }
+        }
+    }
+
     func recheckEnvironment() {
         Task { await probeEnvironment() }
     }
 
+    /// Probes the environment, or joins the probe already running (its result is just as fresh).
     private func probeEnvironment() async {
-        guard !isProbing else { return }
+        if let probeTask { await probeTask.value; return }
+        // Cleared by the task itself (on the main actor, before anyone awaiting it resumes), so a
+        // caller woken by its end never mistakes it for one still running.
+        let task = Task {
+            await runProbe()
+            probeTask = nil
+        }
+        probeTask = task
+        await task.value
+    }
+
+    /// Waits for the probe already running, if any, then probes again: the result reflects what
+    /// changed since that probe started (a certificate just created).
+    private func probeEnvironmentAfresh() async {
+        if let probeTask { await probeTask.value }
+        await probeEnvironment()
+    }
+
+    private func runProbe() async {
         isProbing = true
         defer { isProbing = false }
         #if DEBUG
         // Debug-only: XSIDE_FAKE_ENV_FILE names a file holding xcodeMissing / xcodeNotSignedIn /
-        // noSigningIdentity / ok, re-read at each probe, to exercise the welcome journey.
+        // signedOutNoCertificate / noSigningIdentity / ok [developer dir] / checking, re-read at
+        // each probe, to exercise the welcome journey.
+        if Self.fakeEnvironmentText == "checking" {
+            environment = nil
+            environmentChanged()
+            return
+        }
         if let fake = Self.fakeEnvironment() {
             environment = fake
+            certificateMissingToo = Self.fakeEnvironmentText == "signedOutNoCertificate"
+            environmentChanged()
             updateOnboardingPoller()
             onNeedsEvaluation?()
             return
         }
         #endif
-        let result = await EnvironmentProbe(runner: runner).detect()
+        let probe = EnvironmentProbe(runner: runner)
+        let result = await probe.detect()
+        if case .failure(.xcodeNotSignedIn) = result {
+            if case .failure(.noSigningIdentity) = await probe.signingIdentity() {
+                certificateMissingToo = true
+            } else {
+                certificateMissingToo = false
+            }
+        } else {
+            certificateMissingToo = false
+        }
         environment = result
+        environmentChanged()
         updateOnboardingPoller()
         if case .success(let env) = result, env != pipelineEnv {
             pipelineEnv = env
@@ -201,19 +290,52 @@ final class AppModel {
                 provisioner: Provisioner(runner: runner, templateDir: paths.template, workDir: paths.provisioningWork,
                                          cacheDirs: paths.xcodeProfileDirs),
                 resigner: Resigner(runner: runner), installer: Installer(runner: runner),
-                env: env, workRoot: paths.jobsWork, now: { Date() })
+                env: env, workRoot: paths.jobsWork, now: { Date() }, macIsBeta: XcodeLauncher.macIsBeta)
         }
-        await updateAppIDCounter()
+        // Reading the profiles spawns one `security` per profile: not at every probe (popover
+        // open, 5-min tick), only for a new environment or a stale count. Jobs update it too.
+        if case .success(let env) = result {
+            if env != appIDCounterEnv || appIDCounterDate.map({ Date().timeIntervalSince($0) >= Self.appIDCounterMaxAge }) ?? true {
+                await updateAppIDCounter()
+            }
+        } else {
+            await updateAppIDCounter()
+        }
         onNeedsEvaluation?()
     }
 
+    /// Per-probe state the views read on every render, so no file or preferences I/O there.
+    private func environmentChanged() {
+        if case .success? = environment { certificateCreationError = nil }
+        if let identity = signingEnvironment?.identityName, let appleID = EnvironmentProbe.appleID(fromIdentityName: identity) {
+            accountName = appleID
+        } else {
+            accountName = EnvironmentProbe.personalTeamName(EnvironmentProbe.savedXcodeTeams())
+        }
+        if XcodeLauncher.macIsBeta, let env = signingEnvironment,
+           let xcode = XcodeCompat.xcodeVersion(developerDir: env.developerDir) {
+            macBetaWithReleaseXcode = !xcode.isBeta
+        } else {
+            macBetaWithReleaseXcode = false
+        }
+    }
+
     #if DEBUG
-    private static func fakeEnvironment() -> Result<SigningEnvironment, XSideError>? {
+    private static var fakeEnvironmentText: String? {
         guard let path = ProcessInfo.processInfo.environment["XSIDE_FAKE_ENV_FILE"],
               let text = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
-        switch text.trimmingCharacters(in: .whitespacesAndNewlines) {
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func fakeEnvironment() -> Result<SigningEnvironment, XSideError>? {
+        guard let text = fakeEnvironmentText else { return nil }
+        if text.hasPrefix("ok ") {
+            let dir = URL(fileURLWithPath: String(text.dropFirst(3)))
+            return .success(SigningEnvironment(developerDir: dir, identitySHA1: "0", identityName: "Fake", teamID: "FAKE"))
+        }
+        switch text {
         case "xcodeMissing": return .failure(.xcodeMissing)
-        case "xcodeNotSignedIn": return .failure(.xcodeNotSignedIn)
+        case "xcodeNotSignedIn", "signedOutNoCertificate": return .failure(.xcodeNotSignedIn)
         case "noSigningIdentity": return .failure(.noSigningIdentity)
         case "ok":
             let dir = URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer")
@@ -224,6 +346,10 @@ final class AppModel {
     #endif
 
     var signingEnvironment: SigningEnvironment? { try? environment?.get() }
+
+    /// macOS beta with a release Xcode, which may stop working on it: warned, never blocking.
+    /// Computed once per probe.
+    private(set) var macBetaWithReleaseXcode = false
     var isPipelineReady: Bool { pipeline != nil }
 
     // MARK: - Devices
@@ -235,6 +361,7 @@ final class AppModel {
         updateOnboardingPoller()
         if visible {
             refreshDevices()
+            recheckEnvironment()
             Task { await reloadRecords() }
         }
     }
@@ -249,7 +376,11 @@ final class AppModel {
         listingDevices = true
         defer { listingDevices = false }
         do {
-            let listed = try await DeviceService(runner: runner).list().filter { $0.kind != .other }
+            var listed = try await DeviceService(runner: runner).list().filter { $0.kind != .other }
+            #if DEBUG
+            // Debug-only: XSIDE_FAKE_NO_DEVICES=1 shows the "no device yet" screens.
+            if ProcessInfo.processInfo.environment["XSIDE_FAKE_NO_DEVICES"] == "1" { listed = [] }
+            #endif
             let changed = listed != devices
             devices = listed
             rememberNames(devices)
@@ -330,7 +461,7 @@ final class AppModel {
     /// False while an install or refresh targets the device.
     func canRemoveDevice(_ deviceID: String) -> Bool {
         !removingDevices.contains(deviceID) && !jobs.keys.contains { $0.deviceID == deviceID }
-            && !(install?.isRunning == true && install?.deviceID == deviceID)
+            && !(install?.isRunning == true && install?.runs.contains { $0.deviceID == deviceID } == true)
     }
 
     /// Stops managing a device: forgets its installations (apps without any installation left are
@@ -365,8 +496,19 @@ final class AppModel {
         records = await library.records()
     }
 
+    /// Environment and date of the last App ID count, to skip recounting at every probe.
+    @ObservationIgnored private var appIDCounterEnv: SigningEnvironment?
+    @ObservationIgnored private var appIDCounterDate: Date?
+    private static let appIDCounterMaxAge: TimeInterval = 30 * 60
+
     private func updateAppIDCounter() async {
-        guard case .success(let env) = environment else { appIDsRemaining = nil; return }
+        guard case .success(let env) = environment else {
+            appIDsRemaining = nil
+            appIDCounterEnv = nil
+            return
+        }
+        appIDCounterEnv = env
+        appIDCounterDate = Date()
         let profiles = await ProfileReader(runner: runner).scan(paths.xcodeProfileDirs)
         let firstUse = AppIDCounter.firstUses(await library.records())
         appIDsRemaining = AppIDCounter.remaining(profiles, teamID: env.teamID, now: Date(), firstUse: firstUse)
@@ -381,30 +523,44 @@ final class AppModel {
 
     /// Inspect → import (or update the existing record) → save options → sign and install.
     /// `options == nil` keeps the options remembered for this app.
+    /// `importedInto`: the record this `.ipa` was already imported into (an earlier device of the
+    /// same run). Nothing is imported again and `options` is ignored (saved by that import).
+    /// `imported` reports the record once imported with its options, even if the install then fails.
     @discardableResult
     func importAndInstall(_ ipa: URL, on device: Device, options: InstallOptions? = nil,
+                          importedInto recordID: UUID? = nil,
+                          imported: @MainActor (UUID) -> Void = { _ in },
                           progress: @escaping @MainActor @Sendable (JobStage) -> Void = { _ in }) async throws -> AppRecord {
         guard let env = try environment?.get(), let pipeline else { throw XSideError.xcodeMissing }
         guard !removingDevices.contains(device.id) else { throw XSideError.deviceUnavailable }
-        let info: AppInfo
-        if let flow = install, flow.ipa == ipa, let known = flow.info {
-            info = known
+        let record: AppRecord
+        if let recordID {
+            guard let known = records.first(where: { $0.id == recordID }) else { throw XSideError.recordNotFound }
+            record = known
         } else {
-            info = try await IPAImporter.inspect(ipa: ipa, runner: runner)
+            let info: AppInfo
+            if let flow = install, flow.ipa == ipa, let known = flow.info {
+                info = known
+            } else {
+                info = try await IPAImporter.inspect(ipa: ipa, runner: runner)
+            }
+            record = try await library.importIPA(ipa, info: info, teamID: env.teamID)
         }
-        let record = try await library.importIPA(ipa, info: info, teamID: env.teamID)
         // Claimed with no await since the import, so a refresh can't start in between.
         let key = JobKey(recordID: record.id, deviceID: device.id)
         claim(key)
         defer { release(key) }
-        if let options { try await library.setOptions(options, for: record.id) }
+        if recordID == nil {
+            if let options { try await library.setOptions(options, for: record.id) }
+            imported(record.id) // options saved too: later devices install this record as is
+        }
         await reloadRecords()
         // Preparation is over: until the pipeline reports its first step the job may be queued
         // (provisioning lock, or another job on the same device).
         if jobs[key] == .preparing { jobs[key] = .waiting }
         progress(jobs[key] ?? .waiting) // never replaces a real step another holder already reported
         try await run(pipeline, key: key, device: device, progress: progress)
-        return record
+        return records.first { $0.id == record.id } ?? record
     }
 
     /// Starts a refresh of one row unless it is already running. Returns false when nothing started.
@@ -508,13 +664,19 @@ final class AppModel {
         autoselectDevice()
         Task {
             do {
-                let info = try await IPAImporter.inspect(ipa: url, runner: runner)
-                guard install === flow else { return }
+                let icon = Self.iconsDir.appendingPathComponent("\(UUID().uuidString).png")
+                let info = try await IPAImporter.inspect(ipa: url, runner: runner, iconDestination: icon)
+                guard install === flow else {
+                    try? FileManager.default.removeItem(at: icon) // replaced meanwhile
+                    return
+                }
                 flow.info = info
+                flow.appIcon = FileManager.default.fileExists(atPath: icon.path) ? icon : nil
                 let existing = records.first { $0.originalBundleID == info.bundleID }
                 flow.existing = existing
                 flow.draft = OptionsDraft(existing?.options ?? InstallOptions())
                 flow.phase = .editing(error: nil)
+                autoselectDevice() // the default now depends on where the app is installed
             } catch {
                 guard install === flow else { return }
                 flow.phase = .rejected(localizedMessage(error))
@@ -545,58 +707,118 @@ final class AppModel {
         return custom != flow.existing?.signedBundleID
     }
 
+    /// Default targets (see `InstallTargets`), or the user's choice minus the devices gone.
     private func autoselectDevice() {
         guard let flow = install, !flow.isRunning else { return }
-        let available = pairedDevices.filter(\.isAvailable)
-        if let id = flow.deviceID, available.contains(where: { $0.id == id }) { return }
-        flow.deviceID = available.first?.id
+        let available = pairedDevices.filter(\.isAvailable).map(\.id)
+        let installedOn = Set(flow.existing?.installations.map(\.deviceID) ?? [])
+        let selection = InstallTargets.reconcile(flow.deviceIDs, edited: flow.selectionEdited,
+                                                 available: available, installedOn: installedOn)
+        if selection != flow.deviceIDs { flow.deviceIDs = selection }
     }
 
+    /// Installs on the checked devices, one after another.
     func startInstall() {
-        guard let flow = install, !flow.isRunning,
-              !removingDevices.contains(flow.deviceID ?? ""),
-              let device = devices.first(where: { $0.id == flow.deviceID && $0.isAvailable }) else { return }
-        let options = flow.draft.options
-        flow.phase = .running(.preparing)
-        flow.lastStage = .preparing
+        guard let flow = install, !flow.isRunning else { return }
+        let targets = flow.deviceIDs.filter { id in
+            !removingDevices.contains(id) && devices.contains { $0.id == id && $0.isAvailable }
+        }
+        guard !targets.isEmpty else { return }
+        flow.runs = targets.map { id in DeviceRun(deviceID: id, name: devices.first { $0.id == id }?.name ?? id) }
+        flow.runOptions = flow.draft.options
+        // A new run imports again (the options may have changed); only its later devices reuse it.
+        flow.importedRecordID = nil
+        flow.guides = []
+        flow.shownGuides = []
         flow.failure = nil
-        flow.wifiVerified = false
         // The Wi-Fi check follows a first install over USB (see `guideIfFirstInstall`, below).
-        flow.wifiStepPlanned = guideIfFirstInstall(on: device) != nil
-            && devicePrefs.wifiRefresh(for: device.id) && device.transport == .usb
-        // Re-install of a known app: claim its row now, before any await.
-        let existingKey = flow.existing.map { JobKey(recordID: $0.id, deviceID: device.id) }
-        if let existingKey { claim(existingKey, stage: .preparing) }
+        if targets.count == 1, let device = devices.first(where: { $0.id == targets[0] }) {
+            flow.wifiStepPlanned = guideIfFirstInstall(on: device) != nil
+                && devicePrefs.wifiRefresh(for: device.id) && device.transport == .usb
+        } else {
+            flow.wifiStepPlanned = false
+        }
+        runInstall(flow, on: targets)
+    }
+
+    /// "Retry failed": runs again the devices that failed, with the same options.
+    func retryFailedInstalls() {
+        guard let flow = install, !flow.isRunning, flow.wifiCheck == nil else { return }
+        let targets = flow.failedDeviceIDs
+        guard !targets.isEmpty else { return }
+        for id in targets { flow.setStatus(.waiting, for: id) }
+        runInstall(flow, on: targets)
+    }
+
+    /// Installs `targets` (already in `flow.runs`) in order. The first import of the `.ipa` is
+    /// reused by the next devices. Each device's failure is kept on its row and the run goes on.
+    private func runInstall(_ flow: InstallFlow, on targets: [String]) {
+        flow.phase = .running(.preparing)
+        // Re-install of a known app: claim each device's row now, before any await. Each claim is
+        // released when that device is done.
+        let recordID = flow.importedRecordID ?? flow.existing?.id
+        if let recordID {
+            for id in targets { claim(JobKey(recordID: recordID, deviceID: id), stage: id == targets[0] ? .preparing : .waiting) }
+        }
         Task {
-            defer { if let existingKey { release(existingKey) } }
-            do {
-                try await importAndInstall(flow.ipa, on: device, options: options) {
-                    flow.lastStage = $0
-                    flow.phase = .running($0)
-                }
-                let guide = guideIfFirstInstall(on: device)
-                if guide != nil, devicePrefs.wifiRefresh(for: device.id) {
-                    if device.transport == .usb {
-                        flow.wifiCheck = WifiCheck(startedAt: Date())
-                    } else {
-                        flow.wifiVerified = true // already installed over Wi-Fi
-                    }
-                }
-                flow.phase = .succeeded(deviceName: device.name, guide: guide)
-            } catch {
-                let message = localizedMessage(error)
-                flow.failure = StepFailure(stage: flow.lastStage, message: message)
-                flow.phase = .editing(error: message)
+            for id in targets {
+                await installOne(flow, on: id)
+                if let recordID { release(JobKey(recordID: recordID, deviceID: id)) }
+            }
+            if !flow.isMultiDevice, case .failed(let failure)? = flow.runs.first?.status {
+                flow.failure = failure
+                flow.phase = .editing(error: failure.message)
+            } else {
+                flow.phase = .finished
+                flow.nextWifiCheck() // the checks collected during the run, one at a time
             }
             flowFinished(flow)
         }
     }
 
+    /// One device of a run. A first install queues its guide and, over USB with Wi-Fi refresh on,
+    /// its Wi-Fi check.
+    private func installOne(_ flow: InstallFlow, on deviceID: String) async {
+        flow.lastStage = .preparing
+        flow.phase = .running(.preparing)
+        flow.setStatus(.running(.preparing), for: deviceID)
+        // Looked up now: the device may have gone (or changed transport) during the earlier ones.
+        guard !removingDevices.contains(deviceID),
+              let device = devices.first(where: { $0.id == deviceID && $0.isAvailable }) else {
+            flow.setStatus(.failed(StepFailure(stage: .preparing, message: localizedMessage(XSideError.deviceUnavailable))),
+                           for: deviceID)
+            return
+        }
+        do {
+            try await importAndInstall(flow.ipa, on: device, options: flow.runOptions,
+                                       importedInto: flow.importedRecordID,
+                                       imported: { flow.importedRecordID = $0 },
+                                       progress: { stage in
+                                           flow.lastStage = stage
+                                           flow.phase = .running(stage)
+                                           flow.setStatus(.running(stage), for: deviceID)
+                                       })
+            flow.setStatus(.succeeded, for: deviceID)
+            if let guide = guideIfFirstInstall(on: device) {
+                flow.guides.append(guide)
+                if devicePrefs.wifiRefresh(for: device.id) {
+                    if device.transport == .usb {
+                        flow.wifiQueue.append(device.id)
+                    } else if let i = flow.runs.firstIndex(where: { $0.deviceID == deviceID }) {
+                        flow.runs[i].wifiVerified = true // already installed over Wi-Fi
+                    }
+                }
+            }
+        } catch {
+            flow.setStatus(.failed(StepFailure(stage: flow.lastStage, message: localizedMessage(error))), for: deviceID)
+        }
+    }
+
     /// The window may have been closed during the job: bring it back when there is something to
-    /// see (an error, the first-install guide, or the next queued file).
+    /// see (an error, a Wi-Fi check, a first-install guide, or the next queued file).
     private func flowFinished(_ flow: InstallFlow) {
         guard install === flow, !isInstallWindowOpen else { return }
-        if case .succeeded(_, nil) = flow.phase, flow.wifiCheck == nil {
+        if case .finished = flow.phase, flow.failedDeviceIDs.isEmpty, flow.guideSeen, flow.wifiCheck == nil {
             if !advanceQueue() { install = nil; return }
         }
         showInstallWindow?()
@@ -620,12 +842,11 @@ final class AppModel {
     }
 
     func evaluateWifiCheck(_ flow: InstallFlow) {
-        guard install === flow, var check = flow.wifiCheck else { return }
-        let device = devices.first { $0.id == flow.deviceID }
-        check.observe(device, at: Date())
+        guard install === flow, var check = flow.wifiCheck, let id = flow.wifiDeviceID else { return }
+        check.observe(devices.first { $0.id == id }, at: Date())
         if check.status == .ok {
-            flow.wifiCheck = nil
-            flow.wifiVerified = true
+            if let i = flow.runs.firstIndex(where: { $0.deviceID == id }) { flow.runs[i].wifiVerified = true }
+            flow.nextWifiCheck()
         } else {
             flow.wifiCheck = check
         }
@@ -638,22 +859,22 @@ final class AppModel {
         evaluateWifiCheck(flow)
     }
 
-    /// "Skip" (or the window closing): the step ends, settings untouched.
+    /// "Skip": this device's step ends, settings untouched; the next device's check follows.
     func skipWifiCheck(_ flow: InstallFlow) {
         guard install === flow else { return }
-        flow.wifiCheck = nil
+        flow.nextWifiCheck()
     }
 
-    /// "I'll refresh over USB": Wi-Fi refresh off for this device, the step ends.
+    /// "I'll refresh over USB": Wi-Fi refresh off for this device, its step ends.
     func chooseUSBRefresh(_ flow: InstallFlow) {
         guard install === flow else { return }
-        if let id = flow.deviceID { setWifiRefresh(false, for: id) }
-        flow.wifiCheck = nil
+        if let id = flow.wifiDeviceID { setWifiRefresh(false, for: id) }
+        flow.nextWifiCheck()
     }
 
     func guideDisplayed(_ guide: FirstInstallGuide) {
         UserDefaults.standard.set(true, forKey: Self.guideKey(guide.deviceID))
-        if case .succeeded(_, let shown?)? = install?.phase, shown == guide { install?.guideSeen = true }
+        if let flow = install, flow.guides.contains(guide) { flow.shownGuides.insert(guide.deviceID) }
     }
 
     private static func guideKey(_ deviceID: String) -> String { "guideShown.\(deviceID)" }
@@ -670,9 +891,13 @@ final class AppModel {
 
     /// Closed with the window button. A running install keeps going (its row shows progress) and
     /// reopens the window when it ends if needed; queued files are never dropped.
+    /// After the run, closing ends the flow: the Wi-Fi steps are skipped, and guides still waiting
+    /// behind them are dropped without being marked as shown (the device's next install shows
+    /// its guide), instead of keeping a busy flow with no window.
     func installWindowDisappeared() {
         isInstallWindowOpen = false
-        install?.wifiCheck = nil // closing the window skips the Wi-Fi step
+        install?.skipAllWifiChecks() // closing the window skips the Wi-Fi steps
+        if let flow = install, !flow.isRunning { flow.guides.removeAll { !flow.shownGuides.contains($0.deviceID) } }
         guard install?.isBusy != true else { return }
         if advanceQueue() {
             showInstallWindow?()

@@ -3,8 +3,10 @@ import Foundation
 /// Reads an `.ipa` before it enters the library: unzips it to a scratch directory, extracts its
 /// `AppInfo` and refuses App Store (encrypted) builds right away. The scratch copy is always removed.
 public enum IPAImporter {
+    /// `iconDestination`: where to write the app's own icon (PNG), best effort.
     public static func inspect(ipa: URL, runner: CommandRunning,
-                               scratchRoot: URL = FileManager.default.temporaryDirectory) async throws -> AppInfo {
+                               scratchRoot: URL = FileManager.default.temporaryDirectory,
+                               iconDestination: URL? = nil) async throws -> AppInfo {
         let fm = FileManager.default
         let dir = scratchRoot.appendingPathComponent("xside-import-\(UUID().uuidString)", isDirectory: true)
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -22,6 +24,11 @@ public enum IPAImporter {
         let executable = app.appendingPathComponent(info.executable)
         try require(.typeRegular, executable)
         if try IPAInspector.isEncrypted(executable) { throw XSideError.encryptedIPA }
+        if let iconDestination,
+           let data = try? Data(contentsOf: app.appendingPathComponent("Info.plist")),
+           let plist = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any] {
+            AppIconExtractor.extract(from: app, plist: plist, to: iconDestination)
+        }
         return info
     }
 

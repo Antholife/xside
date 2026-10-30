@@ -12,7 +12,8 @@ final class BackgroundEngine {
     static let slowPoll: Duration = .seconds(60)
     /// Periodic due evaluation (also run on device changes and on wake).
     static let evaluationInterval: Duration = .seconds(5 * 60)
-    /// Hidden debug setting (days): `defaults write io.github.xside.XSide debugThresholdDays 7`.
+    /// Hidden debug setting (days): `defaults write io.github.xside.XSide debugThresholdDays 7`
+    /// (`io.github.xside.XSide.debug` for the debug bundle).
     static let debugThresholdKey = "debugThresholdDays"
 
     private let model: AppModel
@@ -82,9 +83,9 @@ final class BackgroundEngine {
     }
 
     private func periodicTick() {
-        // A broken signing environment (Xcode signed out…) blocks every refresh: re-check it so a
-        // fix in Xcode is picked up without user action.
-        if case .failure? = model.environment, !dueJobs().isEmpty { model.recheckEnvironment() }
+        // Re-check the signing environment every tick: a break (Xcode removed, signed out,
+        // certificate deleted) is reported within minutes, and a fix in Xcode is picked up by itself.
+        model.recheckEnvironment()
         evaluate(reason: "timer")
     }
 
@@ -106,6 +107,8 @@ final class BackgroundEngine {
     }
 
     private func evaluate(reason: String) {
+        reportEnvironment()
+        reportMacBeta()
         reportUnreachable()
         reportNeedsUSB()
         let due = RefreshPlanner.startable(dueJobs(), busy: model.busyJobs)
@@ -172,6 +175,60 @@ final class BackgroundEngine {
     }
 
     static let needsUSBKey = "needsUSB"
+
+    /// Environment problems already notified (their keys), each cleared once it's fixed.
+    static let environmentWarnedKey = "environmentWarnedErrors"
+
+    /// After setup, the signing environment broke: one notification per problem until it's fixed,
+    /// since no refresh can run meanwhile.
+    private func reportEnvironment() {
+        let defaults = UserDefaults.standard
+        guard model.environment != nil else { return }
+        let problems = model.environmentProblems
+        let warned = Set(defaults.stringArray(forKey: Self.environmentWarnedKey) ?? [])
+        // Fixed problems can be notified again if they come back.
+        let current = warned.intersection(problems.map(\.key))
+        if current != warned { defaults.set(Array(current), forKey: Self.environmentWarnedKey) }
+        guard defaults.bool(forKey: JourneyStep.completedKey) else { return }
+        for error in problems where !current.contains(error.key) {
+            markWarned(error.key, true)
+            Task {
+                guard await notifier.canDeliver(),
+                      await notifier.environmentBroken(key: error.key, title: error.setupTitle,
+                                                       message: error.environmentReason) else {
+                    markWarned(error.key, false)
+                    return
+                }
+            }
+        }
+    }
+
+    private func markWarned(_ key: String, _ warned: Bool) {
+        var keys = Set(UserDefaults.standard.stringArray(forKey: Self.environmentWarnedKey) ?? [])
+        if warned { keys.insert(key) } else { keys.remove(key) }
+        UserDefaults.standard.set(Array(keys), forKey: Self.environmentWarnedKey)
+    }
+
+    /// macOS build already warned about (macOS beta with a release Xcode).
+    static let macBetaWarnedKey = "macBetaWarnedBuild"
+
+    /// macOS beta with a release Xcode: one notification per macOS build, once setup is done.
+    private func reportMacBeta() {
+        let build = XcodeLauncher.macBuild
+        guard model.macBetaWithReleaseXcode, UserDefaults.standard.bool(forKey: JourneyStep.completedKey),
+              UserDefaults.standard.string(forKey: Self.macBetaWarnedKey) != build else { return }
+        UserDefaults.standard.set(build, forKey: Self.macBetaWarnedKey)
+        Task {
+            guard await notifier.canDeliver() else {
+                Self.logger.notice("macOS beta warning: notifications not authorized")
+                UserDefaults.standard.removeObject(forKey: Self.macBetaWarnedKey)
+                return
+            }
+            if !(await notifier.macBetaWithReleaseXcode()) {
+                UserDefaults.standard.removeObject(forKey: Self.macBetaWarnedKey)
+            }
+        }
+    }
 
     // MARK: - Outcomes
 

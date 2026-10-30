@@ -1,9 +1,34 @@
 import AppKit
 import os
+import XSideCore
 
 enum XcodeLauncher {
     private static let logger = Logger(subsystem: "io.github.xside.XSide", category: "app")
     static let appStoreURL = URL(string: "macappstore://apps.apple.com/app/xcode/id497799835")!
+    static let betaURL = URL(string: "https://developer.apple.com/download/applications/")!
+
+    /// macOS build ("26B123"), empty if unreadable.
+    static let macBuild: String = {
+        #if DEBUG
+        // Debug-only: XSIDE_FAKE_MAC_BUILD=26C5012e shows the macOS-beta screens.
+        if let fake = ProcessInfo.processInfo.environment["XSIDE_FAKE_MAC_BUILD"] { return fake }
+        #endif
+        var size = 0
+        guard sysctlbyname("kern.osversion", nil, &size, nil, 0) == 0, size > 0 else { return "" }
+        var buffer = [CChar](repeating: 0, count: size)
+        guard sysctlbyname("kern.osversion", &buffer, &size, nil, 0) == 0 else { return "" }
+        return String(decoding: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
+    }()
+
+    /// macOS version ("27.2", or "27.2.1").
+    static let macVersion: String = {
+        let v = ProcessInfo.processInfo.operatingSystemVersion
+        return v.patchVersion == 0 ? "\(v.majorVersion).\(v.minorVersion)"
+                                   : "\(v.majorVersion).\(v.minorVersion).\(v.patchVersion)"
+    }()
+
+    /// The Mac runs a macOS beta (build "26A5279m"): a release Xcode may not support it.
+    static let macIsBeta = XcodeCompat.isBetaBuild(macBuild)
 
     /// Xcode by bundle identifier, else the app enclosing the detected developer directory.
     @MainActor static func open(developerDir: URL?) {
@@ -14,6 +39,18 @@ enum XcodeLauncher {
             return
         }
         NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+    }
+
+    /// Opens Xcode so that its Settings (⌘,) show the Accounts pane: Xcode reopens its last
+    /// viewed pane, read at launch, so it's only set while Xcode isn't running.
+    @MainActor static func openAccounts(developerDir: URL?) {
+        let xcodeID = "com.apple.dt.Xcode"
+        if NSRunningApplication.runningApplications(withBundleIdentifier: xcodeID).isEmpty {
+            CFPreferencesSetAppValue("IDELastViewedSettingsPane" as CFString,
+                                     "IDEKit.IDESettingsPane.Accounts" as CFString, xcodeID as CFString)
+            CFPreferencesAppSynchronize(xcodeID as CFString)
+        }
+        open(developerDir: developerDir)
     }
 
     /// `xcode-select -p`: can succeed even when the signing probe fails (not signed in).

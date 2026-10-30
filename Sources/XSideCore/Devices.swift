@@ -14,12 +14,15 @@ public struct Device: Identifiable, Equatable, Codable, Sendable {
     public let isPaired: Bool
     public let isAvailable: Bool
     public let developerModeEnabled: Bool?
+    /// iOS / iPadOS version ("26.1").
+    public let osVersion: String?
 
     public init(id: String, udid: String?, name: String, model: String, kind: DeviceKind,
-                transport: Transport, isPaired: Bool, isAvailable: Bool, developerModeEnabled: Bool?) {
+                transport: Transport, isPaired: Bool, isAvailable: Bool, developerModeEnabled: Bool?,
+                osVersion: String? = nil) {
         self.id = id; self.udid = udid; self.name = name; self.model = model; self.kind = kind
         self.transport = transport; self.isPaired = isPaired; self.isAvailable = isAvailable
-        self.developerModeEnabled = developerModeEnabled
+        self.developerModeEnabled = developerModeEnabled; self.osVersion = osVersion
     }
 }
 
@@ -48,7 +51,7 @@ public struct DeviceService: Sendable {
     }
     private struct Raw: Decodable {
         struct Conn: Decodable { let pairingState: String?; let tunnelState: String?; let transportType: String? }
-        struct Props: Decodable { let name: String?; let developerModeStatus: String? }
+        struct Props: Decodable { let name: String?; let developerModeStatus: String?; let osVersionNumber: String? }
         struct HW: Decodable { let deviceType: String?; let marketingName: String?; let productType: String?; let udid: String?; let reality: String? }
         let identifier: String
         let connectionProperties: Conn?
@@ -77,7 +80,8 @@ public struct DeviceService: Sendable {
                 transport: transport,
                 isPaired: paired,
                 isAvailable: available,
-                developerModeEnabled: raw.deviceProperties?.developerModeStatus.map { $0 == DevicectlValues.developerModeEnabled })
+                developerModeEnabled: raw.deviceProperties?.developerModeStatus.map { $0 == DevicectlValues.developerModeEnabled },
+                osVersion: raw.deviceProperties?.osVersionNumber)
         }
     }
 

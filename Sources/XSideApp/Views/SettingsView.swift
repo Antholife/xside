@@ -3,6 +3,7 @@ import SwiftUI
 
 enum AppLinks {
     static let repository = URL(string: "https://github.com/Antholife/xside")!
+    static let author = URL(string: "https://github.com/Antholife")!
 }
 
 /// The Settings window.
@@ -13,10 +14,6 @@ struct SettingsView: View {
     @Environment(\.openWindow) private var openWindow
     @State private var login = LaunchAtLogin()
     @State private var notifications = NotificationPermission()
-
-    private var version: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–"
-    }
 
     var body: some View {
         Form {
@@ -29,6 +26,7 @@ struct SettingsView: View {
                     Text(L("settings.language.fr")).tag(AppLanguage.fr.rawValue)
                 }
             }
+            SigningSettingsSection(model: model)
             Section(L("settings.notifications")) {
                 Toggle(L("settings.notifyRefreshSuccess"), isOn: $notifyRefreshSuccess)
                 if notifications.state == .notDetermined || notifications.state == .denied {
@@ -37,8 +35,9 @@ struct SettingsView: View {
             }
             Section {
                 Button(L("settings.replayJourney")) { openWindow.presentJourney(model, at: .language) }
-                Text(L("settings.version", version)).foregroundStyle(.secondary)
-                Link(L("settings.github"), destination: AppLinks.repository)
+            }
+            Section(L("settings.about")) {
+                AboutCard()
             }
         }
         .formStyle(.grouped)
@@ -48,6 +47,13 @@ struct SettingsView: View {
         .id(language)
         .onAppear(perform: login.refresh)
         .task { await notifications.refresh() }
+        // While something fails, re-check every 5 s so a fix in Xcode shows up here by itself.
+        .task {
+            while !Task.isCancelled {
+                if model.environmentFailed { model.recheckEnvironment() }
+                try? await Task.sleep(for: .seconds(5))
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             login.refresh()
             Task { await notifications.refresh() }

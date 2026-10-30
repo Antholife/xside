@@ -69,6 +69,38 @@ public struct Provisioner: Sendable {
         return (stable, profile)
     }
 
+    /// Bundle ID of the certificate build: fixed, so repeated attempts reuse one App ID.
+    public static func certificateBundleID(teamID: String) -> String { "io.github.xside.certificate.\(teamID)" }
+
+    /// Lets Xcode create an "Apple Development" certificate by building the template with automatic
+    /// signing for any iOS device. Works where Xcode's "Manage Certificates… > ＋" refuses because
+    /// of old certificates whose private key is gone. The profile step may fail without a
+    /// registered device; only the certificate matters, so the caller re-probes the keychain and
+    /// uses the returned error (nil on success) only when it's still missing.
+    public func createCertificate(teamID: String) async throws -> XSideError? {
+        let fm = FileManager.default
+        let buildDir = workDir.appendingPathComponent("certificate-\(UUID().uuidString)", isDirectory: true)
+        try fm.createDirectory(at: workDir, withIntermediateDirectories: true)
+        try fm.copyItem(at: templateDir, to: buildDir)
+        defer { try? fm.removeItem(at: buildDir) }
+
+        let args = Self.certificateArguments(project: buildDir.appendingPathComponent("XSideTemplate.xcodeproj"),
+                                             derivedData: buildDir.appendingPathComponent("DerivedData", isDirectory: true),
+                                             teamID: teamID)
+        let result = try await runner.run("/usr/bin/xcrun", args, cwd: buildDir)
+        guard result.status != 0 else { return nil }
+        let mapped = Self.mapError(String(decoding: result.stdout, as: UTF8.self) + "\n" + result.stderr)
+        if case .commandFailed = mapped { return .commandFailed(tool: "xcodebuild", status: result.status) }
+        return mapped
+    }
+
+    public static func certificateArguments(project: URL, derivedData: URL, teamID: String) -> [String] {
+        ["xcodebuild", "-project", project.path, "-scheme", "XSideTemplate", "-configuration", "Debug",
+         "-destination", "generic/platform=iOS", "-derivedDataPath", derivedData.path,
+         "-allowProvisioningUpdates", "DEVELOPMENT_TEAM=\(teamID)",
+         "PRODUCT_BUNDLE_IDENTIFIER=\(certificateBundleID(teamID: teamID))", "CODE_SIGN_STYLE=Automatic", "build"]
+    }
+
     /// Removes the cached `*.mobileprovision` files whose team is `teamID` and whose decoded
     /// `application-identifier` is exactly `applicationIdentifier`. Unreadable files and missing
     /// directories are skipped; a failed removal is logged and doesn't stop the build.

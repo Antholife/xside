@@ -81,7 +81,8 @@ struct StatusCard<Accessory: View>: View {
                 }
             }
             Spacer(minLength: 8)
-            accessory
+            // Buttons keep their full label: the text on the left wraps instead.
+            accessory.fixedSize()
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)

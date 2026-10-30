@@ -26,6 +26,7 @@ struct InstallWindowRoot: View {
         }
         .frame(width: 440)
         .fixedSize(horizontal: false, vertical: true)
+        .background(KeepWindowOnScreen())
         .navigationTitle(L("install.title"))
         .id(language)
         .onAppear(perform: model.installWindowAppeared)
@@ -33,15 +34,45 @@ struct InstallWindowRoot: View {
     }
 }
 
-/// App summary, target device, folded options, Install button and per-step progress.
+/// App summary, target devices, folded options, Install button and per-step progress (one row
+/// per device when installing on several).
 struct InstallSheet: View {
     let model: AppModel
     let flow: InstallFlow
     let close: () -> Void
+    /// Natural height of the scrolling middle.
+    @State private var contentHeight: CGFloat = 120
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             header
+            // Only the middle scrolls: the app header and the buttons stay in view, and the window
+            // never grows past the screen (the options can be long once unfolded).
+            // The middle gets its measured height, capped: a ScrollView alone has no ideal height,
+            // so the window would stay at its old size and clip everything when the options unfold.
+            ScrollView(.vertical) {
+                content
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 2)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(height: min(contentHeight, Self.maxContentHeight))
+            .padding(.horizontal, -20)
+            if !model.queuedIPAs.isEmpty { QueueLine(files: model.queuedIPAs) }
+            buttons
+        }
+        .padding(20)
+        .animation(.smooth(duration: 0.25), value: flow.phase)
+    }
+
+    /// Room left for the scrolling middle on the current screen, minus header, buttons and chrome.
+    private static var maxContentHeight: CGFloat {
+        max(240, (NSScreen.main?.visibleFrame.height ?? 800) - 240)
+    }
+
+    @ViewBuilder private var content: some View {
+        VStack(alignment: .leading, spacing: 16) {
             switch flow.phase {
             case .inspecting:
                 ProgressView()
@@ -50,10 +81,14 @@ struct InstallSheet: View {
             case .rejected(let message):
                 ErrorText(message)
             case .editing, .running:
-                DevicePicker(model: model, flow: flow)
+                if flow.isRunning && flow.isMultiDevice {
+                    DeviceRunList(model: model, flow: flow, steps: steps)
+                } else {
+                    DevicePicker(model: model, flow: flow)
+                }
                 InstallOptionsSection(model: model, flow: flow)
                 if case .running(let stage) = flow.phase {
-                    InstallProgressView(timeline: StepTimeline(steps: steps, stage: stage))
+                    if !flow.isMultiDevice { InstallProgressView(timeline: StepTimeline(steps: steps, stage: stage)) }
                 } else if let failure = flow.failure, case .editing = flow.phase {
                     InstallProgressView(timeline: StepTimeline(steps: steps, stage: failure.stage, failed: true),
                                         failureMessage: failure.message)
@@ -61,29 +96,36 @@ struct InstallSheet: View {
                     ErrorText(error)
                 }
                 if case .failure(let error)? = model.environment { ErrorText(error.localizedMessage) }
-            case .succeeded(let deviceName, let guide):
-                InstallProgressView(timeline: StepTimeline(
-                    steps: steps, current: flow.wifiCheck != nil ? .wifiCheck : nil, skipped: skippedSteps))
-                Label(L("install.success", deviceName), systemImage: "checkmark.circle.fill")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color(nsColor: .systemGreen))
+            case .finished:
+                if flow.isMultiDevice {
+                    DeviceRunList(model: model, flow: flow, steps: steps)
+                    summary
+                } else {
+                    InstallProgressView(timeline: StepTimeline(
+                        steps: steps, current: flow.wifiCheck != nil ? .wifiCheck : nil, skipped: skippedSteps))
+                    Label(L("install.success", flow.runs.first?.name ?? ""), systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Color(nsColor: .systemGreen))
+                }
+                // Wi-Fi checks one device at a time, then every first-install guide.
                 if let check = flow.wifiCheck {
-                    WifiCheckView(model: model, flow: flow, check: check)
-                } else if flow.wifiVerified {
+                    WifiCheckView(model: model, flow: flow, check: check,
+                                  deviceName: flow.isMultiDevice ? name(of: flow.wifiDeviceID) : nil)
+                        .id(flow.wifiDeviceID)
+                } else if !flow.isMultiDevice, flow.runs.first?.wifiVerified == true {
                     Label(L("wifi.ok"), systemImage: "wifi")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Color(nsColor: .systemGreen))
                 }
-                if let guide, flow.wifiCheck == nil {
-                    FirstInstallGuideView(guide: guide)
-                        .onAppear { model.guideDisplayed(guide) }
+                if flow.wifiCheck == nil {
+                    ForEach(flow.guides, id: \.deviceID) { guide in
+                        FirstInstallGuideView(guide: guide,
+                                              deviceName: flow.isMultiDevice ? name(of: guide.deviceID) : nil)
+                            .onAppear { model.guideDisplayed(guide) }
+                    }
                 }
             }
-            if !model.queuedIPAs.isEmpty { QueueLine(files: model.queuedIPAs) }
-            buttons
         }
-        .padding(20)
-        .animation(.smooth(duration: 0.25), value: flow.phase)
     }
 
     /// Steps of the run, fixed up front: Wi-Fi verification is planned or not, never added later.
@@ -91,14 +133,35 @@ struct InstallSheet: View {
 
     /// The Wi-Fi check ended without success (skipped, USB chosen or window closed).
     private var skippedSteps: Set<ProgressStep> {
-        guard flow.wifiStepPlanned, case .succeeded = flow.phase,
-              flow.wifiCheck == nil, !flow.wifiVerified else { return [] }
+        guard flow.wifiStepPlanned, case .finished = flow.phase,
+              flow.wifiCheck == nil, flow.runs.first?.wifiVerified != true else { return [] }
         return [.wifiCheck]
+    }
+
+    private func name(of deviceID: String?) -> String? {
+        flow.runs.first { $0.deviceID == deviceID }?.name
+    }
+
+    /// Outcome of a run on several devices.
+    @ViewBuilder private var summary: some View {
+        let done = flow.runs.count - flow.failedDeviceIDs.count
+        if done == flow.runs.count {
+            Label(L("install.successMany", done), systemImage: "checkmark.circle.fill")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color(nsColor: .systemGreen))
+        } else if done > 0 {
+            Label(L("install.successSome", done, flow.runs.count), systemImage: "exclamationmark.triangle.fill")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color(nsColor: .systemOrange))
+        } else {
+            ErrorText(L("install.failedAll"))
+        }
     }
 
     private var header: some View {
         HStack(spacing: 12) {
-            AppGlyph(iconURL: flow.draft.iconPath.map(model.iconURL))
+            // A custom icon chosen in the options wins over the app's own.
+            AppGlyph(iconURL: flow.draft.iconPath.map(model.iconURL) ?? flow.appIcon)
             VStack(alignment: .leading, spacing: 2) {
                 Text(flow.info?.name ?? flow.ipa.deletingPathExtension().lastPathComponent)
                     .font(.system(size: 15, weight: .semibold))
@@ -122,7 +185,17 @@ struct InstallSheet: View {
         HStack(spacing: 10) {
             Spacer()
             switch flow.phase {
-            case .succeeded:
+            case .finished where !flow.failedDeviceIDs.isEmpty:
+                Button(L("install.done"), action: close)
+                    .keyboardShortcut(.cancelAction)
+                    .controlSize(.large)
+                    .disabled(flow.wifiCheck != nil)
+                Button(L("install.retryFailed"), action: model.retryFailedInstalls)
+                    .buttonStyle(GradientButtonStyle())
+                    .frame(width: 170)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(flow.wifiCheck != nil || !model.isPipelineReady)
+            case .finished:
                 Button(L("install.done"), action: close)
                     .keyboardShortcut(.defaultAction)
                     .controlSize(.large)
@@ -136,18 +209,22 @@ struct InstallSheet: View {
                     .keyboardShortcut(.cancelAction)
                     .controlSize(.large)
                     .disabled(flow.isRunning)
-                Button(L("install.title"), action: model.startInstall)
+                Button(installLabel, action: model.startInstall)
                     .buttonStyle(GradientButtonStyle())
-                    .frame(width: 130)
+                    .frame(width: flow.deviceIDs.count > 1 ? 200 : 130)
                     .keyboardShortcut(.defaultAction)
                     .disabled(!canInstall)
             }
         }
     }
 
+    private var installLabel: String {
+        flow.deviceIDs.count > 1 ? L("install.onDevices", flow.deviceIDs.count) : L("install.title")
+    }
+
     private var canInstall: Bool {
         guard !flow.isRunning, case .success? = model.environment else { return false }
-        return model.devices.contains { $0.id == flow.deviceID && $0.isAvailable }
+        return model.devices.contains { flow.deviceIDs.contains($0.id) && $0.isAvailable }
     }
 }
 
@@ -165,8 +242,9 @@ private struct QueueLine: View {
     }
 }
 
-/// The paired devices; only reachable ones can be chosen. "＋ New device" (or no reachable device
-/// at all) shows the first-pairing helper, which watches the list and selects the new device.
+/// The paired devices, several can be checked; only reachable ones. "＋ New device" (or no
+/// reachable device at all) shows the first-pairing helper, which watches the list and checks the
+/// new device.
 private struct DevicePicker: View {
     let model: AppModel
     let flow: InstallFlow
@@ -179,13 +257,27 @@ private struct DevicePicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            SectionTitle(L("install.device"))
+            SectionTitle(devices.count > 1 ? L("install.devices") : L("install.device"))
             VStack(spacing: 0) {
                 ForEach(devices) { device in
-                    DeviceChoice(device: device, isSelected: flow.deviceID == device.id) {
-                        flow.deviceID = device.id
+                    DeviceChoice(device: device, isSelected: flow.deviceIDs.contains(device.id)) {
+                        flow.toggle(device.id)
                     }
                     .disabled(!device.isAvailable || flow.isRunning)
+                    // Per device, the same setting as in the popover: refresh this one over Wi-Fi.
+                    if flow.deviceIDs.contains(device.id) {
+                        Toggle(L("popover.device.wifiRefresh"), isOn: Binding(
+                            get: { model.devicePrefs.wifiRefresh(for: device.id) },
+                            set: { model.setWifiRefresh($0, for: device.id) }))
+                            .toggleStyle(.checkbox)
+                            .tint(Theme.violet)
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.secondary)
+                            .padding(.leading, 38)
+                            .padding(.bottom, 8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .disabled(flow.isRunning)
+                    }
                     Divider().padding(.leading, 38)
                 }
                 NewDeviceRow(isOpen: showHelper) { helperRequested.toggle() }
@@ -219,7 +311,10 @@ private struct DevicePicker: View {
         defer { knownIDs = availableIDs }
         guard showHelper, !flow.isRunning,
               let device = devices.first(where: { $0.isAvailable && !known.contains($0.id) }) else { return }
-        flow.deviceID = device.id
+        // The new device replaces the default choice, or joins the user's own.
+        if !flow.selectionEdited { flow.deviceIDs = [] }
+        if !flow.deviceIDs.contains(device.id) { flow.deviceIDs.append(device.id) }
+        flow.selectionEdited = true
         helperRequested = false
         detectedName = device.name
         Task {
@@ -278,7 +373,7 @@ private struct DeviceChoice: View {
                     .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
                     .font(.system(size: 16))
                     .foregroundStyle(isSelected ? AnyShapeStyle(Theme.violet) : AnyShapeStyle(.tertiary))
             }
@@ -288,10 +383,97 @@ private struct DeviceChoice: View {
             .opacity(isEnabled ? 1 : 0.5)
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
-/// App icon placeholder (or the chosen custom icon).
+/// The devices of a run on several devices, one row each with its status. The device being
+/// installed shows its step timeline under its row.
+private struct DeviceRunList: View {
+    let model: AppModel
+    let flow: InstallFlow
+    let steps: [ProgressStep]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            SectionTitle(L("install.devices"))
+            VStack(spacing: 0) {
+                ForEach(flow.runs) { run in
+                    VStack(alignment: .leading, spacing: 8) {
+                        DeviceRunRow(run: run, symbolName: symbolName(run.deviceID),
+                                     checkingWifi: flow.wifiCheck != nil && flow.wifiDeviceID == run.deviceID)
+                        if case .running(let stage) = run.status {
+                            InstallProgressView(timeline: StepTimeline(steps: steps, stage: stage))
+                                .padding(.leading, 28)
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    if run.id != flow.runs.last?.id { Divider().padding(.leading, 38) }
+                }
+            }
+            .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+    }
+
+    private func symbolName(_ deviceID: String) -> String {
+        model.devices.first { $0.id == deviceID }?.symbolName ?? "iphone"
+    }
+}
+
+private struct DeviceRunRow: View {
+    let run: DeviceRun
+    let symbolName: String
+    let checkingWifi: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbolName)
+                .font(.system(size: 16))
+                .frame(width: 18)
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(run.name).font(.system(size: 13, weight: .medium))
+                Text(statusText)
+                    .font(.system(size: 11))
+                    .foregroundStyle(run.isFailed ? AnyShapeStyle(Color(nsColor: .systemRed)) : AnyShapeStyle(.secondary))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+            indicator
+                .frame(width: 16, height: 16)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var statusText: String {
+        switch run.status {
+        case .waiting: L("install.step.waiting") + "…"
+        case .running(let stage): stage.rowText
+        case .succeeded where checkingWifi: L("wifi.title") + "…"
+        case .succeeded: run.wifiVerified ? L("install.run.doneWifi") : L("install.run.done")
+        case .failed(let failure): failure.message
+        }
+    }
+
+    @ViewBuilder private var indicator: some View {
+        switch run.status {
+        case .waiting:
+            Image(systemName: "clock")
+                .foregroundStyle(.tertiary)
+        case .running:
+            ProgressView().controlSize(.small)
+        case .succeeded:
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(Color(nsColor: .systemGreen))
+        case .failed:
+            Image(systemName: "xmark.octagon.fill")
+                .foregroundStyle(Color(nsColor: .systemRed))
+        }
+    }
+}
+
+/// The app's icon: the custom one chosen, else the IPA's own, else a placeholder.
 private struct AppGlyph: View {
     let iconURL: URL?
 

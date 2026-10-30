@@ -16,6 +16,10 @@ public enum XSideError: Error, Equatable, Sendable {
     case recordNotFound
     /// A refresh got back a profile that doesn't expire later than the installed one.
     case profileNotRenewed
+    /// The device runs an iOS newer than the installed Xcode supports (iOS beta, release Xcode).
+    case xcodeTooOld(deviceOS: String)
+    /// The Mac runs a macOS beta with a release Xcode, which may not work on it.
+    case xcodeNeedsBetaForMac
 
     /// Case name without payload, used to deduplicate notifications.
     public var key: String {
@@ -34,6 +38,8 @@ public enum XSideError: Error, Equatable, Sendable {
         case .commandFailed: "commandFailed"
         case .recordNotFound: "recordNotFound"
         case .profileNotRenewed: "profileNotRenewed"
+        case .xcodeTooOld: "xcodeTooOld"
+        case .xcodeNeedsBetaForMac: "xcodeNeedsBetaForMac"
         }
     }
 }

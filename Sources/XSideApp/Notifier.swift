@@ -9,11 +9,12 @@ import XSideCore
 @MainActor
 final class Notifier: NSObject {
     private nonisolated static let logger = Logger(subsystem: "io.github.xside.XSide", category: "engine")
-    private static let xcodeCategory = "refreshFailed.xcode"
+    private nonisolated static let xcodeCategory = "refreshFailed.xcode"
     private nonisolated static let openXcodeAction = "openXcode"
-    /// Causes the user fixes in Xcode (Settings > Accounts): their notification has "Open Xcode".
+    /// Causes the user fixes in Xcode (its account settings, or a newer or beta Xcode): their
+    /// notification has "Open Xcode", and a tap opens Settings.
     static let xcodeErrorKeys: Set<String> = ["xcodeNotSignedIn", "noSigningIdentity", "provisioningFailed",
-                                              "xcodeMissing"]
+                                              "xcodeMissing", "xcodeTooOld", "xcodeNeedsBetaForMac"]
 
     /// Developer dir of the detected environment, used when Xcode isn't found by bundle identifier.
     private let developerDir: @MainActor () -> URL?
@@ -95,6 +96,47 @@ final class Notifier: NSObject {
         }
     }
 
+    nonisolated static let environmentNotificationID = "environment"
+
+    /// The signing environment broke after setup; a tap opens Settings, where the fix is.
+    func environmentBroken(key: String, title: String, message: String) async -> Bool {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = L("environment.notification.body", message)
+        content.sound = .default
+        guard let center else {
+            Self.logger.notice("would notify: \(content.title, privacy: .public)")
+            return true
+        }
+        do {
+            try await center.add(UNNotificationRequest(identifier: "\(Self.environmentNotificationID).\(key)",
+                                                       content: content, trigger: nil))
+            return true
+        } catch {
+            Self.logger.error("notification failed: \(String(describing: error), privacy: .public)")
+            return false
+        }
+    }
+
+    /// The Mac runs a macOS beta with a release Xcode (posted once per macOS build).
+    func macBetaWithReleaseXcode() async -> Bool {
+        let content = UNMutableNotificationContent()
+        content.title = L("macBeta.banner.title")
+        content.body = L("macBeta.notification.body")
+        content.sound = .default
+        guard let center else {
+            Self.logger.notice("would notify: \(content.title, privacy: .public)")
+            return true
+        }
+        do {
+            try await center.add(UNNotificationRequest(identifier: Self.macBetaNotificationID, content: content, trigger: nil))
+            return true
+        } catch {
+            Self.logger.error("notification failed: \(String(describing: error), privacy: .public)")
+            return false
+        }
+    }
+
     /// UserDefaults key of the "notify successful refreshes" setting (default on).
     nonisolated static let notifyRefreshSuccessKey = "notifyRefreshSuccess"
 
@@ -119,6 +161,22 @@ final class Notifier: NSObject {
     func openXcode() {
         XcodeLauncher.open(developerDir: developerDir())
     }
+
+    /// Opens the SwiftUI Settings window. Installed by the menu-bar label, since only a view can
+    /// reach `openSettings` (the `showSettingsWindow:` action no longer opens it).
+    static var openSettingsHandler: (@MainActor () -> Void)?
+
+    static func openSettings() {
+        NSApp.activate()
+        openSettingsHandler?()
+    }
+
+    /// Notifications whose tap opens Settings, where the fix is: environment ("environment.<key>")
+    /// and macOS beta.
+    nonisolated static func opensSettings(_ identifier: String) -> Bool {
+        identifier == macBetaNotificationID || identifier.hasPrefix(environmentNotificationID + ".")
+    }
+    nonisolated static let macBetaNotificationID = "macBeta"
 }
 
 extension Notifier: UNUserNotificationCenterDelegate {
@@ -131,8 +189,14 @@ extension Notifier: UNUserNotificationCenterDelegate {
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             didReceive response: UNNotificationResponse) async {
-        guard response.actionIdentifier == Self.openXcodeAction else { return }
-        await openXcode()
+        if response.actionIdentifier == Self.openXcodeAction {
+            await openXcode()
+        } else if response.actionIdentifier == UNNotificationDefaultActionIdentifier,
+                  Self.opensSettings(response.notification.request.identifier)
+                    || response.notification.request.content.categoryIdentifier == Self.xcodeCategory {
+            // Environment, macOS beta and Xcode-caused refresh failures: the fix is in Settings.
+            await Self.openSettings()
+        }
     }
 }
 
@@ -140,7 +204,9 @@ extension Notifier: UNUserNotificationCenterDelegate {
 @MainActor @Observable
 final class NotificationPermission {
     private static let logger = Logger(subsystem: "io.github.xside.XSide", category: "app")
-    static let systemSettingsURL = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")!
+    /// System Settings > Notifications, opened straight on XSide's own page (`?id=<bundle id>`).
+    static let systemSettingsURL = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id="
+                                       + (Bundle.main.bundleIdentifier ?? "io.github.xside.XSide"))!
 
     enum State { case checking, unavailable, notDetermined, denied, authorized }
 

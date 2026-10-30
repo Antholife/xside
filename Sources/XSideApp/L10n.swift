@@ -49,7 +49,7 @@ func L(_ key: String, _ args: CVarArg...) -> String {
 }
 
 extension XSideError {
-    /// One friendly message per case. Payloads are technical and never shown.
+    /// One friendly message per case. Payloads are technical and never shown, except the iOS version.
     var localizedMessage: String {
         switch self {
         case .xcodeMissing: return L("error.xcodeMissing")
@@ -66,6 +66,8 @@ extension XSideError {
         case .commandFailed: return L("error.commandFailed")
         case .recordNotFound: return L("error.recordNotFound")
         case .profileNotRenewed: return L("error.profileNotRenewed")
+        case .xcodeTooOld(let deviceOS): return L("error.xcodeTooOld", deviceOS)
+        case .xcodeNeedsBetaForMac: return L("error.xcodeNeedsBetaForMac")
         }
     }
 }
@@ -79,6 +81,7 @@ func localizedMessage(_ error: any Error) -> String {
 /// An unreachable device gets the network hint (isolating networks, CoreDeviceError 4016).
 func localizedRowError(key: String) -> String {
     if key == "deviceUnavailable" { return L("popover.unreachableHint") }
+    if key == "xcodeTooOld" { return L("error.xcodeTooOld.short") }
     let lookup = "error.\(key)"
     let text = L(lookup)
     return text == lookup ? L("error.generic") : text

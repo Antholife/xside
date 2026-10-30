@@ -16,9 +16,62 @@ public struct SigningEnvironment: Equatable, Sendable {
 
 public struct EnvironmentProbe: Sendable {
     private let runner: CommandRunning
+    private let fileExists: @Sendable (String) -> Bool
+    /// Xcode's saved accounts (`DVTDeveloperAccountManagerAppleIDLists`), nil when unreadable.
+    /// An undocumented key: when it's missing or unreadable, the account check is skipped.
+    private let xcodeAccounts: @Sendable () -> Any?
 
-    public init(runner: CommandRunning) {
+    public init(runner: CommandRunning,
+                fileExists: @escaping @Sendable (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
+                xcodeAccounts: @escaping @Sendable () -> Any? = EnvironmentProbe.savedXcodeAccounts) {
         self.runner = runner
+        self.fileExists = fileExists
+        self.xcodeAccounts = xcodeAccounts
+    }
+
+    public static let savedXcodeAccounts: @Sendable () -> Any? = {
+        // Xcode writes its preferences from another process: drop our cached copy first.
+        CFPreferencesAppSynchronize("com.apple.dt.Xcode" as CFString)
+        return CFPreferencesCopyAppValue("DVTDeveloperAccountManagerAppleIDLists" as CFString, "com.apple.dt.Xcode" as CFString)
+    }
+
+    /// Xcode's teams (`IDEProvisioningTeamByIdentifier`), nil when unreadable.
+    public static let savedXcodeTeams: @Sendable () -> Any? = {
+        CFPreferencesAppSynchronize("com.apple.dt.Xcode" as CFString)
+        return CFPreferencesCopyAppValue("IDEProvisioningTeamByIdentifier" as CFString, "com.apple.dt.Xcode" as CFString)
+    }
+
+    /// The team to create a certificate for, with no certificate to read it from: the free
+    /// "Personal Team" first, else the first team. `{account: [{teamID, isFreeProvisioningTeam…}]}`.
+    public static func personalTeamID(_ teams: Any?) -> String? {
+        guard let byAccount = teams as? [String: Any] else { return nil }
+        let all = byAccount.values.flatMap { $0 as? [[String: Any]] ?? [] }
+        let free = all.first { $0["isFreeProvisioningTeam"] as? Bool == true }
+        return (free ?? all.first)?["teamID"] as? String
+    }
+
+    /// The Apple ID e-mail in a certificate name: "Apple Development: me@icloud.com (AB12CD34EF)".
+    public static func appleID(fromIdentityName name: String) -> String? {
+        guard let colon = name.firstIndex(of: ":") else { return nil }
+        var rest = name[name.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+        if let paren = rest.range(of: " (", options: .backwards) { rest = String(rest[..<paren.lowerBound]) }
+        return rest.contains("@") ? rest : nil
+    }
+
+    /// The Personal Team's name ("Jane Appleseed"), shown when no certificate gives the e-mail.
+    /// Xcode's preferences hold no e-mail (the account `identifier` is an internal UUID).
+    public static func personalTeamName(_ teams: Any?) -> String? {
+        guard let byAccount = teams as? [String: Any] else { return nil }
+        let all = byAccount.values.flatMap { $0 as? [[String: Any]] ?? [] }
+        let free = all.first { $0["isFreeProvisioningTeam"] as? Bool == true }
+        return (free ?? all.first)?["teamName"] as? String
+    }
+
+    /// True when Xcode lists at least one account: `{"IDE.Identifiers.Prod": [{identifier: …}]}`,
+    /// false when every list is empty, nil (unknown) when the key is missing or isn't a dictionary.
+    public static func hasSignedInAccount(_ accounts: Any?) -> Bool? {
+        guard let lists = accounts as? [String: Any] else { return nil }
+        return lists.values.contains { ($0 as? [Any])?.isEmpty == false }
     }
 
     public func detect() async -> Result<SigningEnvironment, XSideError> {
@@ -28,21 +81,22 @@ public struct EnvironmentProbe: Sendable {
         }
         let dirPath = String(decoding: xs.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !dirPath.isEmpty else { return .failure(.xcodeMissing) }
+        // Command Line Tools alone also answer `xcode-select -p`, but have no xcodebuild.
+        guard fileExists(dirPath + "/usr/bin/xcodebuild") else { return .failure(.xcodeMissing) }
 
-        // 2. First "Apple Development" signing identity.
-        let find: CommandResult
-        do {
-            find = try await runner.run("/usr/bin/security", ["find-identity", "-v", "-p", "codesigning"], cwd: nil)
-        } catch {
-            return .failure(.commandFailed(tool: "security", status: -1))
-        }
-        guard find.status == 0 else { return .failure(.commandFailed(tool: "security", status: find.status)) }
-        let identities = Self.parseIdentities(String(decoding: find.stdout, as: UTF8.self))
-        guard let identity = identities.first(where: { $0.name.hasPrefix("Apple Development") }) else {
-            return .failure(.noSigningIdentity)
+        // 2. An account signed in to Xcode. Checked before the certificate: signing out of Xcode
+        // leaves the certificate in the keychain, yet nothing can be provisioned anymore.
+        // Unknown (key moved in a new Xcode) isn't a failure: the certificate check decides.
+        guard Self.hasSignedInAccount(xcodeAccounts()) != false else { return .failure(.xcodeNotSignedIn) }
+
+        // 3. First "Apple Development" signing identity.
+        let identity: (sha1: String, name: String)
+        switch await signingIdentity() {
+        case .success(let found): identity = found
+        case .failure(let error): return .failure(error)
         }
 
-        // 3. Team ID from the certificate subject's OU field.
+        // 4. Team ID from the certificate subject's OU field.
         let command = "/usr/bin/security find-certificate -c \(Self.shellQuote(identity.name)) -p | /usr/bin/openssl x509 -noout -subject"
         let sub: CommandResult
         do {
@@ -60,6 +114,23 @@ public struct EnvironmentProbe: Sendable {
             identitySHA1: identity.sha1,
             identityName: identity.name,
             teamID: team))
+    }
+
+    /// The first "Apple Development" signing identity in the keychain. Also asked on its own when
+    /// the account is signed out, to tell whether the certificate is missing too.
+    public func signingIdentity() async -> Result<(sha1: String, name: String), XSideError> {
+        let find: CommandResult
+        do {
+            find = try await runner.run("/usr/bin/security", ["find-identity", "-v", "-p", "codesigning"], cwd: nil)
+        } catch {
+            return .failure(.commandFailed(tool: "security", status: -1))
+        }
+        guard find.status == 0 else { return .failure(.commandFailed(tool: "security", status: find.status)) }
+        let identities = Self.parseIdentities(String(decoding: find.stdout, as: UTF8.self))
+        guard let identity = identities.first(where: { $0.name.hasPrefix("Apple Development") }) else {
+            return .failure(.noSigningIdentity)
+        }
+        return .success(identity)
     }
 
     /// Parses lines like `  1) <40-hex> "Name"` from `security find-identity`.

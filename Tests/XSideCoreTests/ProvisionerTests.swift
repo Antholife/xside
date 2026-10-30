@@ -79,6 +79,15 @@ private final class Box: @unchecked Sendable {
 }
 
 @Suite struct ProvisionerTests {
+    @Test func certificateArgumentsTargetAnyDeviceWithFixedBundleID() {
+        let args = Provisioner.certificateArguments(project: URL(fileURLWithPath: "/w/XSideTemplate.xcodeproj"),
+                                                    derivedData: URL(fileURLWithPath: "/w/DD"), teamID: "TEAM123456")
+        #expect(args.contains("generic/platform=iOS"))
+        #expect(args.contains("PRODUCT_BUNDLE_IDENTIFIER=io.github.xside.certificate.TEAM123456"))
+        #expect(args.contains("-allowProvisioningUpdates"))
+        #expect(!args.contains("-allowProvisioningDeviceRegistration"))
+    }
+
     @Test func argumentsMatchSpike() {
         let args = Provisioner.arguments(
             project: URL(fileURLWithPath: "/w/copy/XSideTemplate.xcodeproj"),

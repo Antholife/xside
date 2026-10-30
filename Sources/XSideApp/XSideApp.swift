@@ -55,6 +55,7 @@ private struct MenuBarLabel: View {
     let model: AppModel
     let appDelegate: AppDelegate
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
     @AppStorage(JourneyStep.completedKey) private var journeyCompleted = false
     @State private var journeyShown = false
 
@@ -69,17 +70,17 @@ private struct MenuBarLabel: View {
         return Image(nsImage: image)
     }
 
-    /// Opens the welcome journey once per launch: at once while it was never finished, else the
-    /// first time a probe fails (it then opens at the failing step).
+    /// Opens the welcome journey once per launch while it was never finished. Afterwards a failing
+    /// probe shows a banner, a notification and the fix in Settings instead.
     private func showJourneyIfNeeded() {
-        guard !journeyShown, !journeyCompleted || model.environmentFailed else { return }
+        guard !journeyShown, !journeyCompleted else { return }
         journeyShown = true
         openWindow.presentJourney(model)
     }
 
     /// Opens the .ipa received during setup, once the journey is finished and the environment OK.
     private func openQueuedIPA() {
-        guard journeyCompleted, !model.environmentFailed, let url = model.queuedIPA else { return }
+        guard journeyCompleted, let url = model.queuedIPA else { return }
         model.queuedIPA = nil
         openWindow.presentInstall(url, model: model)
     }
@@ -92,8 +93,9 @@ private struct MenuBarLabel: View {
             }
             .onChange(of: journeyCompleted) { openQueuedIPA() }
             .onAppear {
+                Notifier.openSettingsHandler = { openSettings() }
                 appDelegate.openIPA = { url in
-                    if journeyCompleted && !model.environmentFailed {
+                    if journeyCompleted {
                         openWindow.presentInstall(url, model: model)
                     } else {
                         model.queuedIPA = url

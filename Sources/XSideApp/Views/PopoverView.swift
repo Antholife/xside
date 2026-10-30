@@ -19,11 +19,13 @@ struct PopoverView: View {
 private struct PopoverContent: View {
     let model: AppModel
     @Environment(\.openWindow) private var openWindow
+    /// Closes the popover: every action that leads elsewhere (window, web page) does.
+    @Environment(\.dismiss) private var dismiss
     @AppStorage(JourneyStep.completedKey) private var journeyCompleted = false
     @State private var isDropTargeted = false
 
     var body: some View {
-        if model.environmentFailed || !journeyCompleted {
+        if !journeyCompleted {
             setupBody
         } else {
             mainBody
@@ -33,7 +35,10 @@ private struct PopoverContent: View {
     /// Until setup is done: only the setup card and the minimal footer.
     private var setupBody: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SetupCard { openWindow.presentJourney(model) }
+            SetupCard {
+                dismiss()
+                openWindow.presentJourney(model)
+            }
             PopoverFooter(appIDsRemaining: nil, showsSettings: false)
         }
         .padding(12)
@@ -42,13 +47,21 @@ private struct PopoverContent: View {
 
     private var mainBody: some View {
         VStack(alignment: .leading, spacing: 10) {
+            ForEach(model.environmentProblems, id: \.key) { error in
+                EnvironmentBanner(error: error) { dismiss() }
+            }
+            if model.macBetaWithReleaseXcode { MacBetaBanner { dismiss() } }
             ForEach(model.unpairedDevices) { device in
                 PairPrompt(device: device, isPairing: model.pairing.contains(device.id),
                            error: model.pairErrors[device.id]) { model.pair(device) }
             }
             devices
             Button(L("popover.install")) {
-                if let url = chooseIPA() { openWindow.presentInstall(url, model: model) }
+                // Close the popover first: the file picker opens on its own, not over it.
+                dismiss()
+                DispatchQueue.main.async {
+                    if let url = chooseIPA() { openWindow.presentInstall(url, model: model) }
+                }
             }
             .buttonStyle(GradientButtonStyle())
             .padding(.top, 2)
@@ -59,6 +72,7 @@ private struct PopoverContent: View {
         .overlay { if isDropTargeted { DropHighlight() } }
         .dropDestination(for: URL.self) { urls, _ in
             guard let url = urls.first(where: AppDelegate.isIPA) else { return false }
+            dismiss()
             openWindow.presentInstall(url, model: model)
             return true
         } isTargeted: { isDropTargeted = $0 }
@@ -93,6 +107,72 @@ private struct PopoverContent: View {
                 }
             }
         }
+    }
+}
+
+/// After setup, the signing environment broke (Xcode removed, signed out, certificate gone): no
+/// refresh can run until it's fixed in Settings.
+struct EnvironmentBanner: View {
+    let error: XSideError
+    /// Called after Settings opens (the popover closes itself).
+    var onOpen: () -> Void = {}
+    @Environment(\.openSettings) private var openSettings
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.octagon.fill")
+                .font(.system(size: 15))
+                .foregroundStyle(.red)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(error.setupTitle).font(.system(size: 12.5, weight: .semibold))
+                Text(error.environmentReason)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(L("environment.banner.fix")) {
+                    onOpen()
+                    NSApp.activate()
+                    openSettings()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Theme.violet)
+                .controlSize(.small)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
+/// macOS beta with a release Xcode: a warning, nothing is blocked.
+struct MacBetaBanner: View {
+    /// Called after the download page opens (the popover closes itself).
+    var onOpen: () -> Void = {}
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 15))
+                .foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(L("macBeta.banner.title")).font(.system(size: 12.5, weight: .semibold))
+                Text(L("macBeta.banner.text"))
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(L("journey.xcode.downloadBeta")) {
+                    NSWorkspace.shared.open(XcodeLauncher.betaURL)
+                    onOpen()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Theme.violet)
+                .controlSize(.small)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
 
@@ -169,6 +249,7 @@ private struct PopoverFooter: View {
     let appIDsRemaining: Int?
     var showsSettings = true
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -183,6 +264,7 @@ private struct PopoverFooter: View {
             HStack {
                 if showsSettings {
                     Button(L("popover.settings")) {
+                        dismiss()
                         NSApp.activate()
                         openSettings()
                     }
