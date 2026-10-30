@@ -17,7 +17,7 @@
 "popover.unreachableHint" = "Not found on this network: plug it in with USB or join the same Wi-Fi as this Mac.";
 "popover.newDevice" = "New device detected";
 "popover.pair" = "Pair";
-"popover.empty" = "No apps installed — drop an .ipa here";
+"popover.empty" = "No apps installed — drop an .ipa onto the XSide icon in the menu bar";
 "popover.noDevice" = "No device detected. Plug in your iPhone or iPad with USB and unlock it.";
 "popover.ring.days" = "%d d";
 "popover.refreshPending" = "Refresh pending";

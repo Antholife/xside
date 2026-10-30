@@ -17,7 +17,7 @@
 "popover.unreachableHint" = "Introuvable sur ce réseau : branche-le en USB ou connecte-le au même Wi-Fi que ce Mac.";
 "popover.newDevice" = "Nouvel appareil détecté";
 "popover.pair" = "Appairer";
-"popover.empty" = "Aucune app installée — glisse un .ipa ici";
+"popover.empty" = "Aucune app installée — glisse un .ipa sur l'icône XSide de la barre des menus";
 "popover.noDevice" = "Aucun appareil détecté. Branche ton iPhone ou ton iPad en USB et déverrouille-le.";
 "popover.ring.days" = "%d j";
 "popover.refreshPending" = "Rafraîchissement en attente";
