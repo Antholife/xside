@@ -23,6 +23,9 @@ Free Apple Account · Xcode's own tools · Auto-refresh over USB or Wi-Fi
 
 XSide installs `.ipa` files on your iPhone and iPad with a free Apple Account, then re-signs and reinstalls them before Apple's 7-day expiry, quietly, from the menu bar.
 
+> [!WARNING]
+> **XSide is in beta.** This is a pre-release: some bugs may still show up (though it's been holding up well so far), and not every planned feature is in yet. Found something odd? [Open an issue](https://github.com/Antholife/xside/issues).
+
 > [!NOTE]
 > XSide never asks for your Apple password. Signing goes through the account you already added in Xcode, using Xcode's own tools: `xcodebuild`, `codesign` and `devicectl`.
 
