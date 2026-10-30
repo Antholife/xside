@@ -368,3 +368,9 @@
 "whatsNew.102.report.title" = "Easier bug reports";
 "whatsNew.102.report.text" = "When something fails, \"Export logs\" makes a zip ready to attach to a GitHub issue.";
 "whatsNew.102.thanks" = "again, for sharing the .ipa that helped find this one.";
+
+/* Popover tiles */
+"popover.tile.install" = "Install an app";
+"popover.tile.refreshAll" = "Refresh all";
+"popover.tile.refreshAll.help" = "Refresh every app that can be right now (%d)";
+"popover.tile.refreshAll.none" = "Nothing to refresh right now: no app is reachable, or they're all paused or already running";

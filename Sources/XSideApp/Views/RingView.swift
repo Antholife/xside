@@ -33,8 +33,9 @@ struct RingView: View {
     var isBusy = false
     var isPaused = false
 
-    private let size: CGFloat = 34
-    private let line: CGFloat = 3.5
+    /// 34 on its own; smaller next to the app's icon.
+    var size: CGFloat = 34
+    private var line: CGFloat { size * 0.1 }
 
     private var colors: [Color] {
         if isPaused { return [Color.secondary, Color.secondary] }
@@ -68,11 +69,11 @@ struct RingView: View {
             ProgressView().controlSize(.small)
         } else if validity.isExpired {
             Image(systemName: "exclamationmark")
-                .font(.system(size: 13, weight: .bold))
+                .font(.system(size: size * 0.38, weight: .bold))
                 .foregroundStyle(isPaused ? Color.secondary : Color(nsColor: .systemRed))
         } else {
             Text(L("popover.ring.days", validity.daysLeft))
-                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                .font(.system(size: size * 0.31, weight: .semibold, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(isPaused ? .secondary : .primary)
         }

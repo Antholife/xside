@@ -15,6 +15,8 @@ struct AppRow: View {
     /// Wi-Fi refresh is off and the device is only on Wi-Fi.
     let needsUSB: Bool
     let deviceName: String
+    /// The app's icon (custom or its own), nil until known.
+    let icon: NSImage?
     let onRefresh: () -> Void
     /// Each asks for confirmation first (see `AppRowAlerts`).
     let onUninstall: () -> Void
@@ -71,7 +73,7 @@ struct AppRow: View {
 
     private func row(validity: Validity, now: Date) -> some View {
         HStack(spacing: 10) {
-            RingView(validity: validity, isBusy: step != nil, isPaused: isPaused)
+            AppIconView(icon: icon, isBusy: step != nil || isUninstalling, isPaused: isPaused)
             VStack(alignment: .leading, spacing: 2) {
                 Text(appName)
                     .font(.system(size: 13, weight: .medium))
@@ -107,6 +109,7 @@ struct AppRow: View {
                 .accessibilityLabel(L("popover.refreshNow"))
                 .transition(.opacity)
             }
+            RingView(validity: validity, isBusy: false, isPaused: isPaused, size: 28)
             Menu { actions } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 12, weight: .semibold))
@@ -136,6 +139,43 @@ struct AppRow: View {
         guard next > now else { return L("popover.refreshPending") }
         let when = next.formatted(.dateTime.weekday(.wide).hour().minute().locale(appLocale))
         return L("popover.nextRefresh", when)
+    }
+}
+
+/// The app's icon in its rounded square, greyed while paused, with a spinner over it while a job
+/// runs on the row. A brand-colored square until the icon is known.
+struct AppIconView: View {
+    let icon: NSImage?
+    var isBusy = false
+    var isPaused = false
+    var size: CGFloat = 38
+
+    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: size * 0.225, style: .continuous) }
+
+    var body: some View {
+        ZStack {
+            if let icon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .interpolation(.high)
+            } else {
+                shape.fill(Theme.brand)
+                Image(systemName: "app.dashed")
+                    .font(.system(size: size * 0.45, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.9))
+            }
+            if isBusy {
+                shape.fill(.black.opacity(0.35))
+                ProgressView().controlSize(.small).tint(.white)
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(shape)
+        .overlay(shape.strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.15), radius: 2, y: 1)
+        .saturation(isPaused ? 0 : 1)
+        .opacity(isPaused ? 0.6 : 1)
+        .accessibilityHidden(true)
     }
 }
 

@@ -111,6 +111,8 @@ final class AppModel {
         LibraryLocation.folderName(bundleID: Bundle.main.bundleIdentifier).lowercased() + "-icons")
 
     let library: AppLibrary
+    /// The icon of each app (popover rows).
+    let icons: AppIcons
     /// Runs every tool with `DEVELOPER_DIR` set to the Xcode in use (see `resolveXcode`).
     private let runner: ProcessRunner
     /// Without the override: what `xcode-select -p` itself points to.
@@ -154,6 +156,7 @@ final class AppModel {
         })
         paths = Paths()
         library = AppLibrary(root: paths.root)
+        icons = AppIcons(library: library, runner: runner)
         prefsStore = DevicePrefsStore(libraryRoot: paths.root)
         devicePrefs = prefsStore.load()
         // Icons pulled out of earlier sessions' `.ipa` files.
@@ -687,6 +690,7 @@ final class AppModel {
     func reloadRecords() async {
         records = await library.records()
         updateAttention()
+        icons.backfill(records) // once per launch
     }
 
     // MARK: Attention (menu-bar badge)
@@ -776,6 +780,7 @@ final class AppModel {
                 info = try await IPAImporter.inspect(ipa: ipa, runner: runner)
             }
             record = try await library.importIPA(ipa, info: info, teamID: env.teamID)
+            if let flow = install, flow.ipa == ipa, let icon = flow.appIcon { icons.keep(icon, for: record.id) }
         }
         // Claimed with no await since the import, so a refresh can't start in between.
         let key = JobKey(recordID: record.id, deviceID: device.id)
@@ -946,6 +951,16 @@ final class AppModel {
     /// Rows with an install or refresh running.
     var busyJobs: Set<RefreshJob> {
         Set(jobs.keys.map { RefreshJob(recordID: $0.recordID, deviceID: $0.deviceID) })
+    }
+
+    /// Rows "Refresh all" would start now.
+    var refreshableEntries: [AppEntry] { deviceGroups.flatMap(\.apps).filter(canRefresh) }
+
+    /// Refreshes every app that can be now (reachable, not paused, not already running).
+    func refreshAll() {
+        let entries = refreshableEntries
+        Self.logger.notice("refresh all: \(entries.count) app(s)")
+        for entry in entries { refreshNow(entry.job) }
     }
 
     func canRefresh(_ entry: AppEntry) -> Bool {

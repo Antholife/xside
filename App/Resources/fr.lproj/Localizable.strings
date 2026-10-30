@@ -368,3 +368,9 @@
 "whatsNew.102.report.title" = "Signaler un bug plus facilement";
 "whatsNew.102.report.text" = "Quand quelque chose échoue, « Exporter les logs » crée un zip prêt à joindre à une issue GitHub.";
 "whatsNew.102.thanks" = "encore, d'avoir partagé le .ipa qui a permis de trouver celui-ci.";
+
+/* Tuiles de la popup */
+"popover.tile.install" = "Installer une app";
+"popover.tile.refreshAll" = "Tout rafraîchir";
+"popover.tile.refreshAll.help" = "Rafraîchir toutes les apps qui peuvent l'être maintenant (%d)";
+"popover.tile.refreshAll.none" = "Rien à rafraîchir pour l'instant : aucune app joignable, ou elles sont toutes en pause ou déjà en cours";

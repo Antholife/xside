@@ -39,10 +39,11 @@ private struct PopoverContent: View {
                 dismiss()
                 openWindow.presentJourney(model)
             }
-            PopoverFooter(appIDsRemaining: nil, showsSettings: false)
+            PopoverFooter(model: model, appIDsRemaining: nil, showsSettings: false)
         }
         .padding(12)
-        .frame(width: 320)
+        .frame(width: 340)
+        .background(PopoverTint())
     }
 
     private var mainBody: some View {
@@ -59,7 +60,6 @@ private struct PopoverContent: View {
                 PairPrompt(device: device, isPairing: model.pairing.contains(device.id),
                            error: model.pairErrors[device.id]) { model.pair(device) }
             }
-            devices
             if let flow = model.install, InstallProgressCard.isShown(for: flow, in: model) {
                 // The run lives in the model: the window shows it where it is.
                 InstallProgressCard(model: model, flow: flow) {
@@ -67,22 +67,16 @@ private struct PopoverContent: View {
                     openWindow(id: InstallWindow.id)
                     NSApp.activate()
                 }
-                .padding(.top, 2)
             } else {
-                Button(L("popover.install")) {
-                    // Close the popover first: the file picker opens on its own, not over it.
-                    dismiss()
-                    DispatchQueue.main.async {
-                        if let url = chooseIPA() { openWindow.presentInstall(url, model: model) }
-                    }
-                }
-                .buttonStyle(GradientButtonStyle())
-                .padding(.top, 2)
+                actionTiles
             }
-            PopoverFooter(appIDsRemaining: model.appIDsRemaining)
+            PopoverDivider()
+            devices
+            PopoverFooter(model: model, appIDsRemaining: model.appIDsRemaining)
         }
         .padding(12)
-        .frame(width: 320)
+        .frame(width: 340)
+        .background(PopoverTint())
         .overlay { if isDropTargeted { DropHighlight() } }
         .dropDestination(for: URL.self) { urls, _ in
             guard let url = urls.first(where: AppDelegate.isIPA) else { return false }
@@ -90,6 +84,29 @@ private struct PopoverContent: View {
             openWindow.presentInstall(url, model: model)
             return true
         } isTargeted: { isDropTargeted = $0 }
+    }
+
+    /// Install an app, refresh them all.
+    private var actionTiles: some View {
+        let refreshable = model.refreshableEntries.count
+        return HStack(spacing: 8) {
+            Button {
+                // Close the popover first: the file picker opens on its own, not over it.
+                dismiss()
+                DispatchQueue.main.async {
+                    if let url = chooseIPA() { openWindow.presentInstall(url, model: model) }
+                }
+            } label: {
+                ActionTileLabel(symbol: "arrow.down.app.fill", title: L("popover.tile.install"))
+            }
+            .buttonStyle(ActionTileStyle(prominent: true))
+            Button(action: model.refreshAll) {
+                ActionTileLabel(symbol: "arrow.triangle.2.circlepath", title: L("popover.tile.refreshAll"))
+            }
+            .buttonStyle(ActionTileStyle(prominent: false))
+            .disabled(refreshable == 0)
+            .help(refreshable == 0 ? L("popover.tile.refreshAll.none") : L("popover.tile.refreshAll.help", refreshable))
+        }
     }
 
     @ViewBuilder private var devices: some View {
@@ -121,6 +138,7 @@ private struct PopoverContent: View {
                                    canManage: model.canManage(entry),
                                    isUninstalling: model.uninstalling.contains(entry.id),
                                    needsUSB: group.needsUSB, deviceName: group.name,
+                                   icon: model.icons.image(for: entry.record),
                                    onRefresh: { model.refreshNow(entry.job) },
                                    onUninstall: { uninstall(entry, deviceName: group.name) },
                                    onStopRefreshing: { stopRefreshing(entry, deviceName: group.name) },
@@ -375,16 +393,22 @@ private struct DropHighlight: View {
     }
 }
 
-/// "~N/10 App IDs left…" then "Settings · Quit".
+/// "~N/10 App IDs left…", then icon tiles: Settings, What's New, logs, the version, Quit.
 private struct PopoverFooter: View {
+    let model: AppModel
     let appIDsRemaining: Int?
     var showsSettings = true
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
     @Environment(\.dismiss) private var dismiss
 
+    private var version: String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        return "\(info["CFBundleShortVersionString"] as? String ?? "") β"
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Divider()
+        VStack(alignment: .leading, spacing: 8) {
             if let appIDsRemaining {
                 Text(L("popover.appIDsRemaining", appIDsRemaining))
                     .font(.system(size: 10.5))
@@ -392,48 +416,133 @@ private struct PopoverFooter: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 4)
             }
-            HStack {
+            PopoverDivider()
+            HStack(spacing: 6) {
                 if showsSettings {
-                    Button(L("popover.settings")) {
+                    IconTile(symbol: "gearshape.fill", help: L("popover.settings")) {
                         dismiss()
                         NSApp.activate()
                         openSettings()
                     }
+                    IconTile(symbol: "sparkles", help: L("whatsNew.window")) {
+                        dismiss()
+                        openWindow(id: WhatsNewWindow.id)
+                        NSApp.activate()
+                    }
+                    IconTile(symbol: "doc.text.magnifyingglass", help: L("logs.exportLink")) {
+                        dismiss()
+                        DispatchQueue.main.async { Diagnostics.export(model: model) }
+                    }
                 }
+                Spacer()
+                Text(version)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
                 Spacer()
                 // Confirmed by `AppDelegate.applicationShouldTerminate` while it would stop a refresh:
                 // the popover closes first, so a cancelled quit doesn't leave it open behind.
-                Button(L("popover.quit")) {
+                IconTile(symbol: "power", help: L("popover.quit")) {
                     dismiss()
                     DispatchQueue.main.async { NSApp.terminate(nil) }
                 }
-                    .keyboardShortcut("q")
+                .keyboardShortcut("q")
             }
-            .buttonStyle(FooterButtonStyle())
-
         }
     }
 }
 
-private struct FooterButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        FooterButtonLabel(configuration: configuration)
+/// A thin separator, lighter than `Divider` on the glass.
+private struct PopoverDivider: View {
+    var body: some View {
+        Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 1)
     }
 }
 
-private struct FooterButtonLabel: View {
+/// A faint brand wash behind the popover's material.
+private struct PopoverTint: View {
+    var body: some View {
+        LinearGradient(colors: [Theme.violet.opacity(0.12), Theme.pink.opacity(0.05), .clear],
+                       startPoint: .top, endPoint: .bottom)
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+    }
+}
+
+/// Big square-ish tile: an icon over its title.
+private struct ActionTileLabel: View {
+    let symbol: String
+    let title: String
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Image(systemName: symbol).font(.system(size: 20, weight: .semibold))
+            Text(title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 64)
+    }
+}
+
+/// `prominent`: the brand gradient with white content; else a glass tile with brand content.
+private struct ActionTileStyle: ButtonStyle {
+    let prominent: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        ActionTileBody(configuration: configuration, prominent: prominent)
+    }
+}
+
+private struct ActionTileBody: View {
     let configuration: ButtonStyleConfiguration
+    let prominent: Bool
+    @Environment(\.isEnabled) private var isEnabled
     @State private var isHovering = false
+
+    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 12, style: .continuous) }
 
     var body: some View {
         configuration.label
-            .font(.system(size: 12))
-            .foregroundStyle(isHovering ? .primary : .secondary)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .background(RoundedRectangle(cornerRadius: 5).fill(isHovering ? Theme.hoverFill : .clear))
-            .opacity(configuration.isPressed ? 0.7 : 1)
-            .contentShape(Rectangle())
-            .onHover { isHovering = $0 }
+            .foregroundStyle(prominent ? AnyShapeStyle(.white) : AnyShapeStyle(Theme.brand))
+            .background {
+                if prominent {
+                    shape.fill(Theme.brand)
+                        .shadow(color: Theme.violet.opacity(isHovering ? 0.45 : 0.3), radius: isHovering ? 8 : 5, y: 2)
+                } else {
+                    shape.fill(Theme.violet.opacity(isHovering ? 0.16 : 0.09))
+                }
+            }
+            .overlay(shape.strokeBorder(prominent ? Color.white.opacity(0.18) : Theme.violet.opacity(0.18), lineWidth: 0.5))
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .opacity(isEnabled ? 1 : 0.4)
+            .contentShape(shape)
+            .onHover { isHovering = $0 && isEnabled }
+            .animation(.easeOut(duration: 0.15), value: isHovering)
+            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+    }
+}
+
+/// Small icon-only footer tile, with its name as tooltip.
+private struct IconTile: View {
+    let symbol: String
+    let help: String
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(isHovering ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(.secondary))
+                .frame(width: 32, height: 28)
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isHovering ? Theme.violet.opacity(0.14) : Color.primary.opacity(0.05)))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .help(help)
+        .accessibilityLabel(help)
+        .animation(.easeOut(duration: 0.12), value: isHovering)
     }
 }
