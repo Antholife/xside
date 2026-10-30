@@ -632,6 +632,7 @@ final class AppModel {
         // Set before the first await: no refresh or install can start on it meanwhile.
         removingDevices.insert(deviceID)
         defer { removingDevices.remove(deviceID) }
+        Self.logger.notice("removing device \(deviceID)")
         // Records a job is installing on another device must survive even if this device held
         // their last installation.
         var busyRecords = Set(claims.keys.map(\.recordID))

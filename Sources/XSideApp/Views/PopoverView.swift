@@ -103,7 +103,12 @@ private struct PopoverContent: View {
                 VStack(alignment: .leading, spacing: 2) {
                     DeviceCard(group: group,
                                onWifiRefresh: { model.setWifiRefresh($0, for: group.id) },
-                               onRemove: { Task { await model.removeDevice(group.id) } })
+                               onRemove: {
+                                   afterClosing {
+                                       guard AppRowAlerts.confirmRemoveDevice() else { return }
+                                       Task { await model.removeDevice(group.id) }
+                                   }
+                               })
                     if group.apps.isEmpty {
                         Text(L("popover.empty"))
                             .font(.system(size: 11))

@@ -13,7 +13,6 @@ struct DeviceCard: View {
     let onWifiRefresh: @MainActor @Sendable (Bool) -> Void
     let onRemove: () -> Void
 
-    @State private var confirmingRemoval = false
 
     init(group: DeviceGroup, onWifiRefresh: @escaping @MainActor @Sendable (Bool) -> Void, onRemove: @escaping () -> Void) {
         wifiRefresh = group.wifiRefresh
@@ -48,7 +47,9 @@ struct DeviceCard: View {
             Menu {
                 Toggle(L("popover.device.wifiRefresh"), isOn: Binding(get: { wifiRefresh }, set: onWifiRefresh))
                 Divider()
-                Button(L("popover.device.remove"), role: .destructive) { confirmingRemoval = true }
+                // Confirmed by the caller, once the popover is closed: an alert inside it would
+                // close along with it.
+                Button(L("popover.device.remove"), role: .destructive, action: onRemove)
                     .disabled(!canRemove)
                 if !canRemove { Text(L("popover.device.removeBusy")) }
             } label: {
@@ -64,12 +65,6 @@ struct DeviceCard: View {
             .accessibilityLabel(L("popover.device.menu"))
         }
         .accessibilityElement(children: .contain)
-        .alert(L("popover.device.removeTitle"), isPresented: $confirmingRemoval) {
-            Button(L("popover.device.remove"), role: .destructive, action: onRemove)
-            Button(L("install.cancel"), role: .cancel) {}
-        } message: {
-            Text(L("popover.device.removeMessage"))
-        }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))

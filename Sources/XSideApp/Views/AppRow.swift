@@ -188,6 +188,12 @@ enum AppRowAlerts {
             confirm: L("popover.app.remove"), cancel: L("install.cancel"), destructive: true)
     }
 
+    /// True when the user confirmed removing the device from XSide (nothing is uninstalled).
+    static func confirmRemoveDevice() -> Bool {
+        run(title: L("popover.device.removeTitle"), message: L("popover.device.removeMessage"),
+            confirm: L("popover.device.remove"), cancel: L("install.cancel"), destructive: true)
+    }
+
     /// Shows why the uninstall failed. `offerPause`: the alert also offers to stop refreshing it
     /// instead (pointless for a paused app); true when the user chose that.
     static func uninstallFailed(app: String, device: String, error: any Error, offerPause: Bool) -> Bool {
