@@ -10,10 +10,13 @@ public struct InstallOptions: Codable, Equatable, Sendable {
     public var iPadFullScreen: Bool = false
     public var proMotion: Bool = false
     public var minimumOSVersion: String?
+    /// Grant the keychain groups the app shares with its vendor's other apps. Off by default: the
+    /// vendor is read from the IPA itself, so a crafted IPA could claim one to read their logins.
+    public var shareKeychain: Bool = false
 
     public init(displayName: String? = nil, customBundleID: String? = nil, version: String? = nil,
                 iconPath: String? = nil, fileSharing: Bool = false, iPadFullScreen: Bool = false,
-                proMotion: Bool = false, minimumOSVersion: String? = nil) {
+                proMotion: Bool = false, minimumOSVersion: String? = nil, shareKeychain: Bool = false) {
         self.displayName = displayName
         self.customBundleID = customBundleID
         self.version = version
@@ -22,6 +25,7 @@ public struct InstallOptions: Codable, Equatable, Sendable {
         self.iPadFullScreen = iPadFullScreen
         self.proMotion = proMotion
         self.minimumOSVersion = minimumOSVersion
+        self.shareKeychain = shareKeychain
     }
 
     /// Every key is optional: options saved by an older version (or missing a key) still load.
@@ -35,6 +39,7 @@ public struct InstallOptions: Codable, Equatable, Sendable {
         iPadFullScreen = try c.decodeIfPresent(Bool.self, forKey: .iPadFullScreen) ?? false
         proMotion = try c.decodeIfPresent(Bool.self, forKey: .proMotion) ?? false
         minimumOSVersion = try c.decodeIfPresent(String.self, forKey: .minimumOSVersion)
+        shareKeychain = try c.decodeIfPresent(Bool.self, forKey: .shareKeychain) ?? false
     }
 }
 
@@ -86,7 +91,7 @@ public struct Resigner: Sendable {
 
         let entitlements = workDir.appendingPathComponent("entitlements-\(UUID().uuidString).plist")
         try Self.signingEntitlements(profile: profile, bundleID: bundleID, original: originalEntitlements,
-                                     otherBundleIDs: otherBundleIDs)
+                                     shareKeychain: options.shareKeychain, otherBundleIDs: otherBundleIDs)
             .write(to: entitlements)
 
         for target in signTargets(in: app) {
@@ -104,9 +109,10 @@ public struct Resigner: Sendable {
     /// `keychain-access-groups = [TEAM.*]`, which would let the sideloaded app read every keychain
     /// item of the team's other apps. Other profile keys pass through unless a value contains `*`.
     /// `original`: the entitlements the app was signed with. The keychain groups it declares are
-    /// kept, moved to the new team (see `keychainGroups`), after `<TEAM>.<bundleID>`.
+    /// kept, moved to the new team (see `keychainGroups`), after `<TEAM>.<bundleID>`, only when
+    /// `shareKeychain` is on.
     public static func signingEntitlements(profile: ProvisioningProfile, bundleID: String,
-                                           original: [String: Any]? = nil,
+                                           original: [String: Any]? = nil, shareKeychain: Bool = false,
                                            otherBundleIDs: Set<String> = []) throws -> Data {
         let granted = (try? PropertyListSerialization.propertyList(from: profile.entitlements, format: nil))
             as? [String: Any] ?? [:]
@@ -116,8 +122,10 @@ public struct Resigner: Sendable {
         result["application-identifier"] = appID
         result["com.apple.developer.team-identifier"] = profile.teamID
         result["get-task-allow"] = granted["get-task-allow"] as? Bool ?? true
-        result["keychain-access-groups"] = keychainGroups(original, team: profile.teamID, appID: appID,
-                                                          otherBundleIDs: otherBundleIDs)
+        // Only the app's own group unless the user chose to share with the vendor's other apps.
+        result["keychain-access-groups"] = shareKeychain
+            ? keychainGroups(original, team: profile.teamID, appID: appID, otherBundleIDs: otherBundleIDs)
+            : [appID]
         return try PropertyListSerialization.data(fromPropertyList: result, format: .xml, options: 0)
     }
 
@@ -133,11 +141,7 @@ public struct Resigner: Sendable {
         // Allowlist: a shared group is kept only within the app's own vendor, the first two
         // components of its original id ("com.google" for com.google.ios.youtube, which keeps
         // com.google.common.SSO). Unknown original id: nothing beyond `appID`.
-        let originalID = (original?["application-identifier"] as? String).flatMap { id -> String? in
-            guard let dot = id.firstIndex(of: ".") else { return nil }
-            return String(id[id.index(after: dot)...])
-        }
-        let vendor = originalID.map { $0.split(separator: ".").prefix(2).joined(separator: ".") + "." }
+        let vendor = keychainVendor(original).map { $0 + "." }
         let declared = original?["keychain-access-groups"] as? [String] ?? []
         // The original team: its own key, else the prefix of its application identifier.
         let oldTeam = original?["com.apple.developer.team-identifier"] as? String
@@ -169,6 +173,25 @@ public struct Resigner: Sendable {
             }
         }
         return groups
+    }
+
+    /// The vendor whose shared keychain groups an app may keep: the first two components of its
+    /// original id, read from the embedded `application-identifier` ("TEAM.com.google.ios.youtube"
+    /// gives "com.google"). Nil when the entitlements don't say.
+    public static func keychainVendor(_ original: [String: Any]?) -> String? {
+        guard let id = original?["application-identifier"] as? String, let dot = id.firstIndex(of: ".") else { return nil }
+        let parts = id[id.index(after: dot)...].split(separator: ".")
+        guard !parts.isEmpty else { return nil }
+        return parts.prefix(2).joined(separator: ".")
+    }
+
+    /// The shared groups `keychainGroups` would grant, without their team prefix, for the install
+    /// options to list ("com.google.common.SSO").
+    public static func sharedGroupNames(_ original: [String: Any]?) -> [String] {
+        let team = "XSIDETEAM0"
+        return keychainGroups(original, team: team, appID: "\(team).\(UUID().uuidString)").dropFirst()
+            .filter { $0 != "com.apple.token" }
+            .map { String($0.dropFirst(team.count + 1)) }
     }
 
     private static func containsWildcard(_ value: Any) -> Bool {

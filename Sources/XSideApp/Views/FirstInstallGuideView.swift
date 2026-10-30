@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Shown after the first successful install on a device: stay unlocked, trust the developer,
-/// and enable Developer Mode when the device reports it off.
+/// Shown after the first successful install on a device: what to set on the device before the
+/// app opens (Developer Mode when the device reports it off, then trust the developer).
 struct FirstInstallGuideView: View {
     let guide: FirstInstallGuide
     /// Named in the title when several devices were installed (one guide each).
@@ -12,18 +12,22 @@ struct FirstInstallGuideView: View {
             Label(deviceName.map { L("guide.titleDevice", $0) } ?? L("guide.title"), systemImage: "hand.raised.fill")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Theme.violet)
-            step(1, symbol: "lock.open", L("guide.unlock"))
-            step(2, symbol: "checkmark.shield", L("guide.trust", guide.accountName))
+            Text(L("guide.unlock"))
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            // Developer Mode first: turning it on restarts the device.
             if guide.needsDeveloperMode {
-                step(3, symbol: "hammer", L("guide.developerMode"))
+                step(1, L("guide.developerMode"))
             }
+            step(guide.needsDeveloperMode ? 2 : 1, L("guide.trust", guide.accountName))
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.violet.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
-    private func step(_ n: Int, symbol: String, _ text: String) -> some View {
+    private func step(_ n: Int, _ text: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text("\(n)")
                 .font(.system(size: 10, weight: .bold, design: .rounded))

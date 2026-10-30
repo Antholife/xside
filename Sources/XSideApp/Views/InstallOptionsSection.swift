@@ -46,11 +46,21 @@ struct InstallOptionsSection: View {
                 if !flow.draft.minOS.trimmingCharacters(in: .whitespaces).isEmpty {
                     warning(L("install.warning.minOS"))
                 }
+                // Only offered when the app asks for shared groups; off unless the user trusts the IPA.
+                if let info = flow.info, !info.sharedKeychainGroups.isEmpty {
+                    toggle(L("install.field.shareKeychain", info.sharedKeychainVendor ?? Self.vendor(of: info.bundleID)), isOn: $flow.draft.shareKeychain)
+                    warning(L("install.warning.shareKeychain", info.sharedKeychainGroups.joined(separator: ", ")))
+                }
             }
             .font(.system(size: 12))
             .padding(.top, 10)
             .padding(.leading, 4)
             .disabled(flow.isRunning)
+    }
+
+    /// "com.google" for com.google.ios.youtube (fallback when the entitlements name no vendor).
+    private static func vendor(of bundleID: String) -> String {
+        bundleID.split(separator: ".").prefix(2).joined(separator: ".")
     }
 
     private func label(_ text: String) -> some View {
@@ -109,6 +119,8 @@ struct InstallOptionsSection: View {
                     }
                     .buttonStyle(.borderless)
                     .foregroundStyle(.tertiary)
+                    .help(L("install.field.iconRemove"))
+                    .accessibilityLabel(L("install.field.iconRemove"))
                 }
             }
         }

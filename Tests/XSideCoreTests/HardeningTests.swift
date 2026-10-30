@@ -285,9 +285,22 @@ struct EntitlementsTests {
         let data = try Resigner.signingEntitlements(
             profile: profile, bundleID: "com.vendor.app.NEWTEAM456",
             original: ["application-identifier": "OLDTEAM123.com.vendor.app",
-                       "keychain-access-groups": ["OLDTEAM123.com.vendor.shared", "*"]])
+                       "keychain-access-groups": ["OLDTEAM123.com.vendor.shared", "*"]],
+            shareKeychain: true)
         let signed = try #require(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
         #expect(signed["keychain-access-groups"] as? [String]
                 == ["NEWTEAM456.com.vendor.app.NEWTEAM456", "NEWTEAM456.com.vendor.shared"])
+        // Sharing is opt-in: by default only the app's own group.
+        let alone = try Resigner.signingEntitlements(
+            profile: profile, bundleID: "com.vendor.app.NEWTEAM456",
+            original: ["application-identifier": "OLDTEAM123.com.vendor.app",
+                       "keychain-access-groups": ["OLDTEAM123.com.vendor.shared"]])
+        let aloneGroups = try #require(try PropertyListSerialization.propertyList(from: alone, format: nil) as? [String: Any])
+        #expect(aloneGroups["keychain-access-groups"] as? [String] == ["NEWTEAM456.com.vendor.app.NEWTEAM456"])
+        #expect(Resigner.sharedGroupNames(["application-identifier": "OLDTEAM123.com.vendor.app",
+                                           "keychain-access-groups": ["OLDTEAM123.com.vendor.shared",
+                                                                      "OLDTEAM123.com.other.x", "com.apple.token"]])
+                == ["com.vendor.shared"])
+        #expect(Resigner.sharedGroupNames(nil).isEmpty)
     }
 }

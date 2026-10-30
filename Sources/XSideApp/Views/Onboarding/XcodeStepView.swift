@@ -18,6 +18,22 @@ struct XcodeStepView: View {
         return L(xcode.isBeta ? "journey.xcode.done.beta" : "journey.xcode.done.version", xcode.version, xcode.build)
     }
 
+    /// Several Xcode apps: which one XSide uses (another one can be picked in Settings).
+    private var usingCaption: String? {
+        guard model.xcodes.count > 1, let dir = model.lastKnownDeveloperDir,
+              let xcode = model.xcodes.first(where: { $0.developerDir.isSameDirectory(dir) }) else { return nil }
+        return L("journey.xcode.using", L(xcode.isBeta ? "settings.xcode.item.beta" : "settings.xcode.item",
+                                          xcode.version, xcode.build))
+    }
+
+    private func caption(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11.5))
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
     /// How to get a working Xcode: install it (beta on a macOS beta), open it once, come back.
     private var installSteps: some View {
         VStack(spacing: 8) {
@@ -37,6 +53,12 @@ struct XcodeStepView: View {
                     StatusCard(status: .checking, title: L("journey.xcode.checking"))
                 case .done:
                     StatusCard(status: .done, title: doneTitle)
+                    if let using = usingCaption {
+                        caption(using)
+                    }
+                    if model.unreadyBetaXcode != nil {
+                        caption(L("settings.xcode.betaNotReady"))
+                    }
                     if model.macBetaWithReleaseXcode {
                         MacBetaBanner()
                         installSteps

@@ -95,7 +95,7 @@ struct InstallSheet: View {
                 } else if case .editing(let error?) = flow.phase {
                     ErrorText(error)
                 }
-                if case .failure(let error)? = model.environment { ErrorText(error.localizedMessage) }
+                if case .editing = flow.phase { BlockedNotice(model: model, flow: flow) }
             case .finished:
                 if flow.isMultiDevice {
                     DeviceRunList(model: model, flow: flow, steps: steps)
@@ -117,6 +117,7 @@ struct InstallSheet: View {
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Color(nsColor: .systemGreen))
                 }
+                if !flow.failedDeviceIDs.isEmpty, flow.wifiCheck == nil { BlockedNotice(model: model, flow: flow) }
                 if flow.wifiCheck == nil {
                     ForEach(flow.guides, id: \.deviceID) { guide in
                         FirstInstallGuideView(guide: guide,
@@ -193,11 +194,12 @@ struct InstallSheet: View {
                 Button(L("install.retryFailed"), action: model.retryFailedInstalls)
                     .buttonStyle(GradientButtonStyle())
                     .frame(width: 170)
-                    .keyboardShortcut(.defaultAction)
+                    // During the Wi-Fi check, Return is its "Retry".
+                    .keyboardShortcut(flow.wifiCheck == nil ? .defaultAction : nil)
                     .disabled(flow.wifiCheck != nil || !model.isPipelineReady)
             case .finished:
                 Button(L("install.done"), action: close)
-                    .keyboardShortcut(.defaultAction)
+                    .keyboardShortcut(flow.wifiCheck == nil ? .defaultAction : nil)
                     .controlSize(.large)
                     .disabled(flow.wifiCheck != nil)
             case .inspecting, .rejected:
@@ -225,6 +227,49 @@ struct InstallSheet: View {
     private var canInstall: Bool {
         guard !flow.isRunning, case .success? = model.environment else { return false }
         return model.devices.contains { flow.deviceIDs.contains($0.id) && $0.isAvailable }
+    }
+}
+
+/// Why "Install" (or "Retry failed") can't be pressed: the first check still running, the
+/// environment failing (with its fix), or the chosen devices gone.
+private struct BlockedNotice: View {
+    let model: AppModel
+    let flow: InstallFlow
+    @Environment(\.openSettings) private var openSettings
+
+    var body: some View {
+        if flow.isRunning {
+            EmptyView()
+        } else if model.environment == nil {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text(L("install.blocked.checking")).font(.system(size: 12)).foregroundStyle(.secondary)
+            }
+        } else if let error = model.environmentError {
+            VStack(alignment: .leading, spacing: 8) {
+                ErrorText(error.localizedMessage)
+                Group {
+                    // A failed check has nothing to fix: checking again is the action.
+                    if error.isSetupCheckFailure {
+                        Button(L("onboarding.recheck"), action: model.recheckEnvironment)
+                            .disabled(model.isProbing)
+                    } else {
+                        Button(L("environment.banner.fix")) {
+                            NSApp.activate()
+                            openSettings()
+                        }
+                    }
+                }
+                .controlSize(.small)
+                .padding(.leading, 22)
+            }
+        } else if case .editing = flow.phase, !flow.deviceIDs.isEmpty,
+                  !model.devices.contains(where: { flow.deviceIDs.contains($0.id) && $0.isAvailable }) {
+            Label(L("install.noAvailableDevice"), systemImage: "exclamationmark.triangle.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(Color(nsColor: .systemOrange))
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 
@@ -362,6 +407,7 @@ private struct DeviceChoice: View {
                     .font(.system(size: 16))
                     .frame(width: 18)
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(device.name).font(.system(size: 13, weight: .medium))
                     HStack(spacing: 5) {
@@ -432,6 +478,7 @@ private struct DeviceRunRow: View {
                 .font(.system(size: 16))
                 .frame(width: 18)
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(run.name).font(.system(size: 13, weight: .medium))
                 Text(statusText)

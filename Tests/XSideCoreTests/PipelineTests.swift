@@ -579,3 +579,38 @@ struct PipelineTests {
         #expect(await f.log.provisionUDIDs.count == 1)
     }
 }
+
+/// Records the `DEVELOPER_DIR` each step's subprocesses would get.
+private actor DirLog {
+    private(set) var dirs: [String?] = []
+    func add(_ dir: String?) { dirs.append(dir) }
+}
+
+private struct DirProvisioner: Provisioning {
+    let dirs: DirLog
+    func profile(bundleID: String, env: SigningEnvironment,
+                 deviceUDIDs: [String]) async throws -> (url: URL, profile: ProvisioningProfile) {
+        await dirs.add(CommandEnvironment.overrides["DEVELOPER_DIR"])
+        return (URL(fileURLWithPath: "/nonexistent/profile.mobileprovision"), makeProfile(udids: deviceUDIDs))
+    }
+}
+
+private struct DirInstaller: Installing {
+    let dirs: DirLog
+    func install(app: URL, deviceID: String) async throws {
+        await dirs.add(CommandEnvironment.overrides["DEVELOPER_DIR"])
+    }
+}
+
+struct PipelineDeveloperDirTests {
+    @Test func runsEveryStepWithTheJobsXcode() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let dirs = DirLog()
+        let pipeline = SideloadPipeline(library: f.library, provisioner: DirProvisioner(dirs: dirs),
+                                        resigner: FakeResigner(log: f.log), installer: DirInstaller(dirs: dirs),
+                                        workRoot: f.workRoot, now: { fixedNow })
+        _ = try await pipeline.install(recordID: f.record.id, device: device(), env: env)
+        #expect(await dirs.dirs == [env.developerDir.path, env.developerDir.path])
+        #expect(CommandEnvironment.overrides["DEVELOPER_DIR"] == nil)
+    }
+}

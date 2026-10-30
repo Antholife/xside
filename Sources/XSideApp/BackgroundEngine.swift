@@ -26,10 +26,15 @@ final class BackgroundEngine {
     private var tasks: [Task<Void, Never>] = []
     private var wakeObserver: NSObjectProtocol?
     private var lastPoll = ContinuousClock.now
+    /// The expiry reminders were reconciled with the library once since launch.
+    private var remindersReconciled = false
+    /// Periodic ticks since the last reconciliation (redone hourly: notifications may have been
+    /// allowed since, or the clock changed).
+    private var ticksSinceReconcile = 0
 
     init(model: AppModel) {
         self.model = model
-        notifier = Notifier(developerDir: { [weak model] in model?.signingEnvironment?.developerDir })
+        notifier = Notifier(developerDir: { [weak model] in model?.lastKnownDeveloperDir })
         gateStore = NotificationGateStore(libraryRoot: model.library.root)
         gate = gateStore.load()
     }
@@ -43,6 +48,8 @@ final class BackgroundEngine {
 
         model.onNeedsEvaluation = { [weak self] in self?.evaluate(reason: "change") }
         model.onDeviceRemoved = { [weak self] id in self?.forgetDevice(id) }
+        // Allowed only now (journey, Settings): the reminders couldn't be scheduled before.
+        NotificationPermission.onBecameAuthorized = { [weak self] in self?.reconcileReminders() }
         model.onJobFinished = { [weak self] job, error, automatic, wasRefresh in
             self?.jobFinished(job, error: error, automatic: automatic, wasRefresh: wasRefresh)
         }
@@ -83,6 +90,9 @@ final class BackgroundEngine {
     }
 
     private func periodicTick() {
+        model.updateAttention() // an app may have expired since the last change
+        ticksSinceReconcile += 1
+        if ticksSinceReconcile * Int(Self.evaluationInterval.components.seconds) >= 3600 { reconcileReminders() }
         // Re-check the signing environment every tick: a break (Xcode removed, signed out,
         // certificate deleted) is reported within minutes, and a fix in Xcode is picked up by itself.
         model.recheckEnvironment()
@@ -108,6 +118,11 @@ final class BackgroundEngine {
     }
 
     private func evaluate(reason: String) {
+        // The first evaluation comes after the library is loaded (see `AppModel.start`).
+        if !remindersReconciled {
+            remindersReconciled = true
+            reconcileReminders()
+        }
         reportEnvironment()
         reportMacBeta()
         reportUnreachable()
@@ -153,15 +168,14 @@ final class BackgroundEngine {
     private func notifyNeedsUSB(_ job: RefreshJob) {
         guard let record = model.records.first(where: { $0.id == job.recordID }),
               let installation = record.installations.first(where: { $0.deviceID == job.deviceID }) else { return }
-        let deviceName = model.devices.first { $0.id == job.deviceID }?.name
-            ?? model.cachedNames[job.deviceID] ?? L("notification.refreshed.genericDevice")
+        let deviceName = deviceName(job.deviceID)
         let date = installation.expiresAt.formatted(
             Date.FormatStyle(date: .abbreviated, time: .omitted).locale(appLocale))
         Task {
             guard await notifier.canDeliver() else { return }
             guard gate.shouldNotify(recordID: job.recordID, deviceID: job.deviceID, errorKey: Self.needsUSBKey) else { return }
             persistGate()
-            let posted = await notifier.needsUSB(appName: record.displayName, deviceName: deviceName, date: date,
+            let posted = await notifier.needsUSB(appName: Self.appName(record), deviceName: deviceName, date: date,
                                                  id: "refresh.\(job.recordID.uuidString).\(job.deviceID)")
             if !posted {
                 gate.forget(recordID: job.recordID, deviceID: job.deviceID, errorKey: Self.needsUSBKey)
@@ -191,7 +205,8 @@ final class BackgroundEngine {
             Task {
                 guard await notifier.canDeliver(),
                       await notifier.environmentBroken(key: error.key, title: error.setupTitle,
-                                                       message: error.environmentReason) else {
+                                                       message: error.environmentReason,
+                                                       checkFailed: error.isSetupCheckFailure) else {
                     markWarned(error.key, false)
                     return
                 }
@@ -233,6 +248,63 @@ final class BackgroundEngine {
         gate.forgetDevice(deviceID)
         persistGate()
         successGate.forgetDevice(deviceID)
+        // Its installations are gone: so are their reminders, pending or shown.
+        enqueueReminders { [notifier] in await notifier.removeExpiryReminders(forDevice: deviceID) }
+        reconcileReminders()
+    }
+
+    // MARK: Expiry reminders
+
+    /// Reminder work runs one operation at a time, in order: a reconciliation can't overwrite a
+    /// reschedule that came after it.
+    private var reminderTail: Task<Void, Never>?
+
+    private func enqueueReminders(_ operation: @escaping @MainActor () async -> Void) {
+        let previous = reminderTail
+        reminderTail = Task { @MainActor in
+            await previous?.value
+            await operation()
+        }
+    }
+
+    /// One reminder per installation, scheduled with the system (see `Notifier.scheduleExpiryReminder`);
+    /// reminders of installations gone since are removed. Cheap: everything is simply re-added.
+    private func reconcileReminders() {
+        ticksSinceReconcile = 0
+        enqueueReminders { [weak self] in
+            guard let self else { return }
+            let jobs = model.records.flatMap { record in
+                record.installations.map { RefreshJob(recordID: record.id, deviceID: $0.deviceID) }
+            }
+            await notifier.removeExpiryReminders(keeping: Set(jobs.map {
+                ExpiryWatch.reminderID(recordID: $0.recordID, deviceID: $0.deviceID)
+            }))
+            // Each one read afresh: the library may have changed during the awaits.
+            for job in jobs { await scheduleCurrentReminder(job) }
+        }
+    }
+
+    /// Reschedules one installation's reminder for its new expiry (after an install or a refresh).
+    private func scheduleReminder(_ job: RefreshJob) {
+        enqueueReminders { [weak self] in await self?.scheduleCurrentReminder(job) }
+    }
+
+    /// Schedules the reminder of the installation as it is now; nothing if it's gone.
+    private func scheduleCurrentReminder(_ job: RefreshJob) async {
+        guard let record = model.records.first(where: { $0.id == job.recordID }),
+              let installation = record.installations.first(where: { $0.deviceID == job.deviceID }) else { return }
+        await notifier.scheduleExpiryReminder(recordID: record.id, deviceID: job.deviceID, appName: Self.appName(record),
+                                              deviceName: deviceName(job.deviceID), expiresAt: installation.expiresAt)
+    }
+
+    /// The name shown for the app: the custom one from the install options, else the app's own.
+    private static func appName(_ record: AppRecord) -> String {
+        record.options.displayName ?? record.displayName
+    }
+
+    private func deviceName(_ deviceID: String) -> String {
+        model.devices.first { $0.id == deviceID }?.name
+            ?? model.cachedNames[deviceID] ?? L("notification.refreshed.genericDevice")
     }
 
     private func jobFinished(_ job: RefreshJob, error: (any Error)?, automatic: Bool, wasRefresh: Bool) {
@@ -243,12 +315,17 @@ final class BackgroundEngine {
             updated.reset(recordID: job.recordID, deviceID: job.deviceID)
             if updated != gate { gate = updated; persistGate() }
             notifySuccess(job, wasRefresh: wasRefresh)
+            scheduleReminder(job)
             return
         }
         // Manual actions show their error in the UI; only background failures notify.
         guard automatic else { return }
         // The environment broke while the job waited: `reportEnvironment` notifies it, once.
-        if let e = error as? XSideError, [.xcodeMissing, .xcodeNotSignedIn, .noSigningIdentity].contains(e) { return }
+        // A failed check of the environment (`security`, `openssl`) is reported the same way.
+        if let e = error as? XSideError,
+           [.xcodeMissing, .xcodeNotSignedIn, .noSigningIdentity].contains(e)
+            || (e.isSetupCheckFailure && e == model.environmentError)
+            || Self.isProbeFailure(e) { return }
         // The device was removed from XSide meanwhile: nothing to report.
         guard model.records.first(where: { $0.id == job.recordID })?
             .installations.contains(where: { $0.deviceID == job.deviceID }) == true else { return }
@@ -256,7 +333,21 @@ final class BackgroundEngine {
             .installations.first { $0.deviceID == job.deviceID }
         let key = installation?.lastErrorKey ?? (error as? XSideError)?.key ?? "unknown"
         Self.logger.notice("refresh failed \(job.recordID.uuidString, privacy: .public): \(key, privacy: .public)")
-        notifyFailure(job, errorKey: key, message: (error as? XSideError)?.localizedMessage ?? localizedRowError(key: key))
+        notifyFailure(job, errorKey: key, message: Self.backgroundMessage(error) ?? localizedRowError(key: key))
+    }
+
+    /// A tool only the environment probe runs (`openssl`). A `security` failure counts only while
+    /// it is the environment's own (above): the pipeline runs `security` too.
+    private static func isProbeFailure(_ error: XSideError) -> Bool {
+        if case .commandFailed(let tool, _) = error { return tool == "openssl" }
+        return false
+    }
+
+    /// The error's message for a background job: a stopped tool is retried by XSide itself.
+    private static func backgroundMessage(_ error: any Error) -> String? {
+        guard let error = error as? XSideError else { return nil }
+        if case .timedOut(let tool) = error { return L("error.timedOut.auto", tool) }
+        return error.localizedMessage
     }
 
     /// Success of a refresh of an existing installation (automatic or manual), unless disabled in
@@ -265,8 +356,7 @@ final class BackgroundEngine {
         guard wasRefresh, UserDefaults.standard.object(forKey: Notifier.notifyRefreshSuccessKey) as? Bool ?? true,
               let record = model.records.first(where: { $0.id == job.recordID }),
               let installation = record.installations.first(where: { $0.deviceID == job.deviceID }) else { return }
-        let deviceName = model.devices.first { $0.id == job.deviceID }?.name
-            ?? model.cachedNames[job.deviceID] ?? L("notification.refreshed.genericDevice")
+        let deviceName = deviceName(job.deviceID)
         Task {
             guard await notifier.canDeliver() else { return }
             guard successGate.shouldNotify(recordID: job.recordID, deviceID: job.deviceID,
@@ -274,7 +364,7 @@ final class BackgroundEngine {
             let date = installation.expiresAt.formatted(
                 Date.FormatStyle(date: .abbreviated, time: .omitted).locale(appLocale))
             let posted = await notifier.refreshSucceeded(
-                appName: record.displayName, deviceName: deviceName, date: date,
+                appName: Self.appName(record), deviceName: deviceName, date: date,
                 id: "refreshed.\(job.recordID.uuidString).\(job.deviceID)")
             if !posted { successGate.forget(recordID: job.recordID, deviceID: job.deviceID) }
         }
@@ -290,7 +380,7 @@ final class BackgroundEngine {
             }
             guard gate.shouldNotify(recordID: job.recordID, deviceID: job.deviceID, errorKey: errorKey) else { return }
             persistGate()
-            let name = model.records.first { $0.id == job.recordID }?.displayName ?? "XSide"
+            let name = model.records.first { $0.id == job.recordID }.map(Self.appName) ?? "XSide"
             let posted = await notifier.refreshFailed(appName: name, errorKey: errorKey, message: message,
                                                       id: "refresh.\(job.recordID.uuidString).\(job.deviceID)")
             if !posted {

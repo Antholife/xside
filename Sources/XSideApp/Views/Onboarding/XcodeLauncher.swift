@@ -30,10 +30,13 @@ enum XcodeLauncher {
     /// The Mac runs a macOS beta (build "26A5279m"): a release Xcode may not support it.
     static let macIsBeta = XcodeCompat.isBetaBuild(macBuild)
 
-    /// Xcode by bundle identifier, else the app enclosing the detected developer directory.
+    /// The Xcode XSide uses (the app enclosing its developer directory), else Xcode by bundle
+    /// identifier, else the one `xcode-select` points to.
     @MainActor static func open(developerDir: URL?) {
-        let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.dt.Xcode")
-            ?? (developerDir ?? selectedDeveloperDir()).flatMap(enclosingApp)
+        // The enclosing app may have been deleted or moved since the probe.
+        let url = developerDir.flatMap(enclosingApp).flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
+            ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: XcodeLocator.bundleID)
+            ?? selectedDeveloperDir().flatMap(enclosingApp)
         guard let url else {
             logger.error("Xcode not found (bundle id, developer dir, xcode-select)")
             return

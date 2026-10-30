@@ -12,6 +12,8 @@ struct WelcomeWindowRoot: View {
         WelcomeJourneyView(model: model)
             .id(language)
             .frame(width: 600, height: 560)
+            // The scene's title is read once: follow the in-app language.
+            .navigationTitle(L("onboarding.window"))
             // Outside `.id` so a language change doesn't report a close/open.
             .background(WindowVisibilityReader { model.onboardingWindowVisibilityChanged($0) })
     }
@@ -95,7 +97,6 @@ private struct WelcomeJourneyView: View {
                     Label(L("journey.back"), systemImage: "chevron.left").labelStyle(.titleAndIcon)
                 }
                 .buttonStyle(JourneyTextButtonStyle())
-                .keyboardShortcut(.cancelAction)
             }
             Spacer()
             if showsSkip, let next = step.isExplainer ? .xcode : step.next {

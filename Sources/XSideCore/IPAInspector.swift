@@ -5,12 +5,21 @@ public struct AppInfo: Equatable, Sendable {
     public let name: String
     public let version: String?
     public let executable: String
+    /// Keychain groups the app asks to share with its vendor's other apps ("com.google.common.SSO"),
+    /// granted only if the user opts in (`InstallOptions.shareKeychain`).
+    public let sharedKeychainGroups: [String]
+    /// The vendor those groups are allowed for ("com.google"), from the same source as the
+    /// allowlist (the embedded `application-identifier`, see `Resigner.keychainVendor`).
+    public let sharedKeychainVendor: String?
 
-    public init(bundleID: String, name: String, version: String?, executable: String) {
+    public init(bundleID: String, name: String, version: String?, executable: String,
+                sharedKeychainGroups: [String] = [], sharedKeychainVendor: String? = nil) {
         self.bundleID = bundleID
         self.name = name
         self.version = version
         self.executable = executable
+        self.sharedKeychainGroups = sharedKeychainGroups
+        self.sharedKeychainVendor = sharedKeychainVendor
     }
 }
 

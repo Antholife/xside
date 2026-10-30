@@ -1,26 +1,25 @@
 /* Popover */
 "popover.transport.usb" = "USB";
 "popover.transport.wifi" = "Wi-Fi";
-"popover.transport.unreachable" = "Hors de portée";
-"popover.expires.days" = "Expire dans %d j";
+"popover.transport.unreachable" = "Introuvable";
 "popover.expires.today" = "Expire aujourd'hui";
 "popover.expired" = "Expirée";
-"popover.nextRefresh" = "Prochain refresh : %@";
+"popover.nextRefresh" = "Rafraîchissement : %@";
 "popover.install" = "＋ Installer une app";
 "popover.settings" = "Réglages";
 "popover.quit" = "Quitter";
 "popover.appIDsRemaining" = "~%d/10 App ID restants cette semaine · estimation d'après ce Mac";
-"popover.unreachableHint" = "Introuvable sur ce réseau — branche-le en USB ou change de réseau";
-"popover.newDevice" = "Nouvel appareil trouvé — Appairer ?";
+"popover.unreachableHint" = "Introuvable sur ce réseau : branche-le en USB ou connecte-le au même Wi-Fi que ce Mac.";
+"popover.newDevice" = "Nouvel appareil détecté";
 "popover.pair" = "Appairer";
 "popover.empty" = "Aucune app installée — glisse un .ipa ici";
-"popover.noDevice" = "Aucun appareil détecté";
-"popover.ring.days" = "%dj";
-"popover.refreshPending" = "Refresh en attente";
+"popover.noDevice" = "Aucun appareil détecté. Branche ton iPhone ou ton iPad en USB et déverrouille-le.";
+"popover.ring.days" = "%d j";
+"popover.refreshPending" = "Rafraîchissement en attente";
 "popover.refreshNow" = "Rafraîchir maintenant";
 "popover.unknownDevice" = "Appareil inconnu";
 "popover.dropHint" = "Dépose le .ipa pour l'installer";
-"popover.pairing" = "Confirme sur l'appareil…";
+"popover.pairing" = "Touche « Se fier » sur l'appareil…";
 
 /* Install sheet */
 "install.title" = "Installer";
@@ -38,7 +37,7 @@
 "install.warning.newBundleID" = "Un identifiant différent consomme un nouvel App ID.";
 "install.warning.minOS" = "L'app peut planter si elle utilise des fonctions récentes.";
 "install.step.preparing" = "Préparation";
-"install.step.waiting" = "En attente";
+"install.step.waiting" = "En attente d'une autre opération";
 "install.progress.accessibility" = "Étape %1$d sur %2$d : %3$@, %4$@";
 "install.status.done" = "terminée";
 "install.status.active" = "en cours";
@@ -46,13 +45,13 @@
 "install.status.failed" = "échec";
 "install.status.pending" = "à venir";
 "install.status.skipped" = "ignorée";
-"install.step.profile" = "Profil";
+"install.step.profile" = "Autorisation d'Apple";
 "install.step.signing" = "Signature";
 "install.step.installing" = "Installation";
 "install.cancel" = "Annuler";
 "install.done" = "Terminé";
 "install.success" = "Installée sur %@";
-"install.noAvailableDevice" = "Aucun appareil joignable. Déverrouille-le, branche-le en USB ou connecte-le au même Wi-Fi.";
+"install.noAvailableDevice" = "L'appareil choisi n'est plus joignable.";
 "install.queued" = "Ensuite : %@";
 "install.devices" = "Appareils";
 "install.onDevices" = "Installer sur %d appareils";
@@ -61,17 +60,17 @@
 "install.failedAll" = "L'installation a échoué sur tous les appareils.";
 "install.retryFailed" = "Réessayer les échecs";
 "install.run.done" = "Installée";
-"install.run.doneWifi" = "Installée, répond en Wi-Fi";
+"install.run.doneWifi" = "Installée · joignable en Wi-Fi";
 
 /* First-install guide */
-"guide.title" = "Première installation";
-"guide.titleDevice" = "Première installation sur %@";
-"guide.unlock" = "Garde l'appareil déverrouillé pendant l'installation.";
+"guide.title" = "Avant d'ouvrir l'app";
+"guide.titleDevice" = "Avant d'ouvrir l'app sur %@";
+"guide.unlock" = "L'app ne s'ouvrira qu'après ces réglages sur l'appareil.";
 "guide.trust" = "Ensuite, sur l'appareil : Réglages > Général > VPN et gestion de l'appareil > %@ > Faire confiance.";
-"guide.developerMode" = "Si nécessaire : Réglages > Confidentialité et sécurité > Mode développeur.";
+"guide.developerMode" = "Active le mode développeur : Réglages > Confidentialité et sécurité > Mode développeur (l'appareil redémarre).";
 
 /* Notifications */
-"notification.refreshFailed.title" = "Refresh impossible : %@";
+"notification.refreshFailed.title" = "Impossible de rafraîchir %@";
 "notification.openXcode" = "Ouvrir Xcode";
 
 /* Settings */
@@ -80,8 +79,8 @@
 "settings.language.system" = "Système";
 "settings.language.en" = "English";
 "settings.language.fr" = "Français";
-"settings.launchAtLogin.approval" = "Autorisation requise dans Réglages Système > Général > Ouverture.";
-"settings.openLoginItems" = "Ouvrir les éléments d'ouverture";
+"settings.launchAtLogin.approval" = "Autorisation requise dans Réglages Système > Général > Ouverture et extensions.";
+"settings.openLoginItems" = "Ouvrir les réglages";
 "settings.launchAtLogin.error" = "Impossible de modifier le lancement à l'ouverture de session.";
 "settings.github" = "Dépôt GitHub";
 
@@ -93,24 +92,24 @@
 "onboarding.noIdentity.title" = "Certificat de signature manquant";
 "onboarding.checkFailed.title" = "Vérification impossible";
 "onboarding.window" = "Bienvenue dans XSide";
-"onboarding.autoDetect" = "XSide le détecte automatiquement dès que tout est prêt.";
+"onboarding.autoDetect" = "XSide s'en aperçoit tout seul dès que c'est fait.";
 "onboarding.recheck" = "Vérifier à nouveau";
 
 /* Errors (one per XSideError case) */
 "error.xcodeMissing" = "Xcode est introuvable. Installe-le depuis l'App Store pour continuer.";
-"error.xcodeNotSignedIn" = "Aucun compte Apple n'est connecté. Connecte ton compte dans Xcode > Settings > Apple Account (compte Apple).";
-"error.noSigningIdentity" = "Aucun certificat de signature disponible. Ouvre Xcode > Settings > Apple Account (compte Apple) et vérifie ton compte.";
+"error.xcodeNotSignedIn" = "Aucun compte Apple n'est connecté. Connecte ton compte dans Xcode > Settings (réglages) > Apple Accounts (comptes Apple).";
+"error.noSigningIdentity" = "Aucun certificat de signature disponible. Ouvre Xcode > Settings (réglages) > Apple Accounts (comptes Apple) et vérifie ton compte.";
 "error.appIDLimitReached" = "La limite de 10 App ID par semaine est atteinte. Réessaie dans quelques jours.";
-"error.deviceUnavailable" = "L'appareil est injoignable. Déverrouille-le, branche-le en USB ou connecte-le au même Wi-Fi.";
+"error.deviceUnavailable" = "L'appareil est introuvable. Déverrouille-le, branche-le en USB ou connecte-le au même Wi-Fi.";
 "error.deviceLocked" = "L'appareil est verrouillé. Déverrouille-le puis réessaie.";
 "error.maxAppsReached" = "Cet appareil a déjà 3 apps installées avec un compte gratuit. Supprimes-en une pour continuer.";
 "error.encryptedIPA" = "Les IPA de l'App Store sont chiffrés et ne peuvent pas être installés.";
-"error.invalidIPA" = "Ce fichier n'est pas une app valide.";
+"error.invalidIPA" = "Ce fichier n'est pas une app valide. Choisis un fichier .ipa.";
 "error.provisioningFailed" = "Impossible de créer le profil de provisionnement. Vérifie ton compte dans Xcode et réessaie.";
 "error.installFailed" = "L'installation a échoué. Vérifie que l'appareil est déverrouillé et réessaie.";
 "error.commandFailed" = "Une commande Xcode a échoué. Réessaie, ou ouvre Xcode pour vérifier son état.";
 "error.recordNotFound" = "Cette app est introuvable dans XSide.";
-"error.profileNotRenewed" = "Xcode a renvoyé le même profil de provisionnement : l'app n'a pas été renouvelée. Ouvre Xcode, vérifie ton compte dans Settings > Apple Account (compte Apple), puis réessaie.";
+"error.profileNotRenewed" = "Xcode a renvoyé le même profil de provisionnement : l'app n'a pas été renouvelée. Ouvre Xcode, vérifie ton compte dans Settings (réglages) > Apple Accounts (comptes Apple), puis réessaie.";
 "error.generic" = "Une erreur inattendue est survenue. Réessaie.";
 
 /* Services menu / Open With */
@@ -120,7 +119,7 @@
 "notification.refreshed.body" = "Sur %@ · valable jusqu'au %@";
 "notification.refreshed.genericDevice" = "ton appareil";
 "settings.notifications" = "Notifications";
-"settings.notifyRefreshSuccess" = "Notifier les refresh réussis";
+"settings.notifyRefreshSuccess" = "Me prévenir quand un rafraîchissement réussit";
 
 /* Welcome journey */
 "journey.progress" = "Étape %d sur %d";
@@ -130,7 +129,7 @@
 "journey.skip" = "Passer";
 "journey.continue" = "Continuer";
 "journey.finish" = "Terminer";
-"journey.welcome.subtitle" = "Installe tes apps sur ton iPhone et XSide les garde à jour, sans jamais toucher à ton compte Apple.";
+"journey.welcome.subtitle" = "Installe tes apps sur ton iPhone : XSide les rafraîchit avant qu'elles expirent, sans jamais voir ton mot de passe Apple.";
 "journey.welcome.install" = "Installe n'importe quel .ipa sur ton iPhone ou ton iPad en quelques clics.";
 "journey.welcome.refresh" = "Tes apps sont rafraîchies automatiquement, avant qu'elles expirent.";
 "journey.welcome.account" = "Ton compte reste dans Xcode : XSide ne voit jamais ton mot de passe.";
@@ -139,7 +138,7 @@
 "journey.how.sideload.title" = "Le sideloading";
 "journey.how.sideload.text" = "Installer toi-même une app sur ton iPhone, hors de l'App Store, à partir d'un fichier .ipa.";
 "journey.how.refresh.title" = "7 jours, puis XSide prend le relais";
-"journey.how.refresh.text" = "Avec un compte Apple gratuit, une app marche 7 jours, puis elle ne s'ouvre plus. XSide la rafraîchit tout seul environ 2 jours avant, en USB ou en Wi-Fi, et te prévient quand c'est fait ou si ça échoue.";
+"journey.how.refresh.text" = "Avec un compte Apple gratuit, une app marche 7 jours, puis elle ne s'ouvre plus. XSide la rafraîchit tout seul environ 2 jours avant l'expiration, en USB ou en Wi-Fi, et te prévient quand c'est fait ou si ça échoue.";
 "journey.know.title" = "Bon à savoir";
 "journey.know.subtitle" = "Un compte gratuit suffit, avec quelques limites.";
 "journey.know.limits.title" = "Les limites du compte gratuit";
@@ -147,7 +146,7 @@
 "journey.know.safe.title" = "Ton compte reste protégé";
 "journey.know.safe.text" = "XSide ne voit jamais ton mot de passe : tout passe par Xcode, l'outil officiel d'Apple.";
 "journey.xcode.title" = "Xcode";
-"journey.xcode.subtitle" = "XSide utilise les outils de Xcode pour signer et installer tes apps. Il est gratuit sur le Mac App Store.";
+"journey.xcode.subtitle" = "XSide utilise les outils de Xcode pour signer et installer tes apps. Xcode est gratuit sur le Mac App Store.";
 "journey.xcode.checking" = "Recherche de Xcode…";
 "journey.xcode.done" = "Xcode est installé";
 "journey.account.title" = "Ton compte Apple dans Xcode";
@@ -155,7 +154,7 @@
 "journey.account.checking" = "Vérification de ton compte…";
 "journey.account.done" = "Compte connecté";
 "journey.account.needsXcode" = "Installe d'abord Xcode (étape précédente).";
-"journey.account.step1" = "Dans Xcode, ouvre les réglages (⌘ ,), onglet « Apple Account » (compte Apple).";
+"journey.account.step1" = "Dans Xcode, ouvre Settings (réglages, ⌘ ,), onglet « Apple Accounts » (comptes Apple).";
 "journey.account.step2" = "Clique sur ＋, choisis « Apple Account » (compte Apple), puis connecte-toi.";
 "journey.account.step3" = "Reviens ici : XSide détecte ton compte tout seul.";
 "journey.notifications.title" = "Notifications";
@@ -181,9 +180,8 @@
 "journey.ready.openWith" = "Ou clic droit sur un .ipa > Ouvrir avec > XSide.";
 "journey.ready.auto" = "XSide la rafraîchit ensuite tout seul, tant que ton Mac est allumé.";
 "journey.popover.title" = "Termine la configuration";
-"journey.popover.text" = "Reprends là où tu t'étais arrêté, XSide sera prêt en une minute.";
+"journey.popover.text" = "Reprends où tu en étais : XSide sera prêt en une minute.";
 "journey.popover.button" = "Continuer la configuration";
-"journey.popover.subtitle" = "Quelques étapes et c'est parti";
 "settings.replayJourney" = "Revoir le parcours de bienvenue…";
 
 /* First USB pairing */
@@ -191,9 +189,9 @@
 "install.newDevice.intro" = "Un appareil jamais branché à ce Mac n'est pas visible en Wi-Fi. La première fois, il faut l'USB.";
 "install.newDevice.step1" = "Branche ton iPhone ou ton iPad à ce Mac en USB, puis déverrouille-le.";
 "install.newDevice.step2" = "Touche « Se fier » sur l'appareil, puis entre ton code.";
-"install.newDevice.step3" = "Active le mode développeur : Réglages > Confidentialité et sécurité > Mode développeur.";
+"install.newDevice.step3" = "Si l'option apparaît, active le mode développeur : Réglages > Confidentialité et sécurité > Mode développeur. Sinon, XSide te le dira après l'installation.";
 "install.newDevice.waiting" = "En attente de l'appareil… Ensuite, le Wi-Fi suffira.";
-"install.newDevice.detected" = "✅ %@ détecté";
+"install.newDevice.detected" = "%@ détecté";
 "journey.how.pairing.title" = "La première fois, en USB";
 "journey.how.pairing.text" = "Branche ton iPhone ou ton iPad en USB, déverrouille-le et touche « Se fier ». Ensuite, le Wi-Fi suffit (même réseau). Un appareil jamais branché n'est pas visible en Wi-Fi.";
 "popover.plugInUSB" = "Branche-le en USB pour rafraîchir";
@@ -238,13 +236,13 @@
 "journey.xcode.step.open" = "Ouvre-le une fois : il te fait accepter sa licence et installe ses composants, sans quoi XSide ne peut pas s'en servir.";
 "journey.xcode.step.back" = "Reviens ici : XSide le détecte tout seul.";
 "macBeta.banner.title" = "macOS bêta détecté";
-"macBeta.banner.text" = "La version de Xcode installée n'est pas faite pour cette bêta de macOS. Elle risque de ne plus fonctionner, et XSide avec elle. Installe Xcode bêta pour éviter toute interruption.";
+"macBeta.banner.text" = "La version de Xcode installée n'est pas faite pour cette bêta de macOS. Elle risque de ne plus fonctionner, et XSide avec elle. Installe Xcode bêta : XSide l'utilisera tout seul.";
 "macBeta.notification.body" = "La version de Xcode installée n'est pas faite pour cette bêta de macOS. Installe Xcode bêta, sinon XSide risque de ne plus pouvoir rafraîchir tes apps.";
 "error.xcodeNeedsBetaForMac" = "La version de Xcode installée n'est pas compatible avec cette bêta de macOS. Installe Xcode bêta (developer.apple.com/download/applications), ouvre-le une fois, puis réessaie.";
-"error.timedOut" = "%@ ne répond plus : l'opération a été interrompue. XSide réessaiera tout seul.";
+"error.timedOut" = "%@ ne répond plus : l'opération a été interrompue. Réessaie dans un instant.";
 "error.invalidBundleID" = "L'identifiant « %@ » n'est pas valide : il ne peut contenir que des lettres, des chiffres, des tirets et des points (par exemple com.exemple.app), 155 caractères au plus.";
 "error.invalidBundleID.short" = "L'identifiant de l'app n'est pas valide : choisis-en un autre dans les options d'installation.";
-"journey.account.opened" = "Xcode est ouvert : appuie sur ⌘ , pour arriver sur l'onglet « Apple Account » (compte Apple).";
+"journey.account.opened" = "Xcode est ouvert : appuie sur ⌘ , puis va dans l'onglet « Apple Accounts » (comptes Apple).";
 "journey.account.cert.step2" = "Sélectionne ton compte, clique sur « Personal Team » (ton équipe personnelle), puis sur « Manage Certificates… » (gérer les certificats).";
 "journey.account.cert.step3" = "Clique sur ＋, puis choisis « Apple Development » (certificat de développement).";
 "journey.account.cert.step4" = "Reviens ici : XSide détecte le certificat tout seul.";
@@ -260,7 +258,6 @@
 "settings.signing.xcode.version" = "Version %@ (%@)";
 "settings.signing.xcode.beta" = "Version %@ bêta (%@)";
 "settings.signing.todo" = "À corriger";
-"environment.banner.text" = "XSide ne peut plus rafraîchir tes apps tant que ce n'est pas réglé.";
 "environment.banner.fix" = "Corriger dans les réglages";
 "environment.notification.body" = "%@ Clique ici pour corriger.";
 "settings.signing.needsXcode" = "Installe d'abord Xcode, juste au-dessus.";
@@ -280,3 +277,26 @@
 "about.by" = "Par";
 "about.license" = "Open source · licence MIT";
 "about.tagline" = "Fait avec Swift, SwiftUI et les outils officiels de Xcode. Ton mot de passe Apple ne passe jamais par XSide.";
+
+"error.timedOut.auto" = "%@ ne répond plus : l'opération a été interrompue. XSide réessaiera tout seul.";
+"notification.expiry.title" = "%@ expire demain";
+"notification.expiry.body" = "XSide n'a pas pu la rafraîchir à temps sur %@. Ouvre XSide (et branche l'appareil si besoin) pour la garder.";
+"library.issue.restoredFromBackup" = "La bibliothèque était abîmée : XSide a repris la dernière sauvegarde.";
+"library.issue.unreadable" = "La bibliothèque est illisible : une copie a été gardée, tes apps doivent être réinstallées.";
+"quit.confirm.message" = "Si tu quittes XSide, il ne pourra plus rafraîchir tes apps. Quitter quand même ?";
+"environment.notification.body.check" = "%@ Clique ici pour ouvrir les réglages.";
+"settings.signing.checking" = "Vérification…";
+"install.blocked.checking" = "Vérification de Xcode…";
+"install.field.iconRemove" = "Retirer l'icône";
+"settings.xcode.picker" = "Xcode utilisé";
+"settings.xcode.auto" = "Automatique (%@)";
+"settings.xcode.auto.none" = "Automatique";
+"settings.xcode.item" = "Xcode %@ (%@)";
+"settings.xcode.item.beta" = "Xcode %@ bêta (%@)";
+"journey.xcode.using" = "XSide utilise %@. Tu peux en choisir un autre dans les réglages.";
+
+"menuBar.attention" = "XSide : quelque chose demande ton attention";
+"install.field.shareKeychain" = "Trousseau partagé avec %@";
+"install.warning.shareKeychain" = "L'app demande à partager ces groupes avec les autres apps de cet éditeur : %@. Active-le seulement pour une IPA de confiance : une app piégée pourrait lire les connexions des autres apps de l'éditeur.";
+
+"settings.xcode.betaNotReady" = "Xcode bêta trouvé, mais pas encore prêt : ouvre-le une fois pour accepter sa licence.";

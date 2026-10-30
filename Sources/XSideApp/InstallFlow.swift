@@ -157,6 +157,7 @@ struct OptionsDraft: Equatable {
     var fileSharing = false
     var iPadFullScreen = false
     var proMotion = false
+    var shareKeychain = false
     var minOS = ""
 
     init() {}
@@ -169,6 +170,7 @@ struct OptionsDraft: Equatable {
         fileSharing = o.fileSharing
         iPadFullScreen = o.iPadFullScreen
         proMotion = o.proMotion
+        shareKeychain = o.shareKeychain
         minOS = o.minimumOSVersion ?? ""
     }
 
@@ -179,7 +181,7 @@ struct OptionsDraft: Equatable {
         }
         return InstallOptions(displayName: clean(name), customBundleID: clean(bundleID), version: clean(version),
                               iconPath: iconPath, fileSharing: fileSharing, iPadFullScreen: iPadFullScreen,
-                              proMotion: proMotion, minimumOSVersion: clean(minOS))
+                              proMotion: proMotion, minimumOSVersion: clean(minOS), shareKeychain: shareKeychain)
     }
 }
 

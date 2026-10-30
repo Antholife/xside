@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import XSideCore
 
 enum AppLinks {
     static let repository = URL(string: "https://github.com/Antholife/xside")!
@@ -14,8 +15,43 @@ struct SettingsView: View {
     @Environment(\.openWindow) private var openWindow
     @State private var login = LaunchAtLogin()
     @State private var notifications = NotificationPermission()
+    /// Natural height of the form, to size the window to it (scrolling only past the screen).
+    @State private var formHeight: CGFloat = 400
+
+    /// Room for the form on the current screen, minus the title bar.
+    private static var maxHeight: CGFloat {
+        max(300, (NSScreen.main?.visibleFrame.height ?? 800) - 60)
+    }
 
     var body: some View {
+        // The window fits the form; a ScrollView alone has no ideal height, so the form's measured
+        // one is used, capped by the screen.
+        ScrollView(.vertical) {
+            form
+                .scrollDisabled(true)
+                .fixedSize(horizontal: false, vertical: true)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { formHeight = $0 }
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(width: 420, height: min(formHeight, Self.maxHeight))
+        .navigationTitle(L("popover.settings"))
+        .id(language)
+        .onAppear(perform: login.refresh)
+        .task { await notifications.refresh() }
+        // While something fails, re-check every 5 s so a fix in Xcode shows up here by itself.
+        .task {
+            while !Task.isCancelled {
+                if model.environmentFailed { model.recheckEnvironment() }
+                try? await Task.sleep(for: .seconds(5))
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            login.refresh()
+            Task { await notifications.refresh() }
+        }
+    }
+
+    private var form: some View {
         Form {
             Section {
                 Toggle(L("settings.launchAtLogin"), isOn: Binding(get: { login.isEnabled }, set: login.set))
@@ -25,6 +61,9 @@ struct SettingsView: View {
                     Text(L("settings.language.en")).tag(AppLanguage.en.rawValue)
                     Text(L("settings.language.fr")).tag(AppLanguage.fr.rawValue)
                 }
+            }
+            if let issue = model.library.loadIssue {
+                Section { LibraryIssueBanner(issue: issue) }
             }
             SigningSettingsSection(model: model)
             Section(L("settings.notifications")) {
@@ -41,22 +80,5 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 420)
-        .fixedSize(horizontal: false, vertical: true)
-        .navigationTitle(L("popover.settings"))
-        .id(language)
-        .onAppear(perform: login.refresh)
-        .task { await notifications.refresh() }
-        // While something fails, re-check every 5 s so a fix in Xcode shows up here by itself.
-        .task {
-            while !Task.isCancelled {
-                if model.environmentFailed { model.recheckEnvironment() }
-                try? await Task.sleep(for: .seconds(5))
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            login.refresh()
-            Task { await notifications.refresh() }
-        }
     }
 }

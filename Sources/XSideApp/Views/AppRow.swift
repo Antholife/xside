@@ -27,6 +27,9 @@ struct AppRow: View {
             Button(L("popover.refreshNow"), systemImage: "arrow.clockwise", action: onRefresh)
                 .disabled(!canRefresh)
         }
+        // VoiceOver can't hover: the refresh is an action of the row.
+        .accessibilityElement(children: .combine)
+        .accessibilityAction(named: L("popover.refreshNow")) { if canRefresh { onRefresh() } }
     }
 
     private func row(validity: Validity, now: Date) -> some View {
@@ -62,6 +65,7 @@ struct AppRow: View {
                 }
                 .buttonStyle(.borderless)
                 .help(L("popover.refreshNow"))
+                .accessibilityLabel(L("popover.refreshNow"))
                 .transition(.opacity)
             }
         }

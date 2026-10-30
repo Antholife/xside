@@ -41,6 +41,19 @@ extension CommandRunning {
     }
 }
 
+/// Environment variables for the subprocesses started by the current task (and its child tasks),
+/// on top of the runner's own overrides. A job sets `DEVELOPER_DIR` once, when it starts, so all
+/// its tools use the same Xcode even if the app's choice changes meanwhile.
+public enum CommandEnvironment {
+    @TaskLocal public static var overrides: [String: String] = [:]
+
+    /// Runs `body` with every subprocess using `developerDir` as `DEVELOPER_DIR`.
+    nonisolated(nonsending) public static func withDeveloperDir<T>(
+        _ developerDir: URL, _ body: nonisolated(nonsending) () async throws -> T) async rethrows -> T {
+        try await $overrides.withValue(overrides.merging(["DEVELOPER_DIR": developerDir.path]) { $1 }, operation: body)
+    }
+}
+
 /// Collects data appended from a readability handler.
 private final class DataBox: @unchecked Sendable {
     private let lock = NSLock()
@@ -129,7 +142,13 @@ public struct ProcessRunner: CommandRunning {
     /// Same after a normal exit: a lingering grandchild holding the pipes can't hang the job.
     static let drainAfterExit: DispatchTimeInterval = .seconds(5)
 
-    public init() {}
+    /// Variables set (or replaced) in every child's environment on top of XSide's own, read at
+    /// each spawn: e.g. `DEVELOPER_DIR`, so every tool uses the Xcode chosen in Settings.
+    private let environmentOverrides: @Sendable () -> [String: String]
+
+    public init(environment: @escaping @Sendable () -> [String: String] = { [:] }) {
+        environmentOverrides = environment
+    }
 
     public func run(_ executable: String, _ arguments: [String], cwd: URL?,
                     timeout: Duration) async throws -> CommandResult {
@@ -152,6 +171,8 @@ public struct ProcessRunner: CommandRunning {
             }
         }
 
+        // The task's own variables (a job's `DEVELOPER_DIR`) win over the runner's.
+        let overrides = environmentOverrides().merging(CommandEnvironment.overrides) { $1 }
         let state = RunState()
         let tool = Self.toolName(executable, arguments)
         let seconds = Double(timeout.components.seconds) + Double(timeout.components.attoseconds) / 1e18
@@ -161,7 +182,7 @@ public struct ProcessRunner: CommandRunning {
                 state.setContinuation(cont)
                 let pid: pid_t
                 do {
-                    pid = try Self.spawn(executable, arguments, cwd: cwd,
+                    pid = try Self.spawn(executable, arguments, cwd: cwd, overrides: overrides,
                                          stdout: outPipe.fileHandleForWriting.fileDescriptor,
                                          stderr: errPipe.fileHandleForWriting.fileDescriptor)
                 } catch {
@@ -217,7 +238,29 @@ public struct ProcessRunner: CommandRunning {
         raw & 0x7F == 0 ? (raw >> 8) & 0xFF : raw & 0x7F
     }
 
-    private static func spawn(_ executable: String, _ arguments: [String], cwd: URL?,
+    /// `base` ("NAME=value" entries) with `overrides` applied: a variable set in both takes the
+    /// override's value, the others are kept in order and the new ones are appended (sorted).
+    static func environment(base: [String], overrides: [String: String]) -> [String] {
+        guard !overrides.isEmpty else { return base }
+        let kept = base.filter { entry in
+            let name = entry.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? entry
+            return overrides[name] == nil
+        }
+        return kept + overrides.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
+    }
+
+    /// The parent's environment as "NAME=value" entries.
+    private static func currentEnvironment() -> [String] {
+        var entries: [String] = []
+        var pointer = environ
+        while let entry = pointer.pointee {
+            entries.append(String(cString: entry))
+            pointer += 1
+        }
+        return entries
+    }
+
+    private static func spawn(_ executable: String, _ arguments: [String], cwd: URL?, overrides: [String: String],
                               stdout: Int32, stderr: Int32) throws -> pid_t {
         var actions: posix_spawn_file_actions_t?
         posix_spawn_file_actions_init(&actions)
@@ -242,7 +285,15 @@ public struct ProcessRunner: CommandRunning {
         let argv: [UnsafeMutablePointer<CChar>?] = ([executable] + arguments).map { strdup($0) } + [nil]
         defer { argv.forEach { free($0) } }
         var pid: pid_t = 0
-        let rc = posix_spawn(&pid, executable, &actions, &attributes, argv, environ)
+        let rc: Int32
+        if overrides.isEmpty {
+            rc = posix_spawn(&pid, executable, &actions, &attributes, argv, environ)
+        } else {
+            let envp: [UnsafeMutablePointer<CChar>?] = environment(base: currentEnvironment(), overrides: overrides)
+                .map { strdup($0) } + [nil]
+            defer { envp.forEach { free($0) } }
+            rc = posix_spawn(&pid, executable, &actions, &attributes, argv, envp)
+        }
         guard rc == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(rc)) }
         return pid
     }

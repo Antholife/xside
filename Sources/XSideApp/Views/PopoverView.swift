@@ -48,9 +48,13 @@ private struct PopoverContent: View {
     private var mainBody: some View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(model.environmentProblems, id: \.key) { error in
-                EnvironmentBanner(error: error) { dismiss() }
+                EnvironmentBanner(error: error, onOpen: { dismiss() }, onRecheck: model.recheckEnvironment,
+                                  isChecking: model.isProbing)
             }
             if model.macBetaWithReleaseXcode { MacBetaBanner { dismiss() } }
+            if let issue = model.library.loadIssue, !model.libraryIssueDismissed {
+                LibraryIssueBanner(issue: issue, onDismiss: model.dismissLibraryIssue)
+            }
             ForEach(model.unpairedDevices) { device in
                 PairPrompt(device: device, isPairing: model.pairing.contains(device.id),
                            error: model.pairErrors[device.id]) { model.pair(device) }
@@ -116,6 +120,9 @@ struct EnvironmentBanner: View {
     let error: XSideError
     /// Called after Settings opens (the popover closes itself).
     var onOpen: () -> Void = {}
+    /// Checks the environment again (a failed check); nil shows "Fix in Settings" instead.
+    var onRecheck: (() -> Void)?
+    var isChecking = false
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
@@ -129,19 +136,66 @@ struct EnvironmentBanner: View {
                     .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Button(L("environment.banner.fix")) {
-                    onOpen()
-                    NSApp.activate()
-                    openSettings()
+                // A failed check has nothing to fix: checking again is the action.
+                if error.isSetupCheckFailure, let onRecheck {
+                    Button(L("onboarding.recheck"), action: onRecheck)
+                        .buttonStyle(.borderedProminent)
+                        .tint(Theme.violet)
+                        .controlSize(.small)
+                        .disabled(isChecking)
+                } else {
+                    Button(L("environment.banner.fix")) {
+                        onOpen()
+                        NSApp.activate()
+                        openSettings()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.violet)
+                    .controlSize(.small)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(Theme.violet)
-                .controlSize(.small)
             }
             Spacer(minLength: 0)
         }
         .padding(10)
         .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
+/// `state.json` couldn't be fully read at launch: say what was lost, once (dismissed until next launch).
+struct LibraryIssueBanner: View {
+    let issue: LibraryLoadIssue
+    /// Nil in Settings, where the line stays.
+    var onDismiss: (() -> Void)?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 15))
+                .foregroundStyle(.orange)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(issue.localizedMessage)
+                    .font(.system(size: 11.5))
+                    .fixedSize(horizontal: false, vertical: true)
+                if let onDismiss {
+                    Button(L("background.hint.ok"), action: onDismiss)
+                        .controlSize(.small)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
+extension LibraryLoadIssue {
+    var localizedMessage: String {
+        switch self {
+        case .recordsSkipped(let count): L("library.issue.recordsSkipped", count)
+        case .restoredFromBackup: L("library.issue.restoredFromBackup")
+        case .unreadable: L("library.issue.unreadable")
+        }
     }
 }
 
@@ -213,12 +267,16 @@ private struct Placeholder: View {
             Image(systemName: symbol)
                 .font(.system(size: 22, weight: .light))
                 .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
             Text(text)
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 14)
+        .padding(.horizontal, 12)
         .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
@@ -270,10 +328,12 @@ private struct PopoverFooter: View {
                     }
                 }
                 Spacer()
+                // Confirmed by `AppDelegate.applicationShouldTerminate` while it would stop a refresh.
                 Button(L("popover.quit")) { NSApp.terminate(nil) }
                     .keyboardShortcut("q")
             }
             .buttonStyle(FooterButtonStyle())
+
         }
     }
 }

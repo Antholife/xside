@@ -10,11 +10,15 @@ import XSideCore
 final class Notifier: NSObject {
     private nonisolated static let logger = Logger(subsystem: "io.github.xside.XSide", category: "engine")
     private nonisolated static let xcodeCategory = "refreshFailed.xcode"
+    /// Causes fixed by installing another Xcode (App Store update, beta): no "Open Xcode", a tap
+    /// opens Settings, which links to the download.
+    private nonisolated static let settingsCategory = "refreshFailed.settings"
     private nonisolated static let openXcodeAction = "openXcode"
-    /// Causes the user fixes in Xcode (its account settings, or a newer or beta Xcode): their
-    /// notification has "Open Xcode", and a tap opens Settings.
-    static let xcodeErrorKeys: Set<String> = ["xcodeNotSignedIn", "noSigningIdentity", "provisioningFailed",
-                                              "xcodeMissing", "xcodeTooOld", "xcodeNeedsBetaForMac"]
+    /// Causes the user fixes in Xcode itself (its account settings): their notification has
+    /// "Open Xcode", and a tap opens Settings.
+    static let xcodeErrorKeys: Set<String> = ["xcodeNotSignedIn", "noSigningIdentity", "provisioningFailed", "xcodeMissing"]
+    /// Causes fixed with a newer or beta Xcode: a tap opens Settings.
+    static let newXcodeErrorKeys: Set<String> = ["xcodeTooOld", "xcodeNeedsBetaForMac"]
 
     /// Developer dir of the detected environment, used when Xcode isn't found by bundle identifier.
     private let developerDir: @MainActor () -> URL?
@@ -44,15 +48,23 @@ final class Notifier: NSObject {
                                         options: [.foreground])
         center.setNotificationCategories([
             UNNotificationCategory(identifier: Self.xcodeCategory, actions: [open], intentIdentifiers: []),
+            UNNotificationCategory(identifier: Self.settingsCategory, actions: [], intentIdentifiers: []),
         ])
     }
 
-    /// True when a notification posted now would be shown (authorized or provisional). Without a
-    /// bundle (`swift run`) the failure is only logged, which counts as delivered.
+    /// True when a notification posted now would be shown: authorized (or provisional) with an
+    /// alert style other than "None". Without a bundle (`swift run`) the failure is only logged,
+    /// which counts as delivered.
     func canDeliver() async -> Bool {
         guard let center else { return true }
-        let status = await center.notificationSettings().authorizationStatus
-        return status == .authorized || status == .provisional
+        return Self.isDeliverable(await center.notificationSettings())
+    }
+
+    /// Authorized, with banners or alerts: with alert style "None" nothing pops up (at most a
+    /// silent entry in Notification Center), so a cause notified then would go unseen.
+    nonisolated static func isDeliverable(_ settings: UNNotificationSettings) -> Bool {
+        guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else { return false }
+        return settings.alertSetting != .disabled
     }
 
     /// One refresh failure: title names the app, body is the friendly error message.
@@ -62,7 +74,11 @@ final class Notifier: NSObject {
         content.title = L("notification.refreshFailed.title", appName)
         content.body = message
         content.sound = .default
-        if Self.xcodeErrorKeys.contains(errorKey) { content.categoryIdentifier = Self.xcodeCategory }
+        if Self.xcodeErrorKeys.contains(errorKey) {
+            content.categoryIdentifier = Self.xcodeCategory
+        } else if Self.newXcodeErrorKeys.contains(errorKey) {
+            content.categoryIdentifier = Self.settingsCategory
+        }
         guard let center else {
             Self.logger.notice("would notify: \(content.title, privacy: .public) — \(errorKey, privacy: .public)")
             return true
@@ -99,10 +115,11 @@ final class Notifier: NSObject {
     nonisolated static let environmentNotificationID = "environment"
 
     /// The signing environment broke after setup; a tap opens Settings, where the fix is.
-    func environmentBroken(key: String, title: String, message: String) async -> Bool {
+    /// `checkFailed`: the check itself failed, Settings only offers to check again.
+    func environmentBroken(key: String, title: String, message: String, checkFailed: Bool = false) async -> Bool {
         let content = UNMutableNotificationContent()
         content.title = title
-        content.body = L("environment.notification.body", message)
+        content.body = L(checkFailed ? "environment.notification.body.check" : "environment.notification.body", message)
         content.sound = .default
         guard let center else {
             Self.logger.notice("would notify: \(content.title, privacy: .public)")
@@ -158,6 +175,63 @@ final class Notifier: NSObject {
         }
     }
 
+    // MARK: Expiry reminders
+
+    /// Schedules (or replaces) the reminder of one installation: delivered by macOS 24 h before
+    /// it expires, even if XSide isn't running. A refresh reschedules it, so it only shows when
+    /// no refresh happened in time. Nothing is scheduled when that moment is already past.
+    func scheduleExpiryReminder(recordID: UUID, deviceID: String, appName: String, deviceName: String,
+                                expiresAt: Date) async {
+        let id = ExpiryWatch.reminderID(recordID: recordID, deviceID: deviceID)
+        guard let date = ExpiryWatch.reminderDate(expiresAt: expiresAt, now: Date()) else {
+            center?.removePendingNotificationRequests(withIdentifiers: [id])
+            return
+        }
+        let content = UNMutableNotificationContent()
+        content.title = L("notification.expiry.title", appName)
+        content.body = L("notification.expiry.body", deviceName)
+        content.sound = .default
+        guard let center else {
+            Self.logger.notice("would schedule: \(content.title, privacy: .public) at \(date, privacy: .public)")
+            return
+        }
+        // Not allowed (yet): nothing to schedule; the next reconciliation adds it once allowed.
+        let status = await center.notificationSettings().authorizationStatus
+        guard status == .authorized || status == .provisional else { return }
+        // An interval, not a calendar date: unaffected by time zone changes.
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(60, date.timeIntervalSinceNow), repeats: false)
+        // A reminder shown for the previous expiry no longer applies.
+        center.removeDeliveredNotifications(withIdentifiers: [id])
+        do {
+            // Same identifier: replaces the pending one.
+            try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
+        } catch {
+            Self.logger.error("scheduling reminder failed: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    /// Removes the pending and shown reminders of one device (removed from XSide).
+    func removeExpiryReminders(forDevice deviceID: String) async {
+        guard let center else { return }
+        let suffix = ".\(deviceID)"
+        let pending = await center.pendingNotificationRequests().map(\.identifier)
+        let delivered = await center.deliveredNotifications().map(\.request.identifier)
+        let ids = Array(Set(pending + delivered).filter { $0.hasPrefix(ExpiryWatch.reminderPrefix) && $0.hasSuffix(suffix) })
+        guard !ids.isEmpty else { return }
+        center.removePendingNotificationRequests(withIdentifiers: ids)
+        center.removeDeliveredNotifications(withIdentifiers: ids)
+    }
+
+    /// Removes the pending reminders whose installation is gone (`keeping`: the current ids).
+    func removeExpiryReminders(keeping ids: Set<String>) async {
+        guard let center else { return }
+        let stale = await center.pendingNotificationRequests().map(\.identifier)
+            .filter { $0.hasPrefix(ExpiryWatch.reminderPrefix) && !ids.contains($0) }
+        guard !stale.isEmpty else { return }
+        center.removePendingNotificationRequests(withIdentifiers: stale)
+        center.removeDeliveredNotifications(withIdentifiers: stale)
+    }
+
     func openXcode() {
         XcodeLauncher.open(developerDir: developerDir())
     }
@@ -189,12 +263,16 @@ extension Notifier: UNUserNotificationCenterDelegate {
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             didReceive response: UNNotificationResponse) async {
+        let request = response.notification.request
         if response.actionIdentifier == Self.openXcodeAction {
             await openXcode()
         } else if response.actionIdentifier == UNNotificationDefaultActionIdentifier,
-                  Self.opensSettings(response.notification.request.identifier)
-                    || response.notification.request.content.categoryIdentifier == Self.xcodeCategory {
+                  Self.opensSettings(request.identifier)
+                    || [Self.xcodeCategory, Self.settingsCategory].contains(request.content.categoryIdentifier) {
             // Environment, macOS beta and Xcode-caused refresh failures: the fix is in Settings.
+            await Self.openSettings()
+        } else if request.identifier.hasPrefix(ExpiryWatch.reminderPrefix) {
+            // An app about to expire: Settings is the window XSide can open (not the popover).
             await Self.openSettings()
         }
     }
@@ -218,12 +296,22 @@ final class NotificationPermission {
         state = center == nil ? .unavailable : .checking
     }
 
+    /// Called when notifications become allowed (journey, Settings): reminders can be scheduled.
+    static var onBecameAuthorized: (@MainActor () -> Void)?
+
     func refresh() async {
         guard let center else { return }
-        switch await center.notificationSettings().authorizationStatus {
+        let before = state
+        defer {
+            if state == .authorized, before == .notDetermined || before == .denied { Self.onBecameAuthorized?() }
+        }
+        let settings = await center.notificationSettings()
+        switch settings.authorizationStatus {
         case .notDetermined: state = .notDetermined
         case .denied: state = .denied
-        default: state = .authorized // authorized, provisional, ephemeral
+        // Allowed, but with alert style "None" and out of Notification Center: nothing would
+        // show, so it reads (and is fixed) like "off".
+        default: state = Notifier.isDeliverable(settings) ? .authorized : .denied
         }
     }
 

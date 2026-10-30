@@ -108,3 +108,24 @@ import Foundation
     _ = try await runner.run("/usr/bin/codesign", [], cwd: nil)
     #expect(runner.timeouts == [CommandTimeout.deviceInstall, CommandTimeout.deviceQuery, CommandTimeout.standard])
 }
+
+@Test func processRunnerAppliesEnvironmentOverrides() async throws {
+    let runner = ProcessRunner(environment: { ["DEVELOPER_DIR": "/Applications/Xcode-beta.app/Contents/Developer"] })
+    let r = try await runner.run("/bin/sh", ["-c", "printf %s \"$DEVELOPER_DIR\"; printf ' %s' \"${HOME:+home}\""], cwd: nil)
+    #expect(String(decoding: r.stdout, as: UTF8.self) == "/Applications/Xcode-beta.app/Contents/Developer home")
+}
+
+@Test func environmentOverridesReplaceInheritedValues() {
+    let merged = ProcessRunner.environment(base: ["PATH=/usr/bin", "DEVELOPER_DIR=/old", "EMPTY="],
+                                           overrides: ["DEVELOPER_DIR": "/new", "XSIDE": "1"])
+    #expect(merged == ["PATH=/usr/bin", "EMPTY=", "DEVELOPER_DIR=/new", "XSIDE=1"])
+    #expect(ProcessRunner.environment(base: ["A=1"], overrides: [:]) == ["A=1"])
+}
+
+@Test func taskDeveloperDirWinsOverTheRunners() async throws {
+    let runner = ProcessRunner(environment: { ["DEVELOPER_DIR": "/app/choice"] })
+    let r = try await CommandEnvironment.withDeveloperDir(URL(fileURLWithPath: "/job/snapshot")) {
+        try await runner.run("/bin/sh", ["-c", "printf %s \"$DEVELOPER_DIR\""], cwd: nil)
+    }
+    #expect(String(decoding: r.stdout, as: UTF8.self) == "/job/snapshot")
+}

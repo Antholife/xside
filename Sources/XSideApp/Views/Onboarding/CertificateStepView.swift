@@ -13,6 +13,10 @@ struct CertificateStepView: View {
                 let blocking = model.firstBlockingStep
                 if model.environment == nil {
                     StatusCard(status: .checking, title: L("journey.certificate.checking"))
+                } else if let error = model.environmentError, error.isSetupCheckFailure {
+                    // The check itself failed: nothing is known about the account or the certificate.
+                    StatusCard(status: .todo, title: error.setupTitle, detail: error.environmentReason)
+                    AutoDetectFooter(model: model)
                 } else if let blocking, blocking < .certificate {
                     StatusCard(status: .todo, title: L("onboarding.signIn.title"),
                                detail: L("journey.certificate.needsAccount"))

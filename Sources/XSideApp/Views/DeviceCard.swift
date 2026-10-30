@@ -44,6 +44,7 @@ struct DeviceCard: View {
             Image(systemName: symbolName)
                 .font(.system(size: 17, weight: .regular))
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             Menu {
                 Toggle(L("popover.device.wifiRefresh"), isOn: Binding(get: { wifiRefresh }, set: onWifiRefresh))
                 Divider()

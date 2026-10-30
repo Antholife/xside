@@ -15,6 +15,7 @@ struct PairPrompt: View {
                     .font(.system(size: 17))
                     .foregroundStyle(Theme.brand)
                     .frame(width: 20)
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(L("popover.newDevice"))
                         .font(.system(size: 12.5, weight: .semibold))

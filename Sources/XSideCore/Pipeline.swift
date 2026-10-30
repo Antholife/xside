@@ -155,7 +155,10 @@ public actor SideloadPipeline {
                 let current: SigningEnvironment
                 do { current = try await environment() } catch { throw EnvironmentUnavailable(underlying: error) }
                 await progress(.profile)
-                return (current, try await provisioner.profile(bundleID: bundleID, env: current, deviceUDIDs: [udid]))
+                let provisioned = try await CommandEnvironment.withDeveloperDir(current.developerDir) {
+                    try await provisioner.profile(bundleID: bundleID, env: current, deviceUDIDs: [udid])
+                }
+                return (current, provisioned)
             }
             env = current
             profileURL = provisioned.url
@@ -177,12 +180,17 @@ public actor SideloadPipeline {
                     ids.insert(other.signedBundleID)
                     for i in other.installations { if let id = i.signedBundleID { ids.insert(id) } }
                 }
-            let app = try await resigner.resign(
-                ipa: ipa, workDir: workDir, bundleID: bundleID, options: record.options,
-                iconURL: icon, profileURL: provisioned.url, profile: provisioned.profile,
-                identitySHA1: current.identitySHA1, otherBundleIDs: others)
+            // The job's tools all use the Xcode of the environment it started with.
+            let app = try await CommandEnvironment.withDeveloperDir(current.developerDir) { [resigner] in
+                try await resigner.resign(
+                    ipa: ipa, workDir: workDir, bundleID: bundleID, options: record.options,
+                    iconURL: icon, profileURL: provisioned.url, profile: provisioned.profile,
+                    identitySHA1: current.identitySHA1, otherBundleIDs: others)
+            }
             await progress(.installing)
-            try await installer.install(app: app, deviceID: device.id)
+            try await CommandEnvironment.withDeveloperDir(current.developerDir) { [installer] in
+                try await installer.install(app: app, deviceID: device.id)
+            }
 
             let date = now()
             let installation = Installation(deviceID: device.id, installedAt: date,

@@ -34,6 +34,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
     }
 
+    /// True while quitting would stop the refresh of a valid app (set by the menu-bar label).
+    var quitStopsRefreshes: (@MainActor () -> Bool)?
+
+    /// Every quit (popover button, ⌘Q, Dock, `osascript`) is confirmed while an app would expire
+    /// without its refresh, except a logout, restart or shutdown, which is never held up.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard quitStopsRefreshes?() == true, !Self.isSystemQuit() else { return .terminateNow }
+        NSApp.activate()
+        let alert = NSAlert()
+        alert.messageText = L("quit.confirm.message")
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: L("popover.quit"))
+        alert.addButton(withTitle: L("install.cancel"))
+        return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
+    }
+
+    /// The quit comes from a logout, restart or shutdown (`kAEQuitReason` of the quit event).
+    private static func isSystemQuit() -> Bool {
+        guard let event = NSAppleEventManager.shared().currentAppleEvent,
+              event.eventClass == kCoreEventClass, event.eventID == kAEQuitApplication,
+              let reason = event.attributeDescriptor(forKeyword: kAEQuitReason)?.enumCodeValue
+                ?? event.paramDescriptor(forKeyword: kAEQuitReason)?.enumCodeValue else { return false }
+        let system: Set<OSType> = [kAELogOut, kAEReallyLogOut, kAEShowRestartDialog, kAEShowShutdownDialog,
+                                   kAERestart, kAEShutDown]
+        return system.contains(reason)
+    }
+
     func application(_ application: NSApplication, open urls: [URL]) {
         dispatch(urls)
     }

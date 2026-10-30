@@ -54,6 +54,7 @@ struct WifiCheckView: View {
                     Button(L("wifi.retry")) { model.retryWifiCheck(flow) }
                         .buttonStyle(GradientButtonStyle())
                         .frame(width: 110)
+                        .keyboardShortcut(.defaultAction)
                 }
             }
         }

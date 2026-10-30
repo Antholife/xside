@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>library.issue.recordsSkipped</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@apps@</string>
+		<key>apps</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>ld</string>
+			<key>one</key>
+			<string>%ld app couldn't be read back from the library. A backup copy was kept.</string>
+			<key>other</key>
+			<string>%ld apps couldn't be read back from the library. A backup copy was kept.</string>
+		</dict>
+	</dict>
+	<key>popover.expires.days</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@days@</string>
+		<key>days</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>ld</string>
+			<key>one</key>
+			<string>Expires in %ld day</string>
+			<key>other</key>
+			<string>Expires in %ld days</string>
+		</dict>
+	</dict>
+</dict>
+</plist>

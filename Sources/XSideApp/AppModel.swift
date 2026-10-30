@@ -81,7 +81,12 @@ final class AppModel {
         LibraryLocation.folderName(bundleID: Bundle.main.bundleIdentifier).lowercased() + "-icons")
 
     let library: AppLibrary
-    private let runner = ProcessRunner()
+    /// Runs every tool with `DEVELOPER_DIR` set to the Xcode in use (see `resolveXcode`).
+    private let runner: ProcessRunner
+    /// Without the override: what `xcode-select -p` itself points to.
+    private let plainRunner = ProcessRunner()
+    /// The developer directory passed as `DEVELOPER_DIR`, nil to inherit XSide's environment.
+    private let developerDirOverride = OSAllocatedUnfairLock<String?>(initialState: nil)
     private let paths: Paths
     /// One for the app's lifetime: its per-device ordering and its provisioning lock only hold
     /// within one instance. The signing environment is passed per job.
@@ -108,6 +113,10 @@ final class AppModel {
     private(set) var isPopoverOpen = false
 
     init() {
+        let developerDirOverride = developerDirOverride
+        runner = ProcessRunner(environment: {
+            developerDirOverride.withLock { $0 }.map { ["DEVELOPER_DIR": $0] } ?? [:]
+        })
         paths = Paths()
         library = AppLibrary(root: paths.root)
         prefsStore = DevicePrefsStore(libraryRoot: paths.root)
@@ -215,8 +224,13 @@ final class AppModel {
     var environmentFailed: Bool { environmentError != nil }
     var environmentError: XSideError? { if case .failure(let error)? = environment { error } else { nil } }
 
-    /// Developer dir of the last good probe, to locate Xcode when it isn't found by bundle id.
-    var lastKnownDeveloperDir: URL? { lastGoodEnv?.developerDir }
+    /// The Xcode XSide uses (to open it, show its version): the one probed OK, else the one
+    /// chosen for the tools, else the last that probed OK.
+    var lastKnownDeveloperDir: URL? {
+        signingEnvironment?.developerDir
+            ?? activeDeveloperDir.flatMap { XcodeLocator.hasXcodebuild($0) ? $0 : nil }
+            ?? lastGoodEnv?.developerDir
+    }
 
     /// Lets Xcode create the signing certificate (see `Provisioner.createCertificate`), then
     /// re-probes: the steps turn ✅ by themselves when it worked.
@@ -287,6 +301,7 @@ final class AppModel {
             return
         }
         #endif
+        await resolveXcode()
         let probe = EnvironmentProbe(runner: runner)
         let result = await probe.detect()
         if case .failure(.xcodeNotSignedIn) = result {
@@ -316,6 +331,7 @@ final class AppModel {
 
     /// Per-probe state the views read on every render, so no file or preferences I/O there.
     private func environmentChanged() {
+        defer { updateAttention() }
         if case .success? = environment { certificateCreationError = nil }
         if let identity = signingEnvironment?.identityName, let appleID = EnvironmentProbe.appleID(fromIdentityName: identity) {
             accountName = appleID
@@ -356,6 +372,101 @@ final class AppModel {
     #endif
 
     var signingEnvironment: SigningEnvironment? { try? environment?.get() }
+
+    // MARK: Xcode selection
+
+    /// The Xcode apps found in /Applications and ~/Applications, newest first (one scan per probe).
+    private(set) var xcodes: [XcodeInstall] = []
+    /// What "Automatic" picks right now (nil when there is no Xcode at all).
+    private(set) var automaticDeveloperDir: URL?
+    /// The developer directory the tools run with now (`DEVELOPER_DIR`).
+    private(set) var activeDeveloperDir: URL?
+
+    /// "Automatic" or an Xcode picked in Settings. Changing it probes again with that Xcode.
+    var xcodeSelection: XcodeSelection {
+        get {
+            access(keyPath: \.xcodeSelection)
+            return XcodeSelection(rawValue: UserDefaults.standard.string(forKey: XcodeSelection.storageKey))
+        }
+        set {
+            withMutation(keyPath: \.xcodeSelection) {
+                UserDefaults.standard.set(newValue.rawValue, forKey: XcodeSelection.storageKey)
+            }
+            Task { await probeEnvironmentAfresh() }
+        }
+    }
+
+    /// Picks the developer directory every tool runs with: the Xcode chosen in Settings, else the
+    /// automatic choice (see `XcodeLocator.automatic`). Command Line Tools alone are left as is.
+    private func resolveXcode() async {
+        let installs = await Task.detached { XcodeLocator.find() }.value
+        // A picked Xcode that was deleted: back to Automatic, so picking it again later works.
+        if case .path(let path) = xcodeSelection, !XcodeLocator.hasXcodebuild(URL(fileURLWithPath: path)) {
+            Self.logger.notice("picked Xcode gone (\(path, privacy: .public)): back to automatic")
+            withMutation(keyPath: \.xcodeSelection) {
+                UserDefaults.standard.set(XcodeSelection.automatic.rawValue, forKey: XcodeSelection.storageKey)
+            }
+        }
+        var selected: XcodeLocator.Selected?
+        if let result = try? await plainRunner.run("/usr/bin/xcode-select", ["-p"], cwd: nil), result.status == 0 {
+            let path = String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !path.isEmpty {
+                let dir = URL(fileURLWithPath: path, isDirectory: true)
+                selected = XcodeLocator.Selected(developerDir: dir, isXcode: XcodeLocator.hasXcodebuild(dir),
+                                                 isBeta: XcodeCompat.xcodeVersion(developerDir: dir)?.isBeta ?? false)
+            }
+        }
+        if installs != xcodes { xcodes = installs }
+        // On a macOS beta, a beta Xcode is switched to only once it's usable (license accepted).
+        var unready: Set<String> = []
+        for beta in XcodeLocator.betasToCheck(selected: selected, installs: installs, macIsBeta: XcodeLauncher.macIsBeta) {
+            if await isReady(beta) { break }
+            unready.insert(beta.developerDir.path)
+        }
+        let automatic = XcodeLocator.automatic(selected: selected, installs: installs,
+                                               macIsBeta: XcodeLauncher.macIsBeta, unready: unready)
+        if automatic?.path != automaticDeveloperDir?.path { automaticDeveloperDir = automatic }
+        let pickedBeta = automatic.map { dir in installs.contains { $0.isBeta && $0.developerDir.path == dir.path } } ?? false
+        let notReady = pickedBeta ? nil : installs.first { unready.contains($0.developerDir.path) }
+        if notReady != unreadyBetaXcode { unreadyBetaXcode = notReady }
+        let resolved = XcodeLocator.resolve(xcodeSelection, selected: selected, installs: installs,
+                                            macIsBeta: XcodeLauncher.macIsBeta, unready: unready,
+                                            hasXcodebuild: XcodeLocator.hasXcodebuild)
+        let current = developerDirOverride.withLock { $0 }
+        guard current != resolved?.path else { return }
+        // A job running now keeps its own Xcode, but the next probe must match what jobs will
+        // use: the switch waits until no job runs, then probes again (see `release`).
+        if !claims.isEmpty, current != nil {
+            Self.logger.notice("developer dir change deferred: jobs running")
+            xcodeSwitchPending = true
+            return
+        }
+        developerDirOverride.withLock { $0 = resolved?.path }
+        activeDeveloperDir = resolved
+        Self.logger.notice("developer dir: \(resolved?.path ?? "inherited", privacy: .public)")
+    }
+
+    /// A beta Xcode found but not usable yet (never opened, license not accepted), shown in
+    /// Settings and the journey; nil otherwise.
+    private(set) var unreadyBetaXcode: XcodeInstall?
+    /// A new developer dir was resolved while jobs were running: applied once they're done.
+    @ObservationIgnored private var xcodeSwitchPending = false
+    /// Xcode apps (path and build) whose first launch is done: checked once.
+    @ObservationIgnored private var readyXcodes: Set<String> = []
+
+    /// `xcodebuild -checkFirstLaunchStatus` with that Xcode: exit 0 once its license is accepted
+    /// and its first launch done.
+    private func isReady(_ xcode: XcodeInstall) async -> Bool {
+        let key = "\(xcode.developerDir.path)#\(xcode.build)"
+        if readyXcodes.contains(key) { return true }
+        let check = XcodeLocator.firstLaunchCheck(xcode.developerDir)
+        let result = try? await CommandEnvironment.withDeveloperDir(xcode.developerDir) {
+            try await plainRunner.run(check.executable, check.arguments, cwd: nil, timeout: .seconds(30))
+        }
+        guard result?.status == 0 else { return false }
+        readyXcodes.insert(key)
+        return true
+    }
 
     /// macOS beta with a release Xcode, which may stop working on it: warned, never blocking.
     /// Computed once per probe.
@@ -502,8 +613,9 @@ final class AppModel {
         names[deviceID] = nil
         UserDefaults.standard.set(names, forKey: Self.namesKey)
         UserDefaults.standard.removeObject(forKey: Self.guideKey(deviceID))
-        onDeviceRemoved?(deviceID)
         await reloadRecords()
+        // After the reload: what it forgets (reminders) is rebuilt from the records left.
+        onDeviceRemoved?(deviceID)
         // Kept for a job on another device; deleted once nothing uses them if that job didn't install.
         keptEmptyRecords.formUnion(records.filter { busyRecords.contains($0.id) && $0.installations.isEmpty }.map(\.id))
         dropKeptEmptyRecords()
@@ -534,7 +646,46 @@ final class AppModel {
 
     func reloadRecords() async {
         records = await library.records()
+        updateAttention()
     }
+
+    // MARK: Attention (menu-bar badge)
+
+    enum Attention { case warning, critical }
+
+    /// Drawn as a dot on the menu-bar icon: something needs a look even with the popover closed.
+    private(set) var attention: Attention?
+    /// The library warning was acknowledged in the popover (for this launch; Settings keeps it).
+    private(set) var libraryIssueDismissed = false
+
+    /// Critical: an app expired, or the environment broke after setup. Warning: an app close to
+    /// expiry whose last attempt failed, or the library couldn't be fully read.
+    func updateAttention() {
+        let now = Date()
+        let setupDone = UserDefaults.standard.bool(forKey: JourneyStep.completedKey)
+        let expired = records.contains { $0.installations.contains { $0.expiresAt <= now } }
+        let updated: Attention?
+        // A failed check of the setup (a system tool erred) says nothing is missing: a warning.
+        let broken = setupDone && environmentFailed && environmentError?.isSetupCheckFailure != true
+        let checkFailed = setupDone && environmentError?.isSetupCheckFailure == true
+        if expired || broken {
+            updated = .critical
+        } else if ExpiryWatch.needsAttention(records, now: now, threshold: BackgroundEngine.threshold)
+                    || (library.loadIssue != nil && !libraryIssueDismissed) || checkFailed {
+            updated = .warning
+        } else {
+            updated = nil
+        }
+        if updated != attention { attention = updated }
+    }
+
+    func dismissLibraryIssue() {
+        libraryIssueDismissed = true
+        updateAttention()
+    }
+
+    /// Quitting now would leave a valid app without its refresh (see `ExpiryWatch`).
+    var quitStopsRefreshes: Bool { ExpiryWatch.quitStopsRefreshes(records, now: Date()) }
 
     /// Environment and date of the last App ID count, to skip recounting at every probe.
     @ObservationIgnored private var appIDCounterEnv: SigningEnvironment?
@@ -674,6 +825,10 @@ final class AppModel {
             jobActivity = nil
         }
         if left <= 0 { dropKeptEmptyRecords() }
+        if claims.isEmpty, xcodeSwitchPending {
+            xcodeSwitchPending = false
+            recheckEnvironment()
+        }
     }
 
     /// The environment as probed now: a queued job asks for it when it actually starts.

@@ -26,6 +26,8 @@ public enum IPAImporter {
         let executable = app.appendingPathComponent(info.executable)
         try require(.typeRegular, executable)
         if try IPAInspector.isEncrypted(executable) { throw XSideError.encryptedIPA }
+        let entitlements = IPAInspector.embeddedEntitlements(executable)
+        let shared = Resigner.sharedGroupNames(entitlements)
         if let iconDestination {
             if let iconHelper {
                 _ = await AppIconExtractor.extractInSubprocess(helper: iconHelper, app: app,
@@ -35,7 +37,9 @@ public enum IPAImporter {
                 AppIconExtractor.extract(from: app, plist: plist, to: iconDestination)
             }
         }
-        return info
+        return AppInfo(bundleID: info.bundleID, name: info.name, version: info.version,
+                       executable: info.executable, sharedKeychainGroups: shared,
+                       sharedKeychainVendor: shared.isEmpty ? nil : Resigner.keychainVendor(entitlements))
     }
 
     private static func require(_ type: FileAttributeType, _ url: URL) throws {
