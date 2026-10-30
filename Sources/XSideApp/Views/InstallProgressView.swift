@@ -109,6 +109,15 @@ extension StepStatus {
 }
 
 extension JobStage {
+    /// Name of the stage, as in the step list (no ellipsis).
+    var label: String {
+        switch self {
+        case .preparing: L("install.step.preparing")
+        case .waiting: L("install.step.waiting")
+        case .step(let s): ProgressStep(s).label
+        }
+    }
+
     /// Compact text for the popover row, with its ellipsis.
     var rowText: String {
         switch self {

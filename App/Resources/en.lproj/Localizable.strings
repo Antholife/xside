@@ -6,6 +6,11 @@
 "popover.expired" = "Expired";
 "popover.nextRefresh" = "Next refresh: %@";
 "popover.install" = "＋ Install an app";
+"popover.installCard.title" = "Installing %@";
+"popover.installCard.step" = "%1$@ · %2$@";
+"popover.installCard.failed" = "Failed — see details";
+"popover.installCard.queued" = "+ %ld queued";
+"popover.installCard.accessibility" = "%1$@, %2$@, %3$ld%%";
 "popover.settings" = "Settings";
 "popover.quit" = "Quit";
 "popover.appIDsRemaining" = "~%d/10 App IDs left this week · estimated from this Mac";
@@ -59,8 +64,12 @@
 "install.successSome" = "Installed on %1$d of %2$d devices";
 "install.failedAll" = "Installation failed on every device.";
 "install.retryFailed" = "Retry failed";
+"install.retry" = "Retry";
 "install.run.done" = "Installed";
 "install.run.doneWifi" = "Installed · reachable over Wi-Fi";
+"install.run.cancelled" = "Cancelled";
+"install.cancelRun" = "Cancel install";
+"install.cancelled" = "Install cancelled.";
 
 /* First-install guide */
 "guide.title" = "Before opening the app";

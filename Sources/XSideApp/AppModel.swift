@@ -627,11 +627,12 @@ final class AppModel {
         await updateAppIDCounter()
     }
 
-    /// Records `removeDevice` left without installations because a job was using them.
+    /// Records `removeDevice` left without installations because a job was using them, and the
+    /// import of a cancelled first install (`dropCancelledImport`).
     @ObservationIgnored private var keptEmptyRecords: Set<UUID> = []
 
     /// Deletes the kept records no job claims and no install window refers to, if they still have
-    /// no installation. A first import (also without installations) is never in the set.
+    /// no installation. Any other first import (also without installations) is never in the set.
     private func dropKeptEmptyRecords() {
         guard !keptEmptyRecords.isEmpty else { return }
         let inUse: (UUID) -> Bool = { [unowned self] id in
@@ -990,7 +991,7 @@ final class AppModel {
     private(set) var queuedIPAs: [URL] = []
     /// Set by the menu-bar label (which has `openWindow`): shows and activates the install window.
     var showInstallWindow: (() -> Void)?
-    private var isInstallWindowOpen = false
+    private(set) var isInstallWindowOpen = false
 
     /// A request (Finder, drop, button). While an install runs, or its guide is still unseen, the
     /// request is queued, never dropped; otherwise it replaces a flow that hasn't started.
@@ -1095,10 +1096,10 @@ final class AppModel {
         runInstall(flow, on: targets)
     }
 
-    /// "Retry failed": runs again the devices that failed, with the same options.
+    /// "Retry failed": runs again the devices that failed or were cancelled, with the same options.
     func retryFailedInstalls() {
         guard let flow = install, !flow.isRunning, flow.wifiCheck == nil else { return }
-        let targets = flow.failedDeviceIDs
+        let targets = flow.retryableDeviceIDs
         guard !targets.isEmpty else { return }
         for id in targets { flow.setStatus(.waiting, for: id) }
         runInstall(flow, on: targets)
@@ -1106,22 +1107,34 @@ final class AppModel {
 
     /// Installs `targets` (already in `flow.runs`) in order. The first import of the `.ipa` is
     /// reused by the next devices. Each device's failure is kept on its row and the run goes on.
+    /// The run's task is kept on the flow for "Cancel install" (`cancelInstall`).
     private func runInstall(_ flow: InstallFlow, on targets: [String]) {
         flow.phase = .running(.preparing)
+        flow.cancelRequested = false
+        flow.wasCancelled = false
         // Re-install of a known app: claim each device's row now, before any await. Each claim is
         // released when that device is done.
         let recordID = flow.importedRecordID ?? flow.existing?.id
         if let recordID {
             for id in targets { claim(JobKey(recordID: recordID, deviceID: id), stage: id == targets[0] ? .preparing : .waiting) }
         }
-        Task {
+        flow.runTask = Task {
             for id in targets {
-                await installOne(flow, on: id)
+                if flow.cancelRequested {
+                    flow.setStatus(.cancelled, for: id) // never started
+                } else {
+                    await installOne(flow, on: id)
+                }
                 if let recordID { release(JobKey(recordID: recordID, deviceID: id)) }
             }
+            flow.runTask = nil
+            flow.wasCancelled = flow.runs.contains { $0.status == .cancelled }
+            if flow.wasCancelled { dropCancelledImport(flow) }
             if !flow.isMultiDevice, case .failed(let failure)? = flow.runs.first?.status {
                 flow.failure = failure
                 flow.phase = .editing(error: failure.message)
+            } else if !flow.isMultiDevice, flow.wasCancelled {
+                flow.phase = .editing(error: nil) // the window says "Install cancelled."
             } else {
                 flow.phase = .finished
                 flow.nextWifiCheck() // the checks collected during the run, one at a time
@@ -1164,15 +1177,43 @@ final class AppModel {
                 }
             }
         } catch {
-            flow.setStatus(.failed(StepFailure(stage: flow.lastStage, message: localizedMessage(error))), for: deviceID)
+            // Cancelled: no error shown (the pipeline reports a step stopped by the cancellation as
+            // such). Any other error, even after "Cancel install", stays a failure.
+            if error is CancellationError {
+                flow.setStatus(.cancelled, for: deviceID)
+            } else {
+                flow.setStatus(.failed(StepFailure(stage: flow.lastStage, message: localizedMessage(error))), for: deviceID)
+            }
         }
+    }
+
+    /// "Cancel install": cancels the run's task. The device being installed stops at once (its
+    /// pipeline job is cancelled, which kills the running tool's process group); the devices still
+    /// waiting never start; those already installed stay installed. No confirmation.
+    func cancelInstall() {
+        guard let flow = install, flow.isRunning, !flow.cancelRequested else { return }
+        flow.cancelRequested = true
+        for run in flow.runs where run.status == .waiting { flow.setStatus(.cancelled, for: run.deviceID) }
+        flow.runTask?.cancel()
+    }
+
+    /// A cancelled first install leaves no record behind: the one this run imported is deleted
+    /// once nothing uses it, if no device got the app (see `dropKeptEmptyRecords`). A reinstall of
+    /// a known app keeps its record and installations as they were.
+    private func dropCancelledImport(_ flow: InstallFlow) {
+        guard flow.existing == nil, flow.succeededCount == 0, let id = flow.importedRecordID else { return }
+        flow.importedRecordID = nil // a new attempt imports again
+        keptEmptyRecords.insert(id)
+        dropKeptEmptyRecords()
     }
 
     /// The window may have been closed during the job: bring it back when there is something to
     /// see (an error, a Wi-Fi check, a first-install guide, or the next queued file).
     private func flowFinished(_ flow: InstallFlow) {
         guard install === flow, !isInstallWindowOpen else { return }
-        if case .finished = flow.phase, flow.failedDeviceIDs.isEmpty, flow.guideSeen, flow.wifiCheck == nil {
+        // A run cancelled from the popover has nothing more to say either.
+        if flow.phase == .finished || flow.wasCancelled,
+           flow.failedDeviceIDs.isEmpty, flow.guideSeen, flow.wifiCheck == nil {
             if !advanceQueue() { install = nil; return }
         }
         showInstallWindow?()

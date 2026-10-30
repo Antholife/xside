@@ -94,6 +94,8 @@ struct InstallSheet: View {
                                         failureMessage: failure.message)
                 } else if case .editing(let error?) = flow.phase {
                     ErrorText(error)
+                } else if case .editing(nil) = flow.phase, flow.wasCancelled {
+                    CancelledNote()
                 }
                 if case .editing = flow.phase { BlockedNotice(model: model, flow: flow) }
             case .finished:
@@ -117,7 +119,7 @@ struct InstallSheet: View {
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Color(nsColor: .systemGreen))
                 }
-                if !flow.failedDeviceIDs.isEmpty, flow.wifiCheck == nil { BlockedNotice(model: model, flow: flow) }
+                if !flow.retryableDeviceIDs.isEmpty, flow.wifiCheck == nil { BlockedNotice(model: model, flow: flow) }
                 if flow.wifiCheck == nil {
                     ForEach(flow.guides, id: \.deviceID) { guide in
                         FirstInstallGuideView(guide: guide,
@@ -145,7 +147,7 @@ struct InstallSheet: View {
 
     /// Outcome of a run on several devices.
     @ViewBuilder private var summary: some View {
-        let done = flow.runs.count - flow.failedDeviceIDs.count
+        let done = flow.succeededCount
         if done == flow.runs.count {
             Label(L("install.successMany", done), systemImage: "checkmark.circle.fill")
                 .font(.system(size: 13, weight: .medium))
@@ -154,9 +156,10 @@ struct InstallSheet: View {
             Label(L("install.successSome", done, flow.runs.count), systemImage: "exclamationmark.triangle.fill")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Color(nsColor: .systemOrange))
-        } else {
-            ErrorText(L("install.failedAll"))
+        } else if !flow.failedDeviceIDs.isEmpty {
+            ErrorText(L("install.failedAll")) // with the cancelled note below if some were cancelled
         }
+        if flow.wasCancelled { CancelledNote() }
     }
 
     private var header: some View {
@@ -186,12 +189,14 @@ struct InstallSheet: View {
         HStack(spacing: 10) {
             Spacer()
             switch flow.phase {
-            case .finished where !flow.failedDeviceIDs.isEmpty:
+            case .finished where !flow.retryableDeviceIDs.isEmpty:
                 Button(L("install.done"), action: close)
                     .keyboardShortcut(.cancelAction)
                     .controlSize(.large)
                     .disabled(flow.wifiCheck != nil)
-                Button(L("install.retryFailed"), action: model.retryFailedInstalls)
+                // Only cancelled devices: nothing failed, plain "Retry".
+                Button(L(flow.failedDeviceIDs.isEmpty ? "install.retry" : "install.retryFailed"),
+                       action: model.retryFailedInstalls)
                     .buttonStyle(GradientButtonStyle())
                     .frame(width: 170)
                     // During the Wi-Fi check, Return is its "Retry".
@@ -207,10 +212,16 @@ struct InstallSheet: View {
                     .keyboardShortcut(.cancelAction)
                     .controlSize(.large)
             case .editing, .running:
-                Button(L("install.cancel"), action: close)
-                    .keyboardShortcut(.cancelAction)
-                    .controlSize(.large)
-                    .disabled(flow.isRunning)
+                if flow.isRunning {
+                    // Immediate, even mid-transfer: no confirmation, so no Escape shortcut either.
+                    Button(L("install.cancelRun"), action: model.cancelInstall)
+                        .controlSize(.large)
+                        .disabled(flow.cancelRequested)
+                } else {
+                    Button(L("install.cancel"), action: close)
+                        .keyboardShortcut(.cancelAction)
+                        .controlSize(.large)
+                }
                 Button(installLabel, action: model.startInstall)
                     .buttonStyle(GradientButtonStyle())
                     .frame(width: flow.deviceIDs.count > 1 ? 200 : 130)
@@ -500,6 +511,7 @@ private struct DeviceRunRow: View {
         case .succeeded where checkingWifi: L("wifi.title") + "…"
         case .succeeded: run.wifiVerified ? L("install.run.doneWifi") : L("install.run.done")
         case .failed(let failure): failure.message
+        case .cancelled: L("install.run.cancelled")
         }
     }
 
@@ -516,13 +528,26 @@ private struct DeviceRunRow: View {
         case .failed:
             Image(systemName: "xmark.octagon.fill")
                 .foregroundStyle(Color(nsColor: .systemRed))
+        case .cancelled:
+            Image(systemName: "minus.circle")
+                .foregroundStyle(.secondary)
         }
     }
 }
 
+/// "Install cancelled.": the last run was stopped by the user (not an error).
+private struct CancelledNote: View {
+    var body: some View {
+        Label(L("install.cancelled"), systemImage: "xmark.circle")
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.secondary)
+    }
+}
+
 /// The app's icon: the custom one chosen, else the IPA's own, else a placeholder.
-private struct AppGlyph: View {
+struct AppGlyph: View {
     let iconURL: URL?
+    var size: CGFloat = 48
 
     var body: some View {
         Group {
@@ -532,13 +557,13 @@ private struct AppGlyph: View {
                 ZStack {
                     Theme.brand
                     Image(systemName: "app.badge.checkmark")
-                        .font(.system(size: 22, weight: .medium))
+                        .font(.system(size: size * 0.46, weight: .medium))
                         .foregroundStyle(.white)
                 }
             }
         }
-        .frame(width: 48, height: 48)
-        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: size * 0.23, style: .continuous))
         .shadow(color: .black.opacity(0.15), radius: 2, y: 1)
     }
 }

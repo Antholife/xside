@@ -337,6 +337,8 @@ final class BackgroundEngine {
             scheduleReminder(job)
             return
         }
+        // Cancelled by the user: nothing failed, nothing to report.
+        if error is CancellationError { return }
         // Manual actions show their error in the UI; only background failures notify.
         guard automatic else { return }
         // The environment broke while the job waited: `reportEnvironment` notifies it, once.

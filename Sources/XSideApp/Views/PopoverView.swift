@@ -60,15 +60,25 @@ private struct PopoverContent: View {
                            error: model.pairErrors[device.id]) { model.pair(device) }
             }
             devices
-            Button(L("popover.install")) {
-                // Close the popover first: the file picker opens on its own, not over it.
-                dismiss()
-                DispatchQueue.main.async {
-                    if let url = chooseIPA() { openWindow.presentInstall(url, model: model) }
+            if let flow = model.install, InstallProgressCard.isShown(for: flow, in: model) {
+                // The run lives in the model: the window shows it where it is.
+                InstallProgressCard(model: model, flow: flow) {
+                    dismiss()
+                    openWindow(id: InstallWindow.id)
+                    NSApp.activate()
                 }
+                .padding(.top, 2)
+            } else {
+                Button(L("popover.install")) {
+                    // Close the popover first: the file picker opens on its own, not over it.
+                    dismiss()
+                    DispatchQueue.main.async {
+                        if let url = chooseIPA() { openWindow.presentInstall(url, model: model) }
+                    }
+                }
+                .buttonStyle(GradientButtonStyle())
+                .padding(.top, 2)
             }
-            .buttonStyle(GradientButtonStyle())
-            .padding(.top, 2)
             PopoverFooter(appIDsRemaining: model.appIDsRemaining)
         }
         .padding(12)

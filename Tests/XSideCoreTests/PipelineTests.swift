@@ -459,10 +459,15 @@ struct PipelineTests {
         let clock = ContinuousClock()
         let start = clock.now
         let times = TimeLog()
+        // B starts only once A holds the lock (A reported .profile): no timing guess.
+        let (aHoldsLock, signal) = AsyncStream<Void>.makeStream()
         async let a = pipeline.install(recordID: id, device: device("dev-1", udid: "UDID-1"), env: env) { step in
-            if step == .profile { await times.add("a", clock.now - start) }
+            if step == .profile {
+                await times.add("a", clock.now - start)
+                signal.yield(); signal.finish()
+            }
         }
-        try await Task.sleep(for: .milliseconds(50)) // A takes the lock first
+        for await _ in aHoldsLock { break }
         async let b = pipeline.install(recordID: id, device: device("dev-2", udid: "UDID-2"), env: env) { step in
             if step == .profile { await times.add("b", clock.now - start) }
         }
@@ -762,5 +767,273 @@ struct PipelineUninstallTests {
         async let uninstall: Void = pipeline.uninstall(recordID: id, deviceID: "dev-2") { nil }
         _ = try await (install, uninstall)
         #expect(await gauge.maximum == 2)
+    }
+}
+
+// MARK: - Cancellation
+
+/// Signals when a call starts, then waits until its task is cancelled (like a subprocess killed
+/// through `ProcessRunner`'s cancellation handler), or for good when `hangs` is false.
+private actor Started {
+    private(set) var count = 0
+    private(set) var cancelled = 0
+    func enter() { count += 1 }
+    func cancel() { cancelled += 1 }
+    func wait(for n: Int = 1, timeout: Duration = .seconds(5)) async {
+        let deadline = ContinuousClock.now + timeout
+        while count < n, ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(5)) }
+    }
+}
+
+private struct HangingInstaller: Installing {
+    let log: CallLog
+    let started: Started
+    func install(app: URL, deviceID: String) async throws {
+        await started.enter()
+        do {
+            try await Task.sleep(for: .seconds(30))
+        } catch {
+            await started.cancel()
+            throw error
+        }
+        await log.install(app, deviceID)
+    }
+    func uninstall(bundleID: String, deviceID: String) async throws {}
+}
+
+/// Holds the provisioning lock until cancelled.
+private struct HangingProvisioner: Provisioning {
+    let log: CallLog
+    let started: Started
+    func profile(bundleID: String, env: SigningEnvironment,
+                 deviceUDIDs: [String]) async throws -> (url: URL, profile: ProvisioningProfile) {
+        await started.enter()
+        await log.provision(deviceUDIDs)
+        try await Task.sleep(for: .seconds(30))
+        return (URL(fileURLWithPath: "/nonexistent/profile.mobileprovision"), makeProfile(udids: deviceUDIDs))
+    }
+}
+
+struct PipelineCancellationTests {
+    @Test func cancellingTheCallerStopsTheRunningStep() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let started = Started()
+        let pipeline = SideloadPipeline(library: f.library, provisioner: FakeProvisioner(log: f.log),
+                                        resigner: FakeResigner(log: f.log),
+                                        installer: HangingInstaller(log: f.log, started: started),
+                                        workRoot: f.workRoot, now: { fixedNow })
+        let task = Task { try await pipeline.install(recordID: f.record.id, device: device(), env: env) }
+        await started.wait()
+        let clock = ContinuousClock(), start = clock.now
+        task.cancel()
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(clock.now - start < .seconds(5)) // not the 30 s of the step
+        #expect(await started.cancelled == 1)
+        #expect(await f.log.installs.isEmpty)
+        // A first install that was cancelled records nothing.
+        #expect(await f.library.records().first?.installations.isEmpty == true)
+        #expect(workRootIsEmpty(f.workRoot))
+    }
+
+    @Test func cancelledRefreshLeavesTheInstallationUntouched() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        _ = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
+        let before = try #require(await f.library.records().first?.installations.first)
+        let started = Started()
+        let pipeline = SideloadPipeline(library: f.library, provisioner: FakeProvisioner(log: f.log),
+                                        resigner: FakeResigner(log: f.log),
+                                        installer: HangingInstaller(log: f.log, started: started),
+                                        workRoot: f.workRoot, now: { fixedNow.addingTimeInterval(3600) })
+        let task = Task {
+            try await pipeline.install(recordID: f.record.id, device: device(), env: env, refresh: true)
+        }
+        await started.wait()
+        task.cancel()
+        await #expect(throws: CancellationError.self) { try await task.value }
+        let after = try #require(await f.library.records().first?.installations.first)
+        #expect(after == before) // no lastAttempt, no lastErrorKey: no retry delay, no error shown
+        #expect(after.lastErrorKey == nil)
+    }
+
+    @Test func aJobWaitingForTheProvisioningLockLeavesAtOnce() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let started = Started()
+        let pipeline = SideloadPipeline(library: f.library,
+                                        provisioner: HangingProvisioner(log: f.log, started: started),
+                                        resigner: FakeResigner(log: f.log), installer: FakeInstaller(log: f.log),
+                                        workRoot: f.workRoot, now: { fixedNow })
+        let holder = Task { try await pipeline.install(recordID: f.record.id, device: device("dev-1", udid: "UDID-1"), env: env) }
+        await started.wait()
+        let steps = StepLog()
+        let waiter = Task {
+            try await pipeline.install(recordID: f.record.id, device: device("dev-2", udid: "UDID-2"), env: env) { step in
+                await steps.add(step)
+            }
+        }
+        try await Task.sleep(for: .milliseconds(50)) // queued behind the holder
+        waiter.cancel()
+        await #expect(throws: CancellationError.self) { try await waiter.value }
+        #expect(await steps.items.isEmpty) // never got the lock
+        #expect(await f.log.provisionUDIDs == [["UDID-1"]])
+        // The holder, cancelled too, releases the lock: a new job gets it.
+        holder.cancel()
+        await #expect(throws: CancellationError.self) { try await holder.value }
+        let next = Task { try await pipeline.install(recordID: f.record.id, device: device("dev-3", udid: "UDID-3"), env: env) }
+        await started.wait(for: 2)
+        #expect(await started.count == 2)
+        next.cancel()
+        _ = try? await next.value
+    }
+
+    @Test func aJobQueuedOnTheDeviceNeverStartsOnceCancelled() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let started = Started()
+        let pipeline = SideloadPipeline(library: f.library, provisioner: FakeProvisioner(log: f.log),
+                                        resigner: FakeResigner(log: f.log),
+                                        installer: HangingInstaller(log: f.log, started: started),
+                                        workRoot: f.workRoot, now: { fixedNow })
+        let first = Task { try await pipeline.install(recordID: f.record.id, device: device(), env: env) }
+        await started.wait()
+        let second = Task { try await pipeline.install(recordID: f.record.id, device: device(), env: env) }
+        try await Task.sleep(for: .milliseconds(50))
+        second.cancel()
+        first.cancel()
+        await #expect(throws: CancellationError.self) { try await first.value }
+        await #expect(throws: CancellationError.self) { try await second.value }
+        #expect(await started.count == 1)
+        #expect(await f.log.provisionUDIDs.count == 1)
+    }
+}
+
+/// Holds an `AsyncLock` until released.
+private actor Gate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var opened = false
+    func wait() async {
+        if opened { return }
+        await withCheckedContinuation { continuation = $0 }
+    }
+    func open() {
+        opened = true
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
+struct AsyncLockTests {
+    /// Runs `body` under the lock in a task; returns once the body holds it.
+    private func hold(_ lock: AsyncLock, until gate: Gate, then log: StepLog? = nil) async -> Task<Void, any Error> {
+        let (entered, signal) = AsyncStream<Void>.makeStream()
+        let task = Task {
+            try await lock.run {
+                signal.yield(); signal.finish()
+                await gate.wait()
+                await log?.add(.profile)
+            }
+        }
+        for await _ in entered { break }
+        return task
+    }
+
+    @Test func aCancelledWaiterLeavesWithoutTheLock() async throws {
+        let lock = AsyncLock()
+        let gate = Gate()
+        let order = StepLog()
+        let holder = await hold(lock, until: gate, then: order)
+        let cancelled = Task { try await lock.run { await order.add(.signing) } }
+        await lock.untilWaiting(1)
+        let next = Task { try await lock.run { await order.add(.installing) } }
+        await lock.untilWaiting(2)
+        cancelled.cancel()
+        // Leaves while the holder still has the lock.
+        await #expect(throws: CancellationError.self) { try await cancelled.value }
+        #expect(await lock.waiterCount == 1)
+        await gate.open()
+        try await holder.value
+        try await next.value
+        #expect(await order.items == [.profile, .installing])
+        // Not leaked: free again.
+        try await lock.run {}
+    }
+
+    @Test func aWaiterCancelledBeforeQueueingNeverRuns() async throws {
+        let lock = AsyncLock()
+        let gate = Gate()
+        let holder = await hold(lock, until: gate)
+        let ran = StepLog()
+        let waiter = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            try await lock.run { await ran.add(.profile) }
+        }
+        await #expect(throws: CancellationError.self) { try await waiter.value }
+        await gate.open()
+        try await holder.value
+        #expect(await ran.items.isEmpty)
+        try await lock.run {}
+    }
+
+    @Test func aCancelledTaskNeverTakesAFreeLock() async throws {
+        let lock = AsyncLock()
+        let ran = StepLog()
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            try await lock.run { await ran.add(.profile) }
+        }
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(await ran.items.isEmpty)
+        try await lock.run {} // still free
+    }
+
+    @Test func aThrowingBodyHandsTheLockOn() async throws {
+        let lock = AsyncLock()
+        await #expect(throws: CancellationError.self) {
+            try await lock.run { throw CancellationError() }
+        }
+        try await lock.run {}
+        #expect(await lock.waiterCount == 0)
+    }
+}
+
+/// Its first call signals and waits for `gate`; later calls install at once.
+private struct GatedInstaller: Installing {
+    let log: CallLog
+    let gate: Gate
+    let entered: AsyncStream<Void>.Continuation
+    func install(app: URL, deviceID: String) async throws {
+        if await log.installs.isEmpty, await log.provisionUDIDs.count == 1 {
+            entered.yield()
+            await gate.wait()
+        }
+        await log.install(app, deviceID)
+    }
+    func uninstall(bundleID: String, deviceID: String) async throws {}
+}
+
+struct PipelineChainCancellationTests {
+    @Test func aCancelledQueuedJobLeavesAtOnceAndTheChainHolds() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let gate = Gate()
+        let (entered, signal) = AsyncStream<Void>.makeStream()
+        let pipeline = SideloadPipeline(library: f.library, provisioner: FakeProvisioner(log: f.log),
+                                        resigner: FakeResigner(log: f.log),
+                                        installer: GatedInstaller(log: f.log, gate: gate, entered: signal),
+                                        workRoot: f.workRoot, now: { fixedNow })
+        let id = f.record.id
+        let a = Task { try await pipeline.install(recordID: id, device: device(), env: env) }
+        for await _ in entered { break } // A is installing, blocked
+        let b = Task { try await pipeline.install(recordID: id, device: device(), env: env) }
+        b.cancel()
+        // B ends while A still runs (it doesn't wait for A to finish).
+        await #expect(throws: CancellationError.self) { try await b.value }
+        #expect(await f.log.installs.isEmpty)
+        let c = Task { try await pipeline.install(recordID: id, device: device(), env: env) }
+        // A broken chain would let C provision now, before A is done. Bounded grace for that.
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(await f.log.provisionUDIDs.count == 1)
+        await gate.open()
+        _ = try await a.value
+        _ = try await c.value
+        #expect(await f.log.provisionUDIDs.count == 2) // A and C; B never ran
+        #expect(await f.log.installs.count == 2)
     }
 }

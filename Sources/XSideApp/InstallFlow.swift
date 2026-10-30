@@ -48,6 +48,13 @@ final class InstallFlow {
     /// Record this `.ipa` was imported into during this flow: later devices install it as is.
     var importedRecordID: UUID?
 
+    /// The running install, cancelled by "Cancel install".
+    @ObservationIgnored var runTask: Task<Void, Never>?
+    /// The user cancelled the current (or last) run: its remaining devices don't start.
+    var cancelRequested = false
+    /// The last run was cancelled: the window says so instead of showing an error.
+    var wasCancelled = false
+
     /// First-install guides due after this flow's successes, one per device.
     var guides: [FirstInstallGuide] = []
     /// Devices whose guide has been displayed.
@@ -78,6 +85,21 @@ final class InstallFlow {
     var isMultiDevice: Bool { runs.count > 1 }
 
     var failedDeviceIDs: [String] { runs.filter(\.isFailed).map(\.deviceID) }
+
+    /// Devices "Retry failed" runs again: failed or cancelled.
+    var retryableDeviceIDs: [String] {
+        runs.filter { $0.isFailed || $0.status == .cancelled }.map(\.deviceID)
+    }
+
+    var succeededCount: Int { runs.filter { $0.status == .succeeded }.count }
+
+    /// The device being installed, with its stage.
+    var currentRun: (index: Int, run: DeviceRun, stage: JobStage)? {
+        for (i, run) in runs.enumerated() {
+            if case .running(let stage) = run.status { return (i, run, stage) }
+        }
+        return nil
+    }
 
     func toggle(_ deviceID: String) {
         selectionEdited = true
@@ -124,6 +146,8 @@ struct DeviceRun: Identifiable, Equatable {
         case running(JobStage)
         case succeeded
         case failed(StepFailure)
+        /// Stopped by "Cancel install" (while running, or before it started).
+        case cancelled
     }
 
     let deviceID: String

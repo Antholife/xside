@@ -32,21 +32,116 @@ public enum InstallStep: Int, CaseIterable, Sendable {
     case profile, signing, installing
 }
 
-/// FIFO async mutex: `run` bodies execute one at a time, in arrival order.
+/// FIFO async mutex: `run` bodies execute one at a time, in arrival order. A task already
+/// cancelled, or cancelled while it waits, throws `CancellationError` without taking the lock
+/// (its body never runs); a body that throws, or is cancelled while running, still hands it on.
 actor AsyncLock {
     private var busy = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var waiters: [(id: UUID, continuation: CheckedContinuation<Void, any Error>)] = []
 
     func run<T: Sendable>(_ body: @Sendable () async throws -> T) async throws -> T {
-        if busy {
-            await withCheckedContinuation { waiters.append($0) }
-        } else {
-            busy = true
-        }
-        defer {
-            if waiters.isEmpty { busy = false } else { waiters.removeFirst().resume() }
-        }
+        try await acquire()
+        defer { release() }
         return try await body()
+    }
+
+    /// Waiters still queued (tests).
+    var waiterCount: Int { waiters.count }
+
+    /// Tests: callers suspended until that many waiters are queued.
+    private var watchers: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+
+    /// Tests: returns once at least `count` waiters are queued (no polling).
+    func untilWaiting(_ count: Int) async {
+        if waiters.count >= count { return }
+        await withCheckedContinuation { watchers.append((count, $0)) }
+    }
+
+    private func acquire() async throws {
+        try Task.checkCancellation()
+        guard busy else {
+            busy = true
+            return
+        }
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                // Cancelled before queueing: the handler below already ran and found nothing to remove.
+                if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                } else {
+                    waiters.append((id, continuation))
+                    let ready = watchers.filter { $0.count <= waiters.count }
+                    watchers.removeAll { $0.count <= waiters.count }
+                    for watcher in ready { watcher.continuation.resume() }
+                }
+            }
+        } onCancel: {
+            Task { await self.cancelWaiter(id) }
+        }
+    }
+
+    /// Still queued: leaves without the lock. Already handed the lock: nothing to do, its body
+    /// starts, sees the cancellation and releases the lock.
+    private func cancelWaiter(_ id: UUID) {
+        guard let index = waiters.firstIndex(where: { $0.id == id }) else { return }
+        waiters.remove(at: index).continuation.resume(throwing: CancellationError())
+    }
+
+    private func release() {
+        if waiters.isEmpty { busy = false } else { waiters.removeFirst().continuation.resume() }
+    }
+}
+
+/// Waits for `previous` to end, or throws `CancellationError` as soon as the calling task is
+/// cancelled (a `Task<Void, Never>`'s `value` ignores cancellation). `previous` itself goes on.
+func waitCancellably(for previous: Task<Void, Never>?) async throws {
+    guard let previous else { return }
+    let gate = OnceContinuation()
+    try await withTaskCancellationHandler {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+            gate.install(continuation)
+            Task {
+                await previous.value
+                gate.resume(with: nil)
+            }
+        }
+    } onCancel: {
+        gate.resume(with: CancellationError())
+    }
+}
+
+/// A continuation resumed once, by whichever comes first; an outcome arriving before the
+/// continuation is installed is kept and applied on install.
+private final class OnceContinuation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, any Error>?
+    /// Set once: nil inside means success.
+    private var outcome: (any Error)??
+
+    func install(_ continuation: CheckedContinuation<Void, any Error>) {
+        lock.lock()
+        guard let outcome else {
+            self.continuation = continuation
+            lock.unlock()
+            return
+        }
+        lock.unlock()
+        Self.resume(continuation, outcome)
+    }
+
+    func resume(with error: (any Error)?) {
+        lock.lock()
+        guard outcome == nil else { lock.unlock(); return }
+        outcome = .some(error)
+        let pending = continuation
+        continuation = nil
+        lock.unlock()
+        if let pending { Self.resume(pending, error) }
+    }
+
+    private static func resume(_ continuation: CheckedContinuation<Void, any Error>, _ error: (any Error)?) {
+        if let error { continuation.resume(throwing: error) } else { continuation.resume() }
     }
 }
 
@@ -68,7 +163,8 @@ public actor SideloadPipeline {
     private let provisioningLock = AsyncLock()
 
     /// Last queued job per device id. Read and replaced without any `await` in between, so the
-    /// chain stays ordered even though the actor is reentrant.
+    /// chain stays ordered even though the actor is reentrant. Each tail waits for the one before it
+    /// and for its own job, so a job cancelled while queued never lets a later one skip ahead.
     private var tails: [String: (token: UUID, task: Task<Void, Never>)] = [:]
 
     public init(library: AppLibrary, provisioner: any Provisioning, resigner: any Resigning,
@@ -91,6 +187,10 @@ public actor SideloadPipeline {
     /// `environment` is asked once the job holds the provisioning lock: a job queued behind others
     /// signs with the identity current when it actually runs. When it throws (the environment
     /// broke meanwhile), the job fails with that error and nothing is recorded on the row.
+    /// Cancelling the calling task cancels the job at once, wherever it is: its running subprocess
+    /// is stopped, and a wait for the provisioning lock or for the device's previous job ends
+    /// (that job goes on, and jobs queued later still wait for it). It throws `CancellationError`
+    /// and records nothing, so an existing installation is left exactly as it was.
     public func install(recordID: UUID, device: Device,
                         environment: @escaping @Sendable () async throws -> SigningEnvironment,
                         refresh: Bool = false,
@@ -98,20 +198,30 @@ public actor SideloadPipeline {
         let previous = tails[device.id]?.task
         let token = UUID()
         let job = Task<Installation, Error> {
-            await previous?.value
+            try await waitCancellably(for: previous)
             try Task.checkCancellation()
             return try await self.perform(recordID: recordID, device: device, environment: environment,
                                           refresh: refresh, progress: progress)
         }
-        tails[device.id] = (token, Task { _ = try? await job.value })
-        defer {
-            if tails[device.id]?.token == token { tails[device.id] = nil }
-        }
+        // The chain waits for the previous job too: one cancelled while queued ends at once, and a
+        // job queued after it must still wait for the one running.
+        tails[device.id] = (token, Task {
+            await previous?.value
+            _ = try? await job.value
+            self.chainEnded(device.id, token: token)
+        })
         return try await withTaskCancellationHandler {
             try await job.value
         } onCancel: {
             job.cancel()
         }
+    }
+
+    /// The tail queued with `token` is done, and so is everything before it: forgotten unless a
+    /// later job took its place. Not when the caller returns: a job cancelled while queued
+    /// returns early, and the jobs before it may still run.
+    private func chainEnded(_ deviceID: String, token: UUID) {
+        if tails[deviceID]?.token == token { tails[deviceID] = nil }
     }
 
     /// Removes the record's app from the device, then its installation from the library (the
@@ -126,14 +236,15 @@ public actor SideloadPipeline {
         let previous = tails[deviceID]?.task
         let token = UUID()
         let job = Task<Void, Error> {
-            await previous?.value
+            try await waitCancellably(for: previous)
             try Task.checkCancellation()
             try await self.performUninstall(recordID: recordID, deviceID: deviceID, developerDir: developerDir)
         }
-        tails[deviceID] = (token, Task { _ = try? await job.value })
-        defer {
-            if tails[deviceID]?.token == token { tails[deviceID] = nil }
-        }
+        tails[deviceID] = (token, Task {
+            await previous?.value
+            _ = try? await job.value
+            self.chainEnded(deviceID, token: token)
+        })
         try await withTaskCancellationHandler {
             try await job.value
         } onCancel: {
@@ -251,6 +362,10 @@ public actor SideloadPipeline {
         } catch let unavailable as EnvironmentUnavailable {
             // Not this row's failure: no attempt recorded, so the refresh runs once it's fixed.
             throw unavailable.underlying
+        } catch where error is CancellationError || Task.isCancelled {
+            // Stopped by the user (or the app): not a failure of the row. Nothing is recorded, so
+            // no error is shown and no retry delay applies; the installation stays as it was.
+            throw CancellationError()
         } catch {
             let developerDir = env?.developerDir
             let releaseXcode = developerDir.flatMap(XcodeCompat.xcodeVersion).map { !$0.isBeta } ?? false
