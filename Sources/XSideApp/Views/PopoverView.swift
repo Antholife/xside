@@ -401,8 +401,12 @@ private struct PopoverFooter: View {
                     }
                 }
                 Spacer()
-                // Confirmed by `AppDelegate.applicationShouldTerminate` while it would stop a refresh.
-                Button(L("popover.quit")) { NSApp.terminate(nil) }
+                // Confirmed by `AppDelegate.applicationShouldTerminate` while it would stop a refresh:
+                // the popover closes first, so a cancelled quit doesn't leave it open behind.
+                Button(L("popover.quit")) {
+                    dismiss()
+                    DispatchQueue.main.async { NSApp.terminate(nil) }
+                }
                     .keyboardShortcut("q")
             }
             .buttonStyle(FooterButtonStyle())
