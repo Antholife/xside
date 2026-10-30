@@ -9,9 +9,11 @@ public protocol Provisioning: Sendable {
 }
 
 public protocol Resigning: Sendable {
+    /// `otherBundleIDs`: the signed ids of XSide's other apps, whose own keychain groups the app
+    /// must never be granted.
     func resign(ipa: URL, workDir: URL, bundleID: String, options: InstallOptions,
                 iconURL: URL?, profileURL: URL, profile: ProvisioningProfile,
-                identitySHA1: String) async throws -> URL
+                identitySHA1: String, otherBundleIDs: Set<String>) async throws -> URL
 }
 
 public protocol Installing: Sendable {
@@ -170,10 +172,15 @@ public actor SideloadPipeline {
                 throw XSideError.profileNotRenewed
             }
             await progress(.signing)
+            let others = await library.records().filter { $0.id != recordID }
+                .reduce(into: Set<String>()) { ids, other in
+                    ids.insert(other.signedBundleID)
+                    for i in other.installations { if let id = i.signedBundleID { ids.insert(id) } }
+                }
             let app = try await resigner.resign(
                 ipa: ipa, workDir: workDir, bundleID: bundleID, options: record.options,
                 iconURL: icon, profileURL: provisioned.url, profile: provisioned.profile,
-                identitySHA1: current.identitySHA1)
+                identitySHA1: current.identitySHA1, otherBundleIDs: others)
             await progress(.installing)
             try await installer.install(app: app, deviceID: device.id)
 

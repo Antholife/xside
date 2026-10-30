@@ -37,7 +37,27 @@ private func write(_ data: Data) throws -> URL {
     return url
 }
 
+/// Stands in for a `ditto` that writes more than the archive declared, then keeps going.
+private struct OverflowingDitto: CommandRunning {
+    func run(_ executable: String, _ arguments: [String], cwd: URL?, timeout: Duration) async throws -> CommandResult {
+        let destination = URL(fileURLWithPath: arguments.last!)
+        try Data(count: 2_000_000).write(to: destination.appendingPathComponent("big.bin"))
+        try await Task.sleep(for: .seconds(30)) // cancelled by the watchdog
+        return CommandResult(status: 0, stdout: Data(), stderr: "")
+    }
+}
+
 struct ZipLimitsTests {
+    @Test func stopsAnExtractionThatWritesMoreThanAllowed() async throws {
+        let ipa = try write(syntheticZip([(10, 20)]))
+        let destination = try tempDir(); defer { try? FileManager.default.removeItem(at: destination) }
+        let start = ContinuousClock.now
+        await #expect(throws: XSideError.self) {
+            _ = try await ZipLimits.extract(ipa, to: destination, runner: OverflowingDitto(), maxBytes: 1_000_000)
+        }
+        #expect(ContinuousClock.now - start < .seconds(5))
+    }
+
     @Test func acceptsARealArchive() async throws {
         let root = try tempDir(); defer { try? FileManager.default.removeItem(at: root) }
         try FakeIPA.makeApp(at: root)
@@ -234,6 +254,14 @@ struct EntitlementsTests {
                            "NEWTEAM456.com.vendor.shared", "NEWTEAM456.com.vendor.other", "NEWTEAM456.com.partner",
                            "com.apple.token"])
         #expect(Resigner.keychainGroups(nil, team: "T", appID: "T.b") == ["T.b"])
+        // A group copying another XSide app's own group is never granted; shared vendor groups are.
+        let crafted: [String: Any] = ["keychain-access-groups": ["EVILTEAM01.com.victim.app.T", "EVILTEAM01.com.vendor.shared"],
+                                      "com.apple.developer.team-identifier": "EVILTEAM01"]
+        #expect(Resigner.keychainGroups(crafted, team: "T", appID: "T.b", otherBundleIDs: ["com.victim.app.T"])
+                == ["T.b", "T.com.vendor.shared"])
+        let future: [String: Any] = ["keychain-access-groups": ["EVILTEAM01.com.later.app.T"],
+                                     "com.apple.developer.team-identifier": "EVILTEAM01"]
+        #expect(Resigner.keychainGroups(future, team: "T", appID: "T.b") == ["T.b"])
     }
 
     @Test func signingEntitlementsUseTheRemappedGroups() throws {

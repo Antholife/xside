@@ -14,8 +14,7 @@ public enum IPAImporter {
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: dir) }
 
-        try ZipLimits.check(ipa)
-        let unzip = try await runner.run("/usr/bin/ditto", ["-x", "-k", ipa.path, dir.path], cwd: nil)
+        let unzip = try await ZipLimits.extract(ipa, to: dir, runner: runner)
         guard unzip.status == 0 else { throw XSideError.invalidIPA("Impossible de décompresser l'IPA") }
 
         // Never follow links out of the archive, even just to read.

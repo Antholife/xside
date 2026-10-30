@@ -71,7 +71,8 @@ private struct FakeProvisioner: Provisioning {
 private struct FakeResigner: Resigning {
     let log: CallLog
     func resign(ipa: URL, workDir: URL, bundleID: String, options: InstallOptions, iconURL: URL?,
-                profileURL: URL, profile: ProvisioningProfile, identitySHA1: String) async throws -> URL {
+                profileURL: URL, profile: ProvisioningProfile, identitySHA1: String,
+                otherBundleIDs: Set<String>) async throws -> URL {
         await log.resign(ipa, workDir, bundleID, iconURL, profileURL, profile)
         // Simulate unpacking into the work dir.
         let app = workDir.appendingPathComponent("Payload/Demo.app", isDirectory: true)

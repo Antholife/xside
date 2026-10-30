@@ -2,8 +2,9 @@ import Foundation
 
 /// Refuses an `.ipa` that would expand into something unreasonable (a zip bomb) before it is
 /// unpacked: reads the zip's central directory (end record, ZIP64 included) and sums what each
-/// entry declares. `ditto` is trusted to honor the declared sizes; this only bounds what an
-/// archive announces.
+/// entry declares. A crafted archive can announce small sizes and expand far more (`ditto` reads
+/// local headers), so `extract` also watches what is really written and stops `ditto` past the
+/// same limits.
 public enum ZipLimits {
     public static let maxUncompressedBytes: UInt64 = 4 * 1024 * 1024 * 1024
     public static let maxEntries = 100_000
@@ -18,6 +19,51 @@ public enum ZipLimits {
         public let entries: Int
         public let compressed: UInt64
         public let uncompressed: UInt64
+    }
+
+    /// How often `extract` measures the destination while `ditto` runs.
+    static let watchInterval: Duration = .milliseconds(500)
+
+    /// Checks the declared sizes, then unpacks `ipa` into `destination` with `ditto -x -k` while
+    /// measuring the destination: past `maxUncompressedBytes` or `maxEntries` really written,
+    /// `ditto` is stopped (its process group is killed through cancellation) and `invalidIPA` thrown.
+    public static func extract(_ ipa: URL, to destination: URL, runner: CommandRunning,
+                               maxBytes: UInt64 = maxUncompressedBytes,
+                               maxFiles: Int = maxEntries) async throws -> CommandResult {
+        try check(ipa)
+        return try await withThrowingTaskGroup(of: CommandResult?.self) { group in
+            group.addTask {
+                try await runner.run("/usr/bin/ditto", ["-x", "-k", ipa.path, destination.path], cwd: nil)
+            }
+            group.addTask {
+                while true {
+                    try await Task.sleep(for: watchInterval)
+                    let written = writtenTotals(destination)
+                    if written.entries > maxFiles || written.bytes > maxBytes {
+                        throw XSideError.invalidIPA("IPA refusé : il se décompresse en plus que ce qu'il annonce")
+                    }
+                }
+            }
+            defer { group.cancelAll() }
+            while let finished = try await group.next() {
+                if let result = finished { return result }
+            }
+            throw CancellationError()
+        }
+    }
+
+    /// Files and bytes under `directory`, without following links.
+    static func writtenTotals(_ directory: URL) -> (entries: Int, bytes: UInt64) {
+        guard let walk = FileManager.default.enumerator(
+            at: directory, includingPropertiesForKeys: [.fileSizeKey, .isSymbolicLinkKey], options: []) else {
+            return (0, 0)
+        }
+        var entries = 0, bytes: UInt64 = 0
+        for case let url as URL in walk {
+            entries += 1
+            bytes += UInt64((try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0)
+        }
+        return (entries, bytes)
     }
 
     /// Throws `invalidIPA` when the archive is unreadable as a zip or past a limit.

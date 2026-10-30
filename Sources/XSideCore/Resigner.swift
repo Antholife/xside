@@ -47,12 +47,11 @@ public struct Resigner: Sendable {
     /// Unpacks `ipa` into `workDir`, rewrites it and signs it inside-out. Returns the signed `.app`.
     public func resign(ipa: URL, workDir: URL, bundleID: String, options: InstallOptions,
                        iconURL: URL?, profileURL: URL, profile: ProvisioningProfile,
-                       identitySHA1: String) async throws -> URL {
+                       identitySHA1: String, otherBundleIDs: Set<String> = []) async throws -> URL {
         let fm = FileManager.default
         try fm.createDirectory(at: workDir, withIntermediateDirectories: true)
         try cleanPreviousRun(in: workDir)
-        try ZipLimits.check(ipa)
-        let unzip = try await runner.run("/usr/bin/ditto", ["-x", "-k", ipa.path, workDir.path], cwd: nil)
+        let unzip = try await ZipLimits.extract(ipa, to: workDir, runner: runner)
         guard unzip.status == 0 else {
             throw XSideError.invalidIPA("Impossible de décompresser l'IPA")
         }
@@ -86,7 +85,8 @@ public struct Resigner: Sendable {
         try fm.copyItem(at: profileURL, to: embedded)
 
         let entitlements = workDir.appendingPathComponent("entitlements-\(UUID().uuidString).plist")
-        try Self.signingEntitlements(profile: profile, bundleID: bundleID, original: originalEntitlements)
+        try Self.signingEntitlements(profile: profile, bundleID: bundleID, original: originalEntitlements,
+                                     otherBundleIDs: otherBundleIDs)
             .write(to: entitlements)
 
         for target in signTargets(in: app) {
@@ -106,7 +106,8 @@ public struct Resigner: Sendable {
     /// `original`: the entitlements the app was signed with. The keychain groups it declares are
     /// kept, moved to the new team (see `keychainGroups`), after `<TEAM>.<bundleID>`.
     public static func signingEntitlements(profile: ProvisioningProfile, bundleID: String,
-                                           original: [String: Any]? = nil) throws -> Data {
+                                           original: [String: Any]? = nil,
+                                           otherBundleIDs: Set<String> = []) throws -> Data {
         let granted = (try? PropertyListSerialization.propertyList(from: profile.entitlements, format: nil))
             as? [String: Any] ?? [:]
         let appID = "\(profile.teamID).\(bundleID)"
@@ -115,14 +116,20 @@ public struct Resigner: Sendable {
         result["application-identifier"] = appID
         result["com.apple.developer.team-identifier"] = profile.teamID
         result["get-task-allow"] = granted["get-task-allow"] as? Bool ?? true
-        result["keychain-access-groups"] = keychainGroups(original, team: profile.teamID, appID: appID)
+        result["keychain-access-groups"] = keychainGroups(original, team: profile.teamID, appID: appID,
+                                                          otherBundleIDs: otherBundleIDs)
         return try PropertyListSerialization.data(fromPropertyList: result, format: .xml, options: 0)
     }
 
     /// `appID` first, then each group the original entitlements declare, remapped to `team`:
     /// `<OLDTEAM>.rest` and `$(AppIdentifierPrefix)rest` become `<team>.rest`; `com.apple.token`
     /// stays. Wildcards and groups without a team prefix are dropped (the profile can't grant them).
-    static func keychainGroups(_ original: [String: Any]?, team: String, appID: String) -> [String] {
+    /// A declared group that lands on another XSide app's own group (`<team>.<its signed id>`) is
+    /// dropped: a crafted IPA could otherwise read that app's keychain items. Shared groups
+    /// (`<team>.com.vendor.shared`) stay, so apps of one vendor keep sharing their logins.
+    static func keychainGroups(_ original: [String: Any]?, team: String, appID: String,
+                               otherBundleIDs: Set<String> = []) -> [String] {
+        let reserved = Set(otherBundleIDs.map { "\(team).\($0)" })
         let declared = original?["keychain-access-groups"] as? [String] ?? []
         // The original team: its own key, else the prefix of its application identifier.
         let oldTeam = original?["com.apple.developer.team-identifier"] as? String
@@ -144,7 +151,11 @@ public struct Resigner: Sendable {
             } else {
                 mapped = nil
             }
-            if let mapped, !groups.contains(mapped) { groups.append(mapped) }
+            // Also never a group shaped like an XSide-signed id (`<team>.<original>.<team>`): that
+            // would target an app installed later, before its id is known here.
+            if let mapped, !reserved.contains(mapped), !mapped.hasSuffix(".\(team)"), !groups.contains(mapped) {
+                groups.append(mapped)
+            }
         }
         return groups
     }
