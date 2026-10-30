@@ -26,15 +26,18 @@ struct Validity {
     }
 }
 
-/// Conic ring that empties until expiry, with the days left in the center.
+/// Conic ring that empties until expiry, with the days left in the center. Neutral grey for a
+/// paused app: its expiry is no longer urgent, the user chose to let it go.
 struct RingView: View {
     let validity: Validity
     var isBusy = false
+    var isPaused = false
 
     private let size: CGFloat = 34
     private let line: CGFloat = 3.5
 
     private var colors: [Color] {
+        if isPaused { return [Color.secondary, Color.secondary] }
         if validity.remaining > RefreshPlanner.threshold { return [Theme.violet, Theme.pink] }
         if validity.remaining > 86_400 { return [Color(nsColor: .systemOrange), Color(nsColor: .systemYellow)] }
         return [Color(nsColor: .systemRed), Color(nsColor: .systemPink)]
@@ -66,12 +69,12 @@ struct RingView: View {
         } else if validity.isExpired {
             Image(systemName: "exclamationmark")
                 .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(Color(nsColor: .systemRed))
+                .foregroundStyle(isPaused ? Color.secondary : Color(nsColor: .systemRed))
         } else {
             Text(L("popover.ring.days", validity.daysLeft))
                 .font(.system(size: 10.5, weight: .semibold, design: .rounded))
                 .monospacedDigit()
-                .foregroundStyle(.primary)
+                .foregroundStyle(isPaused ? .secondary : .primary)
         }
     }
 }

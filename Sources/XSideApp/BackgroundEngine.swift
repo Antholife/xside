@@ -49,6 +49,7 @@ final class BackgroundEngine {
         model.onNeedsEvaluation = { [weak self] in self?.evaluate(reason: "change") }
         model.onDeviceRemoved = { [weak self] id in self?.forgetDevice(id) }
         model.onInstallationRemoved = { [weak self] job in self?.forgetInstallation(job) }
+        model.onRefreshResumed = { [weak self] job in self?.refreshResumed(job) }
         // Allowed only now (journey, Settings): the reminders couldn't be scheduled before.
         NotificationPermission.onBecameAuthorized = { [weak self] in self?.reconcileReminders() }
         model.onJobFinished = { [weak self] job, error, automatic, wasRefresh in
@@ -254,8 +255,8 @@ final class BackgroundEngine {
         reconcileReminders()
     }
 
-    /// An installation was uninstalled or is no longer refreshed: nothing is notified for it any
-    /// more, and its reminder (pending or shown) goes.
+    /// An installation was uninstalled, removed from the list or paused: nothing is notified for
+    /// it any more, and its reminder (pending or shown) goes.
     private func forgetInstallation(_ job: RefreshJob) {
         gate.reset(recordID: job.recordID, deviceID: job.deviceID)
         persistGate()
@@ -263,6 +264,12 @@ final class BackgroundEngine {
         enqueueReminders { [notifier] in
             await notifier.removeExpiryReminder(recordID: job.recordID, deviceID: job.deviceID)
         }
+    }
+
+    /// A paused installation is refreshed again: its reminder comes back, and a due refresh starts now.
+    private func refreshResumed(_ job: RefreshJob) {
+        scheduleReminder(job)
+        evaluate(reason: "resume")
     }
 
     // MARK: Expiry reminders
@@ -279,15 +286,14 @@ final class BackgroundEngine {
         }
     }
 
-    /// One reminder per installation, scheduled with the system (see `Notifier.scheduleExpiryReminder`);
-    /// reminders of installations gone since are removed. Cheap: everything is simply re-added.
+    /// One reminder per refreshed installation, scheduled with the system (see
+    /// `Notifier.scheduleExpiryReminder`); reminders of installations gone or paused since are
+    /// removed. Cheap: everything is simply re-added.
     private func reconcileReminders() {
         ticksSinceReconcile = 0
         enqueueReminders { [weak self] in
             guard let self else { return }
-            let jobs = model.records.flatMap { record in
-                record.installations.map { RefreshJob(recordID: record.id, deviceID: $0.deviceID) }
-            }
+            let jobs = RefreshPlanner.refreshedJobs(model.records)
             await notifier.removeExpiryReminders(keeping: Set(jobs.map {
                 ExpiryWatch.reminderID(recordID: $0.recordID, deviceID: $0.deviceID)
             }))
@@ -301,10 +307,11 @@ final class BackgroundEngine {
         enqueueReminders { [weak self] in await self?.scheduleCurrentReminder(job) }
     }
 
-    /// Schedules the reminder of the installation as it is now; nothing if it's gone.
+    /// Schedules the reminder of the installation as it is now; nothing if it's gone or paused.
     private func scheduleCurrentReminder(_ job: RefreshJob) async {
         guard let record = model.records.first(where: { $0.id == job.recordID }),
-              let installation = record.installations.first(where: { $0.deviceID == job.deviceID }) else { return }
+              let installation = record.installations.first(where: { $0.deviceID == job.deviceID }),
+              !installation.refreshPaused else { return }
         await notifier.scheduleExpiryReminder(recordID: record.id, deviceID: job.deviceID, appName: Self.appName(record),
                                               deviceName: deviceName(job.deviceID), expiresAt: installation.expiresAt)
     }
@@ -338,12 +345,11 @@ final class BackgroundEngine {
            [.xcodeMissing, .xcodeNotSignedIn, .noSigningIdentity].contains(e)
             || (e.isSetupCheckFailure && e == model.environmentError)
             || Self.isProbeFailure(e) { return }
-        // The device was removed from XSide meanwhile: nothing to report.
-        guard model.records.first(where: { $0.id == job.recordID })?
-            .installations.contains(where: { $0.deviceID == job.deviceID }) == true else { return }
-        let installation = model.records.first { $0.id == job.recordID }?
-            .installations.first { $0.deviceID == job.deviceID }
-        let key = installation?.lastErrorKey ?? (error as? XSideError)?.key ?? "unknown"
+        // The device was removed from XSide meanwhile, or the refresh paused: nothing to report.
+        guard let installation = model.records.first(where: { $0.id == job.recordID })?
+            .installations.first(where: { $0.deviceID == job.deviceID }),
+              !installation.refreshPaused else { return }
+        let key = installation.lastErrorKey ?? (error as? XSideError)?.key ?? "unknown"
         Self.logger.notice("refresh failed \(job.recordID.uuidString, privacy: .public): \(key, privacy: .public)")
         notifyFailure(job, errorKey: key, message: Self.backgroundMessage(error) ?? localizedRowError(key: key))
     }

@@ -34,5 +34,21 @@
 			<string>Expire dans %ld jours</string>
 		</dict>
 	</dict>
+	<key>popover.paused.expiresIn</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@days@</string>
+		<key>days</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>ld</string>
+			<key>one</key>
+			<string>Rafraîchissement arrêté · expire dans %ld jour</string>
+			<key>other</key>
+			<string>Rafraîchissement arrêté · expire dans %ld jours</string>
+		</dict>
+	</dict>
 </dict>
 </plist>

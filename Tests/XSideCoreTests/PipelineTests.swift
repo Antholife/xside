@@ -510,6 +510,27 @@ struct PipelineTests {
         #expect(result.lastErrorKey == nil)
     }
 
+    @Test func reinstallingAPausedAppManagesItAgain() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let pipeline = f.pipeline()
+        _ = try await pipeline.install(recordID: f.record.id, device: device(), env: env)
+        try await f.library.setRefreshPaused(true, recordID: f.record.id, deviceID: "dev-1")
+        let result = try await pipeline.install(recordID: f.record.id, device: device(), env: env)
+        #expect(!result.refreshPaused)
+        #expect(try #require(await f.library.records().first?.installations.first).refreshPaused == false)
+    }
+
+    @Test func failedReinstallKeepsThePause() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        try await f.library.upsert(Installation(deviceID: "dev-1", installedAt: fixedNow, expiresAt: expiry,
+                                                refreshPaused: true), for: f.record.id)
+        // Same expiry: the profile isn't renewed, the install fails.
+        await #expect(throws: XSideError.profileNotRenewed) {
+            _ = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
+        }
+        #expect(try #require(await f.library.records().first?.installations.first).refreshPaused)
+    }
+
     @Test func refreshKeepsTheBundleIDTheDeviceWasSignedWith() async throws {
         let f = try await Fixture(); defer { f.cleanup() }
         let pipeline = f.pipeline()

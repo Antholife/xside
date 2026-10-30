@@ -311,7 +311,7 @@
 "popover.app.uninstallFailedTitle" = "Couldn't uninstall %1$@ from %2$@";
 "popover.app.uninstallFailedFallback" = "You can also stop refreshing it: it stays on the device and stops opening once it expires.";
 "popover.app.stopTitle" = "Stop refreshing %@?";
-"popover.app.stopMessage" = "XSide will stop refreshing %1$@ on %2$@. The app stays on the device and stops opening once it expires.";
+"popover.app.stopMessage" = "XSide will stop refreshing %1$@ on %2$@. The app stays on the device and stops opening once it expires. You can resume at any time.";
 "popover.app.stop" = "Stop";
 "popover.app.close" = "Close";
 "error.uninstallFailed" = "Uninstalling failed. Make sure the device is unlocked and try again.";
@@ -322,3 +322,10 @@
 "menuBar.working.more" = "%1$@ (+%2$d)";
 "menuBar.working.generic" = "XSide is working…";
 "menuBar.working.installOn" = "Installing %1$@ on %2$@…";
+"popover.app.resumeRefreshing" = "Resume refreshing";
+"popover.app.removeFromList" = "Remove from list";
+"popover.app.removeTitle" = "Remove %@ from the list?";
+"popover.app.removeMessage" = "XSide will forget it on %@. The app stays on the device until it expires.";
+"popover.app.remove" = "Remove";
+"popover.paused.expired" = "Refresh stopped · expired";
+"popover.paused.expiresToday" = "Refresh stopped · expires today";

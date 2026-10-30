@@ -83,11 +83,27 @@ private struct MenuBarLabel: View {
         return image
     }()
 
+    /// The phone alone (template), shown while `MenuBarSpinner` animates the arrow over it.
+    private static let phoneGlyph: NSImage = {
+        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: true) { _ in
+            let scale = 18.0 / 200
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: NSRect(x: 70 * scale, y: 34 * scale, width: 60 * scale, height: 112 * scale),
+                         xRadius: 18 * scale, yRadius: 18 * scale).fill()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }()
+
     /// The glyph, with a small orange (warning) or red (critical) dot when something needs a look.
-    private func icon(_ attention: AppModel.Attention?) -> Image {
-        guard let glyph = Self.glyph else { return Image(systemName: "arrow.triangle.2.circlepath") }
+    /// `working`: the phone alone, the arrow being animated over it.
+    private func icon(_ attention: AppModel.Attention?, working: Bool = false) -> Image {
+        guard let glyph = working ? Self.phoneGlyph : Self.glyph else {
+            return Image(systemName: "arrow.triangle.2.circlepath")
+        }
         guard let attention else { return Image(nsImage: glyph) }
-        let key = "\(attention == .critical ? "critical" : "warning").\(colorScheme == .dark ? "dark" : "light")"
+        let key = "\(attention == .critical ? "critical" : "warning").\(colorScheme == .dark ? "dark" : "light").\(working)"
         if let cached = Self.badgeCache[key] { return Image(nsImage: cached) }
         let image = Self.badged(glyph, critical: attention == .critical)
         Self.badgeCache[key] = image
@@ -137,7 +153,7 @@ private struct MenuBarLabel: View {
     var body: some View {
         // Static image: the turning arrow while XSide works is a Core Animation layer laid over
         // the button (`MenuBarSpinner`), never a per-frame label update.
-        icon(model.attention)
+        icon(model.attention, working: model.activitySummary != nil)
             .accessibilityLabel(model.activitySummary ?? (model.attention == nil ? "XSide" : L("menuBar.attention")))
             .help(model.activitySummary ?? "XSide")
             .onChange(of: model.activitySummary != nil, initial: true) { _, working in

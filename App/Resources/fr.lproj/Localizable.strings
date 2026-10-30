@@ -311,7 +311,7 @@
 "popover.app.uninstallFailedTitle" = "Impossible de désinstaller %1$@ de %2$@";
 "popover.app.uninstallFailedFallback" = "Tu peux aussi arrêter de la rafraîchir : elle restera sur l'appareil et cessera de s'ouvrir à son expiration.";
 "popover.app.stopTitle" = "Arrêter de rafraîchir %@ ?";
-"popover.app.stopMessage" = "XSide arrêtera de rafraîchir %1$@ sur %2$@. L'app restera sur l'appareil et cessera de s'ouvrir à son expiration.";
+"popover.app.stopMessage" = "XSide arrêtera de rafraîchir %1$@ sur %2$@. L'app restera sur l'appareil et cessera de s'ouvrir à son expiration. Tu pourras reprendre à tout moment.";
 "popover.app.stop" = "Arrêter";
 "popover.app.close" = "Fermer";
 "error.uninstallFailed" = "La désinstallation a échoué. Vérifie que l'appareil est déverrouillé et réessaie.";
@@ -322,3 +322,10 @@
 "menuBar.working.more" = "%1$@ (+%2$d)";
 "menuBar.working.generic" = "XSide travaille…";
 "menuBar.working.installOn" = "Installation de %1$@ sur %2$@…";
+"popover.app.resumeRefreshing" = "Reprendre le rafraîchissement";
+"popover.app.removeFromList" = "Retirer de la liste";
+"popover.app.removeTitle" = "Retirer %@ de la liste ?";
+"popover.app.removeMessage" = "XSide l'oubliera sur %@. L'app restera sur l'appareil tant qu'elle n'a pas expiré.";
+"popover.app.remove" = "Retirer";
+"popover.paused.expired" = "Rafraîchissement arrêté · expirée";
+"popover.paused.expiresToday" = "Rafraîchissement arrêté · expire aujourd'hui";

@@ -1,60 +1,28 @@
 import AppKit
 import QuartzCore
 
-/// The small turning arrow shown on the menu-bar icon while XSide works. It is a layer laid over
-/// the status item's button and turned by Core Animation: animating the SwiftUI `MenuBarExtra`
-/// label itself (a new image per frame) sent its host into an endless layout loop at full CPU.
+/// While XSide works, the icon's own arrow redraws itself: the swoosh is traced from its start,
+/// then its head appears, in a loop. The label shows the phone alone meanwhile, and the arrow is
+/// a pair of Core Animation shape layers laid over the status item's button. Animating the
+/// SwiftUI `MenuBarExtra` label itself (a new image per frame) sent its host into an endless
+/// layout loop at full CPU.
 @MainActor
 final class MenuBarSpinner {
-    private var view: NSImageView?
+    private var overlay: ArrowOverlay?
 
-    /// Shows or hides the spinner; finds the status item's button on first use (false while it
-    /// isn't there yet).
+    /// Shows or hides the animated arrow; finds the status item's button on first use (false
+    /// while it isn't there yet).
     @discardableResult
     func setWorking(_ working: Bool) -> Bool {
         guard let button = Self.statusButton() else { return false }
         if working {
-            let spinner = view ?? makeView(on: button)
-            spinner.isHidden = false
-            if spinner.layer?.animation(forKey: "spin") == nil { Self.spin(spinner) }
-        } else if let view {
-            view.layer?.removeAllAnimations()
-            view.isHidden = true
+            let arrow = overlay ?? ArrowOverlay(on: button)
+            overlay = arrow
+            arrow.start()
+        } else {
+            overlay?.stop()
         }
         return true
-    }
-
-    private func makeView(on button: NSView) -> NSImageView {
-        let size: CGFloat = 9
-        let symbol = NSImage(systemSymbolName: "arrow.trianglehead.2.clockwise", accessibilityDescription: nil)
-            ?? NSImage(systemSymbolName: "arrow.2.circlepath", accessibilityDescription: nil)
-        let spinner = NSImageView(image: symbol ?? NSImage())
-        spinner.symbolConfiguration = .init(pointSize: size - 1, weight: .bold)
-        spinner.contentTintColor = .labelColor
-        spinner.imageScaling = .scaleProportionallyUpOrDown
-        // Lower right corner of the glyph (18 pt, centred in the button).
-        let glyphMaxX = button.bounds.midX + 9, glyphMinY = button.bounds.midY - 9
-        spinner.frame = NSRect(x: glyphMaxX - size, y: button.isFlipped ? glyphMinY + 18 - size : glyphMinY,
-                               width: size, height: size)
-        spinner.autoresizingMask = [.minXMargin, .maxXMargin, .minYMargin, .maxYMargin]
-        spinner.wantsLayer = true
-        button.addSubview(spinner)
-        view = spinner
-        return spinner
-    }
-
-    /// One turn per second, forever, rotating around the view's centre.
-    private static func spin(_ view: NSView) {
-        guard let layer = view.layer else { return }
-        let frame = layer.frame
-        layer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
-        layer.position = CGPoint(x: frame.midX, y: frame.midY)
-        let turn = CABasicAnimation(keyPath: "transform.rotation.z")
-        turn.fromValue = 0
-        turn.toValue = -2 * Double.pi
-        turn.duration = 1
-        turn.repeatCount = .infinity
-        layer.add(turn, forKey: "spin")
     }
 
     /// The button of XSide's status item, in the status bar window AppKit creates for it.
@@ -70,5 +38,82 @@ final class MenuBarSpinner {
             if let found = find(in: sub) { return found }
         }
         return nil
+    }
+}
+
+/// The glyph's swoosh and arrow head, in the 200×200 design space of scripts/make-icons.swift
+/// (y down), scaled to the 18 pt glyph.
+private final class ArrowOverlay: NSView {
+    private let swoosh = CAShapeLayer()
+    private let head = CAShapeLayer()
+
+    override var isFlipped: Bool { true }
+
+    init(on button: NSView) {
+        let glyph = NSRect(x: button.bounds.midX - 9, y: button.bounds.midY - 9, width: 18, height: 18)
+        super.init(frame: glyph)
+        autoresizingMask = [.minXMargin, .maxXMargin, .minYMargin, .maxYMargin]
+        wantsLayer = true
+        isHidden = true
+        let scale = CGAffineTransform(scaleX: 18.0 / 200, y: 18.0 / 200)
+        let curve = CGMutablePath()
+        curve.move(to: CGPoint(x: 40, y: 150))
+        curve.addCurve(to: CGPoint(x: 164, y: 112), control1: CGPoint(x: 78, y: 186), control2: CGPoint(x: 150, y: 176))
+        swoosh.path = curve.copy(using: [scale])
+        swoosh.fillColor = nil
+        swoosh.lineWidth = 16 * 18.0 / 200
+        swoosh.lineCap = .round
+        let tip = CGMutablePath()
+        tip.move(to: CGPoint(x: 168, y: 96)); tip.addLine(to: CGPoint(x: 182.3, y: 122.9))
+        tip.addLine(to: CGPoint(x: 145.4, y: 116.4)); tip.closeSubpath()
+        head.path = tip.copy(using: [scale])
+        head.lineWidth = 8 * 18.0 / 200
+        head.lineJoin = .round
+        layer?.addSublayer(swoosh)
+        layer?.addSublayer(head)
+        applyColor()
+        button.addSubview(self)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    /// The menu bar's text color, re-read when its appearance changes.
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyColor()
+    }
+
+    private func applyColor() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            let color = NSColor.labelColor.cgColor
+            swoosh.strokeColor = color
+            head.strokeColor = color
+            head.fillColor = color
+        }
+    }
+
+    func start() {
+        isHidden = false
+        guard swoosh.animation(forKey: "trace") == nil else { return }
+        let cycle: CFTimeInterval = 1.4
+        let trace = CAKeyframeAnimation(keyPath: "strokeEnd")
+        trace.values = [0, 1, 1]
+        trace.keyTimes = [0, 0.6, 1]
+        trace.timingFunctions = [CAMediaTimingFunction(name: .easeInEaseOut), CAMediaTimingFunction(name: .linear)]
+        trace.duration = cycle
+        trace.repeatCount = .infinity
+        swoosh.add(trace, forKey: "trace")
+        let appear = CAKeyframeAnimation(keyPath: "opacity")
+        appear.values = [0, 0, 1, 1]
+        appear.keyTimes = [0, 0.55, 0.65, 1]
+        appear.duration = cycle
+        appear.repeatCount = .infinity
+        head.add(appear, forKey: "appear")
+    }
+
+    func stop() {
+        swoosh.removeAllAnimations()
+        head.removeAllAnimations()
+        isHidden = true
     }
 }

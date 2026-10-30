@@ -14,10 +14,13 @@ public struct Installation: Codable, Equatable, Sendable {
     /// a certificate change then can't be detected for this installation.
     public var signingIdentitySHA1: String?
     public var teamID: String?
+    /// The user stopped XSide refreshing it there: the app stays on the device (and in the
+    /// popover) until it expires. A new install of the app on that device clears it.
+    public var refreshPaused: Bool
 
     public init(deviceID: String, installedAt: Date, expiresAt: Date,
                 lastAttempt: Date? = nil, lastErrorKey: String? = nil, signedBundleID: String? = nil,
-                signingIdentitySHA1: String? = nil, teamID: String? = nil) {
+                signingIdentitySHA1: String? = nil, teamID: String? = nil, refreshPaused: Bool = false) {
         self.deviceID = deviceID
         self.installedAt = installedAt
         self.expiresAt = expiresAt
@@ -26,6 +29,7 @@ public struct Installation: Codable, Equatable, Sendable {
         self.signedBundleID = signedBundleID
         self.signingIdentitySHA1 = signingIdentitySHA1
         self.teamID = teamID
+        self.refreshPaused = refreshPaused
     }
 
     public init(from decoder: any Decoder) throws {
@@ -38,6 +42,7 @@ public struct Installation: Codable, Equatable, Sendable {
         signedBundleID = try c.decodeIfPresent(String.self, forKey: .signedBundleID)
         signingIdentitySHA1 = try c.decodeIfPresent(String.self, forKey: .signingIdentitySHA1)
         teamID = try c.decodeIfPresent(String.self, forKey: .teamID)
+        refreshPaused = (try? c.decodeIfPresent(Bool.self, forKey: .refreshPaused)) ?? false
     }
 }
 
@@ -309,6 +314,21 @@ public actor AppLibrary {
         guard items[index].installations.contains(where: { $0.deviceID == deviceID }) else { return false }
         let previous = items
         items[index].installations.removeAll { $0.deviceID == deviceID }
+        do { try save() } catch { items = previous; throw error }
+        return true
+    }
+
+    /// Pauses (or resumes) XSide's refreshes of one installation, without touching the device.
+    /// Returns false when there was no such installation, or it was already in that state.
+    @discardableResult
+    public func setRefreshPaused(_ paused: Bool, recordID: UUID, deviceID: String) throws -> Bool {
+        let index = try indexOf(recordID)
+        guard let i = items[index].installations.firstIndex(where: { $0.deviceID == deviceID }),
+              items[index].installations[i].refreshPaused != paused else { return false }
+        let previous = items
+        items[index].installations[i].refreshPaused = paused
+        // Resuming: no retry delay left over from before the pause, a due app goes at once.
+        if !paused { items[index].installations[i].lastAttempt = nil }
         do { try save() } catch { items = previous; throw error }
         return true
     }

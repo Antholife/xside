@@ -3,12 +3,13 @@ import SwiftUI
 import XSideCore
 
 /// One installed app: duration ring, name, next refresh, and the localized error if the last attempt failed.
+/// A paused app (the user stopped refreshing it) stays, greyed, until it's resumed or removed.
 struct AppRow: View {
     let entry: AppEntry
     /// Step of a running refresh or reinstall, if any.
     let step: JobStage?
     let canRefresh: Bool
-    /// No job runs on the row: it can be uninstalled or no longer refreshed.
+    /// No job runs on the row: it can be uninstalled, paused, resumed or removed from the list.
     let canManage: Bool
     let isUninstalling: Bool
     /// Wi-Fi refresh is off and the device is only on Wi-Fi.
@@ -18,6 +19,10 @@ struct AppRow: View {
     /// Each asks for confirmation first (see `AppRowAlerts`).
     let onUninstall: () -> Void
     let onStopRefreshing: () -> Void
+    let onResume: () -> Void
+    let onRemoveFromList: () -> Void
+
+    private var isPaused: Bool { entry.installation.refreshPaused }
 
     @State private var isHovering = false
 
@@ -34,43 +39,57 @@ struct AppRow: View {
         .contextMenu { actions }
         // VoiceOver can't hover: the menu's actions are actions of the row.
         .accessibilityElement(children: .combine)
-        .accessibilityAction(named: L("popover.refreshNow")) { if canRefresh { onRefresh() } }
-        .accessibilityAction(named: L("popover.app.uninstallFrom", deviceName)) { if canManage { onUninstall() } }
-        .accessibilityAction(named: L("popover.app.stopRefreshing")) { if canManage { onStopRefreshing() } }
+        .modifier(RowActions(isPaused: isPaused, canRefresh: canRefresh, canManage: canManage,
+                             deviceName: deviceName, onRefresh: onRefresh, onUninstall: onUninstall,
+                             onStopRefreshing: onStopRefreshing, onResume: onResume,
+                             onRemoveFromList: onRemoveFromList))
     }
 
     private var appName: String { entry.record.options.displayName ?? entry.record.displayName }
 
     @ViewBuilder private var actions: some View {
-        Button(L("popover.refreshNow"), systemImage: "arrow.clockwise", action: onRefresh)
-            .disabled(!canRefresh)
-        Divider()
-        Button(L("popover.app.uninstallFrom", deviceName), systemImage: "trash", role: .destructive,
-               action: onUninstall)
-            .disabled(!canManage)
-        Button(L("popover.app.stopRefreshing"), systemImage: "stop.circle", action: onStopRefreshing)
-            .disabled(!canManage)
+        if isPaused {
+            Button(L("popover.app.resumeRefreshing"), systemImage: "play.circle", action: onResume)
+                .disabled(!canManage)
+            Divider()
+            Button(L("popover.app.uninstallFrom", deviceName), systemImage: "trash", role: .destructive,
+                   action: onUninstall)
+                .disabled(!canManage)
+            Button(L("popover.app.removeFromList"), systemImage: "minus.circle", action: onRemoveFromList)
+                .disabled(!canManage)
+        } else {
+            Button(L("popover.refreshNow"), systemImage: "arrow.clockwise", action: onRefresh)
+                .disabled(!canRefresh)
+            Divider()
+            Button(L("popover.app.uninstallFrom", deviceName), systemImage: "trash", role: .destructive,
+                   action: onUninstall)
+                .disabled(!canManage)
+            Button(L("popover.app.stopRefreshing"), systemImage: "stop.circle", action: onStopRefreshing)
+                .disabled(!canManage)
+        }
     }
 
     private func row(validity: Validity, now: Date) -> some View {
         HStack(spacing: 10) {
-            RingView(validity: validity, isBusy: step != nil)
+            RingView(validity: validity, isBusy: step != nil, isPaused: isPaused)
             VStack(alignment: .leading, spacing: 2) {
                 Text(appName)
                     .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(isPaused ? .secondary : .primary)
                     .lineLimit(1)
                 Text(subtitle(validity: validity, now: now))
                     .font(.system(size: 11))
-                    .foregroundStyle(validity.isExpired && step == nil ? Color(nsColor: .systemRed) : .secondary)
+                    .foregroundStyle(validity.isExpired && step == nil && !isPaused ? Color(nsColor: .systemRed) : .secondary)
                     .lineLimit(1)
-                if step == nil, needsUSB,
+                // Nothing to plug in nor to fix while paused: no refresh will be attempted.
+                if step == nil, !isPaused, needsUSB,
                    entry.installation.expiresAt.timeIntervalSince(now) <= RefreshPlanner.threshold {
                     Text(L("popover.plugInUSB"))
                         .font(.system(size: 11))
                         .foregroundStyle(Color(nsColor: .systemOrange))
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                if step == nil, let key = entry.installation.lastErrorKey {
+                if step == nil, !isPaused, let key = entry.installation.lastErrorKey {
                     Text(localizedRowError(key: key))
                         .font(.system(size: 11))
                         .foregroundStyle(Color(nsColor: .systemRed))
@@ -107,11 +126,43 @@ struct AppRow: View {
     private func subtitle(validity: Validity, now: Date) -> String {
         if isUninstalling { return L("popover.app.uninstalling") }
         if let step { return step.rowText }
+        if isPaused {
+            if validity.isExpired { return L("popover.paused.expired") }
+            if Calendar.current.isDateInToday(validity.expiresAt) { return L("popover.paused.expiresToday") }
+            return L("popover.paused.expiresIn", validity.daysLeft)
+        }
         if validity.isExpired { return L("popover.expired") }
         let next = entry.installation.expiresAt.addingTimeInterval(-RefreshPlanner.threshold)
         guard next > now else { return L("popover.refreshPending") }
         let when = next.formatted(.dateTime.weekday(.wide).hour().minute().locale(appLocale))
         return L("popover.nextRefresh", when)
+    }
+}
+
+/// The menu's actions as VoiceOver actions of the row (it can't hover), for the row's state.
+private struct RowActions: ViewModifier {
+    let isPaused: Bool
+    let canRefresh: Bool
+    let canManage: Bool
+    let deviceName: String
+    let onRefresh: () -> Void
+    let onUninstall: () -> Void
+    let onStopRefreshing: () -> Void
+    let onResume: () -> Void
+    let onRemoveFromList: () -> Void
+
+    func body(content: Content) -> some View {
+        if isPaused {
+            content
+                .accessibilityAction(named: L("popover.app.resumeRefreshing")) { if canManage { onResume() } }
+                .accessibilityAction(named: L("popover.app.uninstallFrom", deviceName)) { if canManage { onUninstall() } }
+                .accessibilityAction(named: L("popover.app.removeFromList")) { if canManage { onRemoveFromList() } }
+        } else {
+            content
+                .accessibilityAction(named: L("popover.refreshNow")) { if canRefresh { onRefresh() } }
+                .accessibilityAction(named: L("popover.app.uninstallFrom", deviceName)) { if canManage { onUninstall() } }
+                .accessibilityAction(named: L("popover.app.stopRefreshing")) { if canManage { onStopRefreshing() } }
+        }
     }
 }
 
@@ -125,27 +176,46 @@ enum AppRowAlerts {
             confirm: L("popover.app.uninstall"), cancel: L("install.cancel"), destructive: true)
     }
 
-    /// True when the user confirmed no longer refreshing `app` on `device`.
+    /// True when the user confirmed pausing the refreshes of `app` on `device`.
     static func confirmStopRefreshing(app: String, device: String) -> Bool {
         run(title: L("popover.app.stopTitle", app), message: L("popover.app.stopMessage", app, device),
             confirm: L("popover.app.stop"), cancel: L("install.cancel"), destructive: true)
     }
 
-    /// Shows why the uninstall failed. True when the user chose to stop refreshing it instead.
-    static func uninstallFailed(app: String, device: String, error: any Error) -> Bool {
-        run(title: L("popover.app.uninstallFailedTitle", app, device),
-            message: localizedMessage(error) + "\n\n" + L("popover.app.uninstallFailedFallback"),
-            confirm: L("popover.app.stopRefreshing"), cancel: L("popover.app.close"), destructive: false)
+    /// True when the user confirmed forgetting `app` on `device` (it stays on the device).
+    static func confirmRemoveFromList(app: String, device: String) -> Bool {
+        run(title: L("popover.app.removeTitle", app), message: L("popover.app.removeMessage", device),
+            confirm: L("popover.app.remove"), cancel: L("install.cancel"), destructive: true)
     }
 
-    /// The first button (Return) confirms; the second one (Escape) cancels.
-    private static func run(title: String, message: String, confirm: String, cancel: String,
+    /// Shows why the uninstall failed. `offerPause`: the alert also offers to stop refreshing it
+    /// instead (pointless for a paused app); true when the user chose that.
+    static func uninstallFailed(app: String, device: String, error: any Error, offerPause: Bool) -> Bool {
+        let title = L("popover.app.uninstallFailedTitle", app, device)
+        guard offerPause else {
+            run(title: title, message: localizedMessage(error), confirm: nil, cancel: L("popover.app.close"),
+                destructive: false)
+            return false
+        }
+        return run(title: title, message: localizedMessage(error) + "\n\n" + L("popover.app.uninstallFailedFallback"),
+                   confirm: L("popover.app.stopRefreshing"), cancel: L("popover.app.close"), destructive: false)
+    }
+
+    /// The first button (Return) confirms; the second one (Escape) cancels. Without `confirm`,
+    /// the only button closes the alert.
+    @discardableResult
+    private static func run(title: String, message: String, confirm: String?, cancel: String,
                             destructive: Bool) -> Bool {
         NSApp.activate()
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = message
         alert.alertStyle = .warning
+        guard let confirm else {
+            alert.addButton(withTitle: cancel)
+            alert.runModal()
+            return false
+        }
         let confirmButton = alert.addButton(withTitle: confirm)
         confirmButton.hasDestructiveAction = destructive
         alert.addButton(withTitle: cancel).keyEquivalent = "\u{1b}"

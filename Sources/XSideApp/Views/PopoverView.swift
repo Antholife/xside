@@ -108,7 +108,9 @@ private struct PopoverContent: View {
                                    needsUSB: group.needsUSB, deviceName: group.name,
                                    onRefresh: { model.refreshNow(entry.job) },
                                    onUninstall: { uninstall(entry, deviceName: group.name) },
-                                   onStopRefreshing: { stopRefreshing(entry, deviceName: group.name) })
+                                   onStopRefreshing: { stopRefreshing(entry, deviceName: group.name) },
+                                   onResume: { resume(entry) },
+                                   onRemoveFromList: { removeFromList(entry, deviceName: group.name) })
                         }
                     }
                 }
@@ -116,18 +118,31 @@ private struct PopoverContent: View {
         }
     }
 
+    /// Closes the popover, then runs `alert` once XSide is active, on a later runloop turn: the
+    /// confirmation shows alone, not over the panel (nor under the row's menu, still closing).
+    private func afterClosing(_ alert: @escaping @MainActor () -> Void) {
+        dismiss()
+        DispatchQueue.main.async {
+            NSApp.activate()
+            DispatchQueue.main.async { alert() }
+        }
+    }
+
     /// Confirmed first; on failure (device out of reach, devicectl error) the alert offers to stop
-    /// refreshing instead. Alerts wait for the menu to close, so they don't open under it.
+    /// refreshing (pause) instead, unless it's already paused. The popover is closed by then.
     private func uninstall(_ entry: AppEntry, deviceName: String) {
         let app = entry.record.options.displayName ?? entry.record.displayName
-        DispatchQueue.main.async {
+        afterClosing {
             guard AppRowAlerts.confirmUninstall(app: app, device: deviceName) else { return }
             Task {
                 do {
                     try await model.uninstall(entry)
                 } catch {
-                    if AppRowAlerts.uninstallFailed(app: app, device: deviceName, error: error) {
-                        await model.stopRefreshing(entry)
+                    // The popover may have been opened again meanwhile: closed again first.
+                    afterClosing {
+                        guard AppRowAlerts.uninstallFailed(app: app, device: deviceName, error: error,
+                                                           offerPause: !entry.installation.refreshPaused) else { return }
+                        Task { await model.stopRefreshing(entry) }
                     }
                 }
             }
@@ -136,9 +151,23 @@ private struct PopoverContent: View {
 
     private func stopRefreshing(_ entry: AppEntry, deviceName: String) {
         let app = entry.record.options.displayName ?? entry.record.displayName
-        DispatchQueue.main.async {
+        afterClosing {
             guard AppRowAlerts.confirmStopRefreshing(app: app, device: deviceName) else { return }
             Task { await model.stopRefreshing(entry) }
+        }
+    }
+
+    /// No confirmation: undoing it is just stopping again. The popover closes like for the others.
+    private func resume(_ entry: AppEntry) {
+        dismiss()
+        Task { await model.resumeRefreshing(entry) }
+    }
+
+    private func removeFromList(_ entry: AppEntry, deviceName: String) {
+        let app = entry.record.options.displayName ?? entry.record.displayName
+        afterClosing {
+            guard AppRowAlerts.confirmRemoveFromList(app: app, device: deviceName) else { return }
+            Task { await model.removeFromList(entry) }
         }
     }
 }

@@ -106,8 +106,11 @@ final class AppModel {
     var onNeedsEvaluation: (() -> Void)?
     /// A device was removed from XSide: forget what is kept per (app, device).
     var onDeviceRemoved: ((_ deviceID: String) -> Void)?
-    /// An installation is gone (uninstalled, or no longer refreshed): forget what is kept for it.
+    /// An installation is gone (uninstalled, removed from the list) or paused: forget what is kept
+    /// for it (reminder, notification state).
     var onInstallationRemoved: ((_ job: RefreshJob) -> Void)?
+    /// A paused installation is refreshed again: its reminder comes back, and it may be due now.
+    var onRefreshResumed: ((_ job: RefreshJob) -> Void)?
     /// Every pipeline run that ends (install, manual or automatic refresh), with its error if it failed.
     var onJobFinished: ((_ job: RefreshJob, _ error: (any Error)?, _ automatic: Bool,
                                _ wasRefresh: Bool) -> Void)?
@@ -665,7 +668,7 @@ final class AppModel {
     func updateAttention() {
         let now = Date()
         let setupDone = UserDefaults.standard.bool(forKey: JourneyStep.completedKey)
-        let expired = records.contains { $0.installations.contains { $0.expiresAt <= now } }
+        let expired = ExpiryWatch.hasExpired(records, now: now)
         let updated: Attention?
         // A failed check of the setup (a system tool erred) says nothing is missing: a warning.
         let broken = setupDone && environmentFailed && environmentError?.isSetupCheckFailure != true
@@ -761,7 +764,7 @@ final class AppModel {
     func refreshNow(_ job: RefreshJob, automatic: Bool = false) -> Bool {
         let key = JobKey(recordID: job.recordID, deviceID: job.deviceID)
         guard signingEnvironment != nil, jobs[key] == nil, !removingDevices.contains(job.deviceID),
-              let device = devices.first(where: { $0.id == job.deviceID }) else { return false }
+              !isPaused(job), let device = devices.first(where: { $0.id == job.deviceID }) else { return false }
         claim(key) // before the task starts, so the row can't be claimed twice
         Task {
             defer { release(key) }
@@ -798,7 +801,13 @@ final class AppModel {
     /// Rows being uninstalled from their device right now (their row says so).
     private(set) var uninstalling: Set<JobKey> = []
 
-    /// Uninstall and "stop refreshing" are offered while no job runs on the row.
+    /// The user stopped refreshing that installation (see `stopRefreshing`).
+    private func isPaused(_ job: RefreshJob) -> Bool {
+        records.first { $0.id == job.recordID }?.installations
+            .first { $0.deviceID == job.deviceID }?.refreshPaused == true
+    }
+
+    /// Uninstall, stop/resume refreshing and "remove from the list" are offered while no job runs on the row.
     func canManage(_ entry: AppEntry) -> Bool {
         jobs[entry.id] == nil && !removingDevices.contains(entry.installation.deviceID)
     }
@@ -828,9 +837,52 @@ final class AppModel {
         await installationRemoved(key)
     }
 
-    /// Stops refreshing the app on that device without touching the device (it may be out of
-    /// reach): the app stays there until it expires.
+    /// Pauses the app's refreshes on that device without touching the device (it may be out of
+    /// reach): the row stays, the app stays there until it expires. Its reminder and notification
+    /// state go (see `onInstallationRemoved`).
     func stopRefreshing(_ entry: AppEntry) async {
+        let key = entry.id
+        guard canManage(entry) else { return }
+        claim(key)
+        defer { release(key) }
+        do {
+            guard try await library.setRefreshPaused(true, recordID: key.recordID, deviceID: key.deviceID) else {
+                await reloadRecords()
+                return
+            }
+        } catch XSideError.recordNotFound {
+            return // removed meanwhile (device removed from XSide)
+        } catch {
+            Self.logger.error("stop refreshing failed: \(String(describing: error), privacy: .public)")
+            return
+        }
+        await reloadRecords()
+        onInstallationRemoved?(RefreshJob(recordID: key.recordID, deviceID: key.deviceID))
+    }
+
+    /// Refreshes a paused installation again: its reminder is scheduled again and, if it's due,
+    /// the engine refreshes it at once (the row is released first, so it can start).
+    func resumeRefreshing(_ entry: AppEntry) async {
+        let key = entry.id
+        guard canManage(entry) else { return }
+        claim(key)
+        let resumed: Bool
+        do {
+            resumed = try await library.setRefreshPaused(false, recordID: key.recordID, deviceID: key.deviceID)
+        } catch XSideError.recordNotFound {
+            resumed = false
+        } catch {
+            Self.logger.error("resume refreshing failed: \(String(describing: error), privacy: .public)")
+            resumed = false
+        }
+        release(key)
+        await reloadRecords()
+        if resumed { onRefreshResumed?(RefreshJob(recordID: key.recordID, deviceID: key.deviceID)) }
+    }
+
+    /// Forgets the app on that device ("remove from the list") without touching the device: the
+    /// app stays there until it expires. A record left without installation is deleted.
+    func removeFromList(_ entry: AppEntry) async {
         let key = entry.id
         guard canManage(entry) else { return }
         claim(key)
@@ -839,7 +891,7 @@ final class AppModel {
             try await library.removeInstallation(recordID: key.recordID, deviceID: key.deviceID)
         } catch XSideError.recordNotFound {
         } catch {
-            Self.logger.error("stop refreshing failed: \(String(describing: error), privacy: .public)")
+            Self.logger.error("remove from list failed: \(String(describing: error), privacy: .public)")
             return
         }
         await installationRemoved(key)
@@ -862,7 +914,7 @@ final class AppModel {
     }
 
     func canRefresh(_ entry: AppEntry) -> Bool {
-        isPipelineReady && jobs[entry.id] == nil && !removingDevices.contains(entry.installation.deviceID)
+        isPipelineReady && !entry.installation.refreshPaused && jobs[entry.id] == nil && !removingDevices.contains(entry.installation.deviceID)
             && devices.contains { $0.id == entry.installation.deviceID && $0.isAvailable }
     }
 

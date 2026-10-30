@@ -23,7 +23,16 @@ public enum RefreshPlanner {
         return elapsed >= 0 && elapsed < delay
     }
 
-    /// Installations to refresh now. Already-expired ones are still due.
+    /// Installations XSide keeps refreshing (not paused by the user), one job each, in library
+    /// order: those that get an expiry reminder.
+    public static func refreshedJobs(_ records: [AppRecord]) -> [RefreshJob] {
+        records.flatMap { record in
+            record.installations.filter { !$0.refreshPaused }
+                .map { RefreshJob(recordID: record.id, deviceID: $0.deviceID) }
+        }
+    }
+
+    /// Installations to refresh now. Already-expired ones are still due. Paused ones never are.
     /// `currentIdentitySHA1`: the signing certificate in use. An installation signed with another
     /// one (certificate replaced or revoked) is due now whatever its expiry: the old signature may
     /// stop working at any time. Installations with no recorded certificate are never forced, nor
@@ -35,7 +44,7 @@ public enum RefreshPlanner {
         let available = Set(devices.filter(prefs.canRefresh).map(\.id))
         var due: [(expiresAt: Date, job: RefreshJob)] = []
         for record in records {
-            for i in record.installations {
+            for i in record.installations where !i.refreshPaused {
                 guard available.contains(i.deviceID) else { continue }
                 let certificateChanged = currentIdentitySHA1 != nil && i.signingIdentitySHA1 != nil
                     && i.signingIdentitySHA1?.uppercased() != currentIdentitySHA1?.uppercased()
@@ -68,7 +77,7 @@ public enum RefreshPlanner {
         var due: [(expiresAt: Date, job: RefreshJob)] = []
         for record in records {
             for i in record.installations
-            where i.expiresAt.timeIntervalSince(now) <= threshold && blocked.contains(i.deviceID) {
+            where !i.refreshPaused && i.expiresAt.timeIntervalSince(now) <= threshold && blocked.contains(i.deviceID) {
                 due.append((i.expiresAt, RefreshJob(recordID: record.id, deviceID: i.deviceID)))
             }
         }
@@ -195,7 +204,7 @@ public struct NotificationGateStore: Sendable {
 }
 
 /// Finds due installations whose device can't be reached (missing from the list or unavailable),
-/// so they are reported instead of expiring silently. A device must be seen unreachable on two
+/// so they are reported instead of expiring silently (paused ones aren't due). A device must be seen unreachable on two
 /// evaluations at least `confirmDelay` apart (avoids alerts right after wake or on a stale list),
 /// and an installation is reported at most once per `RefreshPlanner.retryDelay`.
 public struct UnreachableTracker: Sendable {
@@ -215,7 +224,7 @@ public struct UnreachableTracker: Sendable {
         var result: [(expiresAt: Date, job: RefreshJob)] = []
         for record in records {
             for i in record.installations
-            where i.expiresAt.timeIntervalSince(now) <= threshold && !available.contains(i.deviceID) {
+            where !i.refreshPaused && i.expiresAt.timeIntervalSince(now) <= threshold && !available.contains(i.deviceID) {
                 let job = RefreshJob(recordID: record.id, deviceID: i.deviceID)
                 let first = firstSeen[job] ?? now
                 seen[job] = first
