@@ -5,8 +5,11 @@ cd "$(dirname "$0")/.."
 # CONFIG=debug builds build/XSide-debug.app (bundle id io.github.xside.XSide.debug), with the
 # XSIDE_FAKE_* test hooks.
 CONFIG="${CONFIG:-release}"
-swift build -c "$CONFIG" --product XSideApp
-BIN="$(swift build -c "$CONFIG" --product XSideApp --show-bin-path)/XSideApp"
+# The release app runs on Apple silicon and Intel Macs.
+ARCHS=()
+[ "$CONFIG" = release ] && ARCHS=(--arch arm64 --arch x86_64)
+swift build -c "$CONFIG" --product XSideApp "${ARCHS[@]+"${ARCHS[@]}"}"
+BIN="$(swift build -c "$CONFIG" --product XSideApp "${ARCHS[@]+"${ARCHS[@]}"}" --show-bin-path)/XSideApp"
 
 APP=build/XSide.app
 [ "$CONFIG" = debug ] && APP=build/XSide-debug.app
