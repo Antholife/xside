@@ -81,12 +81,7 @@ struct InstallSheet: View {
             case .rejected(let message):
                 ErrorText(message)
             case .editing, .running:
-                if flow.isRunning && flow.isMultiDevice {
-                    DeviceRunList(model: model, flow: flow, steps: steps)
-                } else {
-                    DevicePicker(model: model, flow: flow)
-                }
-                InstallOptionsSection(model: model, flow: flow)
+                // The run's status comes first, right under the app header.
                 if case .running(let stage) = flow.phase {
                     if !flow.isMultiDevice { InstallProgressView(timeline: StepTimeline(steps: steps, stage: stage)) }
                 } else if let failure = flow.failure, case .editing = flow.phase {
@@ -97,6 +92,12 @@ struct InstallSheet: View {
                 } else if case .editing(nil) = flow.phase, flow.wasCancelled {
                     CancelledNote()
                 }
+                if flow.isRunning && flow.isMultiDevice {
+                    DeviceRunList(model: model, flow: flow, steps: steps)
+                } else {
+                    DevicePicker(model: model, flow: flow)
+                }
+                InstallOptionsSection(model: model, flow: flow)
                 if case .editing = flow.phase { BlockedNotice(model: model, flow: flow) }
             case .finished:
                 if flow.isMultiDevice {
