@@ -31,8 +31,9 @@ struct XSideApp: App {
     }
 
     var body: some Scene {
+        // The status item only: clicks open `StatusPopover`, a real popover with its arrow.
         MenuBarExtra {
-            PopoverView(model: model)
+            EmptyView()
         } label: {
             MenuBarLabel(model: model, appDelegate: appDelegate)
         }
@@ -200,6 +201,7 @@ private struct MenuBarLabel: View {
                 model.updateAttention()
             }
             .onAppear {
+                appDelegate.attachPopover(model: model)
                 Notifier.openSettingsHandler = { openSettings() }
                 appDelegate.quitStopsRefreshes = { [model] in model.quitStopsRefreshes }
                 appDelegate.openIPA = { url in

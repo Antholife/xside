@@ -11,8 +11,6 @@ struct PopoverView: View {
     var body: some View {
         PopoverContent(model: model)
             .id(language)
-            // Outside `.id` so a language change doesn't report a close/open.
-            .background(WindowVisibilityReader { model.popoverVisibilityChanged($0) })
     }
 }
 
@@ -20,7 +18,7 @@ private struct PopoverContent: View {
     let model: AppModel
     @Environment(\.openWindow) private var openWindow
     /// Closes the popover: every action that leads elsewhere (window, web page) does.
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.closePopover) private var dismiss
     @AppStorage(JourneyStep.completedKey) private var journeyCompleted = false
     @State private var isDropTargeted = false
 
@@ -400,7 +398,7 @@ private struct PopoverFooter: View {
     var showsSettings = true
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.closePopover) private var dismiss
 
     private var version: String {
         let info = Bundle.main.infoDictionary ?? [:]
