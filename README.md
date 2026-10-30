@@ -100,6 +100,10 @@ CONFIG=debug scripts/bundle.sh   # build/XSide-debug.app, a separate app with it
 scripts/check-strings.sh         # English and French strings match
 ```
 
+## 📝 Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
+
 ## 📄 License
 
 [MIT](LICENSE) · Made by [Antholife](https://github.com/Antholife)

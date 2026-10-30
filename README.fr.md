@@ -100,6 +100,10 @@ CONFIG=debug scripts/bundle.sh   # build/XSide-debug.app, une app séparée avec
 scripts/check-strings.sh         # les textes français et anglais correspondent
 ```
 
+## 📝 Historique des versions
+
+Voir [CHANGELOG.md](CHANGELOG.md) pour ce qui change à chaque version (en anglais).
+
 ## 📄 Licence
 
 [MIT](LICENSE) · Fait par [Antholife](https://github.com/Antholife)

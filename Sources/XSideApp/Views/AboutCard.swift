@@ -3,6 +3,7 @@ import SwiftUI
 
 /// Settings > About: icon, version and build stamp, author, repository and licence.
 struct AboutCard: View {
+    @Environment(\.openWindow) private var openWindow
     private static func info(_ key: String) -> String? {
         Bundle.main.object(forInfoDictionaryKey: key) as? String
     }
@@ -45,6 +46,13 @@ struct AboutCard: View {
                 Link(destination: AppLinks.repository) {
                     Label(L("settings.github"), systemImage: "chevron.left.forwardslash.chevron.right")
                 }
+                Button {
+                    openWindow(id: WhatsNewWindow.id)
+                    NSApp.activate()
+                } label: {
+                    Label(L("whatsNew.open"), systemImage: "sparkles")
+                }
+                .buttonStyle(.link)
                 Text(L("about.license")).foregroundStyle(.secondary)
             }
             .font(.callout)

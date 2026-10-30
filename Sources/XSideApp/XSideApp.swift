@@ -56,6 +56,17 @@ struct XSideApp: App {
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
 
+        // Once after an update (see `showWhatsNewIfNeeded`), and from Settings > About.
+        Window(L("whatsNew.window"), id: WhatsNewWindow.id) {
+            WhatsNewWindowRoot()
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
+        .windowBackgroundDragBehavior(.enabled)
+        .defaultPosition(.center)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
+
         Settings {
             SettingsView(model: model)
         }
@@ -143,6 +154,24 @@ private struct MenuBarLabel: View {
         openWindow.presentJourney(model)
     }
 
+    /// Opens "What's new" once after an update to a version that has notes. A fresh install only
+    /// remembers its version: the journey already shows everything.
+    private func showWhatsNewIfNeeded() {
+        let defaults = UserDefaults.standard
+        let current = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+        switch WhatsNew.decide(current: current, lastSeen: defaults.string(forKey: WhatsNew.lastSeenKey),
+                               setupDone: journeyCompleted, hasNotes: ReleaseNotes.current != nil) {
+        case .show:
+            defaults.set(current, forKey: WhatsNew.lastSeenKey)
+            openWindow(id: WhatsNewWindow.id)
+            NSApp.activate()
+        case .markSeen:
+            defaults.set(current, forKey: WhatsNew.lastSeenKey)
+        case .nothing:
+            break
+        }
+    }
+
     /// Opens the .ipa received during setup, once the journey is finished and the environment OK.
     private func openQueuedIPA() {
         guard journeyCompleted, let url = model.queuedIPA else { return }
@@ -181,6 +210,7 @@ private struct MenuBarLabel: View {
                     }
                 }
                 showJourneyIfNeeded()
+                showWhatsNewIfNeeded()
                 model.showInstallWindow = {
                     openWindow(id: InstallWindow.id)
                     NSApp.activate()

@@ -338,3 +338,19 @@
 "popover.app.remove" = "Remove";
 "popover.paused.expired" = "Refresh stopped · expired";
 "popover.paused.expiresToday" = "Refresh stopped · expires today";
+
+/* What's new */
+"whatsNew.window" = "What's New";
+"whatsNew.title" = "What's New in XSide";
+"whatsNew.version" = "Version %@";
+"whatsNew.done" = "Let's go";
+"whatsNew.open" = "What's new…";
+"whatsNew.thanks.title" = "Thank you";
+"whatsNew.thanks.link" = "See the report on GitHub";
+"whatsNew.101.ipa.title" = "Fewer .ipa files refused";
+"whatsNew.101.ipa.text" = "Some .ipa files store their folders without the \"open\" permission. XSide took them for an attack and refused them: they now install normally.";
+"whatsNew.101.reason.title" = "The exact reason, when a file is refused";
+"whatsNew.101.reason.text" = "If an .ipa still can't be read, the message now says why. Handy for a bug report.";
+"whatsNew.101.window.title" = "This window";
+"whatsNew.101.window.text" = "After each update, XSide shows you what changed. You'll also find it in Settings > About.";
+"whatsNew.101.thanks" = "for reporting the refused .ipa files and helping track down the cause.";
