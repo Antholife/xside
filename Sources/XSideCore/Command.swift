@@ -150,8 +150,57 @@ public struct ProcessRunner: CommandRunning {
         environmentOverrides = environment
     }
 
+    private static let log = Log("command")
+
+    /// Logs the command line, then how it ended: exit code and duration, plus the end of its output
+    /// when it failed.
     public func run(_ executable: String, _ arguments: [String], cwd: URL?,
                     timeout: Duration) async throws -> CommandResult {
+        let line = Self.commandLine(executable, arguments)
+        Self.log.info("$ \(line)")
+        let start = ContinuousClock.now
+        func elapsed() -> String {
+            let d = ContinuousClock.now - start
+            return String(format: "%.1fs", Double(d.components.seconds) + Double(d.components.attoseconds) / 1e18)
+        }
+        do {
+            let result = try await execute(executable, arguments, cwd: cwd, timeout: timeout)
+            if result.status == 0 {
+                Self.log.info("exit 0 in \(elapsed()): \(Self.toolName(executable, arguments))")
+            } else {
+                var text = "exit \(result.status) in \(elapsed()): \(line)"
+                if let tail = Self.tail(result.stderr) { text += "\n  stderr: \(tail)" }
+                if let tail = Self.tail(String(decoding: result.stdout, as: UTF8.self)) { text += "\n  stdout: \(tail)" }
+                Self.log.error(text)
+            }
+            return result
+        } catch is CancellationError {
+            Self.log.notice("cancelled after \(elapsed()): \(Self.toolName(executable, arguments))")
+            throw CancellationError()
+        } catch {
+            Self.log.error("failed after \(elapsed()): \(line): \(error)")
+            throw error
+        }
+    }
+
+    /// `executable args…`, arguments with spaces quoted, long ones shortened.
+    static func commandLine(_ executable: String, _ arguments: [String]) -> String {
+        ([executable] + arguments).map { argument in
+            let short = argument.count > 300 ? argument.prefix(300) + "…" : Substring(argument)
+            return short.contains(" ") || short.isEmpty ? "'\(short)'" : String(short)
+        }.joined(separator: " ")
+    }
+
+    /// The last 2 000 characters of `text`, on one line, or nil when empty.
+    static func tail(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let end = trimmed.count > 2_000 ? "…" + trimmed.suffix(2_000) : Substring(trimmed)
+        return end.replacingOccurrences(of: "\n", with: "\n          ")
+    }
+
+    private func execute(_ executable: String, _ arguments: [String], cwd: URL?,
+                         timeout: Duration) async throws -> CommandResult {
         try Task.checkCancellation()
         let outPipe = Pipe()
         let errPipe = Pipe()

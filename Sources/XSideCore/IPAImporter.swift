@@ -3,12 +3,29 @@ import Foundation
 /// Reads an `.ipa` before it enters the library: unzips it to a scratch directory, extracts its
 /// `AppInfo` and refuses App Store (encrypted) builds right away. The scratch copy is always removed.
 public enum IPAImporter {
+    private static let log = Log("import")
+
     /// `iconDestination`: where to write the app's own icon (PNG), best effort. `iconHelper`: the
     /// executable that extracts it in a child process (see `AppIconExtractor.runHelper`); nil
     /// extracts in this process (tests).
     public static func inspect(ipa: URL, runner: CommandRunning,
                                scratchRoot: URL = FileManager.default.temporaryDirectory,
                                iconDestination: URL? = nil, iconHelper: URL? = nil) async throws -> AppInfo {
+        let size = (try? ipa.resourceValues(forKeys: [.fileSizeKey]).fileSize).map { "\($0 / 1_048_576) MB" } ?? "? MB"
+        log.notice("inspecting \(ipa.lastPathComponent) (\(size))")
+        do {
+            let info = try await read(ipa: ipa, runner: runner, scratchRoot: scratchRoot,
+                                      iconDestination: iconDestination, iconHelper: iconHelper)
+            log.notice("read \(info.bundleID) \(info.version ?? "?") (executable \(info.executable))")
+            return info
+        } catch {
+            log.error("refused \(ipa.lastPathComponent): \(error)")
+            throw error
+        }
+    }
+
+    private static func read(ipa: URL, runner: CommandRunning, scratchRoot: URL,
+                             iconDestination: URL?, iconHelper: URL?) async throws -> AppInfo {
         let fm = FileManager.default
         let dir = scratchRoot.appendingPathComponent("xside-import-\(UUID().uuidString)", isDirectory: true)
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)

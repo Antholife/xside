@@ -3,7 +3,7 @@ import os
 import XSideCore
 
 enum XcodeLauncher {
-    private static let logger = Logger(subsystem: "io.github.xside.XSide", category: "app")
+    private static let logger = Log("app")
     static let appStoreURL = URL(string: "macappstore://apps.apple.com/app/xcode/id497799835")!
     static let betaURL = URL(string: "https://developer.apple.com/download/applications/")!
 

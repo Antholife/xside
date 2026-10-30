@@ -8,7 +8,7 @@ import XSideCore
 /// is the engine's job (`NotificationGate`).
 @MainActor
 final class Notifier: NSObject {
-    private nonisolated static let logger = Logger(subsystem: "io.github.xside.XSide", category: "engine")
+    private nonisolated static let logger = Log("engine")
     private nonisolated static let xcodeCategory = "refreshFailed.xcode"
     /// Causes fixed by installing another Xcode (App Store update, beta): no "Open Xcode", a tap
     /// opens Settings, which links to the download.
@@ -80,15 +80,15 @@ final class Notifier: NSObject {
             content.categoryIdentifier = Self.settingsCategory
         }
         guard let center else {
-            Self.logger.notice("would notify: \(content.title, privacy: .public) — \(errorKey, privacy: .public)")
+            Self.logger.notice("would notify: \(content.title) — \(errorKey)")
             return true
         }
         do {
             try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
-            Self.logger.notice("notified \(errorKey, privacy: .public)")
+            Self.logger.notice("notified \(errorKey)")
             return true
         } catch {
-            Self.logger.error("notification failed: \(String(describing: error), privacy: .public)")
+            Self.logger.error("notification failed: \(String(describing: error))")
             return false
         }
     }
@@ -100,14 +100,14 @@ final class Notifier: NSObject {
         content.body = L("notification.needsUSB.body", deviceName, appName, date)
         content.sound = .default
         guard let center else {
-            Self.logger.notice("would notify: \(content.title, privacy: .public)")
+            Self.logger.notice("would notify: \(content.title)")
             return true
         }
         do {
             try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
             return true
         } catch {
-            Self.logger.error("notification failed: \(String(describing: error), privacy: .public)")
+            Self.logger.error("notification failed: \(String(describing: error))")
             return false
         }
     }
@@ -122,7 +122,7 @@ final class Notifier: NSObject {
         content.body = L(checkFailed ? "environment.notification.body.check" : "environment.notification.body", message)
         content.sound = .default
         guard let center else {
-            Self.logger.notice("would notify: \(content.title, privacy: .public)")
+            Self.logger.notice("would notify: \(content.title)")
             return true
         }
         do {
@@ -130,7 +130,7 @@ final class Notifier: NSObject {
                                                        content: content, trigger: nil))
             return true
         } catch {
-            Self.logger.error("notification failed: \(String(describing: error), privacy: .public)")
+            Self.logger.error("notification failed: \(String(describing: error))")
             return false
         }
     }
@@ -142,14 +142,14 @@ final class Notifier: NSObject {
         content.body = L("macBeta.notification.body")
         content.sound = .default
         guard let center else {
-            Self.logger.notice("would notify: \(content.title, privacy: .public)")
+            Self.logger.notice("would notify: \(content.title)")
             return true
         }
         do {
             try await center.add(UNNotificationRequest(identifier: Self.macBetaNotificationID, content: content, trigger: nil))
             return true
         } catch {
-            Self.logger.error("notification failed: \(String(describing: error), privacy: .public)")
+            Self.logger.error("notification failed: \(String(describing: error))")
             return false
         }
     }
@@ -163,14 +163,14 @@ final class Notifier: NSObject {
         content.title = L("notification.refreshed.title", appName)
         content.body = L("notification.refreshed.body", deviceName, date)
         guard let center else {
-            Self.logger.notice("would notify: \(content.title, privacy: .public)")
+            Self.logger.notice("would notify: \(content.title)")
             return true
         }
         do {
             try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
             return true
         } catch {
-            Self.logger.error("notification failed: \(String(describing: error), privacy: .public)")
+            Self.logger.error("notification failed: \(String(describing: error))")
             return false
         }
     }
@@ -192,7 +192,7 @@ final class Notifier: NSObject {
         content.body = L("notification.expiry.body", deviceName)
         content.sound = .default
         guard let center else {
-            Self.logger.notice("would schedule: \(content.title, privacy: .public) at \(date, privacy: .public)")
+            Self.logger.notice("would schedule: \(content.title) at \(date)")
             return
         }
         // Not allowed (yet): nothing to schedule; the next reconciliation adds it once allowed.
@@ -206,7 +206,7 @@ final class Notifier: NSObject {
             // Same identifier: replaces the pending one.
             try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
         } catch {
-            Self.logger.error("scheduling reminder failed: \(String(describing: error), privacy: .public)")
+            Self.logger.error("scheduling reminder failed: \(String(describing: error))")
         }
     }
 
@@ -289,7 +289,7 @@ extension Notifier: UNUserNotificationCenterDelegate {
 /// The real notification authorization, for the welcome journey and Settings.
 @MainActor @Observable
 final class NotificationPermission {
-    private static let logger = Logger(subsystem: "io.github.xside.XSide", category: "app")
+    private static let logger = Log("app")
     /// System Settings > Notifications, opened straight on XSide's own page (`?id=<bundle id>`).
     static let systemSettingsURL = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id="
                                        + (Bundle.main.bundleIdentifier ?? "io.github.xside.XSide"))!
@@ -328,9 +328,9 @@ final class NotificationPermission {
         guard let center else { return }
         do {
             let granted = try await center.requestAuthorization(options: [.alert, .sound])
-            Self.logger.notice("notification authorization granted=\(granted, privacy: .public)")
+            Self.logger.notice("notification authorization granted=\(granted)")
         } catch {
-            Self.logger.error("notification authorization failed: \(String(describing: error), privacy: .public)")
+            Self.logger.error("notification authorization failed: \(String(describing: error))")
         }
         await refresh()
     }

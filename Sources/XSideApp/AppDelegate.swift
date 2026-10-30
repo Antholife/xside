@@ -1,9 +1,10 @@
 import AppKit
 import os
+import XSideCore
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private static let logger = Logger(subsystem: "io.github.xside.XSide", category: "app")
+    private static let logger = Log("app")
 
     /// Called for each `.ipa` URL (Open With, double-click, Services). URLs that arrive before a
     /// handler is installed (cold launch from Finder) are kept and delivered once it is set.
@@ -100,7 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func dispatch(_ urls: [URL]) {
         for url in urls where Self.isIPA(url) {
-            Self.logger.notice("openIPA(\(url.path, privacy: .public))")
+            Self.logger.notice("openIPA(\(url.path))")
             if let openIPA { openIPA(url) } else { pending.append(url) }
         }
     }

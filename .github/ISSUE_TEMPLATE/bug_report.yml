@@ -1,0 +1,43 @@
+name: Bug report
+description: Something doesn't work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! 🙏
+        The logs make it much faster to fix: **XSide > Settings > Logs > Export…** (or the "Export logs" link under the error). Personal details (e-mail, team, devices) are already masked.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead. A screenshot of the error helps.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: XSide version
+      description: Settings > About.
+      placeholder: 1.0.2 (60)
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: macOS and Xcode versions
+      placeholder: macOS 27.2, Xcode 27.2
+  - type: input
+    id: device
+    attributes:
+      label: Device and iOS version
+      placeholder: iPhone 17 Pro, iOS 27.2
+  - type: input
+    id: ipa
+    attributes:
+      label: Which app (.ipa)? Where does it come from?
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Drop the exported XSide-logs-….zip here.

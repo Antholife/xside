@@ -6,7 +6,7 @@ import XSideCore
 /// `RefreshPlanner` says are due, and notifies a failure once per (app, device, cause).
 @MainActor
 final class BackgroundEngine {
-    private static let logger = Logger(subsystem: "io.github.xside.XSide", category: "engine")
+    private static let logger = Log("engine")
     /// Device polling while the popover is open / closed.
     static let fastPoll: Duration = .seconds(15)
     static let slowPoll: Duration = .seconds(60)
@@ -43,7 +43,7 @@ final class BackgroundEngine {
     func start() {
         guard !started else { return }
         started = true
-        Self.logger.notice("engine started (threshold \(Self.threshold / 86_400, privacy: .public) d)")
+        Self.logger.notice("engine started (threshold \(Self.threshold / 86_400) d)")
         notifier.start()
 
         model.onNeedsEvaluation = { [weak self] in self?.evaluate(reason: "change") }
@@ -134,9 +134,9 @@ final class BackgroundEngine {
         guard case .success? = model.environment else { return }
         let due = RefreshPlanner.startable(dueJobs(), busy: model.busyJobs)
         guard !due.isEmpty else { return }
-        Self.logger.notice("\(reason, privacy: .public): \(due.count, privacy: .public) job(s) due")
+        Self.logger.notice("\(reason): \(due.count) job(s) due")
         for job in due where model.refreshNow(job, automatic: true) {
-            Self.logger.notice("refresh started \(job.recordID.uuidString, privacy: .public) on \(job.deviceID, privacy: .public)")
+            Self.logger.notice("refresh started \(job.recordID.uuidString) on \(job.deviceID)")
         }
     }
 
@@ -149,7 +149,7 @@ final class BackgroundEngine {
             busy: model.busyJobs)
             .filter { !model.removingDevices.contains($0.deviceID) }
         for job in jobs {
-            Self.logger.notice("device unreachable for due \(job.recordID.uuidString, privacy: .public) on \(job.deviceID, privacy: .public)")
+            Self.logger.notice("device unreachable for due \(job.recordID.uuidString) on \(job.deviceID)")
             Task {
                 guard await model.recordUnreachable(job, at: now) else { return }
                 let error = XSideError.deviceUnavailable
@@ -329,7 +329,7 @@ final class BackgroundEngine {
     private func jobFinished(_ job: RefreshJob, error: (any Error)?, automatic: Bool, wasRefresh: Bool) {
         guard let error else {
             // Any success (install, manual or automatic refresh) re-arms notifications for the row.
-            Self.logger.notice("refresh succeeded \(job.recordID.uuidString, privacy: .public)")
+            Self.logger.notice("refresh succeeded \(job.recordID.uuidString)")
             var updated = gate
             updated.reset(recordID: job.recordID, deviceID: job.deviceID)
             if updated != gate { gate = updated; persistGate() }
@@ -352,7 +352,7 @@ final class BackgroundEngine {
             .installations.first(where: { $0.deviceID == job.deviceID }),
               !installation.refreshPaused else { return }
         let key = installation.lastErrorKey ?? (error as? XSideError)?.key ?? "unknown"
-        Self.logger.notice("refresh failed \(job.recordID.uuidString, privacy: .public): \(key, privacy: .public)")
+        Self.logger.notice("refresh failed \(job.recordID.uuidString): \(key)")
         notifyFailure(job, errorKey: key, message: Self.backgroundMessage(error) ?? localizedRowError(key: key))
     }
 
@@ -395,7 +395,7 @@ final class BackgroundEngine {
     private func notifyFailure(_ job: RefreshJob, errorKey: String, message: String) {
         Task {
             guard await notifier.canDeliver() else {
-                Self.logger.notice("notifications not authorized: \(errorKey, privacy: .public) not notified")
+                Self.logger.notice("notifications not authorized: \(errorKey) not notified")
                 return
             }
             guard gate.shouldNotify(recordID: job.recordID, deviceID: job.deviceID, errorKey: errorKey) else { return }
@@ -414,7 +414,7 @@ final class BackgroundEngine {
         do {
             try gateStore.save(gate)
         } catch {
-            Self.logger.error("saving notifications.json failed: \(String(describing: error), privacy: .public)")
+            Self.logger.error("saving notifications.json failed: \(String(describing: error))")
         }
     }
 }

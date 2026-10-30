@@ -32,9 +32,19 @@ struct DeviceGroup: Identifiable {
 
 @MainActor @Observable
 final class AppModel {
-    private static let logger = Logger(subsystem: "io.github.xside.XSide", category: "model")
+    private static let logger = Log("model")
 
-    private(set) var environment: Result<SigningEnvironment, XSideError>?
+    private(set) var environment: Result<SigningEnvironment, XSideError>? {
+        didSet {
+            if case .success(let env)? = environment {
+                LogStore.shared.register(env.teamID, as: "team")
+                LogStore.shared.registerIdentity(name: env.identityName, sha1: env.identitySHA1)
+                Self.logger.notice("environment OK: \(env.developerDir.path), team \(env.teamID)")
+            } else if case .failure(let error)? = environment {
+                Self.logger.notice("environment problem: \(error.key)")
+            }
+        }
+    }
     /// Signed out of Xcode AND no signing certificate either: both are reported (two banners).
     private(set) var certificateMissingToo = false
 
@@ -48,13 +58,33 @@ final class AppModel {
     @ObservationIgnored private var probeTask: Task<Void, Never>?
     /// Who is signed in to Xcode: the Apple ID e-mail from the certificate, else the Personal
     /// Team's name (Xcode's preferences hold no e-mail). Read once per probe, not per render.
-    private(set) var accountName: String?
+    private(set) var accountName: String? {
+        didSet { LogStore.shared.register(accountName, as: "account") }
+    }
     /// "Create the certificate" is running (an Xcode build, up to a minute).
     private(set) var isCreatingCertificate = false
     /// Why the last "Create the certificate" left no certificate, nil otherwise.
     private(set) var certificateCreationError: String?
-    private(set) var devices: [Device] = []
-    private(set) var records: [AppRecord] = []
+    private(set) var devices: [Device] = [] {
+        didSet {
+            for device in devices {
+                LogStore.shared.register(device.id, as: "device")
+                LogStore.shared.register(device.udid, as: "udid")
+                LogStore.shared.register(device.name, as: "device-name")
+            }
+            if devices.map(\.logLine) != oldValue.map(\.logLine) {
+                Self.logger.notice("devices: \(devices.isEmpty ? "none" : devices.map(\.logLine).joined(separator: "; "))")
+            }
+        }
+    }
+    private(set) var records: [AppRecord] = [] {
+        didSet {
+            for record in records {
+                LogStore.shared.register(record.teamID, as: "team")
+                for installation in record.installations { LogStore.shared.register(installation.deviceID, as: "device") }
+            }
+        }
+    }
     private(set) var appIDsRemaining: Int?
     /// Current step of each running install/refresh, per app row.
     private(set) var jobs: [JobKey: JobStage] = [:]
@@ -251,7 +281,9 @@ final class AppModel {
             let provisioner = Provisioner(runner: runner, templateDir: paths.template,
                                           workDir: paths.provisioningWork, cacheDirs: [])
             let failure: (any Error)?
+            Self.logger.notice("creating a certificate for team \(teamID)")
             do { failure = try await provisioner.createCertificate(teamID: teamID) } catch { failure = error }
+            if let failure { Self.logger.error("certificate creation: \(failure)") }
             // A probe started before the certificate existed would report it missing: wait for it.
             await probeEnvironmentAfresh()
             isCreatingCertificate = false
@@ -407,7 +439,7 @@ final class AppModel {
         let installs = await Task.detached { XcodeLocator.find() }.value
         // A picked Xcode that was deleted: back to Automatic, so picking it again later works.
         if case .path(let path) = xcodeSelection, !XcodeLocator.hasXcodebuild(URL(fileURLWithPath: path)) {
-            Self.logger.notice("picked Xcode gone (\(path, privacy: .public)): back to automatic")
+            Self.logger.notice("picked Xcode gone (\(path)): back to automatic")
             withMutation(keyPath: \.xcodeSelection) {
                 UserDefaults.standard.set(XcodeSelection.automatic.rawValue, forKey: XcodeSelection.storageKey)
             }
@@ -448,7 +480,7 @@ final class AppModel {
         }
         developerDirOverride.withLock { $0 = resolved?.path }
         activeDeveloperDir = resolved
-        Self.logger.notice("developer dir: \(resolved?.path ?? "inherited", privacy: .public)")
+        Self.logger.notice("developer dir: \(resolved?.path ?? "inherited")")
     }
 
     /// A beta Xcode found but not usable yet (never opened, license not accepted), shown in
@@ -514,7 +546,7 @@ final class AppModel {
             autoselectDevice()
             if changed { onNeedsEvaluation?() }
         } catch {
-            Self.logger.error("device list failed: \(String(describing: error), privacy: .public)")
+            Self.logger.error("device list failed: \(String(describing: error))")
         }
     }
 
@@ -530,6 +562,7 @@ final class AppModel {
             do {
                 try await DeviceService(runner: runner).pair(device.id)
             } catch {
+                Self.logger.error("pairing \(device.id) failed: \(error)")
                 pairErrors[device.id] = localizedMessage(error)
             }
             refreshDevices()
@@ -581,7 +614,7 @@ final class AppModel {
     private func savePrefs(_ prefs: DevicePrefs) {
         devicePrefs = prefs
         do { try prefsStore.save(prefs) } catch {
-            Self.logger.error("saving devices.json failed: \(String(describing: error), privacy: .public)")
+            Self.logger.error("saving devices.json failed: \(String(describing: error))")
         }
     }
 
@@ -608,7 +641,7 @@ final class AppModel {
         do {
             try await library.removeDevice(deviceID, keeping: busyRecords)
         } catch {
-            Self.logger.error("removing device failed: \(String(describing: error), privacy: .public)")
+            Self.logger.error("removing device failed: \(String(describing: error))")
             return
         }
         var prefs = devicePrefs
@@ -790,7 +823,7 @@ final class AppModel {
             try await library.upsert(installation, for: job.recordID, requireExisting: true)
             recorded = true
         } catch {
-            Self.logger.error("recording unreachable failed: \(String(describing: error), privacy: .public)")
+            Self.logger.error("recording unreachable failed: \(String(describing: error))")
             recorded = false
         }
         await reloadRecords()
@@ -854,7 +887,7 @@ final class AppModel {
         } catch XSideError.recordNotFound {
             return // removed meanwhile (device removed from XSide)
         } catch {
-            Self.logger.error("stop refreshing failed: \(String(describing: error), privacy: .public)")
+            Self.logger.error("stop refreshing failed: \(String(describing: error))")
             return
         }
         await reloadRecords()
@@ -873,7 +906,7 @@ final class AppModel {
         } catch XSideError.recordNotFound {
             resumed = false
         } catch {
-            Self.logger.error("resume refreshing failed: \(String(describing: error), privacy: .public)")
+            Self.logger.error("resume refreshing failed: \(String(describing: error))")
             resumed = false
         }
         release(key)
@@ -892,7 +925,7 @@ final class AppModel {
             try await library.removeInstallation(recordID: key.recordID, deviceID: key.deviceID)
         } catch XSideError.recordNotFound {
         } catch {
-            Self.logger.error("remove from list failed: \(String(describing: error), privacy: .public)")
+            Self.logger.error("remove from list failed: \(String(describing: error))")
             return
         }
         await installationRemoved(key)

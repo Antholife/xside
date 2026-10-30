@@ -80,6 +80,7 @@ struct InstallSheet: View {
                     .frame(maxWidth: .infinity)
             case .rejected(let message):
                 ErrorText(message)
+                ExportLogsLink(model: model)
             case .editing, .running:
                 // The run's status comes first, right under the app header.
                 if case .running(let stage) = flow.phase {
@@ -87,6 +88,7 @@ struct InstallSheet: View {
                 } else if let failure = flow.failure, case .editing = flow.phase {
                     InstallProgressView(timeline: StepTimeline(steps: steps, stage: failure.stage, failed: true),
                                         failureMessage: failure.message)
+                    ExportLogsLink(model: model)
                 } else if case .editing(let error?) = flow.phase {
                     ErrorText(error)
                 } else if case .editing(nil) = flow.phase, flow.wasCancelled {
@@ -103,6 +105,7 @@ struct InstallSheet: View {
                 if flow.isMultiDevice {
                     DeviceRunList(model: model, flow: flow, steps: steps)
                     summary
+                    if !flow.failedDeviceIDs.isEmpty { ExportLogsLink(model: model) }
                 } else {
                     InstallProgressView(timeline: StepTimeline(
                         steps: steps, current: flow.wifiCheck != nil ? .wifiCheck : nil, skipped: skippedSteps))
@@ -578,6 +581,21 @@ struct SectionTitle: View {
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(.secondary)
             .padding(.leading, 2)
+    }
+}
+
+/// Under a failure: the logs, zipped and redacted, ready to attach to a GitHub issue.
+struct ExportLogsLink: View {
+    let model: AppModel
+
+    var body: some View {
+        Button {
+            Diagnostics.export(model: model)
+        } label: {
+            Label(L("logs.exportLink"), systemImage: "doc.text.magnifyingglass")
+        }
+        .buttonStyle(.link)
+        .font(.system(size: 12))
     }
 }
 

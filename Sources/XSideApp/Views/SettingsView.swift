@@ -75,6 +75,18 @@ struct SettingsView: View {
             Section {
                 Button(L("settings.replayJourney")) { openWindow.presentJourney(model, at: .language) }
             }
+            Section {
+                LabeledContent {
+                    HStack(spacing: 8) {
+                        Button(L("logs.show")) { NSWorkspace.shared.open(Diagnostics.directory) }
+                        Button(L("logs.export")) { Diagnostics.export(model: model) }
+                    }
+                    .fixedSize()
+                } label: {
+                    Text(L("logs.title"))
+                    Text(L("logs.subtitle"))
+                }
+            }
             Section(L("settings.about")) {
                 AboutCard()
             }

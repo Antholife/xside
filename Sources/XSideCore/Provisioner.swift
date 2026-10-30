@@ -4,7 +4,7 @@ import os
 /// Obtains a development provisioning profile by letting Xcode (already signed in) build
 /// a tiny template project with automatic signing. XSide never talks to Apple itself.
 public struct Provisioner: Sendable {
-    private static let logger = Logger(subsystem: "io.github.xside.XSide", category: "provisioning")
+    private static let logger = Log("provisioning")
 
     private let runner: CommandRunning
     private let templateDir: URL
@@ -114,9 +114,9 @@ public struct Provisioner: Sendable {
                       cached.applicationIdentifier == applicationIdentifier else { continue }
                 do {
                     try fm.removeItem(at: file)
-                    Self.logger.notice("removed cached profile \(cached.uuid, privacy: .public)")
+                    Self.logger.notice("removed cached profile \(cached.uuid)")
                 } catch {
-                    Self.logger.error("could not remove cached profile \(cached.uuid, privacy: .public)")
+                    Self.logger.error("could not remove cached profile \(cached.uuid)")
                 }
             }
         }

@@ -354,3 +354,10 @@
 "whatsNew.101.window.title" = "This window";
 "whatsNew.101.window.text" = "After each update, XSide shows you what changed. You'll also find it in Settings > About.";
 "whatsNew.101.thanks" = "for reporting the refused .ipa files and helping track down the cause.";
+
+/* Logs */
+"logs.title" = "Logs";
+"logs.subtitle" = "What XSide did, step by step. Personal details (e-mail, team, devices) are masked: you can attach the export to a GitHub issue.";
+"logs.show" = "Show";
+"logs.export" = "Export…";
+"logs.exportLink" = "Export logs for a bug report…";

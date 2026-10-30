@@ -1,6 +1,7 @@
 import AppKit
 import os
 import SwiftUI
+import XSideCore
 
 /// The welcome window: progress dots, the current step, then Back / Skip / Continue. Opens at first
 /// launch, and at each launch while the environment fails (see `MenuBarLabel`).
@@ -20,7 +21,7 @@ struct WelcomeWindowRoot: View {
 }
 
 private struct WelcomeJourneyView: View {
-    private static let logger = Logger(subsystem: "io.github.xside.XSide", category: "app")
+    private static let logger = Log("app")
 
     let model: AppModel
     @AppStorage(JourneyStep.completedKey) private var completed = false
@@ -61,7 +62,7 @@ private struct WelcomeJourneyView: View {
             footer
         }
         .background { Backdrop().ignoresSafeArea() }
-        .onAppear { Self.logger.notice("welcome journey shown at \(String(describing: step), privacy: .public)") }
+        .onAppear { Self.logger.notice("welcome journey shown at \(String(describing: step))") }
         // The first probe result can make the saved step unreachable (Xcode uninstalled since).
         .onChange(of: model.environment == nil) { _, pending in
             if !pending { model.capJourneyAtBlockingStep() }

@@ -151,7 +151,7 @@ private final class OnceContinuation: @unchecked Sendable {
 /// the team's account and Xcode's profile cache. Keep one pipeline for the app's lifetime: both
 /// guarantees hold only within one instance. The signing environment is given per job.
 public actor SideloadPipeline {
-    private static let logger = Logger(subsystem: "io.github.xside.XSide", category: "pipeline")
+    private static let logger = Log("pipeline")
     private let library: AppLibrary
     private let provisioner: any Provisioning
     private let resigner: any Resigning
@@ -259,6 +259,7 @@ public actor SideloadPipeline {
             throw XSideError.recordNotFound
         }
         let bundleID = installation.signedBundleID ?? record.signedBundleID
+        Self.logger.notice("uninstall \(bundleID) from \(deviceID)")
         if let dir = await developerDir() {
             try await CommandEnvironment.withDeveloperDir(dir) { [installer] in
                 try await installer.uninstall(bundleID: bundleID, deviceID: deviceID)
@@ -293,6 +294,8 @@ public actor SideloadPipeline {
         let previousBundleID = previous.map { $0.signedBundleID ?? record.signedBundleID }
         let bundleID = refresh ? previousBundleID ?? record.signedBundleID : record.signedBundleID
 
+        let what = "\(refresh ? "refresh" : "install") \(record.originalBundleID) as \(bundleID) on \(device.id)"
+        Self.logger.notice("\(what): started (iOS \(device.osVersion ?? "?"), \(device.transport.rawValue))")
         let fm = FileManager.default
         let workDir = workRoot.appendingPathComponent("job-\(UUID().uuidString)", isDirectory: true)
         var profileURL: URL?
@@ -315,6 +318,7 @@ public actor SideloadPipeline {
                 let current: SigningEnvironment
                 do { current = try await environment() } catch { throw EnvironmentUnavailable(underlying: error) }
                 await progress(.profile)
+                Self.logger.info("\(what): provisioning with \(current.developerDir.path)")
                 let provisioned = try await CommandEnvironment.withDeveloperDir(current.developerDir) {
                     try await provisioner.profile(bundleID: bundleID, env: current, deviceUDIDs: [udid])
                 }
@@ -322,6 +326,7 @@ public actor SideloadPipeline {
             }
             env = current
             profileURL = provisioned.url
+            Self.logger.info("\(what): profile \(provisioned.profile.uuid) until \(provisioned.profile.expirationDate.formatted(.iso8601))")
             // A refresh must push the expiry forward; otherwise Xcode reused the cached profile and
             // reinstalling would only reset the 7 days we don't actually have. A new bundle id is a
             // new App ID, unrelated to the previous expiry. With a new certificate, the same
@@ -335,6 +340,7 @@ public actor SideloadPipeline {
                 throw XSideError.profileNotRenewed
             }
             await progress(.signing)
+            Self.logger.info("\(what): signing")
             let others = await library.records().filter { $0.id != recordID }
                 .reduce(into: Set<String>()) { ids, other in
                     ids.insert(other.signedBundleID)
@@ -348,6 +354,7 @@ public actor SideloadPipeline {
                     identitySHA1: current.identitySHA1, otherBundleIDs: others)
             }
             await progress(.installing)
+            Self.logger.info("\(what): installing")
             try await CommandEnvironment.withDeveloperDir(current.developerDir) { [installer] in
                 try await installer.install(app: app, deviceID: device.id)
             }
@@ -358,13 +365,16 @@ public actor SideloadPipeline {
                                             lastAttempt: date, lastErrorKey: nil, signedBundleID: bundleID,
                                             signingIdentitySHA1: current.identitySHA1, teamID: current.teamID)
             try await library.upsert(installation, for: recordID, requireExisting: previous != nil)
+            Self.logger.notice("\(what): done, expires \(installation.expiresAt.formatted(.iso8601))")
             return installation
         } catch let unavailable as EnvironmentUnavailable {
             // Not this row's failure: no attempt recorded, so the refresh runs once it's fixed.
+            Self.logger.error("\(what): environment unavailable: \(unavailable.underlying)")
             throw unavailable.underlying
         } catch where error is CancellationError || Task.isCancelled {
             // Stopped by the user (or the app): not a failure of the row. Nothing is recorded, so
             // no error is shown and no retry delay applies; the installation stays as it was.
+            Self.logger.notice("\(what): cancelled")
             throw CancellationError()
         } catch {
             let developerDir = env?.developerDir
@@ -372,11 +382,12 @@ public actor SideloadPipeline {
             let explained = XcodeCompat.explain(error, deviceOS: device.osVersion,
                                                 sdkVersion: developerDir.flatMap(XcodeCompat.iOSSDKVersion),
                                                 macBetaWithReleaseXcode: macIsBeta && releaseXcode)
+            Self.logger.error("\(what): failed: \(error)")
             if let replaced = explained as? XSideError, replaced != error as? XSideError {
                 // The likely cause is shown; keep the actual failure for diagnosis.
                 Self.logger.error("""
-                    \(replaced.key, privacy: .public) (device iOS \(device.osVersion ?? "?", privacy: .public)) \
-                    explains: \(String(describing: error), privacy: .public)
+                    \(replaced.key) (device iOS \(device.osVersion ?? "?")) \
+                    explains: \(String(describing: error))
                     """)
             }
             if var failed = previous {

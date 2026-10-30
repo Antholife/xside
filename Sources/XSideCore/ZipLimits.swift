@@ -6,6 +6,7 @@ import Foundation
 /// local headers), so `extract` also watches what is really written and stops `ditto` past the
 /// same limits.
 public enum ZipLimits {
+    private static let log = Log("import")
     public static let maxUncompressedBytes: UInt64 = 4 * 1024 * 1024 * 1024
     public static let maxEntries = 100_000
     /// Above `ratioFloor` uncompressed, total uncompressed / total compressed may not exceed this.
@@ -65,7 +66,9 @@ public enum ZipLimits {
     /// counts as over every limit.
     static func writtenTotals(_ directory: URL) -> (entries: Int, bytes: UInt64) {
         if let totals = walk(directory) { return totals }
+        log.notice("unreadable folders in the archive: giving their owner access back")
         if repairPermissions(directory), let totals = walk(directory) { return totals }
+        log.error("archive still unreadable after repairing permissions")
         return (Int.max, UInt64.max)
     }
 

@@ -116,7 +116,7 @@ public enum LibraryLoadIssue: Equatable, Sendable {
 }
 
 public actor AppLibrary {
-    private static let logger = Logger(subsystem: "io.github.xside.XSide", category: "library")
+    private static let logger = Log("library")
     public nonisolated let root: URL
     /// Set when `state.json` couldn't be fully read at init, nil otherwise.
     public nonisolated let loadIssue: LibraryLoadIssue?
@@ -154,12 +154,12 @@ public actor AppLibrary {
             // The next save drops the skipped records: keep the file as it was.
             let kept = corruptURL(root: root)
             try? fm.copyItem(at: url, to: kept)
-            logger.error("state.json: \(skipped, privacy: .public) record(s) skipped, kept as \(kept.lastPathComponent, privacy: .public)")
+            logger.error("state.json: \(skipped) record(s) skipped, kept as \(kept.lastPathComponent)")
             return (records, .recordsSkipped(skipped))
         }
         let kept = corruptURL(root: root)
         try? fm.moveItem(at: url, to: kept)
-        logger.error("state.json unreadable, moved to \(kept.lastPathComponent, privacy: .public)")
+        logger.error("state.json unreadable, moved to \(kept.lastPathComponent)")
         if let backup = try? Data(contentsOf: root.appendingPathComponent("state.json.bak")),
            let restored = decode(backup) {
             return (restored.records, .restoredFromBackup)

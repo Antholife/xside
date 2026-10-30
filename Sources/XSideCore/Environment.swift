@@ -108,6 +108,7 @@ public struct EnvironmentProbe: Sendable {
         guard let team = Self.teamID(fromSubject: String(decoding: sub.stdout, as: UTF8.self)) else {
             return .failure(.noSigningIdentity)
         }
+        LogStore.shared.register(team, as: "team")
 
         return .success(SigningEnvironment(
             developerDir: URL(fileURLWithPath: dirPath),
@@ -130,6 +131,8 @@ public struct EnvironmentProbe: Sendable {
         guard let identity = identities.first(where: { $0.name.hasPrefix("Apple Development") }) else {
             return .failure(.noSigningIdentity)
         }
+        // Masked before the next command logs the name.
+        LogStore.shared.registerIdentity(name: identity.name, sha1: identity.sha1)
         return .success(identity)
     }
 

@@ -11,6 +11,7 @@ enum EntryPoint {
         if arguments.count > 1, arguments[1] == AppIconExtractor.helperFlag {
             exit(AppIconExtractor.runHelper(arguments: Array(arguments.dropFirst(2))))
         }
+        Diagnostics.start()
         XSideApp.main()
     }
 }
