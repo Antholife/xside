@@ -12,6 +12,7 @@ Compte Apple gratuit · Outils officiels d'Xcode · Rafraîchissement auto en US
 [![Swift 6](https://img.shields.io/badge/Swift-6-F05138?style=flat-square&logo=swift&logoColor=white)](https://swift.org)
 [![Xcode](https://img.shields.io/badge/Xcode-requis-147EFB?style=flat-square&logo=xcode&logoColor=white)](https://developer.apple.com/xcode/)
 [![Licence : MIT](https://img.shields.io/badge/Licence-MIT-8B5CF6?style=flat-square)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/Antholife/xside?include_prereleases&style=flat-square&color=8B5CF6)](https://github.com/Antholife/xside/releases)
 [![Compte Apple gratuit](https://img.shields.io/badge/Compte%20Apple-gratuit-FFD84D?style=flat-square)](#-les-limites-dapple-avec-un-compte-gratuit)
 
 [English](README.md) · **Français**
@@ -71,15 +72,16 @@ Windows et Linux ne sont pas pris en charge : XSide repose sur Xcode, qui ne tou
 
 ## 🚀 Installation
 
-Il n'y a pas encore de version signée, il faut donc la compiler :
+1. Télécharge `XSide-<version>.zip` depuis la [dernière release](https://github.com/Antholife/xside/releases).
+2. Décompresse-le, mets `XSide.app` dans `/Applications` et ouvre-la.
+
+Fonctionne sur les Mac Apple Silicon et Intel. Pour la compiler toi-même :
 
 ```sh
 git clone https://github.com/Antholife/xside.git
 cd xside
 scripts/bundle.sh   # crée build/XSide.app
 ```
-
-Mets `build/XSide.app` dans `/Applications` et ouvre-la.
 
 > [!IMPORTANT]
 > L'app n'est pas notarisée. Si macOS la bloque, va dans **Réglages Système > Confidentialité et sécurité** et clique sur **Ouvrir quand même**.
