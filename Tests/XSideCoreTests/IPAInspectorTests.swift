@@ -82,6 +82,6 @@ struct IPAInspectorTests {
         let app = try FakeIPA.makeApp(at: r3)
         try PropertyListSerialization.data(fromPropertyList: ["CFBundleExecutable": "Demo"], format: .xml, options: 0)
             .write(to: app.appendingPathComponent("Info.plist"))
-        #expect(throws: XSideError.invalidIPA("Info.plist sans CFBundleIdentifier")) { try IPAInspector.info(of: app) }
+        #expect(throws: XSideError.invalidIPA("Info.plist without CFBundleIdentifier")) { try IPAInspector.info(of: app) }
     }
 }

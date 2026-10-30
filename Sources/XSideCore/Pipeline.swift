@@ -394,7 +394,7 @@ public actor SideloadPipeline {
         let url = root.appendingPathComponent(relative).standardizedFileURL
         let rootPath = root.path.hasSuffix("/") ? root.path : root.path + "/"
         guard url.path.hasPrefix(rootPath) else {
-            throw XSideError.invalidIPA("Chemin hors de la bibliothèque : \(relative)")
+            throw XSideError.invalidIPA("Path outside the library: \(relative)")
         }
         return url
     }

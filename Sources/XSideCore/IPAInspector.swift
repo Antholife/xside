@@ -63,9 +63,9 @@ public enum IPAInspector {
     public static func infoPlistData(of app: URL) throws -> Data {
         let url = app.appendingPathComponent("Info.plist")
         let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? nil
-        guard let size else { throw XSideError.invalidIPA("Info.plist illisible") }
-        guard size <= maxInfoPlistBytes else { throw XSideError.invalidIPA("Info.plist trop volumineux") }
-        guard let data = try? Data(contentsOf: url) else { throw XSideError.invalidIPA("Info.plist illisible") }
+        guard let size else { throw XSideError.invalidIPA("Unreadable Info.plist") }
+        guard size <= maxInfoPlistBytes else { throw XSideError.invalidIPA("Info.plist too large") }
+        guard let data = try? Data(contentsOf: url) else { throw XSideError.invalidIPA("Unreadable Info.plist") }
         return data
     }
 
@@ -74,11 +74,11 @@ public enum IPAInspector {
         let payload = payloadParent.appendingPathComponent("Payload")
         guard let items = try? FileManager.default.contentsOfDirectory(
             at: payload, includingPropertiesForKeys: nil) else {
-            throw XSideError.invalidIPA("Dossier Payload introuvable")
+            throw XSideError.invalidIPA("Payload folder not found")
         }
         let apps = items.filter { $0.pathExtension == "app" }
         guard apps.count == 1 else {
-            throw XSideError.invalidIPA(apps.isEmpty ? "Aucune app dans Payload" : "Plusieurs apps dans Payload")
+            throw XSideError.invalidIPA(apps.isEmpty ? "No app in Payload" : "Several apps in Payload")
         }
         return apps[0]
     }
@@ -86,18 +86,18 @@ public enum IPAInspector {
     public static func info(of app: URL) throws -> AppInfo {
         let data = try infoPlistData(of: app)
         guard let plist = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any]
-        else { throw XSideError.invalidIPA("Info.plist illisible") }
+        else { throw XSideError.invalidIPA("Unreadable Info.plist") }
         guard let bundleID = plist["CFBundleIdentifier"] as? String, !bundleID.isEmpty else {
-            throw XSideError.invalidIPA("Info.plist sans CFBundleIdentifier")
+            throw XSideError.invalidIPA("Info.plist without CFBundleIdentifier")
         }
         guard BundleIdentifier.isValidOriginal(bundleID) else {
-            throw XSideError.invalidIPA("CFBundleIdentifier invalide")
+            throw XSideError.invalidIPA("Invalid CFBundleIdentifier")
         }
         guard let executable = plist["CFBundleExecutable"] as? String, !executable.isEmpty else {
-            throw XSideError.invalidIPA("Info.plist sans CFBundleExecutable")
+            throw XSideError.invalidIPA("Info.plist without CFBundleExecutable")
         }
         guard !executable.contains("/"), executable != ".", executable != ".." else {
-            throw XSideError.invalidIPA("CFBundleExecutable invalide")
+            throw XSideError.invalidIPA("Invalid CFBundleExecutable")
         }
         let name = (plist["CFBundleDisplayName"] as? String).flatMap { $0.isEmpty ? nil : $0 }
             ?? (plist["CFBundleName"] as? String).flatMap { $0.isEmpty ? nil : $0 }
@@ -149,7 +149,7 @@ public enum IPAInspector {
 
     private static func machOData(_ url: URL) throws -> Data {
         do { return try Data(contentsOf: url, options: .mappedIfSafe) }
-        catch { throw XSideError.invalidIPA("Exécutable illisible") }
+        catch { throw XSideError.invalidIPA("Unreadable executable") }
     }
 
     /// Start of each slice: every architecture of a fat binary (at most `maxFatArchs`), else 0.
@@ -174,7 +174,7 @@ public enum IPAInspector {
         }
     }
 
-    private static func bad() -> XSideError { .invalidIPA("Mach-O invalide") }
+    private static func bad() -> XSideError { .invalidIPA("Invalid Mach-O") }
 
     /// The load commands of the slice at `start` (`pos`: offset of each command in `data`), with
     /// every size checked against `sizeofcmds` and the file.

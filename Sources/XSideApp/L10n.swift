@@ -49,7 +49,8 @@ func L(_ key: String, _ args: CVarArg...) -> String {
 }
 
 extension XSideError {
-    /// One friendly message per case. Payloads are technical and never shown, except the iOS version.
+    /// One friendly message per case. Payloads are technical and never shown, except the iOS version
+    /// and why an archive was refused (in English: it's for bug reports).
     var localizedMessage: String {
         switch self {
         case .xcodeMissing: return L("error.xcodeMissing")
@@ -60,7 +61,7 @@ extension XSideError {
         case .deviceLocked: return L("error.deviceLocked")
         case .maxAppsReached: return L("error.maxAppsReached")
         case .encryptedIPA: return L("error.encryptedIPA")
-        case .invalidIPA: return L("error.invalidIPA")
+        case .invalidIPA(let reason): return L("error.invalidIPA", reason)
         case .provisioningFailed: return L("error.provisioningFailed")
         case .installFailed: return L("error.installFailed")
         case .uninstallFailed: return L("error.uninstallFailed")

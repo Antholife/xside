@@ -58,7 +58,7 @@ public struct Resigner: Sendable {
         try cleanPreviousRun(in: workDir)
         let unzip = try await ZipLimits.extract(ipa, to: workDir, runner: runner)
         guard unzip.status == 0 else {
-            throw XSideError.invalidIPA("Impossible de décompresser l'IPA")
+            throw XSideError.invalidIPA("Couldn't unzip the IPA")
         }
 
         try validateExtraction(in: workDir)
@@ -214,7 +214,7 @@ public struct Resigner: Sendable {
     private func requireType(_ type: FileAttributeType, _ url: URL) throws {
         let actual = try? FileManager.default.attributesOfItem(atPath: url.path)[.type] as? FileAttributeType
         guard actual == type else {
-            throw XSideError.invalidIPA("IPA invalide : \(url.lastPathComponent) n'est pas du type attendu")
+            throw XSideError.invalidIPA("\(url.lastPathComponent) isn't of the expected type")
         }
     }
 
@@ -232,13 +232,13 @@ public struct Resigner: Sendable {
 
     private func validateExtraction(in workDir: URL) throws {
         if isSymlink(workDir.appendingPathComponent("Payload")) {
-            throw XSideError.invalidIPA("IPA invalide : lien symbolique suspect (Payload)")
+            throw XSideError.invalidIPA("Suspicious symbolic link (Payload)")
         }
     }
 
     /// Rejects archives whose entries escape the bundle (symlinks pointing outside it).
     private func validateBundle(_ app: URL, in workDir: URL) throws {
-        func bad(_ what: String) -> XSideError { .invalidIPA("IPA invalide : lien symbolique suspect (\(what))") }
+        func bad(_ what: String) -> XSideError { .invalidIPA("Suspicious symbolic link (\(what))") }
         let root = app.resolvingSymlinksInPath().standardizedFileURL.pathComponents
         let work = workDir.resolvingSymlinksInPath().standardizedFileURL.pathComponents
         func inside(_ path: [String], _ base: [String]) -> Bool {
@@ -274,7 +274,7 @@ public struct Resigner: Sendable {
         var format = PropertyListSerialization.PropertyListFormat.binary
         guard var plist = try PropertyListSerialization.propertyList(
             from: data, options: [], format: &format) as? [String: Any] else {
-            throw XSideError.invalidIPA("Info.plist illisible")
+            throw XSideError.invalidIPA("Unreadable Info.plist")
         }
         plist["CFBundleIdentifier"] = bundleID
         if let name = options.displayName {
@@ -316,7 +316,7 @@ public struct Resigner: Sendable {
         var format = PropertyListSerialization.PropertyListFormat.binary
         guard var plist = try PropertyListSerialization.propertyList(
             from: IPAInspector.infoPlistData(of: app), options: [], format: &format) as? [String: Any] else {
-            throw XSideError.invalidIPA("Info.plist illisible")
+            throw XSideError.invalidIPA("Unreadable Info.plist")
         }
         plist["CFBundleIcons"] = iconDict(plist["CFBundleIcons"], files: ["XSideIcon60x60"])
         plist["CFBundleIcons~ipad"] = iconDict(plist["CFBundleIcons~ipad"], files: ["XSideIcon60x60", "XSideIcon76x76"])

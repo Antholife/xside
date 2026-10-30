@@ -15,7 +15,7 @@ public enum IPAImporter {
         defer { try? fm.removeItem(at: dir) }
 
         let unzip = try await ZipLimits.extract(ipa, to: dir, runner: runner)
-        guard unzip.status == 0 else { throw XSideError.invalidIPA("Impossible de décompresser l'IPA") }
+        guard unzip.status == 0 else { throw XSideError.invalidIPA("Couldn't unzip the IPA") }
 
         // Never follow links out of the archive, even just to read.
         try require(.typeDirectory, dir.appendingPathComponent("Payload"))
@@ -45,7 +45,7 @@ public enum IPAImporter {
     private static func require(_ type: FileAttributeType, _ url: URL) throws {
         let actual = try? FileManager.default.attributesOfItem(atPath: url.path)[.type] as? FileAttributeType
         guard actual == type else {
-            throw XSideError.invalidIPA("IPA invalide : \(url.lastPathComponent) n'est pas du type attendu")
+            throw XSideError.invalidIPA("\(url.lastPathComponent) isn't of the expected type")
         }
     }
 }

@@ -17,6 +17,27 @@ private func zipIPA(_ root: URL) async throws -> URL {
     return ipa
 }
 
+/// Rewrites the Unix mode of every folder entry in `ipa`'s central directory, as some tools write
+/// them (`rw-r--r--`: no search bit). Returns how many entries were changed.
+private func setFolderModes(_ ipa: URL, _ mode: UInt32) throws -> Int {
+    var data = try Data(contentsOf: ipa)
+    func u16(_ o: Int) -> Int { Int(data[o]) | Int(data[o + 1]) << 8 }
+    var changed = 0, pos = 0
+    while let start = data[pos...].firstRange(of: Data([0x50, 0x4B, 0x01, 0x02]))?.lowerBound {
+        let nameLength = u16(start + 28)
+        let name = String(decoding: data[(start + 46)..<(start + 46 + nameLength)], as: UTF8.self)
+        if name.hasSuffix("/") {
+            data[start + 5] = 3 // made by Unix: the high 16 bits of the external attributes are the mode
+            let attributes = (UInt32(0o040000) | mode) << 16 | 0x10
+            for i in 0..<4 { data[start + 38 + i] = UInt8((attributes >> (8 * UInt32(i))) & 0xFF) }
+            changed += 1
+        }
+        pos = start + 46
+    }
+    try data.write(to: ipa)
+    return changed
+}
+
 private func isEmpty(_ dir: URL) -> Bool {
     ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).isEmpty
 }
@@ -31,6 +52,20 @@ struct IPAImporterTests {
 
         let info = try await IPAImporter.inspect(ipa: ipa, runner: ProcessRunner(), scratchRoot: scratch)
         #expect(info == AppInfo(bundleID: "com.example.demo", name: "Démo", version: "2.0", executable: "Demo"))
+        #expect(isEmpty(scratch))
+    }
+
+    /// Some tools write folders without the search bit: ditto reproduces it, and the archive was
+    /// refused as unreadable (issue #1).
+    @Test func acceptsFoldersWithoutSearchPermission() async throws {
+        let root = try tempDir(); defer { try? FileManager.default.removeItem(at: root) }
+        let scratch = try tempDir(); defer { try? FileManager.default.removeItem(at: scratch) }
+        try FakeIPA.makeApp(at: root, bundleID: "com.example.demo")
+        let ipa = try await zipIPA(root)
+        #expect(try setFolderModes(ipa, 0o644) >= 2)
+
+        let info = try await IPAImporter.inspect(ipa: ipa, runner: ProcessRunner(), scratchRoot: scratch)
+        #expect(info.bundleID == "com.example.demo")
         #expect(isEmpty(scratch))
     }
 

@@ -113,7 +113,7 @@
 "error.deviceLocked" = "L'appareil est verrouillé. Déverrouille-le puis réessaie.";
 "error.maxAppsReached" = "Cet appareil a déjà 3 apps installées avec un compte gratuit. Supprimes-en une pour continuer.";
 "error.encryptedIPA" = "Les IPA de l'App Store sont chiffrés et ne peuvent pas être installés.";
-"error.invalidIPA" = "Ce fichier n'est pas une app valide. Choisis un fichier .ipa.";
+"error.invalidIPA" = "Ce fichier n'est pas une app valide. Choisis un fichier .ipa.\nRaison : %@";
 "error.provisioningFailed" = "Impossible de créer le profil de provisionnement. Vérifie ton compte dans Xcode et réessaie.";
 "error.installFailed" = "L'installation a échoué. Vérifie que l'appareil est déverrouillé et réessaie.";
 "error.commandFailed" = "Une commande Xcode a échoué. Réessaie, ou ouvre Xcode pour vérifier son état.";

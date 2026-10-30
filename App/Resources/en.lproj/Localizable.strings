@@ -113,7 +113,7 @@
 "error.deviceLocked" = "The device is locked. Unlock it and try again.";
 "error.maxAppsReached" = "This device already has 3 apps installed with a free account. Delete one to continue.";
 "error.encryptedIPA" = "App Store IPAs are encrypted and can't be installed.";
-"error.invalidIPA" = "This file isn't a valid app. Choose an .ipa file.";
+"error.invalidIPA" = "This file isn't a valid app. Choose an .ipa file.\nReason: %@";
 "error.provisioningFailed" = "Couldn't create the provisioning profile. Check your account in Xcode and try again.";
 "error.installFailed" = "Installation failed. Make sure the device is unlocked and try again.";
 "error.commandFailed" = "An Xcode command failed. Try again, or open Xcode to check its state.";

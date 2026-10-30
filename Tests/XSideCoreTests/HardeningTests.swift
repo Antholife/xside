@@ -48,16 +48,28 @@ private struct OverflowingDitto: CommandRunning {
 }
 
 struct ZipLimitsTests {
-    @Test func anUnreadableFolderCountsAsOverTheLimit() throws {
+    /// A locked folder (an archive can set mode 000) is opened back to its owner, then measured.
+    @Test func aLockedFolderIsRepairedThenMeasured() throws {
         let root = try tempDir()
         let locked = root.appendingPathComponent("locked")
-        try FileManager.default.createDirectory(at: locked, withIntermediateDirectories: true)
-        try Data(count: 10).write(to: locked.appendingPathComponent("f"))
+        let inner = locked.appendingPathComponent("inner")
+        try FileManager.default.createDirectory(at: inner, withIntermediateDirectories: true)
+        try Data(count: 10).write(to: inner.appendingPathComponent("f"))
+        chmod(inner.path, 0o644)
         chmod(locked.path, 0)
-        defer { chmod(locked.path, 0o755); try? FileManager.default.removeItem(at: root) }
-        #expect(ZipLimits.writtenTotals(root).bytes == UInt64.max)
-        chmod(locked.path, 0o755)
-        #expect(ZipLimits.writtenTotals(root).bytes == 10)
+        defer { chmod(locked.path, 0o755); chmod(inner.path, 0o755); try? FileManager.default.removeItem(at: root) }
+        #expect(ZipLimits.writtenTotals(root) == (3, 10))
+        #expect(FileManager.default.isReadableFile(atPath: inner.appendingPathComponent("f").path))
+    }
+
+    /// Links are never followed nor changed: the repair stays inside the extracted tree.
+    @Test func theRepairLeavesLinkTargetsAlone() throws {
+        let root = try tempDir(), outside = try tempDir()
+        defer { chmod(outside.path, 0o755); try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: outside) }
+        chmod(outside.path, 0o500)
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("link"), withDestinationURL: outside)
+        #expect(ZipLimits.repairPermissions(root))
+        #expect((try FileManager.default.attributesOfItem(atPath: outside.path)[.posixPermissions] as? Int) == 0o500)
     }
 
     @Test func stopsAnExtractionThatWritesMoreThanAllowed() async throws {
@@ -181,13 +193,13 @@ struct BundleIdentifierTests {
     @Test func importRefusesInvalidIdentifier() throws {
         let root = try tempDir(); defer { try? FileManager.default.removeItem(at: root) }
         let app = try FakeIPA.makeApp(at: root, bundleID: "com.bad id")
-        #expect(throws: XSideError.invalidIPA("CFBundleIdentifier invalide")) { try IPAInspector.info(of: app) }
+        #expect(throws: XSideError.invalidIPA("Invalid CFBundleIdentifier")) { try IPAInspector.info(of: app) }
     }
 
     @Test func refusesHugeInfoPlist() throws {
         let root = try tempDir(); defer { try? FileManager.default.removeItem(at: root) }
         let app = try FakeIPA.makeApp(at: root, plistExtras: ["Padding": String(repeating: "x", count: 1_100_000)])
-        #expect(throws: XSideError.invalidIPA("Info.plist trop volumineux")) { try IPAInspector.info(of: app) }
+        #expect(throws: XSideError.invalidIPA("Info.plist too large")) { try IPAInspector.info(of: app) }
     }
 }
 

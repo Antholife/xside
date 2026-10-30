@@ -40,33 +40,69 @@ public enum ZipLimits {
                     try await Task.sleep(for: watchInterval)
                     let written = writtenTotals(destination)
                     if written.entries > maxFiles || written.bytes > maxBytes {
-                        throw XSideError.invalidIPA("IPA refusé : il se décompresse en plus que ce qu'il annonce")
+                        throw XSideError.invalidIPA("Rejected: it expands to more than it declares")
                     }
                 }
             }
             defer { group.cancelAll() }
             while let finished = try await group.next() {
-                if let result = finished { return result }
+                guard let result = finished else { continue }
+                // Last measure once ditto is done: it sets folder permissions at the end, and this
+                // pass also gives the owner access back to all of them (see `writtenTotals`).
+                let written = writtenTotals(destination)
+                if result.status == 0, written.entries > maxFiles || written.bytes > maxBytes {
+                    throw XSideError.invalidIPA("Rejected: it expands to more than it declares")
+                }
+                return result
             }
             throw CancellationError()
         }
     }
 
-    /// Files and bytes under `directory`, without following links. Fails closed: a subtree that
-    /// can't be read (an archive can set its folders to mode 000) counts as over every limit.
+    /// Files and bytes under `directory`, without following links. Some tools write archives whose
+    /// folders lack the search bit (`rw-r--r--`), which `ditto` reproduces: such folders are made
+    /// accessible to their owner, then measured. Fails closed: a subtree that still can't be read
+    /// counts as over every limit.
     static func writtenTotals(_ directory: URL) -> (entries: Int, bytes: UInt64) {
+        if let totals = walk(directory) { return totals }
+        if repairPermissions(directory), let totals = walk(directory) { return totals }
+        return (Int.max, UInt64.max)
+    }
+
+    /// Totals under `directory`, or nil when part of it can't be read.
+    private static func walk(_ directory: URL) -> (entries: Int, bytes: UInt64)? {
         let unreadable = UnreadableFlag()
-        guard let walk = FileManager.default.enumerator(
+        guard let items = FileManager.default.enumerator(
             at: directory, includingPropertiesForKeys: [.fileSizeKey, .isSymbolicLinkKey], options: [],
             errorHandler: { _, _ in unreadable.set(); return true }) else {
             return (0, 0)
         }
         var entries = 0, bytes: UInt64 = 0
-        for case let url as URL in walk {
+        for case let url as URL in items {
             entries += 1
             bytes += UInt64((try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0)
         }
-        return unreadable.isSet ? (Int.max, UInt64.max) : (entries, bytes)
+        return unreadable.isSet ? nil : (entries, bytes)
+    }
+
+    /// Gives the owner read, write and search on every folder and read and write on every file
+    /// under `url` (links are left alone, never followed). False when something can't be fixed;
+    /// an entry that vanished meanwhile (ditto still running) is fine.
+    static func repairPermissions(_ url: URL) -> Bool {
+        var st = stat()
+        guard lstat(url.path, &st) == 0 else { return errno == ENOENT }
+        let kind = st.st_mode & S_IFMT
+        if kind == S_IFLNK { return true }
+        let needed: mode_t = kind == S_IFDIR ? 0o700 : 0o600
+        if st.st_mode & needed != needed,
+           fchmodat(AT_FDCWD, url.path, (st.st_mode & 0o7777) | needed, AT_SYMLINK_NOFOLLOW) != 0 {
+            return false
+        }
+        guard kind == S_IFDIR else { return true }
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: url.path) else {
+            return lstat(url.path, &st) != 0 && errno == ENOENT
+        }
+        return names.allSatisfy { repairPermissions(url.appendingPathComponent($0)) }
     }
 
     private final class UnreadableFlag: @unchecked Sendable {
@@ -80,14 +116,14 @@ public enum ZipLimits {
     public static func check(_ url: URL) throws {
         let totals = try scan(url)
         if totals.entries > maxEntries {
-            throw XSideError.invalidIPA("IPA refusé : trop de fichiers (\(totals.entries))")
+            throw XSideError.invalidIPA("Rejected: too many files (\(totals.entries))")
         }
         if totals.uncompressed > maxUncompressedBytes {
-            throw XSideError.invalidIPA("IPA refusé : plus de 4 Go une fois décompressé")
+            throw XSideError.invalidIPA("Rejected: over 4 GB once unzipped")
         }
         if totals.uncompressed > ratioFloor,
            totals.uncompressed / max(totals.compressed, 1) > maxRatio {
-            throw XSideError.invalidIPA("IPA refusé : taux de compression suspect")
+            throw XSideError.invalidIPA("Rejected: suspicious compression ratio")
         }
     }
 
@@ -100,20 +136,20 @@ public enum ZipLimits {
         } catch let error as XSideError {
             throw error
         } catch {
-            throw XSideError.invalidIPA("Archive zip illisible")
+            throw XSideError.invalidIPA("Unreadable zip archive")
         }
     }
 
     private static func scanDirectory(_ url: URL) throws -> Totals {
-        func bad(_ why: String) -> XSideError { .invalidIPA("Archive zip invalide : \(why)") }
+        func bad(_ why: String) -> XSideError { .invalidIPA("Invalid zip archive: \(why)") }
         let handle: FileHandle
-        do { handle = try FileHandle(forReadingFrom: url) } catch { throw bad("illisible") }
+        do { handle = try FileHandle(forReadingFrom: url) } catch { throw bad("unreadable") }
         defer { try? handle.close() }
         let size = try handle.seekToEnd()
         func read(_ offset: UInt64, _ count: Int) throws -> Data {
-            guard offset <= size, UInt64(count) <= size - offset else { throw bad("tronquée") }
+            guard offset <= size, UInt64(count) <= size - offset else { throw bad("truncated") }
             try handle.seek(toOffset: offset)
-            guard let data = try handle.read(upToCount: count), data.count == count else { throw bad("tronquée") }
+            guard let data = try handle.read(upToCount: count), data.count == count else { throw bad("truncated") }
             return data
         }
 
@@ -122,7 +158,7 @@ public enum ZipLimits {
         let tail = try read(size - UInt64(tailLength), tailLength)
         guard tailLength >= 22,
               let eocd = stride(from: tailLength - 22, through: 0, by: -1).first(where: { tail.u32($0) == 0x0605_4B50 })
-        else { throw bad("fin de répertoire introuvable") }
+        else { throw bad("end of central directory not found") }
         var entries = UInt64(tail.u16(eocd + 10))
         var directorySize = UInt64(tail.u32(eocd + 12))
         var directoryOffset = UInt64(tail.u32(eocd + 16))
@@ -132,15 +168,15 @@ public enum ZipLimits {
         let eocdOffset = size - UInt64(tailLength) + UInt64(eocd)
         let locator = eocdOffset >= 20 ? try read(eocdOffset - 20, 20) : Data()
         let hasZIP64 = locator.count == 20 && locator.u32(0) == 0x0706_4B50
-        if directorySize == 0xFFFF_FFFF || directoryOffset == 0xFFFF_FFFF, !hasZIP64 { throw bad("ZIP64 invalide") }
+        if directorySize == 0xFFFF_FFFF || directoryOffset == 0xFFFF_FFFF, !hasZIP64 { throw bad("invalid ZIP64") }
         if hasZIP64 {
             let record = try read(locator.u64(8), 56)
-            guard record.u32(0) == 0x0606_4B50 else { throw bad("ZIP64 invalide") }
+            guard record.u32(0) == 0x0606_4B50 else { throw bad("invalid ZIP64") }
             entries = record.u64(32)
             directorySize = record.u64(40)
             directoryOffset = record.u64(48)
         }
-        guard directorySize <= UInt64(maxDirectoryBytes) else { throw bad("répertoire trop grand") }
+        guard directorySize <= UInt64(maxDirectoryBytes) else { throw bad("central directory too large") }
         let directory = try read(directoryOffset, Int(directorySize))
 
         var pos = 0, count = 0
@@ -154,7 +190,7 @@ public enum ZipLimits {
             let extraLength = Int(directory.u16(pos + 30))
             let commentLength = Int(directory.u16(pos + 32))
             let extraStart = pos + 46 + nameLength
-            guard extraStart + extraLength + commentLength <= directory.count else { throw bad("entrée tronquée") }
+            guard extraStart + extraLength + commentLength <= directory.count else { throw bad("truncated entry") }
             if entryUncompressed == 0xFFFF_FFFF || entryCompressed == 0xFFFF_FFFF {
                 // ZIP64 extra field (0x0001): the 64-bit values, only for the fields set to 0xFFFFFFFF.
                 var e = extraStart
@@ -176,13 +212,13 @@ public enum ZipLimits {
             }
             let (c, o1) = compressed.addingReportingOverflow(entryCompressed)
             let (u, o2) = uncompressed.addingReportingOverflow(entryUncompressed)
-            guard !o1, !o2 else { throw bad("tailles invalides") }
+            guard !o1, !o2 else { throw bad("invalid sizes") }
             compressed = c
             uncompressed = u
             pos = extraStart + extraLength + commentLength
         }
         // The end record's count must match what the directory holds (unless already too many).
-        if count <= maxEntries, UInt64(count) != entries { throw bad("répertoire incohérent") }
+        if count <= maxEntries, UInt64(count) != entries { throw bad("inconsistent central directory") }
         return Totals(entries: count, compressed: compressed, uncompressed: uncompressed)
     }
 }
