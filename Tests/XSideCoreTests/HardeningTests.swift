@@ -48,6 +48,18 @@ private struct OverflowingDitto: CommandRunning {
 }
 
 struct ZipLimitsTests {
+    @Test func anUnreadableFolderCountsAsOverTheLimit() throws {
+        let root = try tempDir()
+        let locked = root.appendingPathComponent("locked")
+        try FileManager.default.createDirectory(at: locked, withIntermediateDirectories: true)
+        try Data(count: 10).write(to: locked.appendingPathComponent("f"))
+        chmod(locked.path, 0)
+        defer { chmod(locked.path, 0o755); try? FileManager.default.removeItem(at: root) }
+        #expect(ZipLimits.writtenTotals(root).bytes == UInt64.max)
+        chmod(locked.path, 0o755)
+        #expect(ZipLimits.writtenTotals(root).bytes == 10)
+    }
+
     @Test func stopsAnExtractionThatWritesMoreThanAllowed() async throws {
         let ipa = try write(syntheticZip([(10, 20)]))
         let destination = try tempDir(); defer { try? FileManager.default.removeItem(at: destination) }
@@ -251,16 +263,17 @@ struct EntitlementsTests {
         ]
         let groups = Resigner.keychainGroups(original, team: "NEWTEAM456", appID: "NEWTEAM456.com.vendor.app.NEWTEAM456")
         #expect(groups == ["NEWTEAM456.com.vendor.app.NEWTEAM456", "NEWTEAM456.com.vendor.app",
-                           "NEWTEAM456.com.vendor.shared", "NEWTEAM456.com.vendor.other", "NEWTEAM456.com.partner",
-                           "com.apple.token"])
+                           "NEWTEAM456.com.vendor.shared", "NEWTEAM456.com.vendor.other", "com.apple.token"])
+        // Another vendor's group (com.partner) is never granted: only the app's own vendor shares.
         #expect(Resigner.keychainGroups(nil, team: "T", appID: "T.b") == ["T.b"])
         // A group copying another XSide app's own group is never granted; shared vendor groups are.
-        let crafted: [String: Any] = ["keychain-access-groups": ["EVILTEAM01.com.victim.app.T", "EVILTEAM01.com.vendor.shared"],
-                                      "com.apple.developer.team-identifier": "EVILTEAM01"]
-        #expect(Resigner.keychainGroups(crafted, team: "T", appID: "T.b", otherBundleIDs: ["com.victim.app.T"])
+        let crafted: [String: Any] = ["keychain-access-groups": ["EVILTEAM01.com.vendor.app.T", "EVILTEAM01.com.vendor.shared",
+                                                                 "EVILTEAM01.com.victim.data"],
+                                      "application-identifier": "EVILTEAM01.com.vendor.tool"]
+        #expect(Resigner.keychainGroups(crafted, team: "T", appID: "T.b", otherBundleIDs: ["com.vendor.app.T"])
                 == ["T.b", "T.com.vendor.shared"])
         let future: [String: Any] = ["keychain-access-groups": ["EVILTEAM01.com.later.app.T"],
-                                     "com.apple.developer.team-identifier": "EVILTEAM01"]
+                                     "application-identifier": "EVILTEAM01.com.later.tool"]
         #expect(Resigner.keychainGroups(future, team: "T", appID: "T.b") == ["T.b"])
     }
 
@@ -271,7 +284,7 @@ struct EntitlementsTests {
                                           expirationDate: Date(), deviceUDIDs: [], entitlements: granted)
         let data = try Resigner.signingEntitlements(
             profile: profile, bundleID: "com.vendor.app.NEWTEAM456",
-            original: ["com.apple.developer.team-identifier": "OLDTEAM123",
+            original: ["application-identifier": "OLDTEAM123.com.vendor.app",
                        "keychain-access-groups": ["OLDTEAM123.com.vendor.shared", "*"]])
         let signed = try #require(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
         #expect(signed["keychain-access-groups"] as? [String]

@@ -130,6 +130,14 @@ public struct Resigner: Sendable {
     static func keychainGroups(_ original: [String: Any]?, team: String, appID: String,
                                otherBundleIDs: Set<String> = []) -> [String] {
         let reserved = Set(otherBundleIDs.map { "\(team).\($0)" })
+        // Allowlist: a shared group is kept only within the app's own vendor, the first two
+        // components of its original id ("com.google" for com.google.ios.youtube, which keeps
+        // com.google.common.SSO). Unknown original id: nothing beyond `appID`.
+        let originalID = (original?["application-identifier"] as? String).flatMap { id -> String? in
+            guard let dot = id.firstIndex(of: ".") else { return nil }
+            return String(id[id.index(after: dot)...])
+        }
+        let vendor = originalID.map { $0.split(separator: ".").prefix(2).joined(separator: ".") + "." }
         let declared = original?["keychain-access-groups"] as? [String] ?? []
         // The original team: its own key, else the prefix of its application identifier.
         let oldTeam = original?["com.apple.developer.team-identifier"] as? String
@@ -153,7 +161,10 @@ public struct Resigner: Sendable {
             }
             // Also never a group shaped like an XSide-signed id (`<team>.<original>.<team>`): that
             // would target an app installed later, before its id is known here.
-            if let mapped, !reserved.contains(mapped), !mapped.hasSuffix(".\(team)"), !groups.contains(mapped) {
+            let sameVendor = mapped == "com.apple.token"
+                || (vendor.map { mapped?.hasPrefix("\(team).\($0)") ?? false } ?? false)
+            if let mapped, sameVendor, !reserved.contains(mapped), !mapped.hasSuffix(".\(team)"),
+               !groups.contains(mapped) {
                 groups.append(mapped)
             }
         }

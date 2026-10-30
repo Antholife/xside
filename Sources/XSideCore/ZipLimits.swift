@@ -52,10 +52,13 @@ public enum ZipLimits {
         }
     }
 
-    /// Files and bytes under `directory`, without following links.
+    /// Files and bytes under `directory`, without following links. Fails closed: a subtree that
+    /// can't be read (an archive can set its folders to mode 000) counts as over every limit.
     static func writtenTotals(_ directory: URL) -> (entries: Int, bytes: UInt64) {
+        let unreadable = UnreadableFlag()
         guard let walk = FileManager.default.enumerator(
-            at: directory, includingPropertiesForKeys: [.fileSizeKey, .isSymbolicLinkKey], options: []) else {
+            at: directory, includingPropertiesForKeys: [.fileSizeKey, .isSymbolicLinkKey], options: [],
+            errorHandler: { _, _ in unreadable.set(); return true }) else {
             return (0, 0)
         }
         var entries = 0, bytes: UInt64 = 0
@@ -63,7 +66,14 @@ public enum ZipLimits {
             entries += 1
             bytes += UInt64((try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0)
         }
-        return (entries, bytes)
+        return unreadable.isSet ? (Int.max, UInt64.max) : (entries, bytes)
+    }
+
+    private final class UnreadableFlag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = false
+        func set() { lock.withLock { value = true } }
+        var isSet: Bool { lock.withLock { value } }
     }
 
     /// Throws `invalidIPA` when the archive is unreadable as a zip or past a limit.
