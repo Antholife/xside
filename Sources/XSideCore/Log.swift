@@ -80,11 +80,15 @@ public final class LogStore: @unchecked Sendable {
         }
     }
 
-    /// A signing identity: its SHA-1 and the person's id in "Apple Development: name (ABCDE12345)".
+    /// A signing identity "Apple Development: name (ABCDE12345)": its SHA-1, the person's name
+    /// (an e-mail, or a real name for some accounts) and their id.
     public func registerIdentity(name: String, sha1: String) {
         register(sha1, as: "certificate")
-        if let open = name.lastIndex(of: "("), let close = name.lastIndex(of: ")"), open < close {
-            register(String(name[name.index(after: open)..<close]), as: "person")
+        guard let open = name.lastIndex(of: "("), let close = name.lastIndex(of: ")"), open < close else { return }
+        register(String(name[name.index(after: open)..<close]), as: "person")
+        let start = name.firstIndex(of: ":").map { name.index(after: $0) } ?? name.startIndex
+        if start < open {
+            register(name[start..<open].trimmingCharacters(in: .whitespaces), as: "person-name")
         }
     }
 

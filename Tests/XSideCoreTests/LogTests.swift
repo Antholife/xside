@@ -31,7 +31,14 @@ struct LogTests {
         store.registerIdentity(name: "Apple Development: someone@icloud.com (LL6YVU88MW)",
                                sha1: "0123456789ABCDEF0123456789ABCDEF01234567")
         #expect(store.redact("find-certificate -c 'Apple Development: someone@icloud.com (LL6YVU88MW)' 0123456789ABCDEF0123456789ABCDEF01234567")
-                == "find-certificate -c 'Apple Development: <email> (<person-1>)' <certificate-1>")
+                == "find-certificate -c 'Apple Development: <person-name-1> (<person-1>)' <certificate-1>")
+    }
+
+    @Test func masksARealNameInAnIdentity() {
+        let store = LogStore()
+        store.registerIdentity(name: "Apple Development: Jane Appleseed (AB12CD34EF)", sha1: "0123456789ABCDEF0123456789ABCDEF01234567")
+        #expect(store.redact("-c 'Apple Development: Jane Appleseed (AB12CD34EF)'")
+                == "-c 'Apple Development: <person-name-1> (<person-1>)'")
     }
 
     @Test func aValueKeepsItsPlaceholder() {
