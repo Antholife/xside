@@ -103,13 +103,42 @@ private struct PopoverContent: View {
                     } else {
                         ForEach(group.apps) { entry in
                             AppRow(entry: entry, step: model.jobs[entry.id], canRefresh: model.canRefresh(entry),
-                                   needsUSB: group.needsUSB) {
-                                model.refreshNow(entry.job)
-                            }
+                                   canManage: model.canManage(entry),
+                                   isUninstalling: model.uninstalling.contains(entry.id),
+                                   needsUSB: group.needsUSB, deviceName: group.name,
+                                   onRefresh: { model.refreshNow(entry.job) },
+                                   onUninstall: { uninstall(entry, deviceName: group.name) },
+                                   onStopRefreshing: { stopRefreshing(entry, deviceName: group.name) })
                         }
                     }
                 }
             }
+        }
+    }
+
+    /// Confirmed first; on failure (device out of reach, devicectl error) the alert offers to stop
+    /// refreshing instead. Alerts wait for the menu to close, so they don't open under it.
+    private func uninstall(_ entry: AppEntry, deviceName: String) {
+        let app = entry.record.options.displayName ?? entry.record.displayName
+        DispatchQueue.main.async {
+            guard AppRowAlerts.confirmUninstall(app: app, device: deviceName) else { return }
+            Task {
+                do {
+                    try await model.uninstall(entry)
+                } catch {
+                    if AppRowAlerts.uninstallFailed(app: app, device: deviceName, error: error) {
+                        await model.stopRefreshing(entry)
+                    }
+                }
+            }
+        }
+    }
+
+    private func stopRefreshing(_ entry: AppEntry, deviceName: String) {
+        let app = entry.record.options.displayName ?? entry.record.displayName
+        DispatchQueue.main.async {
+            guard AppRowAlerts.confirmStopRefreshing(app: app, device: deviceName) else { return }
+            Task { await model.stopRefreshing(entry) }
         }
     }
 }

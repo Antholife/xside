@@ -18,6 +18,7 @@ public protocol Resigning: Sendable {
 
 public protocol Installing: Sendable {
     func install(app: URL, deviceID: String) async throws
+    func uninstall(bundleID: String, deviceID: String) async throws
 }
 
 extension Provisioner: Provisioning {}
@@ -111,6 +112,54 @@ public actor SideloadPipeline {
         } onCancel: {
             job.cancel()
         }
+    }
+
+    /// Removes the record's app from the device, then its installation from the library (the
+    /// record itself stays, even with no installation left: see `AppLibrary.removeIfEmpty`).
+    /// Queued on the device's chain like an install, so it never overlaps a job on that device;
+    /// no provisioning, so the provisioning lock isn't taken. The app removed is the one the
+    /// device was signed with. `developerDir` is asked once the job runs, like an install's
+    /// environment: nil leaves `DEVELOPER_DIR` to the runner. Throws `recordNotFound` when the
+    /// installation is gone (removed meanwhile); on failure the library is left untouched.
+    public func uninstall(recordID: UUID, deviceID: String,
+                          developerDir: @escaping @Sendable () async -> URL?) async throws {
+        let previous = tails[deviceID]?.task
+        let token = UUID()
+        let job = Task<Void, Error> {
+            await previous?.value
+            try Task.checkCancellation()
+            try await self.performUninstall(recordID: recordID, deviceID: deviceID, developerDir: developerDir)
+        }
+        tails[deviceID] = (token, Task { _ = try? await job.value })
+        defer {
+            if tails[deviceID]?.token == token { tails[deviceID] = nil }
+        }
+        try await withTaskCancellationHandler {
+            try await job.value
+        } onCancel: {
+            job.cancel()
+        }
+    }
+
+    private nonisolated func performUninstall(recordID: UUID, deviceID: String,
+                                              developerDir: @Sendable () async -> URL?) async throws {
+        guard let record = await library.records().first(where: { $0.id == recordID }),
+              let installation = record.installations.first(where: { $0.deviceID == deviceID }) else {
+            throw XSideError.recordNotFound
+        }
+        let bundleID = installation.signedBundleID ?? record.signedBundleID
+        if let dir = await developerDir() {
+            try await CommandEnvironment.withDeveloperDir(dir) { [installer] in
+                try await installer.uninstall(bundleID: bundleID, deviceID: deviceID)
+            }
+        } else {
+            try await installer.uninstall(bundleID: bundleID, deviceID: deviceID)
+        }
+        // Still on the device's chain: a job queued behind sees the installation gone. A record
+        // deleted meanwhile has nothing left to forget.
+        do {
+            try await library.removeInstallation(recordID: recordID, deviceID: deviceID)
+        } catch XSideError.recordNotFound {}
     }
 
     /// A fixed environment (tests, callers that just probed).

@@ -106,6 +106,8 @@ final class AppModel {
     var onNeedsEvaluation: (() -> Void)?
     /// A device was removed from XSide: forget what is kept per (app, device).
     var onDeviceRemoved: ((_ deviceID: String) -> Void)?
+    /// An installation is gone (uninstalled, or no longer refreshed): forget what is kept for it.
+    var onInstallationRemoved: ((_ job: RefreshJob) -> Void)?
     /// Every pipeline run that ends (install, manual or automatic refresh), with its error if it failed.
     var onJobFinished: ((_ job: RefreshJob, _ error: (any Error)?, _ automatic: Bool,
                                _ wasRefresh: Bool) -> Void)?
@@ -789,6 +791,69 @@ final class AppModel {
         }
         await reloadRecords()
         return recorded
+    }
+
+    // MARK: - Uninstall / stop refreshing
+
+    /// Rows being uninstalled from their device right now (their row says so).
+    private(set) var uninstalling: Set<JobKey> = []
+
+    /// Uninstall and "stop refreshing" are offered while no job runs on the row.
+    func canManage(_ entry: AppEntry) -> Bool {
+        jobs[entry.id] == nil && !removingDevices.contains(entry.installation.deviceID)
+    }
+
+    /// Removes the app from its device, then stops managing it there (see `forgetInstallation`).
+    /// Runs on the device's pipeline chain, after any job already queued there; the row stays
+    /// claimed meanwhile, so no refresh can start on it. Throws `deviceUnavailable` at once when
+    /// the device isn't reachable; on failure nothing is forgotten.
+    func uninstall(_ entry: AppEntry) async throws {
+        let key = entry.id
+        guard canManage(entry) else { return }
+        guard devices.contains(where: { $0.id == key.deviceID && $0.isAvailable }) else {
+            throw XSideError.deviceUnavailable
+        }
+        claim(key) // before the first await
+        uninstalling.insert(key)
+        defer {
+            uninstalling.remove(key)
+            release(key) // after `installationRemoved`: an emptied record is deleted only then
+        }
+        let developerDir: @Sendable () async -> URL? = { [weak self] in await self?.lastKnownDeveloperDir }
+        do {
+            try await pipeline.uninstall(recordID: key.recordID, deviceID: key.deviceID, developerDir: developerDir)
+        } catch XSideError.recordNotFound {
+            // Removed meanwhile (device removed from XSide): nothing left to forget.
+        }
+        await installationRemoved(key)
+    }
+
+    /// Stops refreshing the app on that device without touching the device (it may be out of
+    /// reach): the app stays there until it expires.
+    func stopRefreshing(_ entry: AppEntry) async {
+        let key = entry.id
+        guard canManage(entry) else { return }
+        claim(key)
+        defer { release(key) }
+        do {
+            try await library.removeInstallation(recordID: key.recordID, deviceID: key.deviceID)
+        } catch XSideError.recordNotFound {
+        } catch {
+            Self.logger.error("stop refreshing failed: \(String(describing: error), privacy: .public)")
+            return
+        }
+        await installationRemoved(key)
+    }
+
+    /// The installation left the library: its reminder and notification state go too, and a
+    /// record left without any installation is deleted (with its files) once nothing uses it.
+    private func installationRemoved(_ key: JobKey) async {
+        await reloadRecords()
+        onInstallationRemoved?(RefreshJob(recordID: key.recordID, deviceID: key.deviceID))
+        if records.first(where: { $0.id == key.recordID })?.installations.isEmpty == true {
+            keptEmptyRecords.insert(key.recordID) // dropped by `release`, unless still in use
+        }
+        await updateAppIDCounter()
     }
 
     /// Rows with an install or refresh running.

@@ -38,8 +38,12 @@ private actor CallLog {
                 _ profileURL: URL, _ profile: ProvisioningProfile) {
         resignArgs.append((ipa, workDir, bundleID, icon, profileURL, profile))
     }
-    func install(_ app: URL, _ id: String) { installs.append((app, id)) }
-    var total: Int { provisionUDIDs.count + resignArgs.count + installs.count }
+    private(set) var uninstalls: [(bundleID: String, deviceID: String)] = []
+    /// Install ("install:<device>") and uninstall ("uninstall:<device>") calls, in call order.
+    private(set) var deviceCalls: [String] = []
+    func install(_ app: URL, _ id: String) { installs.append((app, id)); deviceCalls.append("install:\(id)") }
+    func uninstall(_ bundleID: String, _ id: String) { uninstalls.append((bundleID, id)); deviceCalls.append("uninstall:\(id)") }
+    var total: Int { provisionUDIDs.count + resignArgs.count + installs.count + uninstalls.count }
 }
 
 /// Returns a profile listing exactly the requested UDIDs. With `dir`, writes a real per-call
@@ -94,6 +98,14 @@ private struct FakeInstaller: Installing {
         if delay > .zero { try? await Task.sleep(for: delay) }
         await gauge?.leave()
         await log.install(app, deviceID)
+        if let error { throw error }
+    }
+    func uninstall(bundleID: String, deviceID: String) async throws {
+        await gauge?.enter()
+        if let rendezvous { await gauge?.rendezvous(rendezvous) }
+        if delay > .zero { try? await Task.sleep(for: delay) }
+        await gauge?.leave()
+        await log.uninstall(bundleID, deviceID)
         if let error { throw error }
     }
 }
@@ -600,6 +612,9 @@ private struct DirInstaller: Installing {
     func install(app: URL, deviceID: String) async throws {
         await dirs.add(CommandEnvironment.overrides["DEVELOPER_DIR"])
     }
+    func uninstall(bundleID: String, deviceID: String) async throws {
+        await dirs.add(CommandEnvironment.overrides["DEVELOPER_DIR"])
+    }
 }
 
 struct PipelineDeveloperDirTests {
@@ -612,5 +627,119 @@ struct PipelineDeveloperDirTests {
         _ = try await pipeline.install(recordID: f.record.id, device: device(), env: env)
         #expect(await dirs.dirs == [env.developerDir.path, env.developerDir.path])
         #expect(CommandEnvironment.overrides["DEVELOPER_DIR"] == nil)
+    }
+
+    @Test func uninstallRunsWithTheJobsXcode() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let dirs = DirLog()
+        let pipeline = SideloadPipeline(library: f.library, provisioner: DirProvisioner(dirs: dirs),
+                                        resigner: FakeResigner(log: f.log), installer: DirInstaller(dirs: dirs),
+                                        workRoot: f.workRoot, now: { fixedNow })
+        for id in ["dev-1", "dev-2"] {
+            try await f.library.upsert(Installation(deviceID: id, installedAt: fixedNow, expiresAt: expiry),
+                                       for: f.record.id)
+        }
+        try await pipeline.uninstall(recordID: f.record.id, deviceID: "dev-1") { env.developerDir }
+        // No Xcode known: the runner's own environment applies.
+        try await pipeline.uninstall(recordID: f.record.id, deviceID: "dev-2") { nil }
+        #expect(await dirs.dirs == [env.developerDir.path, nil])
+    }
+}
+
+struct PipelineUninstallTests {
+    private func installed(_ f: Fixture, _ devices: [String], signedAs bundleID: String? = nil) async throws {
+        for id in devices {
+            try await f.library.upsert(Installation(deviceID: id, installedAt: fixedNow, expiresAt: expiry,
+                                                    signedBundleID: bundleID), for: f.record.id)
+        }
+    }
+
+    @Test func removesTheAppTheDeviceWasSignedWith() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        try await installed(f, ["dev-1"], signedAs: "com.custom.demo")
+        try await installed(f, ["dev-2"])
+        try await f.pipeline().uninstall(recordID: f.record.id, deviceID: "dev-1") { nil }
+
+        let calls = await f.log.uninstalls
+        #expect(calls.map(\.bundleID) == ["com.custom.demo"])
+        #expect(calls.map(\.deviceID) == ["dev-1"])
+        let record = try #require(await f.library.records().first)
+        #expect(record.installations.map(\.deviceID) == ["dev-2"])
+        #expect(await f.log.provisionUDIDs.isEmpty)
+    }
+
+    @Test func olderInstallationsUseTheRecordsBundleID() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        try await installed(f, ["dev-1"])
+        try await f.pipeline().uninstall(recordID: f.record.id, deviceID: "dev-1") { nil }
+        #expect(await f.log.uninstalls.map(\.bundleID) == [f.record.signedBundleID])
+        // The record stays, files included: the caller deletes it once nothing uses it.
+        let record = try #require(await f.library.records().first)
+        #expect(record.installations.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: f.library.root.appendingPathComponent(record.ipaPath).path))
+    }
+
+    @Test func failureKeepsTheInstallation() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        try await installed(f, ["dev-1"])
+        let pipeline = f.pipeline(installer: FakeInstaller(log: f.log, error: XSideError.deviceUnavailable))
+        await #expect(throws: XSideError.deviceUnavailable) {
+            try await pipeline.uninstall(recordID: f.record.id, deviceID: "dev-1") { nil }
+        }
+        let stored = try #require(await f.library.records().first?.installations.first)
+        #expect(stored == Installation(deviceID: "dev-1", installedAt: fixedNow, expiresAt: expiry))
+    }
+
+    @Test func unknownInstallationThrowsWithoutRunning() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        await #expect(throws: XSideError.recordNotFound) {
+            try await f.pipeline().uninstall(recordID: f.record.id, deviceID: "dev-1") { nil }
+        }
+        await #expect(throws: XSideError.recordNotFound) {
+            try await f.pipeline().uninstall(recordID: UUID(), deviceID: "dev-1") { nil }
+        }
+        #expect(await f.log.total == 0)
+    }
+
+    @Test func waitsForTheJobRunningOnTheDevice() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let gauge = ConcurrencyGauge()
+        let pipeline = f.pipeline(installer: FakeInstaller(log: f.log, gauge: gauge, delay: .milliseconds(150)))
+        let id = f.record.id
+        async let install = pipeline.install(recordID: id, device: device(), env: env)
+        try await Task.sleep(for: .milliseconds(30)) // the install is queued first
+        async let uninstall: Void = pipeline.uninstall(recordID: id, deviceID: "dev-1") { nil }
+        _ = try await (install, uninstall)
+        #expect(await gauge.maximum == 1)
+        #expect(await f.log.deviceCalls == ["install:dev-1", "uninstall:dev-1"])
+        #expect(try #require(await f.library.records().first).installations.isEmpty)
+    }
+
+    @Test func aJobQueuedBehindSeesTheInstallationGone() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        try await installed(f, ["dev-1"])
+        let gauge = ConcurrencyGauge()
+        let pipeline = f.pipeline(installer: FakeInstaller(log: f.log, gauge: gauge, delay: .milliseconds(150)))
+        let id = f.record.id
+        async let uninstall: Void = pipeline.uninstall(recordID: id, deviceID: "dev-1") { nil }
+        try await Task.sleep(for: .milliseconds(30))
+        // Queued behind the uninstall: a fresh install, not a refresh of the removed one.
+        async let install = pipeline.install(recordID: id, device: device(), env: env)
+        _ = try await (uninstall, install)
+        #expect(await gauge.maximum == 1)
+        #expect(await f.log.deviceCalls == ["uninstall:dev-1", "install:dev-1"])
+        #expect(try #require(await f.library.records().first).installations.map(\.deviceID) == ["dev-1"])
+    }
+
+    @Test func otherDevicesAreNotHeldUp() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        try await installed(f, ["dev-2"])
+        let gauge = ConcurrencyGauge()
+        let pipeline = f.pipeline(installer: FakeInstaller(log: f.log, gauge: gauge, rendezvous: 2))
+        let id = f.record.id
+        async let install = pipeline.install(recordID: id, device: device("dev-1", udid: "UDID-1"), env: env)
+        async let uninstall: Void = pipeline.uninstall(recordID: id, deviceID: "dev-2") { nil }
+        _ = try await (install, uninstall)
+        #expect(await gauge.maximum == 2)
     }
 }

@@ -300,6 +300,19 @@ public actor AppLibrary {
         return true
     }
 
+    /// Forgets one installation (uninstalled, or no longer refreshed). The record stays even
+    /// with none left, with its files: the caller deletes it with `removeIfEmpty` once no job
+    /// uses it. Returns false when there was no such installation.
+    @discardableResult
+    public func removeInstallation(recordID: UUID, deviceID: String) throws -> Bool {
+        let index = try indexOf(recordID)
+        guard items[index].installations.contains(where: { $0.deviceID == deviceID }) else { return false }
+        let previous = items
+        items[index].installations.removeAll { $0.deviceID == deviceID }
+        do { try save() } catch { items = previous; throw error }
+        return true
+    }
+
     /// Forgets a device: drops its installations from every record and deletes the records left
     /// with none (with their files), except those in `keeping` (a job is installing them on another
     /// device right now). One atomic save. Returns the number of installations removed.

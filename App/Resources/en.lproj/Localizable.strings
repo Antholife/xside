@@ -300,3 +300,18 @@
 "install.warning.shareKeychain" = "The app asks to share these groups with its vendor's other apps: %@. Turn this on only for an IPA you trust: a tampered app could read the other apps' sign-ins.";
 
 "settings.xcode.betaNotReady" = "Xcode beta found, but not ready yet: open it once to accept its license.";
+
+"popover.app.menu" = "Actions for %@";
+"popover.app.uninstallFrom" = "Uninstall from %@";
+"popover.app.stopRefreshing" = "Stop refreshing";
+"popover.app.uninstalling" = "Uninstalling…";
+"popover.app.uninstallTitle" = "Uninstall %1$@ from %2$@?";
+"popover.app.uninstallMessage" = "The app and its data will be deleted from the device, and XSide will stop refreshing it.";
+"popover.app.uninstall" = "Uninstall";
+"popover.app.uninstallFailedTitle" = "Couldn't uninstall %1$@ from %2$@";
+"popover.app.uninstallFailedFallback" = "You can also stop refreshing it: it stays on the device and stops opening once it expires.";
+"popover.app.stopTitle" = "Stop refreshing %@?";
+"popover.app.stopMessage" = "XSide will stop refreshing %1$@ on %2$@. The app stays on the device and stops opening once it expires.";
+"popover.app.stop" = "Stop";
+"popover.app.close" = "Close";
+"error.uninstallFailed" = "Uninstalling failed. Make sure the device is unlocked and try again.";

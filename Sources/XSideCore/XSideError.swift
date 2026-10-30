@@ -12,6 +12,8 @@ public enum XSideError: Error, Equatable, Sendable {
     case invalidIPA(String)
     case provisioningFailed(String)
     case installFailed(String)
+    /// `devicectl` couldn't remove the app from the device (its first error line).
+    case uninstallFailed(String)
     case commandFailed(tool: String, status: Int32)
     case recordNotFound
     /// A refresh got back a profile that doesn't expire later than the installed one.
@@ -39,6 +41,7 @@ public enum XSideError: Error, Equatable, Sendable {
         case .invalidIPA: "invalidIPA"
         case .provisioningFailed: "provisioningFailed"
         case .installFailed: "installFailed"
+        case .uninstallFailed: "uninstallFailed"
         case .commandFailed: "commandFailed"
         case .recordNotFound: "recordNotFound"
         case .profileNotRenewed: "profileNotRenewed"

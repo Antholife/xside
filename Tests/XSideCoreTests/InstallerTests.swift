@@ -81,3 +81,61 @@ ERROR: The device is not able to fulfill the requested usage assertion requireme
         }
     }
 }
+
+@Suite struct UninstallerTests {
+    @Test func uninstallCommand() async throws {
+        let runner = FakeRunner()
+        runner.stub("/usr/bin/xcrun", result: CommandResult(status: 0, stdout: Data("App uninstalled.\n".utf8), stderr: ""))
+        try await Installer(runner: runner).uninstall(bundleID: "com.example.demo.TEAM123456", deviceID: "FAKE-DEVICE")
+        #expect(runner.calls == [["/usr/bin/xcrun", "devicectl", "device", "uninstall", "app",
+                                  "--device", "FAKE-DEVICE", "com.example.demo.TEAM123456"]])
+        #expect(runner.timeouts == [CommandTimeout.deviceInstall])
+    }
+
+    @Test func appAlreadyGoneIsASuccess() async throws {
+        let samples = [
+            """
+            ERROR: Failed to uninstall the app. (com.apple.dt.CoreDeviceError error 1005 (0x3ED))
+                   BundleIdentifier = com.example.demo.TEAM123456
+                Underlying error (domain=com.apple.dt.CoreDeviceError, code=1005):
+                   The app com.example.demo.TEAM123456 is not installed on the device.
+            """,
+            "ERROR: No such app: com.example.demo.TEAM123456",
+            "ERROR: There is no app with bundle identifier com.example.demo.TEAM123456 on the device.",
+        ]
+        for sample in samples {
+            #expect(Installer.mapUninstallError(sample) == nil)
+            let runner = FakeRunner()
+            runner.stub("/usr/bin/xcrun", result: CommandResult(status: 1, stdout: Data(), stderr: sample))
+            try await Installer(runner: runner).uninstall(bundleID: "com.example.demo.TEAM123456", deviceID: "X")
+        }
+    }
+
+    @Test func mapsFailures() {
+        #expect(Installer.mapUninstallError(unreachable) == .deviceUnavailable)
+        #expect(Installer.mapUninstallError("ERROR: Unable to uninstall: the device is locked.") == .deviceLocked)
+        #expect(Installer.mapUninstallError("ERROR: Failed to uninstall the app.\n  detail")
+                == .uninstallFailed("Failed to uninstall the app."))
+        #expect(Installer.mapUninstallError("nothing useful") == .commandFailed(tool: "devicectl", status: -1))
+        // Names and lines outside error blocks never pass for "already gone".
+        #expect(Installer.mapUninstallError("ERROR: Failed to uninstall “Is Not Installed”")
+                == .uninstallFailed("Failed to uninstall “Is Not Installed”"))
+        #expect(Installer.mapUninstallError("The app is not installed\nERROR: Connection lost")
+                == .uninstallFailed("Connection lost"))
+        // An unreachable device wins over any other line.
+        #expect(Installer.mapUninstallError(unreachable + "\nERROR: The app is not installed") == .deviceUnavailable)
+    }
+
+    @Test func uninstallThrowsMappedError() async {
+        let runner = FakeRunner()
+        runner.stub("/usr/bin/xcrun", result: CommandResult(status: 1, stdout: Data(), stderr: unreachable))
+        await #expect(throws: XSideError.deviceUnavailable) {
+            try await Installer(runner: runner).uninstall(bundleID: "com.example.demo", deviceID: "X")
+        }
+        let r2 = FakeRunner()
+        r2.stub("/usr/bin/xcrun", result: CommandResult(status: 7, stdout: Data(), stderr: ""))
+        await #expect(throws: XSideError.commandFailed(tool: "devicectl", status: 7)) {
+            try await Installer(runner: r2).uninstall(bundleID: "com.example.demo", deviceID: "X")
+        }
+    }
+}

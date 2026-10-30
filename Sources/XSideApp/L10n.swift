@@ -63,6 +63,7 @@ extension XSideError {
         case .invalidIPA: return L("error.invalidIPA")
         case .provisioningFailed: return L("error.provisioningFailed")
         case .installFailed: return L("error.installFailed")
+        case .uninstallFailed: return L("error.uninstallFailed")
         case .commandFailed: return L("error.commandFailed")
         case .recordNotFound: return L("error.recordNotFound")
         case .profileNotRenewed: return L("error.profileNotRenewed")

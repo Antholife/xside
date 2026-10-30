@@ -300,3 +300,18 @@
 "install.warning.shareKeychain" = "L'app demande à partager ces groupes avec les autres apps de cet éditeur : %@. Active-le seulement pour une IPA de confiance : une app piégée pourrait lire les connexions des autres apps de l'éditeur.";
 
 "settings.xcode.betaNotReady" = "Xcode bêta trouvé, mais pas encore prêt : ouvre-le une fois pour accepter sa licence.";
+
+"popover.app.menu" = "Actions pour %@";
+"popover.app.uninstallFrom" = "Désinstaller de %@";
+"popover.app.stopRefreshing" = "Arrêter de rafraîchir";
+"popover.app.uninstalling" = "Désinstallation…";
+"popover.app.uninstallTitle" = "Désinstaller %1$@ de %2$@ ?";
+"popover.app.uninstallMessage" = "L'app et ses données seront supprimées de l'appareil, et XSide arrêtera de la rafraîchir.";
+"popover.app.uninstall" = "Désinstaller";
+"popover.app.uninstallFailedTitle" = "Impossible de désinstaller %1$@ de %2$@";
+"popover.app.uninstallFailedFallback" = "Tu peux aussi arrêter de la rafraîchir : elle restera sur l'appareil et cessera de s'ouvrir à son expiration.";
+"popover.app.stopTitle" = "Arrêter de rafraîchir %@ ?";
+"popover.app.stopMessage" = "XSide arrêtera de rafraîchir %1$@ sur %2$@. L'app restera sur l'appareil et cessera de s'ouvrir à son expiration.";
+"popover.app.stop" = "Arrêter";
+"popover.app.close" = "Fermer";
+"error.uninstallFailed" = "La désinstallation a échoué. Vérifie que l'appareil est déverrouillé et réessaie.";

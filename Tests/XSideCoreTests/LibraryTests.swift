@@ -196,6 +196,41 @@ struct LibraryTests {
         #expect(try await lib.removeDevice("a") == 0)
     }
 
+    @Test func removeInstallationKeepsTheRecordAndItsFiles() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let root = tmp.appendingPathComponent("lib")
+        let lib = AppLibrary(root: root)
+        let rec = try await lib.importIPA(try makeIPA(in: tmp), info: info, teamID: "TEAM123456")
+        try await lib.upsert(inst("a"), for: rec.id)
+        try await lib.upsert(inst("b"), for: rec.id)
+
+        #expect(try await lib.removeInstallation(recordID: rec.id, deviceID: "a"))
+        #expect(try #require(await lib.records().first).installations == [inst("b")])
+        #expect(try await lib.removeInstallation(recordID: rec.id, deviceID: "a") == false)
+        #expect(try await lib.removeInstallation(recordID: rec.id, deviceID: "b"))
+        let left = await lib.records()
+        #expect(left.count == 1 && left[0].installations.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: root.appendingPathComponent(rec.ipaPath).path))
+        #expect(await AppLibrary(root: root).records() == left) // persisted
+        // Deleted, files included, once the caller finds it unused.
+        #expect(try await lib.removeIfEmpty(rec.id))
+        #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("apps/\(rec.id.uuidString)").path))
+        await #expect(throws: XSideError.recordNotFound) {
+            try await lib.removeInstallation(recordID: rec.id, deviceID: "a")
+        }
+    }
+
+    @Test func removedInstallationIsNotRevivedByARefresh() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let lib = AppLibrary(root: tmp.appendingPathComponent("lib"))
+        let rec = try await lib.importIPA(try makeIPA(in: tmp), info: info, teamID: "TEAM123456")
+        try await lib.upsert(inst("a"), for: rec.id)
+        try await lib.removeInstallation(recordID: rec.id, deviceID: "a")
+        await #expect(throws: XSideError.recordNotFound) {
+            try await lib.upsert(inst("a", 14), for: rec.id, requireExisting: true)
+        }
+    }
+
     @Test func requireExistingUpsertDoesNotRevive() async throws {
         let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
         let lib = AppLibrary(root: tmp.appendingPathComponent("lib"))

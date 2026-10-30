@@ -210,6 +210,14 @@ final class Notifier: NSObject {
         }
     }
 
+    /// Removes the pending and shown reminder of one installation (uninstalled, no longer refreshed).
+    func removeExpiryReminder(recordID: UUID, deviceID: String) async {
+        guard let center else { return }
+        let id = ExpiryWatch.reminderID(recordID: recordID, deviceID: deviceID)
+        center.removePendingNotificationRequests(withIdentifiers: [id])
+        center.removeDeliveredNotifications(withIdentifiers: [id])
+    }
+
     /// Removes the pending and shown reminders of one device (removed from XSide).
     func removeExpiryReminders(forDevice deviceID: String) async {
         guard let center else { return }

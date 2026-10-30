@@ -48,6 +48,7 @@ final class BackgroundEngine {
 
         model.onNeedsEvaluation = { [weak self] in self?.evaluate(reason: "change") }
         model.onDeviceRemoved = { [weak self] id in self?.forgetDevice(id) }
+        model.onInstallationRemoved = { [weak self] job in self?.forgetInstallation(job) }
         // Allowed only now (journey, Settings): the reminders couldn't be scheduled before.
         NotificationPermission.onBecameAuthorized = { [weak self] in self?.reconcileReminders() }
         model.onJobFinished = { [weak self] job, error, automatic, wasRefresh in
@@ -251,6 +252,17 @@ final class BackgroundEngine {
         // Its installations are gone: so are their reminders, pending or shown.
         enqueueReminders { [notifier] in await notifier.removeExpiryReminders(forDevice: deviceID) }
         reconcileReminders()
+    }
+
+    /// An installation was uninstalled or is no longer refreshed: nothing is notified for it any
+    /// more, and its reminder (pending or shown) goes.
+    private func forgetInstallation(_ job: RefreshJob) {
+        gate.reset(recordID: job.recordID, deviceID: job.deviceID)
+        persistGate()
+        successGate.forget(recordID: job.recordID, deviceID: job.deviceID)
+        enqueueReminders { [notifier] in
+            await notifier.removeExpiryReminder(recordID: job.recordID, deviceID: job.deviceID)
+        }
     }
 
     // MARK: Expiry reminders

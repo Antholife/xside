@@ -1,6 +1,6 @@
 import Foundation
 
-/// Installs a signed `.app` on a device with `devicectl`.
+/// Installs a signed `.app` on a device, or removes one, with `devicectl`.
 public struct Installer: Sendable {
     private let runner: CommandRunning
 
@@ -18,6 +18,39 @@ public struct Installer: Sendable {
             let mapped = Self.mapError(combined)
             if case .commandFailed = mapped { throw XSideError.commandFailed(tool: "devicectl", status: result.status) }
             throw mapped
+        }
+    }
+
+    /// Removes the app signed as `bundleID` (and its data) from the device. An app that is
+    /// already gone counts as removed, so asking twice is harmless.
+    public func uninstall(bundleID: String, deviceID: String) async throws {
+        let result = try await runner.run(
+            "/usr/bin/xcrun",
+            ["devicectl", "device", "uninstall", "app", "--device", deviceID, bundleID],
+            cwd: nil, timeout: CommandTimeout.deviceInstall)
+        guard result.status == 0 else {
+            let combined = String(decoding: result.stdout, as: UTF8.self) + "\n" + result.stderr
+            if let mapped = Self.mapUninstallError(combined) {
+                if case .commandFailed = mapped { throw XSideError.commandFailed(tool: "devicectl", status: result.status) }
+                throw mapped
+            }
+            return
+        }
+    }
+
+    /// Maps the output of a failed uninstall: nil when it says the app isn't on the device (the
+    /// goal is reached), else the same errors as an install, `uninstallFailed` for a message.
+    /// Like `mapError`, only error blocks are read, so an app named "Not Installed" is no cause.
+    public static func mapUninstallError(_ output: String) -> XSideError? {
+        if output.lowercased().contains("coredeviceerror error 4016") { return .deviceUnavailable }
+        let texts = errorBlocks(output).flatMap { $0.lines }.map { withoutQuotedNames($0).lowercased() }
+        let gone = ["is not installed", "app not installed", "application not installed", "no such app",
+                    "no app with bundle identifier", "no application with bundle identifier"]
+        if texts.contains(where: { t in gone.contains { t.contains($0) } }) { return nil }
+        switch mapError(output) {
+        case .installFailed(let message): return .uninstallFailed(message)
+        case .maxAppsReached: return .uninstallFailed(errorBlocks(output).first?.first ?? "")
+        case let other: return other
         }
     }
 
