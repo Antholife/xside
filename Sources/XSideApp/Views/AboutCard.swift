@@ -40,9 +40,12 @@ struct AboutCard: View {
             HStack(spacing: 4) {
                 Text(L("about.by"))
                 Link("Antholife", destination: AppLinks.author).fontWeight(.semibold)
+                Text("·").foregroundStyle(.tertiary)
+                Text(L("about.license")).foregroundStyle(.secondary)
             }
             .font(.callout)
-            HStack(spacing: 14) {
+            .lineLimit(1)
+            HStack(spacing: 18) {
                 Link(destination: AppLinks.repository) {
                     Label(L("settings.github"), systemImage: "chevron.left.forwardslash.chevron.right")
                 }
@@ -53,9 +56,10 @@ struct AboutCard: View {
                     Label(L("whatsNew.open"), systemImage: "sparkles")
                 }
                 .buttonStyle(.link)
-                Text(L("about.license")).foregroundStyle(.secondary)
             }
             .font(.callout)
+            .lineLimit(1)
+            .fixedSize()
             Text(L("about.tagline"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
