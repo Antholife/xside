@@ -86,6 +86,24 @@ struct DevicePrefsTests {
         #expect(store.load() == DevicePrefs())
     }
 
+    @Test func hiddenDevicesPersistAndOldFilesStillLoad() throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let store = DevicePrefsStore(libraryRoot: tmp)
+        // Written before `hidden` existed: the Wi-Fi setting is kept.
+        try Data(#"{"wifiOff":["D1"]}"#.utf8).write(to: store.url)
+        var prefs = store.load()
+        #expect(!prefs.wifiRefresh(for: "D1"))
+        #expect(!prefs.isHidden("D1"))
+
+        prefs.setHidden(true, "D2")
+        prefs.forget("D2") // settings only: still hidden
+        try store.save(prefs)
+        #expect(store.load().isHidden("D2"))
+        prefs.setHidden(false, "D2")
+        try store.save(prefs)
+        #expect(!store.load().isHidden("D2"))
+    }
+
     @Test func blockedByWifiPrefListsOnlyDueWifiOnlyBlocked() {
         var prefs = DevicePrefs()
         prefs.setWifiRefresh(false, for: "D1")

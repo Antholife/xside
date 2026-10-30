@@ -575,13 +575,17 @@ final class AppModel {
     /// Paired devices with their apps, then devices only known from past installations.
     var deviceGroups: [DeviceGroup] {
         let entries = records.flatMap { r in r.installations.map { AppEntry(record: r, installation: $0) } }
-        var groups = pairedDevices.map { d in
+        // A removed device stays hidden while it has no app (it is still paired, so listed).
+        let shown = pairedDevices.filter { d in
+            !devicePrefs.isHidden(d.id) || entries.contains { $0.installation.deviceID == d.id }
+        }
+        var groups = shown.map { d in
             DeviceGroup(id: d.id, device: d, name: d.name, kind: d.kind,
                         apps: entries.filter { $0.installation.deviceID == d.id },
                         wifiRefresh: devicePrefs.wifiRefresh(for: d.id),
                         needsUSB: devicePrefs.isWifiBlocked(d), canRemove: canRemoveDevice(d.id))
         }
-        let known = Set(groups.map(\.id))
+        let known = Set(pairedDevices.map(\.id))
         var orphanIDs: [String] = []
         for e in entries where !known.contains(e.installation.deviceID) && !orphanIDs.contains(e.installation.deviceID) {
             orphanIDs.append(e.installation.deviceID)
@@ -650,6 +654,8 @@ final class AppModel {
         }
         var prefs = devicePrefs
         prefs.forget(deviceID)
+        // Still paired, it would show again at once: hidden until an app is installed on it.
+        prefs.setHidden(true, deviceID)
         savePrefs(prefs)
         var names = cachedNames
         names[deviceID] = nil
@@ -1198,6 +1204,11 @@ final class AppModel {
         flow.lastStage = .preparing
         flow.phase = .running(.preparing)
         flow.setStatus(.running(.preparing), for: deviceID)
+        if devicePrefs.isHidden(deviceID) {
+            var prefs = devicePrefs
+            prefs.setHidden(false, deviceID) // installing on it brings it back
+            savePrefs(prefs)
+        }
         // Looked up now: the device may have gone (or changed transport) during the earlier ones.
         guard !removingDevices.contains(deviceID),
               let device = devices.first(where: { $0.id == deviceID && $0.isAvailable }) else {

@@ -209,7 +209,7 @@
 "popover.device.remove" = "Retirer cet appareil";
 "popover.device.removeBusy" = "Une installation est en cours sur cet appareil";
 "popover.device.removeTitle" = "Retirer cet appareil ?";
-"popover.device.removeMessage" = "XSide arrêtera de rafraîchir les apps de cet appareil. Elles resteront installées jusqu'à leur expiration.";
+"popover.device.removeMessage" = "XSide arrête de rafraîchir ses apps et le masque ici. Elles restent installées jusqu'à leur expiration. Pour le faire revenir, installe une app dessus : il reste proposé dans la fenêtre d'installation.";
 "notification.needsUSB.title" = "%@ : branche ton appareil";
 "notification.needsUSB.body" = "Branche %1$@ en USB pour rafraîchir %2$@, sinon elle expirera le %3$@.";
 

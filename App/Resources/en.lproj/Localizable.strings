@@ -209,7 +209,7 @@
 "popover.device.remove" = "Remove this device";
 "popover.device.removeBusy" = "An install is running on this device";
 "popover.device.removeTitle" = "Remove this device?";
-"popover.device.removeMessage" = "XSide will stop refreshing this device's apps. They stay installed until they expire.";
+"popover.device.removeMessage" = "XSide stops refreshing its apps and hides it here. They stay installed until they expire. To bring the device back, install an app on it: it's still offered in the install window.";
 "notification.needsUSB.title" = "%@: plug in your device";
 "notification.needsUSB.body" = "Plug %1$@ in with USB to refresh %2$@, otherwise it will expire on %3$@.";
 

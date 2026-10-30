@@ -4,8 +4,26 @@ import Foundation
 public struct DevicePrefs: Codable, Equatable, Sendable {
     /// Only devices whose Wi-Fi refresh was turned off are stored: the default is on.
     private var wifiOff: Set<String> = []
+    /// Devices removed from XSide while still paired: kept out of the popover until an app is
+    /// installed on them again.
+    private var hidden: Set<String> = []
 
     public init() {}
+
+    private enum CodingKeys: String, CodingKey { case wifiOff, hidden }
+
+    /// Tolerant: a file written before a key existed still loads.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        wifiOff = try c.decodeIfPresent(Set<String>.self, forKey: .wifiOff) ?? []
+        hidden = try c.decodeIfPresent(Set<String>.self, forKey: .hidden) ?? []
+    }
+
+    public func isHidden(_ deviceID: String) -> Bool { hidden.contains(deviceID) }
+
+    public mutating func setHidden(_ isHidden: Bool, _ deviceID: String) {
+        if isHidden { hidden.insert(deviceID) } else { hidden.remove(deviceID) }
+    }
 
     public func wifiRefresh(for deviceID: String) -> Bool { !wifiOff.contains(deviceID) }
 
@@ -13,7 +31,7 @@ public struct DevicePrefs: Codable, Equatable, Sendable {
         if on { wifiOff.remove(deviceID) } else { wifiOff.insert(deviceID) }
     }
 
-    /// Drops everything stored for a device.
+    /// Drops the device's settings (not whether it is hidden).
     public mutating func forget(_ deviceID: String) { wifiOff.remove(deviceID) }
 
     /// Reachable now but only over Wi-Fi while Wi-Fi refresh is off: it can't be refreshed until
