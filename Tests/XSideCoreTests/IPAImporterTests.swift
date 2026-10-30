@@ -38,6 +38,19 @@ private func setFolderModes(_ ipa: URL, _ mode: UInt32) throws -> Int {
     return changed
 }
 
+/// Leaves `count` stray bytes between the last entry and the central directory, as tools that
+/// patch an app in place do: `ditto` then stops ("Couldn't read pkzip signature").
+private func insertGapBeforeCentralDirectory(_ ipa: URL, count: Int) throws {
+    var data = try Data(contentsOf: ipa)
+    guard let eocd = data.lastRange(of: Data([0x50, 0x4B, 0x05, 0x06]))?.lowerBound else { return }
+    let offsetField = eocd + 16
+    let offset = (0..<4).reduce(0) { $0 | Int(data[offsetField + $1]) << (8 * $1) }
+    data.insert(contentsOf: Data(repeating: 0xAB, count: count), at: offset)
+    let moved = offset + count
+    for i in 0..<4 { data[offsetField + count + i] = UInt8((moved >> (8 * i)) & 0xFF) }
+    try data.write(to: ipa)
+}
+
 private func isEmpty(_ dir: URL) -> Bool {
     ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).isEmpty
 }
@@ -63,6 +76,22 @@ struct IPAImporterTests {
         try FakeIPA.makeApp(at: root, bundleID: "com.example.demo")
         let ipa = try await zipIPA(root)
         #expect(try setFolderModes(ipa, 0o644) >= 2)
+
+        let info = try await IPAImporter.inspect(ipa: ipa, runner: ProcessRunner(), scratchRoot: scratch)
+        #expect(info.bundleID == "com.example.demo")
+        #expect(isEmpty(scratch))
+    }
+
+    /// Stray bytes between entries: ditto gives up, unzip (central directory) reads it (issue #1).
+    @Test func readsAnArchiveDittoCantStream() async throws {
+        let root = try tempDir(); defer { try? FileManager.default.removeItem(at: root) }
+        let scratch = try tempDir(); defer { try? FileManager.default.removeItem(at: scratch) }
+        try FakeIPA.makeApp(at: root, bundleID: "com.example.demo")
+        let ipa = try await zipIPA(root)
+        try insertGapBeforeCentralDirectory(ipa, count: 3_000)
+        let probe = try tempDir(); defer { try? FileManager.default.removeItem(at: probe) }
+        let ditto = try await ProcessRunner().run("/usr/bin/ditto", ["-x", "-k", ipa.path, probe.path], cwd: nil)
+        #expect(ditto.status != 0)
 
         let info = try await IPAImporter.inspect(ipa: ipa, runner: ProcessRunner(), scratchRoot: scratch)
         #expect(info.bundleID == "com.example.demo")

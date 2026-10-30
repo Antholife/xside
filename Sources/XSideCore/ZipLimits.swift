@@ -22,20 +22,43 @@ public enum ZipLimits {
         public let uncompressed: UInt64
     }
 
-    /// How often `extract` measures the destination while `ditto` runs.
+    /// How often `extract` measures the destination while the archive is unpacked.
     static let watchInterval: Duration = .milliseconds(500)
 
-    /// Checks the declared sizes, then unpacks `ipa` into `destination` with `ditto -x -k` while
-    /// measuring the destination: past `maxUncompressedBytes` or `maxEntries` really written,
-    /// `ditto` is stopped (its process group is killed through cancellation) and `invalidIPA` thrown.
+    /// Checks the declared sizes, then unpacks `ipa` into `destination` while measuring it: past
+    /// `maxUncompressedBytes` or `maxEntries` really written, the tool is stopped (its process
+    /// group is killed through cancellation) and `invalidIPA` thrown.
+    ///
+    /// `ditto -x -k` first. It reads the archive from start to end, and gives up ("Couldn't read
+    /// pkzip signature") on archives with bytes left between entries, as written by tools that
+    /// patch an app in place (issue #1). `unzip` follows the central directory instead: it gets a
+    /// second try on a clean destination, under the same watch.
     public static func extract(_ ipa: URL, to destination: URL, runner: CommandRunning,
                                maxBytes: UInt64 = maxUncompressedBytes,
                                maxFiles: Int = maxEntries) async throws -> CommandResult {
         try check(ipa)
-        return try await withThrowingTaskGroup(of: CommandResult?.self) { group in
-            group.addTask {
-                try await runner.run("/usr/bin/ditto", ["-x", "-k", ipa.path, destination.path], cwd: nil)
-            }
+        let before = Set((try? FileManager.default.contentsOfDirectory(atPath: destination.path)) ?? [])
+        let ditto = try await watched(destination, maxBytes: maxBytes, maxFiles: maxFiles) {
+            try await runner.run("/usr/bin/ditto", ["-x", "-k", ipa.path, destination.path], cwd: nil)
+        }
+        guard ditto.status != 0 else { return ditto }
+
+        log.notice("ditto couldn't unpack \(ipa.lastPathComponent): trying unzip")
+        _ = repairPermissions(destination)
+        for name in (try? FileManager.default.contentsOfDirectory(atPath: destination.path)) ?? [] where !before.contains(name) {
+            try FileManager.default.removeItem(at: destination.appendingPathComponent(name))
+        }
+        return try await watched(destination, maxBytes: maxBytes, maxFiles: maxFiles) {
+            try await runner.run("/usr/bin/unzip", ["-qq", "-o", ipa.path, "-d", destination.path], cwd: nil)
+        }
+    }
+
+    /// Runs `unpack` while measuring `destination` every `watchInterval`, then once more at the end
+    /// (tools set folder permissions last; this pass also gives the owner access back to them).
+    private static func watched(_ destination: URL, maxBytes: UInt64, maxFiles: Int,
+                                _ unpack: @escaping @Sendable () async throws -> CommandResult) async throws -> CommandResult {
+        try await withThrowingTaskGroup(of: CommandResult?.self) { group in
+            group.addTask { try await unpack() }
             group.addTask {
                 while true {
                     try await Task.sleep(for: watchInterval)
@@ -48,8 +71,6 @@ public enum ZipLimits {
             defer { group.cancelAll() }
             while let finished = try await group.next() {
                 guard let result = finished else { continue }
-                // Last measure once ditto is done: it sets folder permissions at the end, and this
-                // pass also gives the owner access back to all of them (see `writtenTotals`).
                 let written = writtenTotals(destination)
                 if result.status == 0, written.entries > maxFiles || written.bytes > maxBytes {
                     throw XSideError.invalidIPA("Rejected: it expands to more than it declares")
