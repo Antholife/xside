@@ -2,6 +2,20 @@
 
 All notable changes to XSide. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.0.2-beta] - 2026-10-30
+
+### Added
+- **Logs**: every command, install, refresh and uninstall step is written to `~/Library/Logs/XSide`, with e-mail, team, certificate and devices masked. *Settings > Logs* shows or exports them.
+- **Export logs** link under install failures: a zip with the logs and a state summary, ready to attach to an issue.
+- GitHub bug report template.
+
+### Fixed
+- `.ipa` files patched after the fact (stray bytes between zip entries) couldn't be unzipped: `ditto` gave up with "Couldn't read pkzip signature". XSide now falls back to `unzip`, under the same safety checks. ([#1](https://github.com/Antholife/xside/issues/1))
+- The person's name in a signing certificate is masked in the logs too.
+
+### Thanks
+- [@parmagit](https://github.com/parmagit) again, for sharing the `.ipa` that helped find this one.
+
 ## [1.0.1-beta] - 2026-10-30
 
 ### Added
@@ -30,5 +44,6 @@ First public beta.
 - English and French.
 - Universal app: Apple silicon and Intel.
 
+[1.0.2-beta]: https://github.com/Antholife/xside/compare/v1.0.1-beta...v1.0.2-beta
 [1.0.1-beta]: https://github.com/Antholife/xside/compare/v1.0.0-beta...v1.0.1-beta
 [1.0.0-beta]: https://github.com/Antholife/xside/releases/tag/v1.0.0-beta

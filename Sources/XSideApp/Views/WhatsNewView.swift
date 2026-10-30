@@ -37,6 +37,17 @@ struct ReleaseNotes {
 
     static var all: [ReleaseNotes] {
         [
+            ReleaseNotes(version: "1.0.2", label: "beta", items: [
+                Item(symbol: "doc.zipper",
+                     title: L("whatsNew.102.ipa.title"), text: L("whatsNew.102.ipa.text")),
+                Item(symbol: "doc.text.magnifyingglass",
+                     title: L("whatsNew.102.logs.title"), text: L("whatsNew.102.logs.text")),
+                Item(symbol: "ladybug.fill",
+                     title: L("whatsNew.102.report.title"), text: L("whatsNew.102.report.text")),
+            ], thanks: [
+                Thanks(handle: "parmagit", text: L("whatsNew.102.thanks"),
+                       link: URL(string: "https://github.com/Antholife/xside/issues/1")!),
+            ]),
             ReleaseNotes(version: "1.0.1", label: "beta", items: [
                 Item(symbol: "shippingbox.and.arrow.backward.fill",
                      title: L("whatsNew.101.ipa.title"), text: L("whatsNew.101.ipa.text")),

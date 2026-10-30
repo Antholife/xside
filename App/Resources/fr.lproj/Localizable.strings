@@ -361,3 +361,10 @@
 "logs.show" = "Afficher";
 "logs.export" = "Exporter…";
 "logs.exportLink" = "Exporter les logs pour signaler un bug…";
+"whatsNew.102.ipa.title" = "Les apps modifiées s'installent";
+"whatsNew.102.ipa.text" = "Certains .ipa modifiés après coup (tweaks, bibliothèques ajoutées) ne se décompressaient pas. XSide les lit maintenant autrement quand l'outil de macOS abandonne.";
+"whatsNew.102.logs.title" = "Des logs";
+"whatsNew.102.logs.text" = "XSide note maintenant ce qu'il fait, étape par étape. Ton e-mail, ton équipe et tes appareils sont masqués. Réglages > Logs.";
+"whatsNew.102.report.title" = "Signaler un bug plus facilement";
+"whatsNew.102.report.text" = "Quand quelque chose échoue, « Exporter les logs » crée un zip prêt à joindre à une issue GitHub.";
+"whatsNew.102.thanks" = "encore, d'avoir partagé le .ipa qui a permis de trouver celui-ci.";
