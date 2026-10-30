@@ -18,6 +18,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pending: [URL] = []
     private let dockPresence = DockPresence()
     private lazy var menuBarDrop = MenuBarDrop { [weak self] urls in self?.dispatch(urls) }
+    private let spinner = MenuBarSpinner()
+
+    /// Shows the turning arrow on the menu-bar icon while XSide works. The status item may not
+    /// exist yet at launch: retried for a few seconds.
+    func setWorking(_ working: Bool, attempt: Int = 0) {
+        guard !spinner.setWorking(working), attempt < 20 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            self?.setWorking(working, attempt: attempt + 1)
+        }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.servicesProvider = self

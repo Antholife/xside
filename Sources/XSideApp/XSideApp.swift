@@ -135,10 +135,16 @@ private struct MenuBarLabel: View {
     }
 
     var body: some View {
+        // Static image: the turning arrow while XSide works is a Core Animation layer laid over
+        // the button (`MenuBarSpinner`), never a per-frame label update.
         icon(model.attention)
+            .accessibilityLabel(model.activitySummary ?? (model.attention == nil ? "XSide" : L("menuBar.attention")))
+            .help(model.activitySummary ?? "XSide")
+            .onChange(of: model.activitySummary != nil, initial: true) { _, working in
+                appDelegate.setWorking(working)
+            }
             // The badged icon is drawn for one appearance: redrawn when the menu bar's changes.
             .id(colorScheme)
-            .accessibilityLabel(model.attention == nil ? "XSide" : L("menuBar.attention"))
             .onChange(of: model.environmentFailed) {
                 showJourneyIfNeeded()
                 openQueuedIPA()

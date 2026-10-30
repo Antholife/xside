@@ -1236,3 +1236,36 @@ private struct Paths {
         ]
     }
 }
+
+// MARK: - Menu-bar activity
+
+extension AppModel {
+    /// What XSide is doing right now, for the animated menu-bar icon and its tooltip; nil when idle.
+    /// "Refreshing YouTube on iPhone…", with "(+2)" when more jobs run.
+    var activitySummary: String? {
+        #if DEBUG
+        // Debug-only: XSIDE_FAKE_BUSY=1 shows the animated icon without a real job.
+        if ProcessInfo.processInfo.environment["XSIDE_FAKE_BUSY"] == "1" { return L("menuBar.working.generic") }
+        #endif
+        var items: [String] = []
+        for key in jobs.keys.sorted(by: { $0.recordID.uuidString < $1.recordID.uuidString }) {
+            let record = records.first { $0.id == key.recordID }
+            let app = record.map { $0.options.displayName ?? $0.displayName } ?? "XSide"
+            let device = devices.first { $0.id == key.deviceID }?.name ?? cachedNames[key.deviceID]
+                ?? L("notification.refreshed.genericDevice")
+            let installing = install.map { $0.isRunning && ($0.importedRecordID ?? $0.existing?.id) == key.recordID } ?? false
+            if installing {
+                items.append(L("menuBar.working.installOn", app, device))
+            } else {
+                items.append(L(uninstalling.contains(key) ? "menuBar.working.uninstall" : "menuBar.working.refresh",
+                               app, device))
+            }
+        }
+        if items.isEmpty, let flow = install, flow.isRunning {
+            items.append(L("menuBar.working.install", flow.info?.name ?? flow.ipa.deletingPathExtension().lastPathComponent))
+        }
+        if items.isEmpty, isCreatingCertificate { items.append(L("menuBar.working.certificate")) }
+        guard let first = items.first else { return nil }
+        return items.count > 1 ? L("menuBar.working.more", first, items.count - 1) : first
+    }
+}

@@ -315,3 +315,10 @@
 "popover.app.stop" = "Stop";
 "popover.app.close" = "Close";
 "error.uninstallFailed" = "Uninstalling failed. Make sure the device is unlocked and try again.";
+"menuBar.working.refresh" = "Refreshing %1$@ on %2$@…";
+"menuBar.working.uninstall" = "Uninstalling %1$@ from %2$@…";
+"menuBar.working.install" = "Installing %@…";
+"menuBar.working.certificate" = "Creating the certificate…";
+"menuBar.working.more" = "%1$@ (+%2$d)";
+"menuBar.working.generic" = "XSide is working…";
+"menuBar.working.installOn" = "Installing %1$@ on %2$@…";

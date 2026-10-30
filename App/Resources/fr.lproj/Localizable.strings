@@ -315,3 +315,10 @@
 "popover.app.stop" = "Arrêter";
 "popover.app.close" = "Fermer";
 "error.uninstallFailed" = "La désinstallation a échoué. Vérifie que l'appareil est déverrouillé et réessaie.";
+"menuBar.working.refresh" = "Rafraîchissement de %1$@ sur %2$@…";
+"menuBar.working.uninstall" = "Désinstallation de %1$@ de %2$@…";
+"menuBar.working.install" = "Installation de %@…";
+"menuBar.working.certificate" = "Création du certificat…";
+"menuBar.working.more" = "%1$@ (+%2$d)";
+"menuBar.working.generic" = "XSide travaille…";
+"menuBar.working.installOn" = "Installation de %1$@ sur %2$@…";
