@@ -23,6 +23,7 @@ struct XSideApp: App {
 
     init() {
         let model = AppModel()
+        AppDelegate.model = model // the status item is created from it at launch
         let engine = BackgroundEngine(model: model)
         _model = State(initialValue: model)
         _engine = State(initialValue: engine)
@@ -31,15 +32,7 @@ struct XSideApp: App {
     }
 
     var body: some Scene {
-        // The status item only: clicks open `StatusPopover`, a real popover with its arrow.
-        MenuBarExtra {
-            EmptyView()
-        } label: {
-            MenuBarLabel(model: model, appDelegate: appDelegate)
-        }
-        .menuBarExtraStyle(.window)
-
-        // A MenuBarExtra can't be opened programmatically: IPAs from Finder open this window instead.
+        // IPAs from Finder open this window (the popover can't hold an install).
         Window("XSide", id: InstallWindow.id) {
             InstallWindowRoot(model: model)
         }
@@ -77,7 +70,7 @@ struct XSideApp: App {
 
 /// The menu-bar icon. It exists from launch, so it is
 /// where Finder's "Open With" / Services get wired to the install window.
-private struct MenuBarLabel: View {
+struct MenuBarLabel: View {
     let model: AppModel
     let appDelegate: AppDelegate
     @Environment(\.openWindow) private var openWindow
@@ -201,7 +194,6 @@ private struct MenuBarLabel: View {
                 model.updateAttention()
             }
             .onAppear {
-                appDelegate.attachPopover(model: model)
                 Notifier.openSettingsHandler = { openSettings() }
                 appDelegate.quitStopsRefreshes = { [model] in model.quitStopsRefreshes }
                 appDelegate.openIPA = { url in

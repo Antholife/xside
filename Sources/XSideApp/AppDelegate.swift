@@ -22,25 +22,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let spinner = MenuBarSpinner()
     let popover = StatusPopover()
 
-    /// Opens the panel as a popover from the status item (see `StatusPopover`). The item may not
-    /// exist yet at launch: retried for a few seconds.
-    func attachPopover(model: AppModel, attempt: Int = 0) {
-        let attached = popover.attach(content: { PopoverView(model: model) },
-                                      onVisibilityChange: { model.popoverVisibilityChanged($0) })
+    /// Set by `XSideApp` before launch finishes: the status item is created from it.
+    static var model: AppModel?
+
+    /// XSide's menu-bar icon and its popover (see `StatusPopover`).
+    private func installStatusItem() {
+        guard let model = Self.model else { return }
+        popover.install(label: MenuBarLabel(model: model, appDelegate: self), content: PopoverView(model: model),
+                        onVisibilityChange: { model.popoverVisibilityChanged($0) })
         #if DEBUG
         // Debug-only: XSIDE_OPEN_POPOVER=1 opens the panel at launch, to look at it.
-        if attached, ProcessInfo.processInfo.environment["XSIDE_OPEN_POPOVER"] == "1" {
+        if ProcessInfo.processInfo.environment["XSIDE_OPEN_POPOVER"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.popover.show() }
         }
         #endif
-        if attached { Self.logger.notice("popover attached (attempt \(attempt))") }
-        guard !attached, attempt < 20 else {
-            if !attached { Self.logger.error("popover not attached: no status item button") }
-            return
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-            self?.attachPopover(model: model, attempt: attempt + 1)
-        }
     }
 
     /// Shows the turning arrow on the menu-bar icon while XSide works. The status item may not
@@ -56,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.servicesProvider = self
         NSUpdateDynamicServices()
         dockPresence.start()
+        installStatusItem()
         attachMenuBarDrop(attempt: 0)
         #if DEBUG
         // Debug-only: XSIDE_APPEARANCE=dark|light forces the appearance, to check both looks.
@@ -128,3 +124,4 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 }
+
