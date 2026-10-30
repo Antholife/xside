@@ -20,6 +20,10 @@ public enum XSideError: Error, Equatable, Sendable {
     case xcodeTooOld(deviceOS: String)
     /// The Mac runs a macOS beta with a release Xcode, which may not work on it.
     case xcodeNeedsBetaForMac
+    /// A tool didn't answer within its deadline and was stopped (see `CommandTimeout`).
+    case timedOut(tool: String)
+    /// A bundle identifier XSide can't sign with (custom one, or an import's default too long).
+    case invalidBundleID(String)
 
     /// Case name without payload, used to deduplicate notifications.
     public var key: String {
@@ -40,6 +44,8 @@ public enum XSideError: Error, Equatable, Sendable {
         case .profileNotRenewed: "profileNotRenewed"
         case .xcodeTooOld: "xcodeTooOld"
         case .xcodeNeedsBetaForMac: "xcodeNeedsBetaForMac"
+        case .timedOut: "timedOut"
+        case .invalidBundleID: "invalidBundleID"
         }
     }
 }

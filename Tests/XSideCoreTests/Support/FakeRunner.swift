@@ -11,6 +11,7 @@ final class FakeRunner: CommandRunning, @unchecked Sendable {
     private let lock = NSLock()
     private var stubs: [Stub] = []
     private var _calls: [[String]] = []
+    private var _timeouts: [Duration] = []
 
     init() {}
 
@@ -25,9 +26,16 @@ final class FakeRunner: CommandRunning, @unchecked Sendable {
         return _calls
     }
 
-    func run(_ executable: String, _ arguments: [String], cwd: URL?) async throws -> CommandResult {
+    /// Timeout passed with each call, in call order.
+    var timeouts: [Duration] {
+        lock.lock(); defer { lock.unlock() }
+        return _timeouts
+    }
+
+    func run(_ executable: String, _ arguments: [String], cwd: URL?, timeout: Duration) async throws -> CommandResult {
         let match: Stub? = lock.withLock {
             _calls.append([executable] + arguments)
+            _timeouts.append(timeout)
             // Most recent matching stub wins.
             return stubs.last(where: { $0.executable == executable && ($0.firstArg == nil || $0.firstArg == arguments.first) })
         }

@@ -38,7 +38,7 @@ public struct Provisioner: Sendable {
         let args = Self.arguments(
             project: buildDir.appendingPathComponent("XSideTemplate.xcodeproj"),
             derivedData: derivedData, bundleID: bundleID, teamID: env.teamID, deviceUDIDs: deviceUDIDs)
-        let result = try await runner.run("/usr/bin/xcrun", args, cwd: buildDir)
+        let result = try await runner.run("/usr/bin/xcrun", args, cwd: buildDir, timeout: CommandTimeout.xcodebuild)
         guard result.status == 0 else {
             let combined = String(decoding: result.stdout, as: UTF8.self) + "\n" + result.stderr
             let mapped = Self.mapError(combined)
@@ -87,7 +87,7 @@ public struct Provisioner: Sendable {
         let args = Self.certificateArguments(project: buildDir.appendingPathComponent("XSideTemplate.xcodeproj"),
                                              derivedData: buildDir.appendingPathComponent("DerivedData", isDirectory: true),
                                              teamID: teamID)
-        let result = try await runner.run("/usr/bin/xcrun", args, cwd: buildDir)
+        let result = try await runner.run("/usr/bin/xcrun", args, cwd: buildDir, timeout: CommandTimeout.xcodebuild)
         guard result.status != 0 else { return nil }
         let mapped = Self.mapError(String(decoding: result.stdout, as: UTF8.self) + "\n" + result.stderr)
         if case .commandFailed = mapped { return .commandFailed(tool: "xcodebuild", status: result.status) }

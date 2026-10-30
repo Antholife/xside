@@ -68,6 +68,8 @@ extension XSideError {
         case .profileNotRenewed: return L("error.profileNotRenewed")
         case .xcodeTooOld(let deviceOS): return L("error.xcodeTooOld", deviceOS)
         case .xcodeNeedsBetaForMac: return L("error.xcodeNeedsBetaForMac")
+        case .timedOut(let tool): return L("error.timedOut", tool)
+        case .invalidBundleID(let id): return L("error.invalidBundleID", id)
         }
     }
 }
@@ -82,6 +84,8 @@ func localizedMessage(_ error: any Error) -> String {
 func localizedRowError(key: String) -> String {
     if key == "deviceUnavailable" { return L("popover.unreachableHint") }
     if key == "xcodeTooOld" { return L("error.xcodeTooOld.short") }
+    if key == "invalidBundleID" { return L("error.invalidBundleID.short") }
+    if key == "timedOut" { return L("error.timedOut", "Xcode") } // the key doesn't keep the tool
     let lookup = "error.\(key)"
     let text = L(lookup)
     return text == lookup ? L("error.generic") : text

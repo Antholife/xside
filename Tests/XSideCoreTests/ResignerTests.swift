@@ -133,6 +133,43 @@ private func plist(_ app: URL) throws -> [String: Any] {
         #expect(ents["com.apple.security.application-groups"] != nil)
     }
 
+    @Test func narrowsWildcardEntitlements() throws {
+        let granted: [String: Any] = [
+            "application-identifier": "\(team).*",
+            "com.apple.developer.team-identifier": team,
+            "keychain-access-groups": ["\(team).*"],
+            "get-task-allow": true,
+            "aps-environment": "development",
+            "com.apple.developer.associated-domains": "*",
+            "com.apple.developer.icloud-container-identifiers": ["iCloud.*", "iCloud.x"],
+        ]
+        let data = try PropertyListSerialization.data(fromPropertyList: granted, format: .xml, options: 0)
+        let profile = ProvisioningProfile(uuid: "U", teamID: team, bundleID: "*", creationDate: Date(),
+                                          expirationDate: Date(), deviceUDIDs: [], entitlements: data)
+        let signed = try #require(try PropertyListSerialization.propertyList(
+            from: Resigner.signingEntitlements(profile: profile, bundleID: "com.example.bundle"), format: nil) as? [String: Any])
+        #expect(signed["keychain-access-groups"] as? [String] == ["\(team).com.example.bundle"])
+        #expect(signed["application-identifier"] as? String == "\(team).com.example.bundle")
+        #expect(signed["com.apple.developer.team-identifier"] as? String == team)
+        #expect(signed["get-task-allow"] as? Bool == true)
+        #expect(signed["aps-environment"] as? String == "development")
+        #expect(signed["com.apple.developer.associated-domains"] == nil)
+        #expect(signed["com.apple.developer.icloud-container-identifiers"] == nil)
+        #expect(signed.count == 5)
+    }
+
+    @Test func keepsProfileGetTaskAllowAndDefaultsIt() throws {
+        func signed(_ granted: [String: Any]) throws -> [String: Any] {
+            let data = try PropertyListSerialization.data(fromPropertyList: granted, format: .xml, options: 0)
+            let profile = ProvisioningProfile(uuid: "U", teamID: team, bundleID: "b", creationDate: Date(),
+                                              expirationDate: Date(), deviceUDIDs: [], entitlements: data)
+            return try PropertyListSerialization.propertyList(
+                from: Resigner.signingEntitlements(profile: profile, bundleID: "b"), format: nil) as! [String: Any]
+        }
+        #expect(try signed(["get-task-allow": false])["get-task-allow"] as? Bool == false)
+        #expect(try signed([:])["get-task-allow"] as? Bool == true)
+    }
+
     @Test func appliesOptions() async throws {
         let opts = InstallOptions(displayName: "Tube", version: "9.9", fileSharing: true,
                                   iPadFullScreen: true, proMotion: true, minimumOSVersion: "15.0")

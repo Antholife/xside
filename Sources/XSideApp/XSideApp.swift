@@ -1,7 +1,20 @@
 import AppKit
 import SwiftUI
+import XSideCore
 
+/// `XSide --extract-icon …` is the icon helper (see `AppIconExtractor.runHelper`), handled before
+/// anything of the app starts; any other launch is the app.
 @main
+enum EntryPoint {
+    static func main() {
+        let arguments = CommandLine.arguments
+        if arguments.count > 1, arguments[1] == AppIconExtractor.helperFlag {
+            exit(AppIconExtractor.runHelper(arguments: Array(arguments.dropFirst(2))))
+        }
+        XSideApp.main()
+    }
+}
+
 struct XSideApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model: AppModel

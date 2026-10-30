@@ -23,6 +23,19 @@ public struct InstallOptions: Codable, Equatable, Sendable {
         self.proMotion = proMotion
         self.minimumOSVersion = minimumOSVersion
     }
+
+    /// Every key is optional: options saved by an older version (or missing a key) still load.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        displayName = try c.decodeIfPresent(String.self, forKey: .displayName)
+        customBundleID = try c.decodeIfPresent(String.self, forKey: .customBundleID)
+        version = try c.decodeIfPresent(String.self, forKey: .version)
+        iconPath = try c.decodeIfPresent(String.self, forKey: .iconPath)
+        fileSharing = try c.decodeIfPresent(Bool.self, forKey: .fileSharing) ?? false
+        iPadFullScreen = try c.decodeIfPresent(Bool.self, forKey: .iPadFullScreen) ?? false
+        proMotion = try c.decodeIfPresent(Bool.self, forKey: .proMotion) ?? false
+        minimumOSVersion = try c.decodeIfPresent(String.self, forKey: .minimumOSVersion)
+    }
 }
 
 public struct Resigner: Sendable {
@@ -38,6 +51,7 @@ public struct Resigner: Sendable {
         let fm = FileManager.default
         try fm.createDirectory(at: workDir, withIntermediateDirectories: true)
         try cleanPreviousRun(in: workDir)
+        try ZipLimits.check(ipa)
         let unzip = try await runner.run("/usr/bin/ditto", ["-x", "-k", ipa.path, workDir.path], cwd: nil)
         guard unzip.status == 0 else {
             throw XSideError.invalidIPA("Impossible de décompresser l'IPA")
@@ -52,6 +66,8 @@ public struct Resigner: Sendable {
         if try IPAInspector.isEncrypted(executableURL) {
             throw XSideError.encryptedIPA
         }
+        // What the app was signed with, for the keychain groups it declares (before anything changes).
+        let originalEntitlements = IPAInspector.embeddedEntitlements(executableURL)
 
         for dir in ["PlugIns", "Extensions", "Watch"] {
             let url = app.appendingPathComponent(dir)
@@ -70,7 +86,8 @@ public struct Resigner: Sendable {
         try fm.copyItem(at: profileURL, to: embedded)
 
         let entitlements = workDir.appendingPathComponent("entitlements-\(UUID().uuidString).plist")
-        try profile.entitlements.write(to: entitlements)
+        try Self.signingEntitlements(profile: profile, bundleID: bundleID, original: originalEntitlements)
+            .write(to: entitlements)
 
         for target in signTargets(in: app) {
             try requireType(target.pathExtension == "dylib" ? .typeRegular : .typeDirectory, target)
@@ -78,6 +95,67 @@ public struct Resigner: Sendable {
         }
         try await sign(app, identity: identitySHA1, entitlements: entitlements)
         return app
+    }
+
+    // MARK: - Entitlements
+
+    /// The entitlements the app is signed with (XML plist): the identity keys for exactly
+    /// `<TEAM>.<bundleID>`, never the profile's wildcards. A free profile grants
+    /// `keychain-access-groups = [TEAM.*]`, which would let the sideloaded app read every keychain
+    /// item of the team's other apps. Other profile keys pass through unless a value contains `*`.
+    /// `original`: the entitlements the app was signed with. The keychain groups it declares are
+    /// kept, moved to the new team (see `keychainGroups`), after `<TEAM>.<bundleID>`.
+    public static func signingEntitlements(profile: ProvisioningProfile, bundleID: String,
+                                           original: [String: Any]? = nil) throws -> Data {
+        let granted = (try? PropertyListSerialization.propertyList(from: profile.entitlements, format: nil))
+            as? [String: Any] ?? [:]
+        let appID = "\(profile.teamID).\(bundleID)"
+        var result: [String: Any] = [:]
+        for (key, value) in granted where !containsWildcard(value) { result[key] = value }
+        result["application-identifier"] = appID
+        result["com.apple.developer.team-identifier"] = profile.teamID
+        result["get-task-allow"] = granted["get-task-allow"] as? Bool ?? true
+        result["keychain-access-groups"] = keychainGroups(original, team: profile.teamID, appID: appID)
+        return try PropertyListSerialization.data(fromPropertyList: result, format: .xml, options: 0)
+    }
+
+    /// `appID` first, then each group the original entitlements declare, remapped to `team`:
+    /// `<OLDTEAM>.rest` and `$(AppIdentifierPrefix)rest` become `<team>.rest`; `com.apple.token`
+    /// stays. Wildcards and groups without a team prefix are dropped (the profile can't grant them).
+    static func keychainGroups(_ original: [String: Any]?, team: String, appID: String) -> [String] {
+        let declared = original?["keychain-access-groups"] as? [String] ?? []
+        // The original team: its own key, else the prefix of its application identifier.
+        let oldTeam = original?["com.apple.developer.team-identifier"] as? String
+            ?? (original?["application-identifier"] as? String)?.split(separator: ".").first.map(String.init)
+        func looksLikeTeam(_ s: Substring) -> Bool {
+            s.count == 10 && s.allSatisfy { ($0.isASCII && $0.isUppercase) || $0.isASCII && $0.isNumber }
+        }
+        var groups = [appID]
+        for group in declared where !group.contains("*") {
+            let mapped: String?
+            if group == "com.apple.token" {
+                mapped = group
+            } else if group.hasPrefix("$(AppIdentifierPrefix)") {
+                let rest = group.dropFirst("$(AppIdentifierPrefix)".count)
+                mapped = rest.isEmpty ? nil : "\(team).\(rest)"
+            } else if let dot = group.firstIndex(of: "."), group.index(after: dot) < group.endIndex,
+                      group[..<dot] == oldTeam?[...] || looksLikeTeam(group[..<dot]) {
+                mapped = "\(team).\(group[group.index(after: dot)...])"
+            } else {
+                mapped = nil
+            }
+            if let mapped, !groups.contains(mapped) { groups.append(mapped) }
+        }
+        return groups
+    }
+
+    private static func containsWildcard(_ value: Any) -> Bool {
+        switch value {
+        case let string as String: return string.contains("*")
+        case let array as [Any]: return array.contains(where: containsWildcard)
+        case let dict as [String: Any]: return dict.values.contains(where: containsWildcard)
+        default: return false
+        }
     }
 
     // MARK: - Untrusted archive handling
@@ -147,7 +225,7 @@ public struct Resigner: Sendable {
 
     private func editInfoPlist(app: URL, bundleID: String, options: InstallOptions) throws {
         let url = app.appendingPathComponent("Info.plist")
-        let data = try Data(contentsOf: url)
+        let data = try IPAInspector.infoPlistData(of: app)
         var format = PropertyListSerialization.PropertyListFormat.binary
         guard var plist = try PropertyListSerialization.propertyList(
             from: data, options: [], format: &format) as? [String: Any] else {
@@ -192,7 +270,7 @@ public struct Resigner: Sendable {
         let url = app.appendingPathComponent("Info.plist")
         var format = PropertyListSerialization.PropertyListFormat.binary
         guard var plist = try PropertyListSerialization.propertyList(
-            from: Data(contentsOf: url), options: [], format: &format) as? [String: Any] else {
+            from: IPAInspector.infoPlistData(of: app), options: [], format: &format) as? [String: Any] else {
             throw XSideError.invalidIPA("Info.plist illisible")
         }
         plist["CFBundleIcons"] = iconDict(plist["CFBundleIcons"], files: ["XSideIcon60x60"])

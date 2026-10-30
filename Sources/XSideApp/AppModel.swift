@@ -69,16 +69,25 @@ final class AppModel {
     }
     private(set) var install: InstallFlow? {
         // A flow ended or was replaced: its extracted icon is no longer shown anywhere.
-        didSet { if oldValue !== install { oldValue?.removeAppIcon() } }
+        didSet {
+            if oldValue !== install {
+                oldValue?.removeAppIcon()
+                dropKeptEmptyRecords()
+            }
+        }
     }
     /// Where the icons pulled out of `.ipa` files go (one per flow, deleted with it).
-    private static let iconsDir = FileManager.default.temporaryDirectory.appendingPathComponent("xside-icons")
+    private static let iconsDir = FileManager.default.temporaryDirectory.appendingPathComponent(
+        LibraryLocation.folderName(bundleID: Bundle.main.bundleIdentifier).lowercased() + "-icons")
 
     let library: AppLibrary
     private let runner = ProcessRunner()
     private let paths: Paths
-    private var pipeline: SideloadPipeline?
-    private var pipelineEnv: SigningEnvironment?
+    /// One for the app's lifetime: its per-device ordering and its provisioning lock only hold
+    /// within one instance. The signing environment is passed per job.
+    private let pipeline: SideloadPipeline
+    /// Last environment that probed OK.
+    private var lastGoodEnv: SigningEnvironment?
     private var listingDevices = false
     private let prefsStore: DevicePrefsStore
     /// Per-device settings (Wi-Fi refresh), persisted in `devices.json`.
@@ -105,6 +114,15 @@ final class AppModel {
         devicePrefs = prefsStore.load()
         // Icons pulled out of earlier sessions' `.ipa` files.
         try? FileManager.default.removeItem(at: Self.iconsDir)
+        // Leftovers of jobs interrupted by a quit or a crash (extracted apps, template builds).
+        // No job can be running yet.
+        try? FileManager.default.removeItem(at: paths.work)
+        pipeline = SideloadPipeline(
+            library: library,
+            provisioner: Provisioner(runner: runner, templateDir: paths.template, workDir: paths.provisioningWork,
+                                     cacheDirs: paths.xcodeProfileDirs),
+            resigner: Resigner(runner: runner), installer: Installer(runner: runner),
+            workRoot: paths.jobsWork, now: { Date() }, macIsBeta: XcodeLauncher.macIsBeta)
         Task { await start() }
     }
 
@@ -198,7 +216,7 @@ final class AppModel {
     var environmentError: XSideError? { if case .failure(let error)? = environment { error } else { nil } }
 
     /// Developer dir of the last good probe, to locate Xcode when it isn't found by bundle id.
-    var lastKnownDeveloperDir: URL? { pipelineEnv?.developerDir }
+    var lastKnownDeveloperDir: URL? { lastGoodEnv?.developerDir }
 
     /// Lets Xcode create the signing certificate (see `Provisioner.createCertificate`), then
     /// re-probes: the steps turn ✅ by themselves when it worked.
@@ -283,15 +301,7 @@ final class AppModel {
         environment = result
         environmentChanged()
         updateOnboardingPoller()
-        if case .success(let env) = result, env != pipelineEnv {
-            pipelineEnv = env
-            pipeline = SideloadPipeline(
-                library: library,
-                provisioner: Provisioner(runner: runner, templateDir: paths.template, workDir: paths.provisioningWork,
-                                         cacheDirs: paths.xcodeProfileDirs),
-                resigner: Resigner(runner: runner), installer: Installer(runner: runner),
-                env: env, workRoot: paths.jobsWork, now: { Date() }, macIsBeta: XcodeLauncher.macIsBeta)
-        }
+        if case .success(let env) = result { lastGoodEnv = env }
         // Reading the profiles spawns one `security` per profile: not at every probe (popover
         // open, 5-min tick), only for a new environment or a stale count. Jobs update it too.
         if case .success(let env) = result {
@@ -350,7 +360,8 @@ final class AppModel {
     /// macOS beta with a release Xcode, which may stop working on it: warned, never blocking.
     /// Computed once per probe.
     private(set) var macBetaWithReleaseXcode = false
-    var isPipelineReady: Bool { pipeline != nil }
+    /// Jobs can run: the signing environment probed OK.
+    var isPipelineReady: Bool { signingEnvironment != nil }
 
     // MARK: - Devices
 
@@ -472,8 +483,14 @@ final class AppModel {
         // Set before the first await: no refresh or install can start on it meanwhile.
         removingDevices.insert(deviceID)
         defer { removingDevices.remove(deviceID) }
+        // Records a job is installing on another device must survive even if this device held
+        // their last installation.
+        var busyRecords = Set(claims.keys.map(\.recordID))
+        if let flow = install, flow.isRunning {
+            if let id = flow.importedRecordID ?? flow.existing?.id { busyRecords.insert(id) }
+        }
         do {
-            try await library.removeDevice(deviceID)
+            try await library.removeDevice(deviceID, keeping: busyRecords)
         } catch {
             Self.logger.error("removing device failed: \(String(describing: error), privacy: .public)")
             return
@@ -487,7 +504,30 @@ final class AppModel {
         UserDefaults.standard.removeObject(forKey: Self.guideKey(deviceID))
         onDeviceRemoved?(deviceID)
         await reloadRecords()
+        // Kept for a job on another device; deleted once nothing uses them if that job didn't install.
+        keptEmptyRecords.formUnion(records.filter { busyRecords.contains($0.id) && $0.installations.isEmpty }.map(\.id))
+        dropKeptEmptyRecords()
         await updateAppIDCounter()
+    }
+
+    /// Records `removeDevice` left without installations because a job was using them.
+    @ObservationIgnored private var keptEmptyRecords: Set<UUID> = []
+
+    /// Deletes the kept records no job claims and no install window refers to, if they still have
+    /// no installation. A first import (also without installations) is never in the set.
+    private func dropKeptEmptyRecords() {
+        guard !keptEmptyRecords.isEmpty else { return }
+        let inUse: (UUID) -> Bool = { [unowned self] id in
+            claims.keys.contains { $0.recordID == id } || install?.importedRecordID == id || install?.existing?.id == id
+        }
+        let idle = keptEmptyRecords.filter { !inUse($0) }
+        guard !idle.isEmpty else { return }
+        keptEmptyRecords.subtract(idle)
+        Task {
+            // Checked again right before each removal: a job may have claimed it meanwhile.
+            for id in idle where !inUse(id) { _ = try? await library.removeIfEmpty(id) }
+            await reloadRecords()
+        }
     }
 
     // MARK: - Library
@@ -531,7 +571,7 @@ final class AppModel {
                           importedInto recordID: UUID? = nil,
                           imported: @MainActor (UUID) -> Void = { _ in },
                           progress: @escaping @MainActor @Sendable (JobStage) -> Void = { _ in }) async throws -> AppRecord {
-        guard let env = try environment?.get(), let pipeline else { throw XSideError.xcodeMissing }
+        guard let env = try environment?.get() else { throw XSideError.xcodeMissing }
         guard !removingDevices.contains(device.id) else { throw XSideError.deviceUnavailable }
         let record: AppRecord
         if let recordID {
@@ -559,7 +599,7 @@ final class AppModel {
         // (provisioning lock, or another job on the same device).
         if jobs[key] == .preparing { jobs[key] = .waiting }
         progress(jobs[key] ?? .waiting) // never replaces a real step another holder already reported
-        try await run(pipeline, key: key, device: device, progress: progress)
+        try await run(key: key, device: device, progress: progress)
         return records.first { $0.id == record.id } ?? record
     }
 
@@ -567,29 +607,37 @@ final class AppModel {
     @discardableResult
     func refreshNow(_ job: RefreshJob, automatic: Bool = false) -> Bool {
         let key = JobKey(recordID: job.recordID, deviceID: job.deviceID)
-        guard let pipeline, jobs[key] == nil, !removingDevices.contains(job.deviceID),
+        guard signingEnvironment != nil, jobs[key] == nil, !removingDevices.contains(job.deviceID),
               let device = devices.first(where: { $0.id == job.deviceID }) else { return false }
         claim(key) // before the task starts, so the row can't be claimed twice
         Task {
             defer { release(key) }
-            try? await run(pipeline, key: key, device: device, automatic: automatic)
+            try? await run(key: key, device: device, refresh: true, automatic: automatic)
         }
         return true
     }
 
     /// Records a failed attempt on an unreachable device without running the pipeline: the row
-    /// shows the unreachable hint and the 30-min retry delay applies. Expiry is kept.
-    func recordUnreachable(_ job: RefreshJob, at date: Date) async {
-        guard !busyJobs.contains(job), let record = records.first(where: { $0.id == job.recordID }),
-              var installation = record.installations.first(where: { $0.deviceID == job.deviceID }) else { return }
+    /// shows the unreachable hint and the 30-min retry delay applies. Expiry is kept. False when
+    /// nothing was recorded (row busy, installation or device removed meanwhile).
+    @discardableResult
+    func recordUnreachable(_ job: RefreshJob, at date: Date) async -> Bool {
+        guard !busyJobs.contains(job), !removingDevices.contains(job.deviceID),
+              let record = records.first(where: { $0.id == job.recordID }),
+              var installation = record.installations.first(where: { $0.deviceID == job.deviceID }) else { return false }
         installation.lastAttempt = date
         installation.lastErrorKey = XSideError.deviceUnavailable.key
+        let recorded: Bool
         do {
-            try await library.upsert(installation, for: job.recordID)
+            // Never brings back an installation removed meanwhile (device removed from XSide).
+            try await library.upsert(installation, for: job.recordID, requireExisting: true)
+            recorded = true
         } catch {
             Self.logger.error("recording unreachable failed: \(String(describing: error), privacy: .public)")
+            recorded = false
         }
         await reloadRecords()
+        return recorded
     }
 
     /// Rows with an install or refresh running.
@@ -598,33 +646,57 @@ final class AppModel {
     }
 
     func canRefresh(_ entry: AppEntry) -> Bool {
-        pipeline != nil && jobs[entry.id] == nil && !removingDevices.contains(entry.installation.deviceID)
+        isPipelineReady && jobs[entry.id] == nil && !removingDevices.contains(entry.installation.deviceID)
             && devices.contains { $0.id == entry.installation.deviceID && $0.isAvailable }
     }
 
     /// Row job ownership is counted: the row's state clears only when the last holder releases it.
     private var claims: [JobKey: Int] = [:]
 
+    /// Held while any row is claimed: no idle sleep, no App Nap in the middle of a job.
+    @ObservationIgnored private var jobActivity: (any NSObjectProtocol)?
+
     private func claim(_ key: JobKey, stage: JobStage = .waiting) {
         claims[key, default: 0] += 1
         if jobs[key] == nil { jobs[key] = stage }
+        if jobActivity == nil {
+            jobActivity = ProcessInfo.processInfo.beginActivity(
+                options: [.userInitiated, .idleSystemSleepDisabled], reason: "Installing or refreshing an app")
+        }
     }
 
     private func release(_ key: JobKey) {
         let left = (claims[key] ?? 1) - 1
         claims[key] = left > 0 ? left : nil
         if left <= 0 { jobs[key] = nil }
+        if claims.isEmpty, let activity = jobActivity {
+            ProcessInfo.processInfo.endActivity(activity)
+            jobActivity = nil
+        }
+        if left <= 0 { dropKeptEmptyRecords() }
     }
 
-    /// The caller must hold a claim on `key`.
-    private func run(_ pipeline: SideloadPipeline, key: JobKey, device: Device, automatic: Bool = false,
+    /// The environment as probed now: a queued job asks for it when it actually starts.
+    private func currentEnvironment() throws -> SigningEnvironment {
+        guard let environment else { throw XSideError.xcodeMissing }
+        return try environment.get()
+    }
+
+    /// The caller must hold a claim on `key`. `refresh`: see `SideloadPipeline.install`.
+    private func run(key: JobKey, device: Device, refresh: Bool = false,
+                     automatic: Bool = false,
                      progress: @escaping @MainActor @Sendable (JobStage) -> Void = { _ in }) async throws {
         let job = RefreshJob(recordID: key.recordID, deviceID: key.deviceID)
         // A refresh renews an existing installation; a first install is shown by the install window.
         let wasRefresh = records.first { $0.id == key.recordID }?
             .installations.contains { $0.deviceID == key.deviceID } ?? false
         do {
-            _ = try await pipeline.install(recordID: key.recordID, device: device) { step in
+            let environment: @Sendable () async throws -> SigningEnvironment = { [weak self] in
+                guard let self else { throw CancellationError() }
+                return try await self.currentEnvironment()
+            }
+            _ = try await pipeline.install(recordID: key.recordID, device: device, environment: environment,
+                                           refresh: refresh) { step in
                 await MainActor.run {
                     self.jobs[key] = .step(step)
                     progress(.step(step))
@@ -665,7 +737,10 @@ final class AppModel {
         Task {
             do {
                 let icon = Self.iconsDir.appendingPathComponent("\(UUID().uuidString).png")
-                let info = try await IPAImporter.inspect(ipa: url, runner: runner, iconDestination: icon)
+                // The icon is decoded by a child process (this same executable, see `EntryPoint`).
+                let helper = Bundle.main.executableURL
+                let info = try await IPAImporter.inspect(ipa: url, runner: runner,
+                                                         iconDestination: helper == nil ? nil : icon, iconHelper: helper)
                 guard install === flow else {
                     try? FileManager.default.removeItem(at: icon) // replaced meanwhile
                     return
@@ -695,9 +770,11 @@ final class AppModel {
     /// Identifier the app is signed with when no custom one is set.
     func defaultBundleID(for flow: InstallFlow) -> String? {
         guard let info = flow.info else { return nil }
-        if let existing = flow.existing { return "\(existing.originalBundleID).\(existing.teamID)" }
+        if let existing = flow.existing {
+            return BundleIdentifier.defaultSigned(original: existing.originalBundleID, teamID: existing.teamID)
+        }
         guard case .success(let env) = environment else { return info.bundleID }
-        return "\(info.bundleID).\(env.teamID)"
+        return BundleIdentifier.defaultSigned(original: info.bundleID, teamID: env.teamID)
     }
 
     /// True when the draft identifier would register a new App ID.
@@ -724,6 +801,11 @@ final class AppModel {
             !removingDevices.contains(id) && devices.contains { $0.id == id && $0.isAvailable }
         }
         guard !targets.isEmpty else { return }
+        if let custom = flow.draft.options.customBundleID, !BundleIdentifier.isValid(custom) {
+            flow.failure = nil
+            flow.phase = .editing(error: XSideError.invalidBundleID(custom).localizedMessage)
+            return
+        }
         flow.runs = targets.map { id in DeviceRun(deviceID: id, name: devices.first { $0.id == id }?.name ?? id) }
         flow.runOptions = flow.draft.options
         // A new run imports again (the options may have changed); only its later devices reuse it.
@@ -910,6 +992,8 @@ final class AppModel {
 /// Where XSide keeps its files. Nothing here is specific to a Mac or an account.
 private struct Paths {
     let root: URL
+    /// Scratch space of the jobs, emptied at launch.
+    let work: URL
     let provisioningWork: URL
     let jobsWork: URL
     let template: URL
@@ -918,9 +1002,11 @@ private struct Paths {
     init() {
         let fm = FileManager.default
         let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        root = support.appendingPathComponent("XSide", isDirectory: true)
-        provisioningWork = root.appendingPathComponent("work/provisioning", isDirectory: true)
-        jobsWork = root.appendingPathComponent("work/jobs", isDirectory: true)
+        root = support.appendingPathComponent(LibraryLocation.folderName(bundleID: Bundle.main.bundleIdentifier),
+                                              isDirectory: true)
+        work = root.appendingPathComponent("work", isDirectory: true)
+        provisioningWork = work.appendingPathComponent("provisioning", isDirectory: true)
+        jobsWork = work.appendingPathComponent("jobs", isDirectory: true)
         template = (Bundle.main.resourceURL ?? Bundle.main.bundleURL)
             .appendingPathComponent("ProvisioningTemplate", isDirectory: true)
         let library = fm.urls(for: .libraryDirectory, in: .userDomainMask)[0]

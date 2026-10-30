@@ -24,7 +24,7 @@ extension Installer: Installing {}
 
 // MARK: - Pipeline
 
-/// Phase reported by `SideloadPipeline.install(recordID:device:progress:)` as each step starts.
+/// Phase reported by `SideloadPipeline.install(recordID:device:env:refresh:progress:)` as each step starts.
 public enum InstallStep: Int, CaseIterable, Sendable {
     case profile, signing, installing
 }
@@ -50,14 +50,14 @@ actor AsyncLock {
 /// Provision -> resign -> install -> record. Jobs targeting the same `device.id` run one after
 /// another; jobs for different devices may run concurrently, except provisioning: only one
 /// provisioning (Xcode cache purge + xcodebuild) runs at a time across all jobs, since they share
-/// the team's account and Xcode's profile cache.
+/// the team's account and Xcode's profile cache. Keep one pipeline for the app's lifetime: both
+/// guarantees hold only within one instance. The signing environment is given per job.
 public actor SideloadPipeline {
     private static let logger = Logger(subsystem: "io.github.xside.XSide", category: "pipeline")
     private let library: AppLibrary
     private let provisioner: any Provisioning
     private let resigner: any Resigning
     private let installer: any Installing
-    private let env: SigningEnvironment
     private let workRoot: URL
     private let now: @Sendable () -> Date
     /// The Mac runs a macOS beta: failures with a release Xcode are explained as such.
@@ -69,13 +69,12 @@ public actor SideloadPipeline {
     private var tails: [String: (token: UUID, task: Task<Void, Never>)] = [:]
 
     public init(library: AppLibrary, provisioner: any Provisioning, resigner: any Resigning,
-                installer: any Installing, env: SigningEnvironment, workRoot: URL,
+                installer: any Installing, workRoot: URL,
                 now: @escaping @Sendable () -> Date, macIsBeta: Bool = false) {
         self.library = library
         self.provisioner = provisioner
         self.resigner = resigner
         self.installer = installer
-        self.env = env
         self.workRoot = workRoot
         self.now = now
         self.macIsBeta = macIsBeta
@@ -83,14 +82,23 @@ public actor SideloadPipeline {
 
     /// `progress` is awaited as each step starts (profile, signing, installing), in that order.
     /// `.profile` fires once the provisioning lock is held, not while waiting for it.
+    /// `refresh`: renews the device's installation with the bundle id it was signed with (another
+    /// device may have been reinstalled with a new custom id since); otherwise the record's
+    /// current `signedBundleID` is used.
+    /// `environment` is asked once the job holds the provisioning lock: a job queued behind others
+    /// signs with the identity current when it actually runs. When it throws (the environment
+    /// broke meanwhile), the job fails with that error and nothing is recorded on the row.
     public func install(recordID: UUID, device: Device,
+                        environment: @escaping @Sendable () async throws -> SigningEnvironment,
+                        refresh: Bool = false,
                         progress: @escaping @Sendable (InstallStep) async -> Void = { _ in }) async throws -> Installation {
         let previous = tails[device.id]?.task
         let token = UUID()
         let job = Task<Installation, Error> {
             await previous?.value
             try Task.checkCancellation()
-            return try await self.perform(recordID: recordID, device: device, progress: progress)
+            return try await self.perform(recordID: recordID, device: device, environment: environment,
+                                          refresh: refresh, progress: progress)
         }
         tails[device.id] = (token, Task { _ = try? await job.value })
         defer {
@@ -103,16 +111,30 @@ public actor SideloadPipeline {
         }
     }
 
+    /// A fixed environment (tests, callers that just probed).
+    public func install(recordID: UUID, device: Device, env: SigningEnvironment, refresh: Bool = false,
+                        progress: @escaping @Sendable (InstallStep) async -> Void = { _ in }) async throws -> Installation {
+        try await install(recordID: recordID, device: device, environment: { env }, refresh: refresh, progress: progress)
+    }
+
+    /// Thrown inside the provisioning lock when `environment` fails, to tell it from a job failure.
+    private struct EnvironmentUnavailable: Error { let underlying: any Error }
+
     private nonisolated func perform(recordID: UUID, device: Device,
+                                     environment: @escaping @Sendable () async throws -> SigningEnvironment,
+                                     refresh: Bool,
                                      progress: @Sendable (InstallStep) async -> Void) async throws -> Installation {
         guard let record = await library.records().first(where: { $0.id == recordID }) else {
             throw XSideError.recordNotFound
         }
         let previous = record.installations.first { $0.deviceID == device.id }
+        let previousBundleID = previous.map { $0.signedBundleID ?? record.signedBundleID }
+        let bundleID = refresh ? previousBundleID ?? record.signedBundleID : record.signedBundleID
 
         let fm = FileManager.default
         let workDir = workRoot.appendingPathComponent("job-\(UUID().uuidString)", isDirectory: true)
         var profileURL: URL?
+        var env: SigningEnvironment?
         defer {
             try? fm.removeItem(at: workDir)
             if let profileURL { try? fm.removeItem(at: profileURL) }
@@ -126,35 +148,50 @@ public actor SideloadPipeline {
             try fm.createDirectory(at: workDir, withIntermediateDirectories: true)
 
             // Reported once the lock is held: a job queued behind another provisioning is still waiting.
-            let provisioned = try await provisioningLock.run { [provisioner, env] in
+            let (current, provisioned) = try await provisioningLock.run { [provisioner] in
                 try Task.checkCancellation()
+                let current: SigningEnvironment
+                do { current = try await environment() } catch { throw EnvironmentUnavailable(underlying: error) }
                 await progress(.profile)
-                return try await provisioner.profile(bundleID: record.signedBundleID, env: env, deviceUDIDs: [udid])
+                return (current, try await provisioner.profile(bundleID: bundleID, env: current, deviceUDIDs: [udid]))
             }
+            env = current
             profileURL = provisioned.url
             // A refresh must push the expiry forward; otherwise Xcode reused the cached profile and
-            // reinstalling would only reset the 7 days we don't actually have.
-            if let previous, provisioned.profile.expirationDate <= previous.expiresAt {
+            // reinstalling would only reset the 7 days we don't actually have. A new bundle id is a
+            // new App ID, unrelated to the previous expiry. With a new certificate, the same
+            // still-valid profile may come back (it already lists that certificate): re-signing
+            // is the point then, not the expiry.
+            let certificateChanged = previous?.signingIdentitySHA1.map {
+                $0.uppercased() != current.identitySHA1.uppercased()
+            } ?? false
+            if let previous, previousBundleID == bundleID, !certificateChanged,
+               provisioned.profile.expirationDate <= previous.expiresAt {
                 throw XSideError.profileNotRenewed
             }
             await progress(.signing)
             let app = try await resigner.resign(
-                ipa: ipa, workDir: workDir, bundleID: record.signedBundleID, options: record.options,
+                ipa: ipa, workDir: workDir, bundleID: bundleID, options: record.options,
                 iconURL: icon, profileURL: provisioned.url, profile: provisioned.profile,
-                identitySHA1: env.identitySHA1)
+                identitySHA1: current.identitySHA1)
             await progress(.installing)
             try await installer.install(app: app, deviceID: device.id)
 
             let date = now()
             let installation = Installation(deviceID: device.id, installedAt: date,
                                             expiresAt: provisioned.profile.expirationDate,
-                                            lastAttempt: date, lastErrorKey: nil)
+                                            lastAttempt: date, lastErrorKey: nil, signedBundleID: bundleID,
+                                            signingIdentitySHA1: current.identitySHA1, teamID: current.teamID)
             try await library.upsert(installation, for: recordID, requireExisting: previous != nil)
             return installation
+        } catch let unavailable as EnvironmentUnavailable {
+            // Not this row's failure: no attempt recorded, so the refresh runs once it's fixed.
+            throw unavailable.underlying
         } catch {
-            let releaseXcode = XcodeCompat.xcodeVersion(developerDir: env.developerDir).map { !$0.isBeta } ?? false
+            let developerDir = env?.developerDir
+            let releaseXcode = developerDir.flatMap(XcodeCompat.xcodeVersion).map { !$0.isBeta } ?? false
             let explained = XcodeCompat.explain(error, deviceOS: device.osVersion,
-                                                sdkVersion: XcodeCompat.iOSSDKVersion(developerDir: env.developerDir),
+                                                sdkVersion: developerDir.flatMap(XcodeCompat.iOSSDKVersion),
                                                 macBetaWithReleaseXcode: macIsBeta && releaseXcode)
             if let replaced = explained as? XSideError, replaced != error as? XSideError {
                 // The likely cause is shown; keep the actual failure for diagnosis.

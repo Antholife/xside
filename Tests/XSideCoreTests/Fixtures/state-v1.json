@@ -1,0 +1,29 @@
+[
+  {
+    "displayName" : "Demo",
+    "id" : "6B1F3E2A-0C5D-4E8B-9A71-2D4C6E8F0A1B",
+    "installations" : [
+      {
+        "deviceID" : "00008110-000A1B2C3D4E5F60",
+        "expiresAt" : "2026-01-08T10:00:00Z",
+        "installedAt" : "2026-01-01T10:00:00Z",
+        "lastAttempt" : "2026-01-01T10:00:00Z"
+      }
+    ],
+    "ipaPath" : "apps/6B1F3E2A-0C5D-4E8B-9A71-2D4C6E8F0A1B/original.ipa",
+    "options" : {
+      "customBundleID" : "com.custom.demo",
+      "fileSharing" : true
+    },
+    "originalBundleID" : "com.example.demo",
+    "signedBundleID" : "com.custom.demo",
+    "teamID" : "TEAM123456"
+  },
+  {
+    "id" : "0E9D8C7B-6A5F-4E3D-2C1B-0A9F8E7D6C5B",
+    "installations" : [],
+    "ipaPath" : "apps/0E9D8C7B-6A5F-4E3D-2C1B-0A9F8E7D6C5B/original.ipa",
+    "originalBundleID" : "com.example.old",
+    "signedBundleID" : "com.example.old.TEAM123456"
+  }
+]

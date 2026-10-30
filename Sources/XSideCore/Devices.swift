@@ -90,13 +90,15 @@ public struct DeviceService: Sendable {
             .appendingPathComponent("xside-devices-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: file) }
         let r = try await runner.run("/usr/bin/xcrun",
-                                     ["devicectl", "list", "devices", "--json-output", file.path], cwd: nil)
+                                     ["devicectl", "list", "devices", "--json-output", file.path], cwd: nil,
+                                     timeout: CommandTimeout.deviceQuery)
         guard r.status == 0 else { throw XSideError.commandFailed(tool: "devicectl", status: r.status) }
         return try Self.parse(try Data(contentsOf: file))
     }
 
     public func pair(_ id: String) async throws {
-        let r = try await runner.run("/usr/bin/xcrun", ["devicectl", "manage", "pair", "--device", id], cwd: nil)
+        let r = try await runner.run("/usr/bin/xcrun", ["devicectl", "manage", "pair", "--device", id], cwd: nil,
+                                     timeout: CommandTimeout.deviceQuery)
         guard r.status == 0 else { throw XSideError.deviceUnavailable }
     }
 }

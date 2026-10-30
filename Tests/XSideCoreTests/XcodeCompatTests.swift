@@ -33,7 +33,7 @@ struct XcodeCompatTests {
     }
 
     @Test func explainsFailuresOnNewerIOS() {
-        let failure = XSideError.installFailed("x")
+        let failure = XSideError.installFailed("The device's iOS version is not supported by this Xcode")
         #expect(XcodeCompat.explain(failure, deviceOS: "27.0", sdkVersion: "26.4") as? XSideError
                 == .xcodeTooOld(deviceOS: "27.0"))
         #expect(XcodeCompat.explain(failure, deviceOS: "26.4", sdkVersion: "26.4") as? XSideError == failure)
@@ -74,7 +74,7 @@ struct XcodeCompatTests {
     }
 
     @Test func explainsFailuresOnMacBetaWithReleaseXcode() {
-        let failure = XSideError.provisioningFailed("x")
+        let failure = XSideError.provisioningFailed("Unable to find a destination matching the platform")
         #expect(XcodeCompat.explain(failure, deviceOS: "26.0", sdkVersion: "26.4", macBetaWithReleaseXcode: true)
                 as? XSideError == .xcodeNeedsBetaForMac)
         // A newer iOS is the more specific cause.
@@ -83,5 +83,30 @@ struct XcodeCompatTests {
         #expect(XcodeCompat.explain(failure, deviceOS: "26.0", sdkVersion: "26.4") as? XSideError == failure)
         #expect(XcodeCompat.explain(XSideError.deviceLocked, deviceOS: nil, sdkVersion: nil, macBetaWithReleaseXcode: true)
                 as? XSideError == .deviceLocked)
+    }
+
+    @Test func keepsFailuresThatExplainThemselves() {
+        let mapped: [XSideError] = [
+            .provisioningFailed("Your team has no devices from which to generate a provisioning profile."),
+            .provisioningFailed("Failed to register bundle identifier."),
+            .installFailed("Not enough storage on the device"),
+            .deviceLocked, .maxAppsReached, .appIDLimitReached,
+            .commandFailed(tool: "codesign", status: 1), .timedOut(tool: "xcodebuild"),
+        ]
+        for error in mapped {
+            #expect(XcodeCompat.explain(error, deviceOS: "27.0", sdkVersion: "26.4", macBetaWithReleaseXcode: true)
+                    as? XSideError == error)
+        }
+        // Unrecognized output of the Xcode tools, or an SDK / version message, is explained.
+        let unmapped: [XSideError] = [
+            .commandFailed(tool: "xcodebuild", status: 65), .commandFailed(tool: "devicectl", status: 1),
+            .provisioningFailed("iOS 27.0 is not installed. Install the iOS SDK"),
+            .installFailed("Could not locate DeviceSupport files"),
+            .installFailed("The OS VERSION of the device is too new"),
+        ]
+        for error in unmapped {
+            #expect(XcodeCompat.explain(error, deviceOS: "27.0", sdkVersion: "26.4") as? XSideError
+                    == .xcodeTooOld(deviceOS: "27.0"))
+        }
     }
 }

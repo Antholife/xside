@@ -27,3 +27,84 @@ import Foundation
     #expect(XSideError.commandFailed(tool: "x", status: 1).key == "commandFailed")
     #expect(XSideError.recordNotFound.key == "recordNotFound")
 }
+
+@Test func processRunnerStopsAtTimeout() async throws {
+    let start = ContinuousClock.now
+    await #expect(throws: XSideError.timedOut(tool: "sleep")) {
+        try await ProcessRunner().run("/bin/sleep", ["5"], cwd: nil, timeout: .milliseconds(300))
+    }
+    #expect(ContinuousClock.now - start < .seconds(2))
+}
+
+@Test func processRunnerKillsWhatIgnoresSIGTERM() async throws {
+    // The shell ignores SIGTERM and keeps respawning children: SIGKILL to the group after the grace.
+    let start = ContinuousClock.now
+    do {
+        _ = try await ProcessRunner().run("/bin/sh", ["-c", "trap '' TERM; while :; do /bin/sleep 1; done"], cwd: nil,
+                                          timeout: .milliseconds(300))
+        Issue.record("expected timedOut")
+    } catch let error as XSideError {
+        #expect(error.key == "timedOut")
+    }
+    #expect(ContinuousClock.now - start < .seconds(8))
+}
+
+@Test func processRunnerStopsTheWholeProcessGroup() async throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("xside-pg-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let pidFile = dir.appendingPathComponent("pid")
+    // A background grandchild that would outlive its parent, holding the pipes.
+    await #expect(throws: XSideError.timedOut(tool: "sleep")) {
+        try await ProcessRunner().run("/bin/sh", ["-c", "/bin/sleep 30 & echo $! > '\(pidFile.path)'; wait"],
+                                      cwd: nil, timeout: .milliseconds(500))
+    }
+    let pid = try #require(pid_t(String(contentsOf: pidFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
+    var gone = false
+    for _ in 0..<40 where !gone {
+        gone = kill(pid, 0) == -1 && errno == ESRCH
+        if !gone { try await Task.sleep(for: .milliseconds(50)) }
+    }
+    #expect(gone)
+}
+
+@Test func processRunnerDoesNotWaitForeverOnInheritedPipes() async throws {
+    // The shell exits at once; its background child keeps stdout open for 30 s.
+    let start = ContinuousClock.now
+    let r = try await ProcessRunner().run("/bin/sh", ["-c", "echo hi; /bin/sleep 30 &"], cwd: nil, timeout: .seconds(60))
+    #expect(r.status == 0)
+    #expect(String(decoding: r.stdout, as: UTF8.self) == "hi\n")
+    #expect(ContinuousClock.now - start < .seconds(8))
+}
+
+@Test func processRunnerReportsExitCodeAndCwd() async throws {
+    let r = try await ProcessRunner().run("/bin/sh", ["-c", "pwd; exit 3"], cwd: URL(fileURLWithPath: "/usr"))
+    #expect(r.status == 3)
+    #expect(String(decoding: r.stdout, as: UTF8.self) == "/usr\n")
+    await #expect(throws: (any Error).self) { try await ProcessRunner().run("/nonexistent/tool", [], cwd: nil) }
+}
+
+@Test func processRunnerStopsOnCancellation() async throws {
+    let start = ContinuousClock.now
+    let task = Task { try await ProcessRunner().run("/bin/sleep", ["5"], cwd: nil, timeout: .seconds(60)) }
+    try await Task.sleep(for: .milliseconds(200))
+    task.cancel()
+    await #expect(throws: CancellationError.self) { try await task.value }
+    #expect(ContinuousClock.now - start < .seconds(2))
+}
+
+@Test func processRunnerNamesToolBehindXcrun() {
+    #expect(ProcessRunner.toolName("/usr/bin/xcrun", ["devicectl", "list"]) == "devicectl")
+    #expect(ProcessRunner.toolName("/usr/bin/codesign", ["-f"]) == "codesign")
+    #expect(ProcessRunner.toolName("/bin/sh", ["-c", "/usr/bin/security find-certificate -p | openssl"]) == "security")
+}
+
+@Test func toolsGetTheirOwnTimeouts() async throws {
+    let runner = FakeRunner()
+    runner.stub("/usr/bin/xcrun", result: CommandResult(status: 0, stdout: Data(), stderr: ""))
+    runner.stub("/usr/bin/codesign", result: CommandResult(status: 0, stdout: Data(), stderr: ""))
+    try await Installer(runner: runner).install(app: URL(fileURLWithPath: "/tmp/Fake.app"), deviceID: "X")
+    try await DeviceService(runner: runner).pair("X")
+    _ = try await runner.run("/usr/bin/codesign", [], cwd: nil)
+    #expect(runner.timeouts == [CommandTimeout.deviceInstall, CommandTimeout.deviceQuery, CommandTimeout.standard])
+}

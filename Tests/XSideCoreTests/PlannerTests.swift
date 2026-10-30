@@ -173,4 +173,91 @@ struct PlannerTests {
         #expect(t.evaluate([r], devices: [], now: now.addingTimeInterval(6 * min)).isEmpty)
         #expect(t.evaluate([r], devices: [], now: now.addingTimeInterval(11 * min)).count == 1)
     }
+
+    // MARK: Clock skew
+
+    @Test func futureLastAttemptCountsAsElapsed() {
+        // Written on a clock that was ahead (or the clock moved back): it must not block for days.
+        let skewed = record([inst(expiresIn: hour, lastAttempt: now.addingTimeInterval(3 * 86_400))])
+        #expect(RefreshPlanner.dueJobs([skewed], devices: [device("D1")], now: now).count == 1)
+        var t = UnreachableTracker()
+        _ = t.evaluate([skewed], devices: [], now: now)
+        #expect(t.evaluate([skewed], devices: [], now: now.addingTimeInterval(6 * min)).count == 1)
+    }
+
+    @Test func firstSightingInTheFutureCountsAsConfirmed() {
+        var t = UnreachableTracker()
+        let r = record([inst(expiresIn: hour)])
+        _ = t.evaluate([r], devices: [], now: now)
+        // The clock moved back an hour since the first sighting.
+        #expect(t.evaluate([r], devices: [], now: now.addingTimeInterval(-hour)).count == 1)
+    }
+
+    // MARK: Certificate replaced
+
+    private func signed(_ sha1: String?, expiresIn: TimeInterval = 6 * 86_400, lastAttempt: Date? = nil,
+                        error: String? = nil) -> Installation {
+        Installation(deviceID: "D1", installedAt: now.addingTimeInterval(-hour), expiresAt: now.addingTimeInterval(expiresIn),
+                     lastAttempt: lastAttempt, lastErrorKey: error, signingIdentitySHA1: sha1)
+    }
+
+    @Test func otherCertificateIsDueNow() {
+        let r = record([signed("OLDSHA1", lastAttempt: now.addingTimeInterval(-5 * min))])
+        #expect(RefreshPlanner.dueJobs([r], devices: [device("D1")], now: now, currentIdentitySHA1: "NEWSHA1")
+                == [RefreshJob(recordID: r.id, deviceID: "D1")])
+        // Same certificate (whatever the case), no current one, or an unknown one: the expiry decides.
+        #expect(RefreshPlanner.dueJobs([r], devices: [device("D1")], now: now, currentIdentitySHA1: "oldsha1").isEmpty)
+        #expect(RefreshPlanner.dueJobs([r], devices: [device("D1")], now: now).isEmpty)
+        let legacy = record([signed(nil)])
+        #expect(RefreshPlanner.dueJobs([legacy], devices: [device("D1")], now: now, currentIdentitySHA1: "NEWSHA1").isEmpty)
+        // Still needs the device.
+        #expect(RefreshPlanner.dueJobs([r], devices: [], now: now, currentIdentitySHA1: "NEWSHA1").isEmpty)
+    }
+
+    @Test func otherTeamDoesNotForceRefreshes() {
+        var i = signed("OLDSHA1")
+        i.teamID = "TEAMA"
+        let r = record([i])
+        #expect(RefreshPlanner.dueJobs([r], devices: [device("D1")], now: now, currentIdentitySHA1: "NEWSHA1",
+                                       currentTeamID: "TEAMB").isEmpty)
+        #expect(RefreshPlanner.dueJobs([r], devices: [device("D1")], now: now, currentIdentitySHA1: "NEWSHA1",
+                                       currentTeamID: "TEAMA").count == 1)
+    }
+
+    @Test func otherCertificateRetriesAfterAFailedAttempt() {
+        let failed = record([signed("OLDSHA1", lastAttempt: now.addingTimeInterval(-5 * min), error: "deviceLocked")])
+        #expect(RefreshPlanner.dueJobs([failed], devices: [device("D1")], now: now, currentIdentitySHA1: "NEWSHA1").isEmpty)
+        let later = now.addingTimeInterval(31 * min)
+        #expect(RefreshPlanner.dueJobs([failed], devices: [device("D1")], now: later, currentIdentitySHA1: "NEWSHA1").count == 1)
+    }
+
+    // MARK: Notification gate
+
+    @Test func gateRemembersEveryCause() {
+        var gate = NotificationGate()
+        let id = UUID()
+        func notify(_ key: String) -> Bool { gate.shouldNotify(recordID: id, deviceID: "D1", errorKey: key) }
+        #expect(notify("a"))
+        #expect(notify("needsUSB"))
+        // Alternating causes don't notify again.
+        #expect(!notify("a"))
+        #expect(!notify("needsUSB"))
+        // A refused post forgets its own cause only.
+        gate.forget(recordID: id, deviceID: "D1", errorKey: "needsUSB")
+        #expect(notify("needsUSB"))
+        #expect(!notify("a"))
+        gate.reset(recordID: id, deviceID: "D1")
+        #expect(notify("a"))
+    }
+
+    @Test func gateReadsOlderFormat() throws {
+        let id = UUID()
+        let old = Data(#"{"notified":{"\#(id.uuidString)|D1":"deviceLocked"}}"#.utf8)
+        var gate = try JSONDecoder().decode(NotificationGate.self, from: old)
+        func notify(_ key: String) -> Bool { gate.shouldNotify(recordID: id, deviceID: "D1", errorKey: key) }
+        #expect(!notify("deviceLocked"))
+        #expect(notify("other"))
+        let encoded = String(decoding: try JSONEncoder().encode(gate), as: UTF8.self)
+        #expect(encoded.contains(#"["deviceLocked","other"]"#))
+    }
 }

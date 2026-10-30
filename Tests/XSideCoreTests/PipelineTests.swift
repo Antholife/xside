@@ -99,6 +99,17 @@ private struct FakeInstaller: Installing {
 
 private struct OpaqueError: Error {}
 
+/// Its first call times out (a hung xcodebuild); later calls succeed.
+private struct FirstCallTimesOut: Provisioning {
+    let log: CallLog
+    func profile(bundleID: String, env: SigningEnvironment,
+                 deviceUDIDs: [String]) async throws -> (url: URL, profile: ProvisioningProfile) {
+        await log.provision(deviceUDIDs)
+        if await log.provisionUDIDs.count == 1 { throw XSideError.timedOut(tool: "xcodebuild") }
+        return (URL(fileURLWithPath: "/nonexistent/profile.mobileprovision"), makeProfile(udids: deviceUDIDs))
+    }
+}
+
 private actor StepLog {
     private(set) var items: [InstallStep] = []
     func add(_ step: InstallStep) { items.append(step) }
@@ -149,7 +160,7 @@ private struct Fixture {
                          provisioner: provisioner ?? FakeProvisioner(log: log),
                          resigner: FakeResigner(log: log),
                          installer: installer ?? FakeInstaller(log: log),
-                         env: env, workRoot: workRoot, now: now)
+                         workRoot: workRoot, now: now)
     }
 
     func cleanup() { try? FileManager.default.removeItem(at: tmp) }
@@ -164,10 +175,12 @@ private func workRootIsEmpty(_ url: URL) -> Bool {
 struct PipelineTests {
     @Test func successRecordsExpiry() async throws {
         let f = try await Fixture(); defer { f.cleanup() }
-        let result = try await f.pipeline().install(recordID: f.record.id, device: device())
+        let result = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
 
         #expect(result == Installation(deviceID: "dev-1", installedAt: fixedNow, expiresAt: expiry,
-                                       lastAttempt: fixedNow, lastErrorKey: nil))
+                                       lastAttempt: fixedNow, lastErrorKey: nil,
+                                       signedBundleID: "com.example.demo.TEAM123456",
+                                       signingIdentitySHA1: "FAKESHA1", teamID: "TEAM123456"))
         let stored = try #require(await f.library.records().first?.installations.first)
         #expect(stored.deviceID == "dev-1")
         #expect(stored.expiresAt == expiry)
@@ -177,7 +190,7 @@ struct PipelineTests {
     @Test func reportsStepsInOrder() async throws {
         let f = try await Fixture(); defer { f.cleanup() }
         let steps = StepLog()
-        _ = try await f.pipeline().install(recordID: f.record.id, device: device()) { await steps.add($0) }
+        _ = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env) { await steps.add($0) }
         #expect(await steps.items == [.profile, .signing, .installing])
     }
 
@@ -186,7 +199,7 @@ struct PipelineTests {
         let steps = StepLog()
         let failing = FakeProvisioner(log: f.log, error: XSideError.provisioningFailed("x"))
         await #expect(throws: XSideError.self) {
-            _ = try await f.pipeline(provisioner: failing).install(recordID: f.record.id, device: device()) {
+            _ = try await f.pipeline(provisioner: failing).install(recordID: f.record.id, device: device(), env: env) {
                 await steps.add($0)
             }
         }
@@ -195,7 +208,7 @@ struct PipelineTests {
 
     @Test func passesExpectedArgumentsToEachStep() async throws {
         let f = try await Fixture(); defer { f.cleanup() }
-        _ = try await f.pipeline().install(recordID: f.record.id, device: device())
+        _ = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
 
         #expect(await f.log.provisionUDIDs == [["UDID-1"]])
         let resign = try #require(await f.log.resignArgs.first)
@@ -214,7 +227,7 @@ struct PipelineTests {
         let icon = f.tmp.appendingPathComponent("icon.png")
         try Data("png".utf8).write(to: icon)
         try await f.library.setOptions(InstallOptions(iconPath: icon.path), for: f.record.id)
-        _ = try await f.pipeline().install(recordID: f.record.id, device: device())
+        _ = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
         let resign = try #require(await f.log.resignArgs.first)
         let expected = f.library.root.appendingPathComponent("apps/\(f.record.id.uuidString)/icon.png")
         #expect(resign.icon?.standardizedFileURL == expected.standardizedFileURL)
@@ -229,7 +242,7 @@ struct PipelineTests {
         let pipeline = f.pipeline(installer: FakeInstaller(log: f.log, error: XSideError.deviceUnavailable))
 
         await #expect(throws: XSideError.deviceUnavailable) {
-            try await pipeline.install(recordID: f.record.id, device: device())
+            try await pipeline.install(recordID: f.record.id, device: device(), env: env)
         }
         let stored = try #require(await f.library.records().first?.installations.first)
         #expect(stored.installedAt == oldInstalled)
@@ -246,7 +259,7 @@ struct PipelineTests {
                                    for: f.record.id)
         let pipeline = f.pipeline(provisioner: FakeProvisioner(log: f.log, error: XSideError.appIDLimitReached))
         await #expect(throws: XSideError.appIDLimitReached) {
-            try await pipeline.install(recordID: f.record.id, device: device())
+            try await pipeline.install(recordID: f.record.id, device: device(), env: env)
         }
         let stored = try #require(await f.library.records().first?.installations.first)
         #expect(stored.expiresAt == oldExpiry)
@@ -260,7 +273,7 @@ struct PipelineTests {
         try await f.library.upsert(Installation(deviceID: "dev-1", installedAt: old, expiresAt: old), for: f.record.id)
         let pipeline = f.pipeline(installer: FakeInstaller(log: f.log, error: OpaqueError()))
         await #expect(throws: OpaqueError.self) {
-            try await pipeline.install(recordID: f.record.id, device: device())
+            try await pipeline.install(recordID: f.record.id, device: device(), env: env)
         }
         #expect(await f.library.records().first?.installations.first?.lastErrorKey == "unknown")
     }
@@ -269,7 +282,7 @@ struct PipelineTests {
         let f = try await Fixture(); defer { f.cleanup() }
         let pipeline = f.pipeline(installer: FakeInstaller(log: f.log, error: XSideError.deviceLocked))
         await #expect(throws: XSideError.deviceLocked) {
-            try await pipeline.install(recordID: f.record.id, device: device())
+            try await pipeline.install(recordID: f.record.id, device: device(), env: env)
         }
         #expect(await f.library.records().first?.installations == [])
         #expect(workRootIsEmpty(f.workRoot))
@@ -278,7 +291,7 @@ struct PipelineTests {
     @Test func missingUDIDThrowsWithoutRunning() async throws {
         let f = try await Fixture(); defer { f.cleanup() }
         await #expect(throws: XSideError.deviceUnavailable) {
-            try await f.pipeline().install(recordID: f.record.id, device: device(udid: nil))
+            try await f.pipeline().install(recordID: f.record.id, device: device(udid: nil), env: env)
         }
         #expect(await f.log.total == 0)
     }
@@ -288,7 +301,7 @@ struct PipelineTests {
         let old = Date(timeIntervalSince1970: 1_700_000_000)
         try await f.library.upsert(Installation(deviceID: "dev-1", installedAt: old, expiresAt: old), for: f.record.id)
         await #expect(throws: XSideError.deviceUnavailable) {
-            try await f.pipeline().install(recordID: f.record.id, device: device(udid: nil))
+            try await f.pipeline().install(recordID: f.record.id, device: device(udid: nil), env: env)
         }
         let stored = try #require(await f.library.records().first?.installations.first)
         #expect(stored.lastAttempt == fixedNow) // so the 30-min retry delay applies
@@ -299,7 +312,7 @@ struct PipelineTests {
     @Test func unknownRecordThrows() async throws {
         let f = try await Fixture(); defer { f.cleanup() }
         await #expect(throws: XSideError.recordNotFound) {
-            try await f.pipeline().install(recordID: UUID(), device: device())
+            try await f.pipeline().install(recordID: UUID(), device: device(), env: env)
         }
         #expect(await f.log.total == 0)
     }
@@ -320,9 +333,9 @@ struct PipelineTests {
         let log = CallLog()
         let pipeline = SideloadPipeline(library: library, provisioner: FakeProvisioner(log: log),
                                         resigner: FakeResigner(log: log), installer: FakeInstaller(log: log),
-                                        env: env, workRoot: tmp.appendingPathComponent("work"), now: { fixedNow })
+                                        workRoot: tmp.appendingPathComponent("work"), now: { fixedNow })
         await #expect {
-            try await pipeline.install(recordID: id, device: device())
+            try await pipeline.install(recordID: id, device: device(), env: env)
         } throws: { error in
             if case XSideError.invalidIPA = error { return true }
             return false
@@ -335,9 +348,9 @@ struct PipelineTests {
         let gauge = ConcurrencyGauge()
         let pipeline = f.pipeline(installer: FakeInstaller(log: f.log, gauge: gauge, delay: .milliseconds(150)))
         let id = f.record.id
-        async let a = pipeline.install(recordID: id, device: device())
-        async let b = pipeline.install(recordID: id, device: device())
-        async let c = pipeline.install(recordID: id, device: device())
+        async let a = pipeline.install(recordID: id, device: device(), env: env)
+        async let b = pipeline.install(recordID: id, device: device(), env: env)
+        async let c = pipeline.install(recordID: id, device: device(), env: env)
         _ = try await (a, b, c)
         #expect(await gauge.maximum == 1)
         #expect(await f.log.installs.count == 3)
@@ -350,8 +363,8 @@ struct PipelineTests {
         // (otherwise the first call times out alone and the maximum stays 1).
         let pipeline = f.pipeline(installer: FakeInstaller(log: f.log, gauge: gauge, rendezvous: 2))
         let id = f.record.id
-        async let a = pipeline.install(recordID: id, device: device("dev-1", udid: "UDID-1"))
-        async let b = pipeline.install(recordID: id, device: device("dev-2", udid: "UDID-2"))
+        async let a = pipeline.install(recordID: id, device: device("dev-1", udid: "UDID-1"), env: env)
+        async let b = pipeline.install(recordID: id, device: device("dev-2", udid: "UDID-2"), env: env)
         _ = try await (a, b)
         #expect(await gauge.maximum == 2)
         #expect(await f.library.records().first?.installations.count == 2)
@@ -365,8 +378,8 @@ struct PipelineTests {
         let pipeline = f.pipeline(provisioner: FakeProvisioner(log: f.log, dir: provisionDir),
                                   installer: FakeInstaller(log: f.log, gauge: gauge, rendezvous: 2))
         let id = f.record.id
-        async let a = pipeline.install(recordID: id, device: device("dev-1", udid: "UDID-1"))
-        async let b = pipeline.install(recordID: id, device: device("dev-2", udid: "UDID-2"))
+        async let a = pipeline.install(recordID: id, device: device("dev-1", udid: "UDID-1"), env: env)
+        async let b = pipeline.install(recordID: id, device: device("dev-2", udid: "UDID-2"), env: env)
         _ = try await (a, b)
 
         #expect(await gauge.maximum == 2)
@@ -391,7 +404,7 @@ struct PipelineTests {
         let pipeline = f.pipeline(provisioner: FakeProvisioner(log: f.log, dir: provisionDir),
                                   installer: FakeInstaller(log: f.log, error: XSideError.deviceLocked))
         await #expect(throws: XSideError.deviceLocked) {
-            try await pipeline.install(recordID: f.record.id, device: device())
+            try await pipeline.install(recordID: f.record.id, device: device(), env: env)
         }
         #expect(await f.log.resignArgs.count == 1)
         #expect(try FileManager.default.contentsOfDirectory(atPath: provisionDir.path).isEmpty)
@@ -403,8 +416,8 @@ struct PipelineTests {
         let pipeline = f.pipeline(installer: FakeInstaller(log: f.log, error: XSideError.deviceLocked,
                                                            gauge: gauge, delay: .milliseconds(100)))
         let id = f.record.id
-        async let a: Installation? = try? pipeline.install(recordID: id, device: device())
-        async let b: Installation? = try? pipeline.install(recordID: id, device: device())
+        async let a: Installation? = try? pipeline.install(recordID: id, device: device(), env: env)
+        async let b: Installation? = try? pipeline.install(recordID: id, device: device(), env: env)
         let results = await [a, b]
         #expect(results.allSatisfy { $0 == nil })
         #expect(await gauge.maximum == 1)
@@ -418,8 +431,8 @@ struct PipelineTests {
             provisioner: FakeProvisioner(log: f.log, gauge: provisioning, delay: .milliseconds(150)),
             installer: FakeInstaller(log: f.log, gauge: installing, rendezvous: 2))
         let id = f.record.id
-        async let a = pipeline.install(recordID: id, device: device("dev-1", udid: "UDID-1"))
-        async let b = pipeline.install(recordID: id, device: device("dev-2", udid: "UDID-2"))
+        async let a = pipeline.install(recordID: id, device: device("dev-1", udid: "UDID-1"), env: env)
+        async let b = pipeline.install(recordID: id, device: device("dev-2", udid: "UDID-2"), env: env)
         _ = try await (a, b)
         #expect(await provisioning.maximum == 1)
         #expect(await installing.maximum == 2) // installs still overlap across devices
@@ -433,11 +446,11 @@ struct PipelineTests {
         let clock = ContinuousClock()
         let start = clock.now
         let times = TimeLog()
-        async let a = pipeline.install(recordID: id, device: device("dev-1", udid: "UDID-1")) { step in
+        async let a = pipeline.install(recordID: id, device: device("dev-1", udid: "UDID-1"), env: env) { step in
             if step == .profile { await times.add("a", clock.now - start) }
         }
         try await Task.sleep(for: .milliseconds(50)) // A takes the lock first
-        async let b = pipeline.install(recordID: id, device: device("dev-2", udid: "UDID-2")) { step in
+        async let b = pipeline.install(recordID: id, device: device("dev-2", udid: "UDID-2"), env: env) { step in
             if step == .profile { await times.add("b", clock.now - start) }
         }
         _ = try await (a, b)
@@ -454,7 +467,7 @@ struct PipelineTests {
         // Xcode handed back the profile already installed (same expiry).
         let pipeline = f.pipeline(provisioner: FakeProvisioner(log: f.log, expires: expiry))
         await #expect(throws: XSideError.profileNotRenewed) {
-            try await pipeline.install(recordID: f.record.id, device: device())
+            try await pipeline.install(recordID: f.record.id, device: device(), env: env)
         }
         let stored = try #require(await f.library.records().first?.installations.first)
         #expect(stored.expiresAt == expiry)
@@ -471,7 +484,7 @@ struct PipelineTests {
         try await f.library.upsert(Installation(deviceID: "dev-1", installedAt: fixedNow,
                                                 expiresAt: expiry.addingTimeInterval(60)), for: f.record.id)
         await #expect(throws: XSideError.profileNotRenewed) {
-            try await f.pipeline().install(recordID: f.record.id, device: device())
+            try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
         }
     }
 
@@ -479,8 +492,89 @@ struct PipelineTests {
         let f = try await Fixture(); defer { f.cleanup() }
         try await f.library.upsert(Installation(deviceID: "dev-1", installedAt: fixedNow,
                                                 expiresAt: expiry.addingTimeInterval(-1)), for: f.record.id)
-        let result = try await f.pipeline().install(recordID: f.record.id, device: device())
+        let result = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
         #expect(result.expiresAt == expiry)
         #expect(result.lastErrorKey == nil)
+    }
+
+    @Test func refreshKeepsTheBundleIDTheDeviceWasSignedWith() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let pipeline = f.pipeline()
+        let original = f.record.signedBundleID
+        _ = try await pipeline.install(recordID: f.record.id, device: device("dev-1", udid: "UDID-1"), env: env)
+        // Reinstalled on another device with a new custom identifier.
+        try await f.library.setOptions(InstallOptions(customBundleID: "com.custom.demo"), for: f.record.id)
+        _ = try await pipeline.install(recordID: f.record.id, device: device("dev-2", udid: "UDID-2"), env: env)
+        // The first device keeps refreshing the app it has.
+        let refreshed = try await pipeline.install(recordID: f.record.id, device: device("dev-1", udid: "UDID-1"),
+                                                   env: env, refresh: true)
+        #expect(await f.log.resignArgs.map(\.bundleID) == [original, "com.custom.demo", original])
+        #expect(refreshed.signedBundleID == original)
+        let stored = try #require(await f.library.records().first?.installations)
+        #expect(stored.first { $0.deviceID == "dev-2" }?.signedBundleID == "com.custom.demo")
+        // An install (not a refresh) on the first device moves it to the record's current identifier.
+        _ = try await pipeline.install(recordID: f.record.id, device: device("dev-1", udid: "UDID-1"), env: env)
+        #expect(await f.log.resignArgs.last?.bundleID == "com.custom.demo")
+    }
+
+    @Test func recordsTheSigningCertificate() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let other = SigningEnvironment(developerDir: env.developerDir, identitySHA1: "NEWSHA1",
+                                       identityName: env.identityName, teamID: env.teamID)
+        let pipeline = f.pipeline()
+        _ = try await pipeline.install(recordID: f.record.id, device: device(), env: env)
+        let renewed = try await pipeline.install(recordID: f.record.id, device: device(), env: other, refresh: true)
+        #expect(renewed.signingIdentitySHA1 == "NEWSHA1")
+        #expect(renewed.teamID == "TEAM123456")
+    }
+
+    @Test func timedOutProvisioningReleasesTheLock() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let pipeline = SideloadPipeline(library: f.library, provisioner: FirstCallTimesOut(log: f.log),
+                                        resigner: FakeResigner(log: f.log), installer: FakeInstaller(log: f.log),
+                                        workRoot: f.workRoot, now: { fixedNow })
+        await #expect(throws: XSideError.timedOut(tool: "xcodebuild")) {
+            try await pipeline.install(recordID: f.record.id, device: device("dev-1", udid: "UDID-1"), env: env)
+        }
+        // The next job (another device) gets the provisioning lock.
+        _ = try await pipeline.install(recordID: f.record.id, device: device("dev-2", udid: "UDID-2"), env: env)
+        #expect(await f.log.installs.map(\.deviceID) == ["dev-2"])
+    }
+
+    @Test func newCertificateAcceptsTheSameProfile() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        // Xcode hands back the same still-valid profile each time.
+        let pipeline = f.pipeline(provisioner: FakeProvisioner(log: f.log, expires: expiry))
+        _ = try await pipeline.install(recordID: f.record.id, device: device(), env: env)
+        await #expect(throws: XSideError.profileNotRenewed) {
+            try await pipeline.install(recordID: f.record.id, device: device(), env: env, refresh: true)
+        }
+        let other = SigningEnvironment(developerDir: env.developerDir, identitySHA1: "NEWSHA1",
+                                       identityName: env.identityName, teamID: env.teamID)
+        let resigned = try await pipeline.install(recordID: f.record.id, device: device(), env: other, refresh: true)
+        #expect(resigned.signingIdentitySHA1 == "NEWSHA1")
+        #expect(await f.log.resignArgs.count == 2)
+    }
+
+    @Test func environmentIsReadWhenTheJobRuns() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let pipeline = f.pipeline()
+        let other = SigningEnvironment(developerDir: env.developerDir, identitySHA1: "LATERSHA1",
+                                       identityName: env.identityName, teamID: env.teamID)
+        let result = try await pipeline.install(recordID: f.record.id, device: device(), environment: { other })
+        #expect(result.signingIdentitySHA1 == "LATERSHA1")
+    }
+
+    @Test func brokenEnvironmentFailsWithoutRecordingAnAttempt() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let pipeline = f.pipeline()
+        _ = try await pipeline.install(recordID: f.record.id, device: device(), env: env)
+        let before = try #require(await f.library.records().first?.installations.first)
+        await #expect(throws: XSideError.xcodeNotSignedIn) {
+            try await pipeline.install(recordID: f.record.id, device: device(),
+                                       environment: { throw XSideError.xcodeNotSignedIn }, refresh: true)
+        }
+        #expect(await f.library.records().first?.installations.first == before)
+        #expect(await f.log.provisionUDIDs.count == 1)
     }
 }

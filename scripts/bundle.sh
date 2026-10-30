@@ -29,7 +29,11 @@ cp -R App/Resources/*.lproj "$APP/Contents/Resources/"
 cp App/Resources/MenuBarIcon.pdf App/Resources/AppIcon.icns "$APP/Contents/Resources/"
 cp -R Resources/ProvisioningTemplate "$APP/Contents/Resources/ProvisioningTemplate"
 
-codesign -s - --force --deep "$APP"
+# Ad-hoc signature. The release bundle gets the hardened runtime: the private CoreUI framework
+# the icon helper loads is a system library, which the runtime allows.
+SIGN_OPTIONS=()
+[ "$CONFIG" = release ] && SIGN_OPTIONS=(--options runtime)
+codesign -s - --force --deep "${SIGN_OPTIONS[@]+"${SIGN_OPTIONS[@]}"}" "$APP"
 plutil -lint "$APP/Contents/Info.plist"
 codesign --verify --deep --strict "$APP"
 echo "Built $APP"

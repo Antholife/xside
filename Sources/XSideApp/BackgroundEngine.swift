@@ -102,7 +102,8 @@ final class BackgroundEngine {
 
     private func dueJobs() -> [RefreshJob] {
         RefreshPlanner.dueJobs(model.records, devices: model.devices, now: Date(), threshold: Self.threshold,
-                               prefs: model.devicePrefs)
+                               prefs: model.devicePrefs, currentIdentitySHA1: model.signingEnvironment?.identitySHA1,
+                               currentTeamID: model.signingEnvironment?.teamID)
             .filter { !model.removingDevices.contains($0.deviceID) }
     }
 
@@ -111,18 +112,12 @@ final class BackgroundEngine {
         reportMacBeta()
         reportUnreachable()
         reportNeedsUSB()
+        // Environment broken (or not probed yet): nothing can be refreshed. `reportEnvironment`
+        // already notifies each problem once; no per-app notification on top of it.
+        guard case .success? = model.environment else { return }
         let due = RefreshPlanner.startable(dueJobs(), busy: model.busyJobs)
         guard !due.isEmpty else { return }
         Self.logger.notice("\(reason, privacy: .public): \(due.count, privacy: .public) job(s) due")
-
-        // No pipeline: the environment probe failed (or hasn't finished). Notify the cause once
-        // per row so an app can't expire silently.
-        guard model.isPipelineReady else {
-            if case .failure(let error)? = model.environment {
-                for job in due { notifyFailure(job, errorKey: error.key, message: error.localizedMessage) }
-            }
-            return
-        }
         for job in due where model.refreshNow(job, automatic: true) {
             Self.logger.notice("refresh started \(job.recordID.uuidString, privacy: .public) on \(job.deviceID, privacy: .public)")
         }
@@ -135,10 +130,11 @@ final class BackgroundEngine {
         let jobs = RefreshPlanner.startable(
             unreachable.evaluate(model.records, devices: model.devices, now: now, threshold: Self.threshold),
             busy: model.busyJobs)
+            .filter { !model.removingDevices.contains($0.deviceID) }
         for job in jobs {
             Self.logger.notice("device unreachable for due \(job.recordID.uuidString, privacy: .public) on \(job.deviceID, privacy: .public)")
             Task {
-                await model.recordUnreachable(job, at: now)
+                guard await model.recordUnreachable(job, at: now) else { return }
                 let error = XSideError.deviceUnavailable
                 notifyFailure(job, errorKey: error.key, message: error.localizedMessage)
             }
@@ -168,7 +164,7 @@ final class BackgroundEngine {
             let posted = await notifier.needsUSB(appName: record.displayName, deviceName: deviceName, date: date,
                                                  id: "refresh.\(job.recordID.uuidString).\(job.deviceID)")
             if !posted {
-                gate.reset(recordID: job.recordID, deviceID: job.deviceID)
+                gate.forget(recordID: job.recordID, deviceID: job.deviceID, errorKey: Self.needsUSBKey)
                 persistGate()
             }
         }
@@ -251,6 +247,8 @@ final class BackgroundEngine {
         }
         // Manual actions show their error in the UI; only background failures notify.
         guard automatic else { return }
+        // The environment broke while the job waited: `reportEnvironment` notifies it, once.
+        if let e = error as? XSideError, [.xcodeMissing, .xcodeNotSignedIn, .noSigningIdentity].contains(e) { return }
         // The device was removed from XSide meanwhile: nothing to report.
         guard model.records.first(where: { $0.id == job.recordID })?
             .installations.contains(where: { $0.deviceID == job.deviceID }) == true else { return }
@@ -296,7 +294,7 @@ final class BackgroundEngine {
             let posted = await notifier.refreshFailed(appName: name, errorKey: errorKey, message: message,
                                                       id: "refresh.\(job.recordID.uuidString).\(job.deviceID)")
             if !posted {
-                gate.reset(recordID: job.recordID, deviceID: job.deviceID)
+                gate.forget(recordID: job.recordID, deviceID: job.deviceID, errorKey: errorKey)
                 persistGate()
             }
         }

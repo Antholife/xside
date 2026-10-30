@@ -3,15 +3,18 @@ import Foundation
 /// Reads an `.ipa` before it enters the library: unzips it to a scratch directory, extracts its
 /// `AppInfo` and refuses App Store (encrypted) builds right away. The scratch copy is always removed.
 public enum IPAImporter {
-    /// `iconDestination`: where to write the app's own icon (PNG), best effort.
+    /// `iconDestination`: where to write the app's own icon (PNG), best effort. `iconHelper`: the
+    /// executable that extracts it in a child process (see `AppIconExtractor.runHelper`); nil
+    /// extracts in this process (tests).
     public static func inspect(ipa: URL, runner: CommandRunning,
                                scratchRoot: URL = FileManager.default.temporaryDirectory,
-                               iconDestination: URL? = nil) async throws -> AppInfo {
+                               iconDestination: URL? = nil, iconHelper: URL? = nil) async throws -> AppInfo {
         let fm = FileManager.default
         let dir = scratchRoot.appendingPathComponent("xside-import-\(UUID().uuidString)", isDirectory: true)
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: dir) }
 
+        try ZipLimits.check(ipa)
         let unzip = try await runner.run("/usr/bin/ditto", ["-x", "-k", ipa.path, dir.path], cwd: nil)
         guard unzip.status == 0 else { throw XSideError.invalidIPA("Impossible de décompresser l'IPA") }
 
@@ -24,10 +27,14 @@ public enum IPAImporter {
         let executable = app.appendingPathComponent(info.executable)
         try require(.typeRegular, executable)
         if try IPAInspector.isEncrypted(executable) { throw XSideError.encryptedIPA }
-        if let iconDestination,
-           let data = try? Data(contentsOf: app.appendingPathComponent("Info.plist")),
-           let plist = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any] {
-            AppIconExtractor.extract(from: app, plist: plist, to: iconDestination)
+        if let iconDestination {
+            if let iconHelper {
+                _ = await AppIconExtractor.extractInSubprocess(helper: iconHelper, app: app,
+                                                               destination: iconDestination, runner: runner)
+            } else if let data = try? IPAInspector.infoPlistData(of: app),
+                      let plist = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any] {
+                AppIconExtractor.extract(from: app, plist: plist, to: iconDestination)
+            }
         }
         return info
     }

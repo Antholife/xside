@@ -50,20 +50,34 @@ public enum XcodeCompat {
         return number.count >= 4 && number.first == "5"
     }
 
-    /// Replaces a provisioning or install failure by its likely cause: `.xcodeTooOld` when the
-    /// device's iOS major version is newer than the Xcode SDK's (a minor gap usually deploys fine),
-    /// else `.xcodeNeedsBetaForMac` on a macOS beta with a release Xcode. Any other error is
-    /// returned unchanged. The caller logs the original error.
+    /// Replaces an unexplained provisioning or install failure by its likely cause: `.xcodeTooOld`
+    /// when the device's iOS major version is newer than the Xcode SDK's (a minor gap usually
+    /// deploys fine), else `.xcodeNeedsBetaForMac` on a macOS beta with a release Xcode. Failures
+    /// that already say what's wrong (account, device registration, storage, a locked device…)
+    /// are returned unchanged, as is anything else. The caller logs the original error.
     public static func explain(_ error: any Error, deviceOS: String?, sdkVersion: String?,
                                macBetaWithReleaseXcode: Bool = false) -> any Error {
-        guard let xsideError = error as? XSideError else { return error }
-        switch xsideError {
-        case .provisioningFailed, .installFailed, .commandFailed: break
-        default: return error
-        }
+        guard let xsideError = error as? XSideError, mayBeVersionMismatch(xsideError) else { return error }
         if let deviceOS, let sdkVersion, isNewerMajor(deviceOS, than: sdkVersion) {
             return XSideError.xcodeTooOld(deviceOS: deviceOS)
         }
         return macBetaWithReleaseXcode ? XSideError.xcodeNeedsBetaForMac : error
+    }
+
+    /// Words of Xcode's messages when it can't handle the device's OS or the Mac's.
+    static let versionPatterns = ["sdk", "platform", "not supported", "unsupported", "devicesupport", "version"]
+
+    /// An xcodebuild / devicectl failure with no recognized message, or one whose message points
+    /// at an SDK, platform or version problem.
+    static func mayBeVersionMismatch(_ error: XSideError) -> Bool {
+        switch error {
+        case .commandFailed(let tool, _):
+            return tool == "xcodebuild" || tool == "devicectl"
+        case .provisioningFailed(let message), .installFailed(let message):
+            let lower = message.lowercased()
+            return versionPatterns.contains { lower.contains($0) }
+        default:
+            return false
+        }
     }
 }

@@ -241,6 +241,9 @@
 "macBeta.banner.text" = "The installed Xcode isn't made for this macOS beta. It may stop working, and XSide along with it. Install Xcode beta to avoid any interruption.";
 "macBeta.notification.body" = "The installed Xcode isn't made for this macOS beta. Install Xcode beta, or XSide may no longer be able to refresh your apps.";
 "error.xcodeNeedsBetaForMac" = "The installed Xcode isn't compatible with this macOS beta. Install Xcode beta (developer.apple.com/download/applications), open it once, then try again.";
+"error.timedOut" = "%@ stopped responding, so the operation was interrupted. XSide will try again by itself.";
+"error.invalidBundleID" = "The identifier “%@” isn't valid: it can only hold letters, digits, hyphens and dots (for example com.example.app), 155 characters at most.";
+"error.invalidBundleID.short" = "The app's identifier isn't valid: pick another one in the install options.";
 "journey.account.opened" = "Xcode is open: press ⌘ , to land on Apple Account.";
 "journey.account.cert.step2" = "Select your account, click “Personal Team”, then “Manage Certificates…”.";
 "journey.account.cert.step3" = "Click ＋, then choose “Apple Development”.";

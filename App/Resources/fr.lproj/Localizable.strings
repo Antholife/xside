@@ -241,6 +241,9 @@
 "macBeta.banner.text" = "La version de Xcode installée n'est pas faite pour cette bêta de macOS. Elle risque de ne plus fonctionner, et XSide avec elle. Installe Xcode bêta pour éviter toute interruption.";
 "macBeta.notification.body" = "La version de Xcode installée n'est pas faite pour cette bêta de macOS. Installe Xcode bêta, sinon XSide risque de ne plus pouvoir rafraîchir tes apps.";
 "error.xcodeNeedsBetaForMac" = "La version de Xcode installée n'est pas compatible avec cette bêta de macOS. Installe Xcode bêta (developer.apple.com/download/applications), ouvre-le une fois, puis réessaie.";
+"error.timedOut" = "%@ ne répond plus : l'opération a été interrompue. XSide réessaiera tout seul.";
+"error.invalidBundleID" = "L'identifiant « %@ » n'est pas valide : il ne peut contenir que des lettres, des chiffres, des tirets et des points (par exemple com.exemple.app), 155 caractères au plus.";
+"error.invalidBundleID.short" = "L'identifiant de l'app n'est pas valide : choisis-en un autre dans les options d'installation.";
 "journey.account.opened" = "Xcode est ouvert : appuie sur ⌘ , pour arriver sur l'onglet « Apple Account » (compte Apple).";
 "journey.account.cert.step2" = "Sélectionne ton compte, clique sur « Personal Team » (ton équipe personnelle), puis sur « Manage Certificates… » (gérer les certificats).";
 "journey.account.cert.step3" = "Clique sur ＋, puis choisis « Apple Development » (certificat de développement).";

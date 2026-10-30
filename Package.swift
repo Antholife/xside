@@ -11,6 +11,6 @@ let package = Package(
     targets: [
         .target(name: "XSideCore"),
         .executableTarget(name: "XSideApp", dependencies: ["XSideCore"]),
-        .testTarget(name: "XSideCoreTests", dependencies: ["XSideCore"]),
+        .testTarget(name: "XSideCoreTests", dependencies: ["XSideCore"], exclude: ["Fixtures"]),
     ]
 )

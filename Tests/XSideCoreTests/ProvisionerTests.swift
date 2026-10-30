@@ -53,7 +53,7 @@ private final class CacheRunner: CommandRunning, @unchecked Sendable {
     let built: Data
     init(built: Data) { self.built = built }
     var calls: [[String]] { l.lock(); defer { l.unlock() }; return log }
-    func run(_ executable: String, _ arguments: [String], cwd: URL?) async throws -> CommandResult {
+    func run(_ executable: String, _ arguments: [String], cwd: URL?, timeout: Duration) async throws -> CommandResult {
         l.withLock { log.append([executable] + arguments) }
         if executable == "/usr/bin/security", let path = arguments.last {
             guard let data = FileManager.default.contents(atPath: path) else {

@@ -1,4 +1,5 @@
 import CoreGraphics
+import Darwin
 import Foundation
 import ImageIO
 import ObjectiveC
@@ -9,14 +10,81 @@ import UniformTypeIdentifiers
 /// uses (private, loaded at runtime: on failure there's simply no icon). Older apps ship
 /// `AppIcon60x60@3x.png`-style files, used as a fallback. Best effort: nil when nothing is found.
 /// The `.ipa` is untrusted: files and images past sane sizes are skipped, and the icon is decoded
-/// and written at most `maxIconSize` pixels wide.
+/// and written at most `maxIconSize` pixels wide. The app runs it in a child process (`runHelper`,
+/// `extractInSubprocess`): a crash, a hang or a memory blow-up in CoreUI / ImageIO then costs the
+/// icon only, never XSide itself.
 public enum AppIconExtractor {
     /// Largest side of the written icon (an app icon is 1024 px at most).
     static let maxIconSize = 1024
     /// Images declaring a larger side are skipped, never decoded.
     static let maxSourceSize = 4096
     static let maxPNGBytes = 20 * 1024 * 1024
-    static let maxCatalogBytes = 200 * 1024 * 1024
+    static let maxCatalogBytes = 50 * 1024 * 1024
+
+    // MARK: Child process
+
+    /// First argument of the app's executable that runs `runHelper` instead of the app:
+    /// `XSide --extract-icon <app-dir> <out.png>`.
+    public static let helperFlag = "--extract-icon"
+    /// The helper exits past this memory footprint.
+    static let helperMemoryLimit: UInt64 = 768 * 1024 * 1024
+    static let helperCPUSeconds: rlim_t = 10
+
+    /// Runs `helper --extract-icon app destination` (deadline `CommandTimeout.iconHelper`).
+    /// True when the helper succeeded and wrote the icon; any failure means no icon.
+    public static func extractInSubprocess(helper: URL, app: URL, destination: URL,
+                                           runner: CommandRunning) async -> Bool {
+        guard let r = try? await runner.run(helper.path, [helperFlag, app.path, destination.path], cwd: nil,
+                                            timeout: CommandTimeout.iconHelper), r.status == 0 else {
+            try? FileManager.default.removeItem(at: destination)
+            return false
+        }
+        return FileManager.default.fileExists(atPath: destination.path)
+    }
+
+    /// Entry point of the helper process. `arguments`: the `.app` directory and the PNG to write.
+    /// Caps its own resources first, since `Process` offers no hook to do it before exec.
+    /// Returns the exit status: 0 when the icon was written.
+    public static func runHelper(arguments: [String]) -> Int32 {
+        guard arguments.count == 2 else { return 64 }
+        limitHelperResources()
+        let app = URL(fileURLWithPath: arguments[0], isDirectory: true)
+        guard let data = try? IPAInspector.infoPlistData(of: app),
+              let plist = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any]
+        else { return 1 }
+        return extract(from: app, plist: plist, to: URL(fileURLWithPath: arguments[1])) ? 0 : 1
+    }
+
+    /// CPU time (enforced by the kernel), data segment (best effort: macOS doesn't bound mmap with
+    /// it), and a watchdog that exits once the footprint passes `helperMemoryLimit`.
+    private static func limitHelperResources() {
+        var cpu = rlimit(rlim_cur: helperCPUSeconds, rlim_max: helperCPUSeconds)
+        setrlimit(RLIMIT_CPU, &cpu)
+        var data = rlimit(rlim_cur: rlim_t(helperMemoryLimit), rlim_max: rlim_t(helperMemoryLimit))
+        setrlimit(RLIMIT_DATA, &data)
+        let timer = DispatchSource.makeTimerSource(queue: .global())
+        timer.schedule(deadline: .now(), repeating: .milliseconds(50))
+        timer.setEventHandler {
+            if let footprint = physicalFootprint(), footprint > helperMemoryLimit { _exit(3) }
+        }
+        timer.resume()
+        watchdog = timer
+    }
+
+    nonisolated(unsafe) private static var watchdog: (any DispatchSourceTimer)?
+
+    private static func physicalFootprint() -> UInt64? {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+        let kr = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        return kr == KERN_SUCCESS ? info.phys_footprint : nil
+    }
+
+    // MARK: Extraction
 
     /// Icon names from `Info.plist`: `CFBundleIconName`, then `CFBundleIconFiles` (iPhone and iPad).
     public static func iconNames(_ plist: [String: Any]) -> [String] {

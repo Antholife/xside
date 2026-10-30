@@ -16,17 +16,37 @@ public enum RefreshPlanner {
     /// Minimum delay between two attempts on the same installation.
     public static let retryDelay: TimeInterval = 30 * 60
 
+    /// True while `date` is less than `delay` ago. A date in the future (clock moved back, or a
+    /// date written on a skewed clock) counts as elapsed, so it can't block retries for days.
+    static func isRecent(_ date: Date, now: Date, within delay: TimeInterval) -> Bool {
+        let elapsed = now.timeIntervalSince(date)
+        return elapsed >= 0 && elapsed < delay
+    }
+
     /// Installations to refresh now. Already-expired ones are still due.
+    /// `currentIdentitySHA1`: the signing certificate in use. An installation signed with another
+    /// one (certificate replaced or revoked) is due now whatever its expiry: the old signature may
+    /// stop working at any time. Installations with no recorded certificate are never forced, nor
+    /// those of another team (`currentTeamID`): switching teams must not refresh everything at once.
     public static func dueJobs(_ records: [AppRecord], devices: [Device], now: Date,
                                threshold: TimeInterval = RefreshPlanner.threshold,
-                               prefs: DevicePrefs = DevicePrefs()) -> [RefreshJob] {
+                               prefs: DevicePrefs = DevicePrefs(),
+                               currentIdentitySHA1: String? = nil, currentTeamID: String? = nil) -> [RefreshJob] {
         let available = Set(devices.filter(prefs.canRefresh).map(\.id))
         var due: [(expiresAt: Date, job: RefreshJob)] = []
         for record in records {
             for i in record.installations {
-                guard i.expiresAt.timeIntervalSince(now) <= threshold,
-                      available.contains(i.deviceID) else { continue }
-                if let last = i.lastAttempt, now.timeIntervalSince(last) < retryDelay { continue }
+                guard available.contains(i.deviceID) else { continue }
+                let certificateChanged = currentIdentitySHA1 != nil && i.signingIdentitySHA1 != nil
+                    && i.signingIdentitySHA1?.uppercased() != currentIdentitySHA1?.uppercased()
+                    && (i.teamID == nil || i.teamID == currentTeamID)
+                if certificateChanged {
+                    // Only a failed attempt delays it (a success records the new certificate).
+                    if i.lastErrorKey != nil, let last = i.lastAttempt, isRecent(last, now: now, within: retryDelay) { continue }
+                } else {
+                    guard i.expiresAt.timeIntervalSince(now) <= threshold else { continue }
+                    if let last = i.lastAttempt, isRecent(last, now: now, within: retryDelay) { continue }
+                }
                 due.append((i.expiresAt, RefreshJob(recordID: record.id, deviceID: i.deviceID)))
             }
         }
@@ -72,22 +92,43 @@ public enum RefreshPlanner {
     }
 }
 
-/// Remembers, per (app, device), the last failure cause already notified, so a
-/// cause is notified once until the next success calls `reset`.
+/// Remembers, per (app, device), every failure cause already notified (and `needsUSB`), so each
+/// cause is notified once until the next success calls `reset`, even when causes alternate.
 public struct NotificationGate: Codable, Equatable, Sendable {
-    private var notified: [String: String] = [:]
+    private var notified: [String: Set<String>] = [:]
 
     public init() {}
+
+    private enum CodingKeys: String, CodingKey { case notified }
+
+    /// Also reads the older format, which kept only the last cause per pair (`{"k": "cause"}`).
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let sets = try? c.decode([String: [String]].self, forKey: .notified) {
+            notified = sets.mapValues(Set.init)
+        } else if let single = try? c.decode([String: String].self, forKey: .notified) {
+            notified = single.mapValues { [$0] }
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(notified.mapValues { $0.sorted() }, forKey: .notified)
+    }
 
     private static func key(_ recordID: UUID, _ deviceID: String) -> String {
         "\(recordID.uuidString)|\(deviceID)"
     }
 
     public mutating func shouldNotify(recordID: UUID, deviceID: String, errorKey: String) -> Bool {
+        notified[Self.key(recordID, deviceID), default: []].insert(errorKey).inserted
+    }
+
+    /// Forgets one cause only: its notification was refused, the next occurrence retries it.
+    public mutating func forget(recordID: UUID, deviceID: String, errorKey: String) {
         let k = Self.key(recordID, deviceID)
-        if notified[k] == errorKey { return false }
-        notified[k] = errorKey
-        return true
+        notified[k]?.remove(errorKey)
+        if notified[k]?.isEmpty == true { notified[k] = nil }
     }
 
     public mutating func reset(recordID: UUID, deviceID: String) {
@@ -178,8 +219,9 @@ public struct UnreachableTracker: Sendable {
                 let job = RefreshJob(recordID: record.id, deviceID: i.deviceID)
                 let first = firstSeen[job] ?? now
                 seen[job] = first
-                guard now.timeIntervalSince(first) >= Self.confirmDelay else { continue }
-                if let last = i.lastAttempt, now.timeIntervalSince(last) < RefreshPlanner.retryDelay { continue }
+                // A first sighting "in the future" (clock moved back) was an earlier evaluation: confirmed.
+                guard !RefreshPlanner.isRecent(first, now: now, within: Self.confirmDelay) else { continue }
+                if let last = i.lastAttempt, RefreshPlanner.isRecent(last, now: now, within: RefreshPlanner.retryDelay) { continue }
                 result.append((i.expiresAt, job))
             }
         }
