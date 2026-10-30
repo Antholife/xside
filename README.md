@@ -1,38 +1,75 @@
+<div align="center">
+
+<img src="docs/assets/icon.png" width="128" alt="XSide icon">
+
 # XSide
+
+**Sideload iOS apps from your Mac's menu bar, and never let them expire.**
+
+Free Apple Account · Xcode's own tools · Auto-refresh over USB or Wi-Fi
+
+[![macOS 15+](https://img.shields.io/badge/macOS-15%2B-000000?style=flat-square&logo=apple&logoColor=white)](#-requirements)
+[![Swift 6](https://img.shields.io/badge/Swift-6-F05138?style=flat-square&logo=swift&logoColor=white)](https://swift.org)
+[![Xcode](https://img.shields.io/badge/Xcode-required-147EFB?style=flat-square&logo=xcode&logoColor=white)](https://developer.apple.com/xcode/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-8B5CF6?style=flat-square)](LICENSE)
+[![Free Apple Account](https://img.shields.io/badge/Apple%20Account-free-FFD84D?style=flat-square)](#-apples-limits-with-a-free-account)
 
 **English** · [Français](README.fr.md)
 
-XSide is a macOS menu-bar app that sideloads `.ipa` files onto your iPhone and iPad with a free Apple Account, and refreshes them automatically before Apple's 7-day expiry.
+</div>
 
-It only uses Xcode's own tools (`xcodebuild`, `codesign`, `devicectl`). XSide never asks for your Apple password: signing goes through the account you already added in Xcode.
+---
 
-## Features
+XSide installs `.ipa` files on your iPhone and iPad with a free Apple Account, then re-signs and reinstalls them before Apple's 7-day expiry, quietly, from the menu bar.
 
-- Drop an `.ipa` onto the menu-bar icon (or pick one) and install it on one or several devices.
-- Automatic refresh, over USB or Wi-Fi (per device), 2 days before an app expires.
-- Expiry reminders, a badge on the menu-bar icon when something needs you, and notifications that open the right place to fix it.
-- Per-app menu: refresh now, pause refreshing, uninstall from the device.
-- Shows the app icon, its devices and days left at a glance.
-- Guided first launch: Xcode, Apple Account, signing certificate, notifications, devices.
-- English and French.
+> [!NOTE]
+> XSide never asks for your Apple password. Signing goes through the account you already added in Xcode, using Xcode's own tools: `xcodebuild`, `codesign` and `devicectl`.
 
-## Requirements
+## ✨ Features
+
+| | |
+|---|---|
+| 📥 **Drop to install** | Drop an `.ipa` onto the menu-bar icon, or pick one, and install it on one or several devices. |
+| 🔄 **Auto-refresh** | Apps are refreshed 2 days before they expire, over USB or Wi-Fi (your choice, per device). |
+| 🔔 **Never miss an expiry** | Reminders, a badge on the menu-bar icon when something needs you, and notifications that open the right place to fix it. |
+| 🎛️ **Per-app controls** | Refresh now, pause refreshing, or uninstall from the device. |
+| 📱 **At a glance** | Each app's icon, its devices and the days left, right in the popover. |
+| 🧭 **Guided setup** | A first-launch walkthrough: Xcode, Apple Account, signing certificate, notifications, devices. |
+| 🌍 **Localized** | English and French. |
+
+## ⚙️ How it works
+
+```mermaid
+flowchart LR
+    A[".ipa"] --> B["Provisioning profile<br/>(xcodebuild)"]
+    B --> C["Re-sign<br/>(codesign)"]
+    C --> D["Install<br/>(devicectl)"]
+    D --> E["📱 iPhone / iPad"]
+    E -. "2 days before expiry" .-> B
+```
+
+## 📋 Requirements
 
 - A Mac with **macOS 15 or later**.
-- **Xcode**, installed in `/Applications` and opened once. If your iPhone runs an iOS beta, you need the matching Xcode beta ([developer.apple.com/download/applications](https://developer.apple.com/download/applications/)).
-- An **Apple Account** added in Xcode > Settings > Apple Accounts. A free account is enough.
-- Developer Mode enabled on the device, and the device paired with the Mac once over USB.
+- **Xcode**, installed in `/Applications` and opened once.
+- An **Apple Account** added in *Xcode > Settings > Apple Accounts*. A free account is enough.
+- **Developer Mode** enabled on the device, and the device paired with the Mac once over USB.
+
+> [!TIP]
+> If your iPhone runs an iOS beta, you need the matching Xcode beta, from [developer.apple.com/download/applications](https://developer.apple.com/download/applications/).
 
 Windows and Linux aren't supported: XSide relies on Xcode, which only runs on macOS.
 
-## Apple's limits with a free account
+## 🍎 Apple's limits with a free account
 
-- Apps expire after **7 days**: XSide re-signs and reinstalls them before that, as long as it keeps running in the menu bar.
-- **3 sideloaded apps** at most per device.
-- **10 App IDs** per 7 days. XSide shows an estimate of what's left; Apple doesn't expose the real count.
-- App extensions (widgets, share extensions, Watch apps) are removed before signing.
+| Limit | What it means |
+|---|---|
+| ⏳ **7 days** | Apps expire after a week. XSide refreshes them before that, as long as it keeps running in the menu bar. |
+| 📱 **3 apps** | At most 3 sideloaded apps per device. |
+| 🆔 **10 App IDs / 7 days** | XSide shows an estimate of what's left: Apple doesn't expose the real count. |
+| 🧩 **No extensions** | Widgets, share extensions and Watch apps are removed before signing. |
 
-## Install
+## 🚀 Install
 
 There's no signed release yet, so build it yourself:
 
@@ -42,16 +79,22 @@ cd xside
 scripts/bundle.sh   # builds build/XSide.app
 ```
 
-Move `build/XSide.app` to `/Applications` and open it. The app isn't notarized: if macOS blocks it, go to **System Settings > Privacy & Security** and click **Open Anyway**.
+Move `build/XSide.app` to `/Applications` and open it.
 
-Keep XSide running in the menu bar (enable *Launch at login* in its settings): that's what refreshes your apps.
+> [!IMPORTANT]
+> The app isn't notarized. If macOS blocks it, go to **System Settings > Privacy & Security** and click **Open Anyway**.
 
-## Development
+Keep XSide running in the menu bar (turn on *Launch at login* in its settings): that's what refreshes your apps.
 
-- `swift build` / `swift test`: the core logic lives in `Sources/XSideCore`, with tests.
-- `CONFIG=debug scripts/bundle.sh` builds `build/XSide-debug.app`, a separate app (own bundle id and data) for testing.
-- `scripts/check-strings.sh` checks that English and French strings match.
+## 🛠️ Development
 
-## License
+```sh
+swift build                      # build
+swift test                       # core logic tests (Sources/XSideCore)
+CONFIG=debug scripts/bundle.sh   # build/XSide-debug.app, a separate app with its own data
+scripts/check-strings.sh         # English and French strings match
+```
 
-[MIT](LICENSE) · By [Antholife](https://github.com/Antholife)
+## 📄 License
+
+[MIT](LICENSE) · Made by [Antholife](https://github.com/Antholife)
