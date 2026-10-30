@@ -1,6 +1,11 @@
 import AppKit
 import SwiftUI
 
+extension Bundle {
+    /// "1.0.2" (`CFBundleShortVersionString`), nil outside an app bundle.
+    var shortVersion: String? { object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String }
+}
+
 /// Settings > About: icon, version and build stamp, author, repository and licence.
 struct AboutCard: View {
     @Environment(\.openWindow) private var openWindow
@@ -10,7 +15,7 @@ struct AboutCard: View {
 
     /// "Version 0.1.0 (46)".
     private var version: String {
-        L("about.version", Self.info("CFBundleShortVersionString") ?? "–", Self.info("CFBundleVersion") ?? "–")
+        L("about.version", Bundle.main.shortVersion ?? "–", Self.info("CFBundleVersion") ?? "–")
     }
 
     /// "Build f9b997a · 30 Oct 2026, 14:02", from the stamp written by `scripts/bundle.sh`.

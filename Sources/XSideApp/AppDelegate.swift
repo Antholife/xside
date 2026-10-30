@@ -30,6 +30,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let model = Self.model else { return }
         popover.install(label: MenuBarLabel(model: model, appDelegate: self), content: PopoverView(model: model),
                         onVisibilityChange: { model.popoverVisibilityChanged($0) })
+        spinner.button = popover.button
+        if let window = popover.button?.window { menuBarDrop.attach(to: window) }
         #if DEBUG
         // Debug-only: XSIDE_OPEN_POPOVER=1 opens the panel at launch, to look at it.
         if ProcessInfo.processInfo.environment["XSIDE_OPEN_POPOVER"] == "1" {
@@ -38,13 +40,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
     }
 
-    /// Shows the turning arrow on the menu-bar icon while XSide works. The status item may not
-    /// exist yet at launch: retried for a few seconds.
-    func setWorking(_ working: Bool, attempt: Int = 0) {
-        guard !spinner.setWorking(working), attempt < 20 else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-            self?.setWorking(working, attempt: attempt + 1)
-        }
+    /// Shows the turning arrow on the menu-bar icon while XSide works.
+    func setWorking(_ working: Bool) {
+        spinner.setWorking(working)
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -52,7 +50,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSUpdateDynamicServices()
         dockPresence.start()
         installStatusItem()
-        attachMenuBarDrop(attempt: 0)
         #if DEBUG
         // Debug-only: XSIDE_APPEARANCE=dark|light forces the appearance, to check both looks.
         switch ProcessInfo.processInfo.environment["XSIDE_APPEARANCE"] {
@@ -103,14 +100,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         dispatch(urls)
-    }
-
-    /// The status item appears shortly after launch: retry for a few seconds.
-    private func attachMenuBarDrop(attempt: Int) {
-        guard !menuBarDrop.attach(), attempt < 20 else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-            self?.attachMenuBarDrop(attempt: attempt + 1)
-        }
     }
 
     static func isIPA(_ url: URL) -> Bool {

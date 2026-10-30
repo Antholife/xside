@@ -12,6 +12,7 @@ final class StatusPopover: NSObject, NSPopoverDelegate {
 
     private let popover = NSPopover()
     private var item: NSStatusItem?
+    var button: NSStatusBarButton? { item?.button }
     private var onVisibilityChange: (Bool) -> Void = { _ in }
 
     func install<Label: View, Content: View>(label: Label, content: Content,

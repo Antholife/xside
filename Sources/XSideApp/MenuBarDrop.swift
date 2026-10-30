@@ -1,9 +1,9 @@
 import AppKit
 
 /// Lets an `.ipa` be dropped straight on the menu-bar icon (the popover closes as soon as Finder
-/// is clicked, so dropping into it is awkward). SwiftUI's `MenuBarExtra` offers no drop target:
-/// the status bar window hosting XSide's icon is registered for file drags, and dragging messages
-/// it doesn't route to a view reach its delegate (this object). Clicks are untouched.
+/// is clicked, so dropping into it is awkward): the status bar window hosting XSide's icon is
+/// registered for file drags, and dragging messages it doesn't route to a view reach its
+/// delegate (this object). Clicks are untouched.
 @MainActor
 final class MenuBarDrop: NSObject, NSWindowDelegate, NSDraggingDestination {
     private let onDrop: @MainActor ([URL]) -> Void
@@ -13,17 +13,12 @@ final class MenuBarDrop: NSObject, NSWindowDelegate, NSDraggingDestination {
         self.onDrop = onDrop
     }
 
-    /// Hooks the status bar window, once SwiftUI has created it. False when it isn't there yet,
-    /// or already has a delegate (then nothing is touched).
-    @discardableResult
-    func attach() -> Bool {
-        guard window == nil else { return true }
-        guard let statusWindow = NSApp.windows.first(where: { $0.className.contains("NSStatusBarWindow") }),
-              statusWindow.delegate == nil else { return false }
+    /// Hooks the status item's window (left alone if it already has a delegate).
+    func attach(to statusWindow: NSWindow) {
+        guard window == nil, statusWindow.delegate == nil else { return }
         statusWindow.registerForDraggedTypes([.fileURL])
         statusWindow.delegate = self
         window = statusWindow
-        return true
     }
 
     private static func ipas(_ info: NSDraggingInfo) -> [URL] {

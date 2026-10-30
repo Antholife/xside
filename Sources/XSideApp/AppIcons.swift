@@ -13,7 +13,8 @@ final class AppIcons {
     @ObservationIgnored private let runner: CommandRunning
     /// Bumped when an icon appears: rows read it to load the new file.
     private(set) var revision = 0
-    @ObservationIgnored private var images: [URL: NSImage] = [:]
+    /// Loaded icons, and files found missing (nil): each file is read once, not at every render.
+    @ObservationIgnored private var images: [URL: NSImage?] = [:]
     @ObservationIgnored private var backfilling = false
 
     init(library: AppLibrary, runner: CommandRunning) {
@@ -30,11 +31,8 @@ final class AppIcons {
         let candidates = [record.options.iconPath.flatMap { $0.isEmpty ? nil : library.root.appendingPathComponent($0) },
                           file(for: record.id)].compactMap { $0 }
         for url in candidates {
-            if let cached = images[url] { return cached }
-            if let image = NSImage(contentsOf: url) {
-                images[url] = image
-                return image
-            }
+            if images[url] == nil { images[url] = .some(NSImage(contentsOf: url)) }
+            if let image = images[url] ?? nil { return image }
         }
         return nil
     }
@@ -47,7 +45,7 @@ final class AppIcons {
             try fm.createDirectory(at: directory, withIntermediateDirectories: true)
             try? fm.removeItem(at: destination)
             try fm.copyItem(at: extracted, to: destination)
-            images[destination] = nil
+            images[destination] = nil // read again
             revision += 1
         } catch {
             Self.log.error("keeping the icon of \(id) failed: \(error)")

@@ -31,7 +31,7 @@ struct ReleaseNotes {
     /// Notes of the running version, if it has any. Add an entry here (and in CHANGELOG.md) for
     /// each release worth announcing.
     static var current: ReleaseNotes? {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+        let version = Bundle.main.shortVersion ?? ""
         return all.first { $0.version == version }
     }
 

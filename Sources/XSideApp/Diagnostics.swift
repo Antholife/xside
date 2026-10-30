@@ -23,7 +23,7 @@ enum Diagnostics {
     /// "XSide 1.0.1 (57, a4c510b) · macOS 27.2 (26B123) · arm64 · fr".
     static var summary: String {
         let info = Bundle.main.infoDictionary ?? [:]
-        let version = info["CFBundleShortVersionString"] as? String ?? "?"
+        let version = Bundle.main.shortVersion ?? "?"
         let build = info["CFBundleVersion"] as? String ?? "?"
         let commit = info["XSideGitCommit"] as? String ?? "?"
         #if arch(arm64)

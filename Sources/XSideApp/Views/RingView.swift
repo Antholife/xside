@@ -30,7 +30,6 @@ struct Validity {
 /// paused app: its expiry is no longer urgent, the user chose to let it go.
 struct RingView: View {
     let validity: Validity
-    var isBusy = false
     var isPaused = false
 
     /// 34 on its own; smaller next to the app's icon.
@@ -54,7 +53,6 @@ struct RingView: View {
                                         startAngle: .zero, endAngle: .degrees(360 * max(validity.fraction, 0.01))),
                         style: StrokeStyle(lineWidth: line, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-                .opacity(isBusy ? 0.35 : 1)
                 .animation(.smooth, value: validity.fraction)
             center
         }
@@ -65,9 +63,7 @@ struct RingView: View {
     }
 
     @ViewBuilder private var center: some View {
-        if isBusy {
-            ProgressView().controlSize(.small)
-        } else if validity.isExpired {
+        if validity.isExpired {
             Image(systemName: "exclamationmark")
                 .font(.system(size: size * 0.38, weight: .bold))
                 .foregroundStyle(isPaused ? Color.secondary : Color(nsColor: .systemRed))

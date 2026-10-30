@@ -109,7 +109,7 @@ struct AppRow: View {
                 .accessibilityLabel(L("popover.refreshNow"))
                 .transition(.opacity)
             }
-            RingView(validity: validity, isBusy: false, isPaused: isPaused, size: 28)
+            RingView(validity: validity, isPaused: isPaused, size: 28)
             Menu { actions } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 12, weight: .semibold))

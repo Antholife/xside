@@ -153,7 +153,7 @@ struct MenuBarLabel: View {
     /// remembers its version: the journey already shows everything.
     private func showWhatsNewIfNeeded() {
         let defaults = UserDefaults.standard
-        let current = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+        let current = Bundle.main.shortVersion ?? ""
         switch WhatsNew.decide(current: current, lastSeen: defaults.string(forKey: WhatsNew.lastSeenKey),
                                setupDone: journeyCompleted, hasNotes: ReleaseNotes.current != nil) {
         case .show:

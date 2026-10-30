@@ -516,7 +516,7 @@ final class AppModel {
 
     // MARK: - Devices
 
-    /// The popover window was shown or hidden (see `WindowVisibilityReader`).
+    /// The popover was shown or hidden (see `StatusPopover`).
     func popoverVisibilityChanged(_ visible: Bool) {
         guard visible != isPopoverOpen else { return }
         isPopoverOpen = visible
@@ -959,12 +959,9 @@ final class AppModel {
         Set(jobs.keys.map { RefreshJob(recordID: $0.recordID, deviceID: $0.deviceID) })
     }
 
-    /// Rows "Refresh all" would start now.
-    var refreshableEntries: [AppEntry] { deviceGroups.flatMap(\.apps).filter(canRefresh) }
-
     /// Refreshes every app that can be now (reachable, not paused, not already running).
     func refreshAll() {
-        let entries = refreshableEntries
+        let entries = deviceGroups.flatMap(\.apps).filter(canRefresh)
         Self.logger.notice("refresh all: \(entries.count) app(s)")
         for entry in entries { refreshNow(entry.job) }
     }

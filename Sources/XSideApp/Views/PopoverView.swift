@@ -45,7 +45,9 @@ private struct PopoverContent: View {
     }
 
     private var mainBody: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        // Built once per render: the tiles and the list both read it.
+        let groups = model.deviceGroups
+        return VStack(alignment: .leading, spacing: 10) {
             ForEach(model.environmentProblems, id: \.key) { error in
                 EnvironmentBanner(error: error, onOpen: { dismiss() }, onRecheck: model.recheckEnvironment,
                                   isChecking: model.isProbing)
@@ -66,10 +68,10 @@ private struct PopoverContent: View {
                     NSApp.activate()
                 }
             } else {
-                actionTiles
+                actionTiles(refreshable: groups.flatMap(\.apps).filter(model.canRefresh).count)
             }
             PopoverDivider()
-            devices
+            devices(groups)
             PopoverFooter(model: model, appIDsRemaining: model.appIDsRemaining)
         }
         .padding(12)
@@ -85,9 +87,8 @@ private struct PopoverContent: View {
     }
 
     /// Install an app, refresh them all.
-    private var actionTiles: some View {
-        let refreshable = model.refreshableEntries.count
-        return HStack(spacing: 8) {
+    private func actionTiles(refreshable: Int) -> some View {
+        HStack(spacing: 8) {
             Button {
                 // Close the popover first: the file picker opens on its own, not over it.
                 dismiss()
@@ -107,8 +108,7 @@ private struct PopoverContent: View {
         }
     }
 
-    @ViewBuilder private var devices: some View {
-        let groups = model.deviceGroups
+    @ViewBuilder private func devices(_ groups: [DeviceGroup]) -> some View {
         if groups.isEmpty {
             if model.unpairedDevices.isEmpty {
                 Placeholder(symbol: "iphone.slash", text: L("popover.noDevice"))
@@ -400,10 +400,7 @@ private struct PopoverFooter: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.closePopover) private var dismiss
 
-    private var version: String {
-        let info = Bundle.main.infoDictionary ?? [:]
-        return "\(info["CFBundleShortVersionString"] as? String ?? "") β"
-    }
+    private var version: String { "\(Bundle.main.shortVersion ?? "") β" }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -460,8 +457,7 @@ private struct PopoverDivider: View {
 /// A faint brand wash behind the popover's material.
 private struct PopoverTint: View {
     var body: some View {
-        LinearGradient(colors: [Theme.violet.opacity(0.12), Theme.pink.opacity(0.05), .clear],
-                       startPoint: .top, endPoint: .bottom)
+        Theme.brandWash
             .ignoresSafeArea()
             .allowsHitTesting(false)
     }
@@ -534,7 +530,7 @@ private struct IconTile: View {
                 .foregroundStyle(isHovering ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(.secondary))
                 .frame(width: 32, height: 28)
                 .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isHovering ? Theme.violet.opacity(0.14) : Color.primary.opacity(0.05)))
+                    .fill(isHovering ? AnyShapeStyle(Theme.violet.opacity(0.14)) : AnyShapeStyle(Theme.cardFill)))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

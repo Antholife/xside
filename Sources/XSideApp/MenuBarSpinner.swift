@@ -4,17 +4,21 @@ import QuartzCore
 /// While XSide works, the icon's own arrow redraws itself: the swoosh is traced from its start,
 /// then its head appears, in a loop. The label shows the phone alone meanwhile, and the arrow is
 /// a pair of Core Animation shape layers laid over the status item's button. Animating the
-/// SwiftUI `MenuBarExtra` label itself (a new image per frame) sent its host into an endless
-/// layout loop at full CPU.
+/// SwiftUI label itself (a new image per frame) sent its host into an endless layout loop at
+/// full CPU.
 @MainActor
 final class MenuBarSpinner {
     private var overlay: ArrowOverlay?
+    private var working = false
 
-    /// Shows or hides the animated arrow; finds the status item's button on first use (false
-    /// while it isn't there yet).
-    @discardableResult
-    func setWorking(_ working: Bool) -> Bool {
-        guard let button = Self.statusButton() else { return false }
+    /// The status item's button; the state asked before it was set applies then.
+    weak var button: NSView? {
+        didSet { setWorking(working) }
+    }
+
+    func setWorking(_ working: Bool) {
+        self.working = working
+        guard let button else { return }
         if working {
             let arrow = overlay ?? ArrowOverlay(on: button)
             overlay = arrow
@@ -22,22 +26,6 @@ final class MenuBarSpinner {
         } else {
             overlay?.stop()
         }
-        return true
-    }
-
-    /// The button of XSide's status item, in the status bar window AppKit creates for it.
-    private static func statusButton() -> NSView? {
-        guard let window = NSApp.windows.first(where: { $0.className.contains("NSStatusBarWindow") }),
-              let content = window.contentView else { return nil }
-        return content.className.contains("StatusBarButton") ? content : find(in: content)
-    }
-
-    private static func find(in view: NSView) -> NSView? {
-        for sub in view.subviews {
-            if sub.className.contains("StatusBarButton") { return sub }
-            if let found = find(in: sub) { return found }
-        }
-        return nil
     }
 }
 

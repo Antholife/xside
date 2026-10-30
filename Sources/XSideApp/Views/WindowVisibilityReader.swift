@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// Reports whether the hosting window is on screen. Unlike `onAppear`, which a `MenuBarExtra`
-/// window may fire only once, this follows the window's visibility every time it opens or closes.
+/// Reports whether the hosting window is on screen. Unlike `onAppear`, which a reused window may
+/// fire only once, this follows the window's visibility every time it opens or closes.
 struct WindowVisibilityReader: NSViewRepresentable {
     let onChange: @MainActor (Bool) -> Void
 

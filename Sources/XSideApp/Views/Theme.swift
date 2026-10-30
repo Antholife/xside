@@ -11,6 +11,9 @@ enum Theme {
 
     /// Soft card fill that works in light and dark mode.
     static let cardFill = Color.primary.opacity(0.05)
+    /// Faint brand wash behind the popover's content.
+    static let brandWash = LinearGradient(colors: [violet.opacity(0.12), pink.opacity(0.05), .clear],
+                                          startPoint: .top, endPoint: .bottom)
     static let hoverFill = Color.primary.opacity(0.06)
     static let reachable = Color(nsColor: .systemGreen)
     static let unreachable = Color(nsColor: .tertiaryLabelColor)
