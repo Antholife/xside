@@ -49,7 +49,8 @@ struct InstallProgressCard: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                         if let progress {
-                            ProgressView(value: Double(progress.done), total: Double(max(progress.total, 1)))
+                            ProgressView(value: Double(progress.done) + Double(model.runPercent(flow) ?? 0) / 100,
+                                         total: Double(max(progress.total, 1)))
                                 .progressViewStyle(.linear)
                                 .tint(Theme.violet)
                                 .controlSize(.small)
@@ -112,8 +113,9 @@ struct InstallProgressCard: View {
     /// "iPhone de Anthony · Signature" while running; the failure, Wi-Fi check or result after.
     private var detail: String {
         if flow.isRunning, let current {
-            guard let name = current.name else { return current.stage.label }
-            return L("popover.installCard.step", name, current.stage.label)
+            let stage = model.runPercent(flow).map { "\(current.stage.label) · \($0) %" } ?? current.stage.label
+            guard let name = current.name else { return stage }
+            return L("popover.installCard.step", name, stage)
         }
         if Self.hasFailure(flow) { return L("popover.installCard.failed") }
         if flow.wifiCheck != nil { return L("wifi.title") }

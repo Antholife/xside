@@ -8,6 +8,8 @@ struct InstallProgressView: View {
     var failureMessage: String?
     /// The bar above the steps; off when a progress ring already shows it (install window header).
     var showsBar = true
+    /// The running step's percentage, when its tool reports one: shown on its row.
+    var activePercent: Int?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -47,6 +49,21 @@ struct InstallProgressView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
+                if status == .active, let activePercent {
+                    Text("\(activePercent) %")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.brand)
+                        .contentTransition(.numericText())
+                }
+            }
+            if status == .active, let activePercent {
+                ProgressView(value: Double(activePercent), total: 100)
+                    .progressViewStyle(.linear)
+                    .tint(Theme.violet)
+                    .controlSize(.mini)
+                    .padding(.leading, 24)
+                    .animation(.smooth(duration: 0.4), value: activePercent)
             }
             if status == .failed, let failureMessage {
                 Text(failureMessage)

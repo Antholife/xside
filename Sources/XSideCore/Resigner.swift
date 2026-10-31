@@ -56,7 +56,10 @@ public struct Resigner: Sendable {
         let fm = FileManager.default
         try fm.createDirectory(at: workDir, withIntermediateDirectories: true)
         try cleanPreviousRun(in: workDir)
-        let unzip = try await ZipLimits.extract(ipa, to: workDir, runner: runner)
+        // Half of the step's progress is the unzip, the other half the signatures.
+        let unzip = try await StepProgress.within(0...0.5) {
+            try await ZipLimits.extract(ipa, to: workDir, runner: runner)
+        }
         guard unzip.status == 0 else {
             throw XSideError.invalidIPA("Couldn't unzip the IPA")
         }
@@ -94,11 +97,14 @@ public struct Resigner: Sendable {
                                      shareKeychain: options.shareKeychain, otherBundleIDs: otherBundleIDs)
             .write(to: entitlements)
 
-        for target in signTargets(in: app) {
+        let targets = signTargets(in: app)
+        for (index, target) in targets.enumerated() {
             try requireType(target.pathExtension == "dylib" ? .typeRegular : .typeDirectory, target)
             try await sign(target, identity: identitySHA1, entitlements: nil)
+            StepProgress.report?(0.5 + 0.5 * Double(index + 1) / Double(targets.count + 1))
         }
         try await sign(app, identity: identitySHA1, entitlements: entitlements)
+        StepProgress.report?(1)
         return app
     }
 

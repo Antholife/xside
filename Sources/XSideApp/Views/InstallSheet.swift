@@ -37,7 +37,11 @@ private struct ProgressHeader: View {
     let flow: InstallFlow
     let timeline: StepTimeline
 
-    private var fraction: Double { Double(timeline.completedCount) / Double(max(timeline.total, 1)) }
+    private var percent: Int? { model.runPercent(flow) }
+    /// Steps done, plus the running one's part when its tool reports it.
+    private var fraction: Double {
+        (Double(timeline.completedCount) + Double(percent ?? 0) / 100) / Double(max(timeline.total, 1))
+    }
 
     var body: some View {
         VStack(spacing: 10) {
@@ -56,7 +60,7 @@ private struct ProgressHeader: View {
                 .font(.system(size: 17, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
                 .lineLimit(1)
-            Text(L("install.progress.subtitle", flow.runs.first?.name ?? "", min(timeline.completedCount + 1, timeline.total), timeline.total))
+            Text(subtitle)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.white.opacity(0.8))
                 .lineLimit(1)
@@ -64,6 +68,7 @@ private struct ProgressHeader: View {
         .frame(maxWidth: .infinity)
         .padding(.top, 4)
         .padding(.bottom, 20)
+        .animation(.smooth(duration: 0.4), value: percent)
         .padding(.horizontal, 20)
         .background {
             ZStack {
@@ -73,6 +78,17 @@ private struct ProgressHeader: View {
             .clipped()
             .ignoresSafeArea(edges: .top)
         }
+    }
+}
+
+extension ProgressHeader {
+    /// "on iPhone · step 3 of 4", or "on iPhone · Sending to the device · 62 %" when it's known.
+    fileprivate var subtitle: String {
+        let device = flow.runs.first?.name ?? ""
+        if let percent, let step = timeline.current {
+            return L("install.progress.subtitlePercent", device, step.label, percent)
+        }
+        return L("install.progress.subtitle", device, min(timeline.completedCount + 1, timeline.total), timeline.total)
     }
 }
 
@@ -184,7 +200,8 @@ struct InstallSheet: View {
                 ExportLogsLink(model: model)
             case .running(let stage) where !flow.isMultiDevice:
                 // One device: the header shows the ring, the steps follow, nothing else.
-                InstallProgressView(timeline: StepTimeline(steps: steps, stage: stage), showsBar: false)
+                InstallProgressView(timeline: StepTimeline(steps: steps, stage: stage), showsBar: false,
+                                    activePercent: model.runPercent(flow))
             case .editing, .running:
                 // The run's status comes first, right under the app header.
                 if case .running = flow.phase {

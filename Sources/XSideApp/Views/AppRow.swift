@@ -15,6 +15,8 @@ struct AppRow: View {
     /// Wi-Fi refresh is off and the device is only on Wi-Fi.
     let needsUSB: Bool
     let deviceName: String
+    /// The running step's percentage, when its tool reports one.
+    var percent: Int?
     /// A notification was about this app: the row glows while the panel opens.
     var isHighlighted = false
     /// The app's icon (custom or its own), nil until known.
@@ -133,7 +135,7 @@ struct AppRow: View {
 
     private func subtitle(validity: Validity, now: Date) -> String {
         if isUninstalling { return L("popover.app.uninstalling") }
-        if let step { return step.rowText }
+        if let step { return percent.map { "\(step.rowText) \($0) %" } ?? step.rowText }
         if isPaused {
             if validity.isExpired { return L("popover.paused.expired") }
             if Calendar.current.isDateInToday(validity.expiresAt) { return L("popover.paused.expiresToday") }

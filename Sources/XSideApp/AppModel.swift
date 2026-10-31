@@ -1003,6 +1003,32 @@ final class AppModel {
                                       needsNewAppID: needsNewAppID, appIDsRemaining: appIDsRemaining)
     }
 
+    /// The running step's progress per row, in whole percents, when its tool reports one.
+    private(set) var stepPercent: [JobKey: Int] = [:]
+
+    fileprivate func setStepPercent(_ percent: Int, for key: JobKey) {
+        guard jobs[key] != nil, stepPercent[key] != percent else { return }
+        stepPercent[key] = percent
+        updateDockBadge()
+    }
+
+    /// The current step's percentage of the install in `flow` (its device being installed now).
+    func runPercent(_ flow: InstallFlow) -> Int? {
+        guard flow.isRunning, let recordID = flow.importedRecordID ?? flow.existing?.id,
+              let deviceID = flow.currentRun?.run.deviceID ?? flow.runs.first?.deviceID else { return nil }
+        return stepPercent[JobKey(recordID: recordID, deviceID: deviceID)]
+    }
+
+    /// The Dock icon (when shown) carries the percentage of the install in the window, else of
+    /// the only running job.
+    private func updateDockBadge() {
+        let percent = install.flatMap(runPercent) ?? (stepPercent.count == 1 ? stepPercent.values.first : nil)
+        onDockBadge?(percent.map { "\($0)%" })
+    }
+
+    /// Set by the app delegate: shows a label on the Dock icon (nil removes it).
+    var onDockBadge: ((String?) -> Void)?
+
     /// Refreshes every app that can be now (reachable, not paused, not already running).
     func refreshAll() {
         let entries = deviceGroups.flatMap(\.apps).filter(canRefresh)
@@ -1033,7 +1059,11 @@ final class AppModel {
     private func release(_ key: JobKey) {
         let left = (claims[key] ?? 1) - 1
         claims[key] = left > 0 ? left : nil
-        if left <= 0 { jobs[key] = nil }
+        if left <= 0 {
+            jobs[key] = nil
+            stepPercent[key] = nil
+            updateDockBadge()
+        }
         if claims.isEmpty, let activity = jobActivity {
             ProcessInfo.processInfo.endActivity(activity)
             jobActivity = nil
@@ -1064,11 +1094,19 @@ final class AppModel {
                 guard let self else { throw CancellationError() }
                 return try await self.currentEnvironment()
             }
-            _ = try await pipeline.install(recordID: key.recordID, device: device, environment: environment,
+            // How far the current step is, when its tool can tell (whole percents, on the main actor).
+            let report: @Sendable (Double) -> Void = { [weak self] fraction in
+                let percent = Int((fraction * 100).rounded(.down))
+                Task { @MainActor in self?.setStepPercent(percent, for: key) }
+            }
+            _ = try await StepProgress.$report.withValue(report) {
+                try await pipeline.install(recordID: key.recordID, device: device, environment: environment,
                                            refresh: refresh) { step in
-                await MainActor.run {
-                    self.jobs[key] = .step(step)
-                    progress(.step(step))
+                    await MainActor.run {
+                        self.jobs[key] = .step(step)
+                        self.stepPercent[key] = nil // a new step starts from nothing
+                        progress(.step(step))
+                    }
                 }
             }
         } catch {

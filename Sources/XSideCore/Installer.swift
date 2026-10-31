@@ -2,17 +2,27 @@ import Foundation
 
 /// Installs a signed `.app` on a device, or removes one, with `devicectl`.
 public struct Installer: Sendable {
+    private static let log = Log("command")
     private let runner: CommandRunning
 
     public init(runner: CommandRunning) {
         self.runner = runner
     }
 
+    /// The transfer's progress comes from devicectl's own percentages, read as they're printed.
     public func install(app: URL, deviceID: String) async throws {
-        let result = try await runner.run(
-            "/usr/bin/xcrun",
-            ["devicectl", "device", "install", "app", "--device", deviceID, app.path],
-            cwd: nil, timeout: CommandTimeout.deviceInstall)
+        let report = StepProgress.report
+        let result = try await CommandOutput.$onChunk.withValue({ chunk in
+            if let fraction = StepProgress.lastPercent(in: chunk) {
+                report?(fraction)
+                Self.log.debug("devicectl progress \(Int(fraction * 100))%")
+            }
+        }) {
+            try await runner.run(
+                "/usr/bin/xcrun",
+                ["devicectl", "device", "install", "app", "--device", deviceID, app.path],
+                cwd: nil, timeout: CommandTimeout.deviceInstall)
+        }
         guard result.status == 0 else {
             let combined = String(decoding: result.stdout, as: UTF8.self) + "\n" + result.stderr
             let mapped = Self.mapError(combined)

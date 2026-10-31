@@ -207,6 +207,7 @@ public struct ProcessRunner: CommandRunning {
         let out = DataBox()
         let err = DataBox()
         let outDone = DispatchSemaphore(value: 0)
+        let onChunk = CommandOutput.onChunk
         let errDone = DispatchSemaphore(value: 0)
         func drain(_ pipe: Pipe, _ box: DataBox, _ done: DispatchSemaphore) {
             pipe.fileHandleForReading.readabilityHandler = { h in
@@ -216,6 +217,7 @@ public struct ProcessRunner: CommandRunning {
                     done.signal()
                 } else {
                     box.append(chunk)
+                    onChunk?(String(decoding: chunk, as: UTF8.self))
                 }
             }
         }

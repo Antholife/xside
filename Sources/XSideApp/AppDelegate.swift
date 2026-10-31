@@ -31,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.install(label: MenuBarLabel(model: model, appDelegate: self), content: PopoverView(model: model),
                         onVisibilityChange: { model.popoverVisibilityChanged($0) })
         spinner.button = popover.button
+        model.onDockBadge = { NSApp.dockTile.badgeLabel = $0 }
         Notifier.openPanelHandler = { [weak self] job in
             if let job { model.highlight(JobKey(recordID: job.recordID, deviceID: job.deviceID)) }
             self?.popover.show()

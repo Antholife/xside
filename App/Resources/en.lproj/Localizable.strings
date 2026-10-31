@@ -420,3 +420,4 @@
 "install.options.customize.hint" = "As in the app";
 "install.progress.title" = "Installing %@";
 "install.progress.subtitle" = "on %1$@ · step %2$d of %3$d";
+"install.progress.subtitlePercent" = "on %1$@ · %2$@ · %3$d %%";

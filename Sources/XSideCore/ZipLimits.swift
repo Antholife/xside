@@ -36,9 +36,10 @@ public enum ZipLimits {
     public static func extract(_ ipa: URL, to destination: URL, runner: CommandRunning,
                                maxBytes: UInt64 = maxUncompressedBytes,
                                maxFiles: Int = maxEntries) async throws -> CommandResult {
+        let declared = try scan(ipa).uncompressed
         try check(ipa)
         let before = Set((try? FileManager.default.contentsOfDirectory(atPath: destination.path)) ?? [])
-        let ditto = try await watched(destination, maxBytes: maxBytes, maxFiles: maxFiles) {
+        let ditto = try await watched(destination, maxBytes: maxBytes, maxFiles: maxFiles, declared: declared) {
             try await runner.run("/usr/bin/ditto", ["-x", "-k", ipa.path, destination.path], cwd: nil)
         }
         guard ditto.status != 0 else { return ditto }
@@ -48,16 +49,18 @@ public enum ZipLimits {
         for name in (try? FileManager.default.contentsOfDirectory(atPath: destination.path)) ?? [] where !before.contains(name) {
             try FileManager.default.removeItem(at: destination.appendingPathComponent(name))
         }
-        return try await watched(destination, maxBytes: maxBytes, maxFiles: maxFiles) {
+        return try await watched(destination, maxBytes: maxBytes, maxFiles: maxFiles, declared: declared) {
             try await runner.run("/usr/bin/unzip", ["-qq", "-o", ipa.path, "-d", destination.path], cwd: nil)
         }
     }
 
     /// Runs `unpack` while measuring `destination` every `watchInterval`, then once more at the end
     /// (tools set folder permissions last; this pass also gives the owner access back to them).
-    private static func watched(_ destination: URL, maxBytes: UInt64, maxFiles: Int,
+    /// `declared`: the uncompressed size the archive announces, to report how far the unzip is.
+    private static func watched(_ destination: URL, maxBytes: UInt64, maxFiles: Int, declared: UInt64,
                                 _ unpack: @escaping @Sendable () async throws -> CommandResult) async throws -> CommandResult {
-        try await withThrowingTaskGroup(of: CommandResult?.self) { group in
+        let report = StepProgress.report
+        return try await withThrowingTaskGroup(of: CommandResult?.self) { group in
             group.addTask { try await unpack() }
             group.addTask {
                 while true {
@@ -66,6 +69,7 @@ public enum ZipLimits {
                     if written.entries > maxFiles || written.bytes > maxBytes {
                         throw XSideError.invalidIPA("Rejected: it expands to more than it declares")
                     }
+                    if declared > 0 { report?(min(Double(written.bytes) / Double(declared), 1)) }
                 }
             }
             defer { group.cancelAll() }
