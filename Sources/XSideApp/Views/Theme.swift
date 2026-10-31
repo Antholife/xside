@@ -68,6 +68,9 @@ enum InstallWindow {
     panel.allowedContentTypes = [UTType(filenameExtension: "ipa") ?? .data]
     panel.allowsMultipleSelection = false
     panel.canChooseDirectories = false
-    NSApp.activate()
+    // Opened right after the popover closes: XSide isn't active anymore, and a plain activate()
+    // is turned down, leaving the panel behind the other apps.
+    NSApp.activate(ignoringOtherApps: true)
+    panel.orderFrontRegardless()
     return panel.runModal() == .OK ? panel.url : nil
 }

@@ -90,7 +90,9 @@ private struct PopoverContent: View {
     private func actionTiles(refreshable: Int) -> some View {
         HStack(spacing: 8) {
             Button {
-                // Close the popover first: the file picker opens on its own, not over it.
+                // Close the popover first: the file picker opens on its own, not over it. Active
+                // now, while the click counts (see `chooseIPA`).
+                NSApp.activate(ignoringOtherApps: true)
                 dismiss()
                 DispatchQueue.main.async {
                     if let url = chooseIPA() { openWindow.presentInstall(url, model: model) }
