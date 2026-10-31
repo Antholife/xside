@@ -29,6 +29,18 @@ XSide installs `.ipa` files on your iPhone and iPad with a free Apple Account, t
 > [!NOTE]
 > XSide never asks for your Apple password. Signing goes through the account you already added in Xcode, using Xcode's own tools: `xcodebuild`, `codesign` and `devicectl`.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/panel-dark.png">
+    <img src="docs/assets/screenshots/panel-light.png" width="380" alt="The XSide panel under the menu bar icon: apps with their icon and days left">
+  </picture>
+</p>
+
+<p align="center">
+  <img src="docs/assets/screenshots/install-dark.png" width="370" alt="The install window: devices as tiles and options">
+  <img src="docs/assets/screenshots/installing-dark.png" width="370" alt="Installing: the app's icon in a progress ring and the steps">
+</p>
+
 ## ✨ Features
 
 | | |
