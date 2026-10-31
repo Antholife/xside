@@ -6,7 +6,9 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 
 ### Added
 - **Automatic updates** with [Sparkle](https://sparkle-project.org): XSide checks once a day and offers new versions, signed with the project's EdDSA key. *Settings > Updates* to turn it off or check now. Versions before this one have to be updated by hand once.
-- The panel is a real popover, with its arrow under the menu-bar icon, and a new look: Install / Refresh all tiles, each app's own icon, icon footer.
+- The panel is a real popover, with its arrow under the menu-bar icon, and a new look: Install / Refresh all tiles, each app's own icon, icon footer (Settings, What's New, logs, GitHub, report a bug) with hover labels.
+- Settings redone with a sidebar, one short page per topic; update check frequency (daily, weekly, monthly) and channel (beta; stable opens with 1.0).
+- Change the app right from the install window, with a button or by dropping another `.ipa` on it.
 
 ### Fixed
 - Removing a device that is still paired now hides it until an app is installed on it again.

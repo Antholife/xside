@@ -49,7 +49,7 @@ private struct PopoverContent: View {
         let groups = model.deviceGroups
         return VStack(alignment: .leading, spacing: 10) {
             ForEach(model.environmentProblems, id: \.key) { error in
-                EnvironmentBanner(error: error, onOpen: { dismiss() }, onRecheck: model.recheckEnvironment,
+                EnvironmentBanner(error: error, onOpen: { model.settingsPane = .signing; dismiss() }, onRecheck: model.recheckEnvironment,
                                   isChecking: model.isProbing)
             }
             if model.macBetaWithReleaseXcode { MacBetaBanner { dismiss() } }
@@ -414,7 +414,9 @@ private struct PopoverFooter: View {
             PopoverDivider()
             HStack(spacing: 6) {
                 if showsSettings {
-                    IconTile(symbol: "gearshape.fill", help: L("popover.settings")) {
+                    IconTile(symbol: "gearshape.fill", help: L("popover.settings"), tipAlignment: .leading) {
+                        // A signing problem opens on its fix.
+                        model.settingsPane = model.environmentFailed ? .signing : .general
                         dismiss()
                         NSApp.activate()
                         openSettings()
@@ -428,6 +430,14 @@ private struct PopoverFooter: View {
                         dismiss()
                         DispatchQueue.main.async { Diagnostics.export(model: model) }
                     }
+                    IconTile(image: .githubMark, help: L("settings.github")) {
+                        dismiss()
+                        NSWorkspace.shared.open(AppLinks.repository)
+                    }
+                    IconTile(symbol: "ladybug.fill", help: L("popover.reportBug")) {
+                        dismiss()
+                        NSWorkspace.shared.open(AppLinks.newBugReport)
+                    }
                 }
                 Spacer()
                 Text(version)
@@ -437,7 +447,7 @@ private struct PopoverFooter: View {
                 Spacer()
                 // Confirmed by `AppDelegate.applicationShouldTerminate` while it would stop a refresh:
                 // the popover closes first, so a cancelled quit doesn't leave it open behind.
-                IconTile(symbol: "power", help: L("popover.quit")) {
+                IconTile(symbol: "power", help: L("popover.quit"), tipAlignment: .trailing) {
                     dismiss()
                     DispatchQueue.main.async { NSApp.terminate(nil) }
                 }
@@ -518,14 +528,28 @@ private struct ActionTileBody: View {
 
 /// Small icon-only footer tile, with its name as tooltip.
 private struct IconTile: View {
-    let symbol: String
+    let icon: Image
     let help: String
+    /// Where the hover bubble lines up: the edge tiles keep it inside the popover.
+    var tipAlignment: HorizontalAlignment = .center
     let action: () -> Void
     @State private var isHovering = false
+    @State private var showsTip = false
+
+    init(symbol: String, help: String, tipAlignment: HorizontalAlignment = .center, action: @escaping () -> Void) {
+        self.init(image: Image(systemName: symbol), help: help, tipAlignment: tipAlignment, action: action)
+    }
+
+    init(image: Image, help: String, tipAlignment: HorizontalAlignment = .center, action: @escaping () -> Void) {
+        icon = image
+        self.help = help
+        self.tipAlignment = tipAlignment
+        self.action = action
+    }
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol)
+            icon
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(isHovering ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(.secondary))
                 .frame(width: 32, height: 28)
@@ -534,9 +558,46 @@ private struct IconTile: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // System tooltips don't show in a popover: a bubble above the tile after a short pause.
+        .overlay(alignment: Alignment(horizontal: tipAlignment, vertical: .top)) {
+            if showsTip {
+                Text(help)
+                    .font(.system(size: 11, weight: .medium))
+                    .fixedSize()
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5))
+                    .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
+                    .offset(y: -30)
+                    .transition(.opacity.combined(with: .offset(y: 4)))
+                    .allowsHitTesting(false)
+            }
+        }
+        .zIndex(showsTip ? 1 : 0)
+        .task(id: isHovering) {
+            guard isHovering else { showsTip = false; return }
+            try? await Task.sleep(for: .milliseconds(450))
+            if !Task.isCancelled { showsTip = true }
+        }
         .onHover { isHovering = $0 }
-        .help(help)
         .accessibilityLabel(help)
         .animation(.easeOut(duration: 0.12), value: isHovering)
+        .animation(.easeOut(duration: 0.15), value: showsTip)
+    }
+}
+
+extension Image {
+    /// GitHub's mark (App/Resources/GitHubMark.svg), tinted like an SF Symbol; a code symbol when
+    /// it isn't bundled (`swift run`).
+    static var githubMark: Image {
+        guard let url = Bundle.main.url(forResource: "GitHubMark", withExtension: "svg"),
+              let image = NSImage(contentsOf: url) else {
+            return Image(systemName: "chevron.left.forwardslash.chevron.right")
+        }
+        image.isTemplate = true
+        image.size = NSSize(width: 13, height: 13)
+        return Image(nsImage: image)
     }
 }

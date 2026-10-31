@@ -52,7 +52,7 @@ struct AboutCard: View {
             .lineLimit(1)
             HStack(spacing: 18) {
                 Link(destination: AppLinks.repository) {
-                    Label(L("settings.github"), systemImage: "chevron.left.forwardslash.chevron.right")
+                    Label { Text(L("settings.github")) } icon: { Image.githubMark }
                 }
                 Button {
                     openWindow(id: WhatsNewWindow.id)

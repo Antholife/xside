@@ -64,6 +64,12 @@ struct InstallSheet: View {
         }
         .padding(20)
         .animation(.smooth(duration: 0.25), value: flow.phase)
+        // An .ipa dropped on the window replaces this one (queued while an install runs).
+        .dropDestination(for: URL.self) { urls, _ in
+            guard let url = urls.first(where: AppDelegate.isIPA) else { return false }
+            model.pendingIPA = url
+            return true
+        }
     }
 
     /// Room left for the scrolling middle on the current screen, minus header, buttons and chrome.
@@ -181,6 +187,16 @@ struct InstallSheet: View {
                     .truncationMode(.middle)
             }
             Spacer(minLength: 0)
+            // Another .ipa without starting over: it replaces this one until an install starts.
+            if !flow.isBusy {
+                Button {
+                    if let url = chooseIPA() { model.pendingIPA = url }
+                } label: {
+                    Label(L("install.changeApp"), systemImage: "arrow.left.arrow.right")
+                }
+                .controlSize(.small)
+                .help(L("install.changeApp.help"))
+            }
         }
     }
 
@@ -270,6 +286,7 @@ private struct BlockedNotice: View {
                             .disabled(model.isProbing)
                     } else {
                         Button(L("environment.banner.fix")) {
+                            model.settingsPane = .signing
                             NSApp.activate()
                             openSettings()
                         }

@@ -389,3 +389,15 @@
 "updates.channel.beta" = "Beta";
 "updates.channel.stable" = "Stable";
 "updates.channel.noStable" = "XSide is in beta: there's no stable release yet. The stable channel opens with version 1.0.";
+
+/* Settings pages */
+"settings.pane.general" = "General";
+"settings.journey" = "Welcome journey";
+"settings.notifications.footer" = "Failures and expiry reminders are always notified.";
+"settings.signing.hero.ready" = "All set";
+"settings.signing.hero.readyText" = "XSide can install and refresh your apps.";
+"settings.signing.hero.todo" = "Something needs fixing";
+"settings.signing.hero.todoText" = "Until it's fixed, XSide can't install or refresh apps. Follow the steps below.";
+"popover.reportBug" = "Report a bug on GitHub";
+"install.changeApp" = "Change app…";
+"install.changeApp.help" = "Pick another .ipa, or drop one on this window";

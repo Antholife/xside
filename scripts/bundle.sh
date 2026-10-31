@@ -29,7 +29,7 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
 fi
 plutil -replace XSideBuildDate -string "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$APP/Contents/Info.plist"
 cp -R App/Resources/*.lproj "$APP/Contents/Resources/"
-cp App/Resources/MenuBarIcon.pdf App/Resources/AppIcon.icns "$APP/Contents/Resources/"
+cp App/Resources/MenuBarIcon.pdf App/Resources/AppIcon.icns App/Resources/GitHubMark.svg "$APP/Contents/Resources/"
 cp -R Resources/ProvisioningTemplate "$APP/Contents/Resources/ProvisioningTemplate"
 # Sparkle (self-updates): the framework next to the executable, found through its rpath.
 mkdir -p "$APP/Contents/Frameworks"

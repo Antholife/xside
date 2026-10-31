@@ -194,7 +194,18 @@ struct MenuBarLabel: View {
                 model.updateAttention()
             }
             .onAppear {
-                Notifier.openSettingsHandler = { openSettings() }
+                #if DEBUG
+                // Debug-only: XSIDE_OPEN_SETTINGS=<pane> opens Settings on that page at launch.
+                if let pane = ProcessInfo.processInfo.environment["XSIDE_OPEN_SETTINGS"].flatMap(SettingsPane.init) {
+                    model.settingsPane = pane
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { NSApp.activate(); openSettings() }
+                }
+                #endif
+                // Notifications open Settings on a signing or macOS beta problem: its page.
+                Notifier.openSettingsHandler = {
+                    model.settingsPane = .signing
+                    openSettings()
+                }
                 appDelegate.quitStopsRefreshes = { [model] in model.quitStopsRefreshes }
                 appDelegate.openIPA = { url in
                     if journeyCompleted {

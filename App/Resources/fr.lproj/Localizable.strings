@@ -389,3 +389,15 @@
 "updates.channel.beta" = "Bêta";
 "updates.channel.stable" = "Stable";
 "updates.channel.noStable" = "XSide est en bêta : il n'y a pas encore de version stable. Le canal stable ouvrira avec la version 1.0.";
+
+/* Pages des réglages */
+"settings.pane.general" = "Général";
+"settings.journey" = "Parcours de bienvenue";
+"settings.notifications.footer" = "Les échecs et les rappels avant expiration sont toujours notifiés.";
+"settings.signing.hero.ready" = "Tout est prêt";
+"settings.signing.hero.readyText" = "XSide peut installer et rafraîchir tes apps.";
+"settings.signing.hero.todo" = "Quelque chose est à corriger";
+"settings.signing.hero.todoText" = "Tant que ce n'est pas réglé, XSide ne peut ni installer ni rafraîchir. Suis les étapes ci-dessous.";
+"popover.reportBug" = "Signaler un bug sur GitHub";
+"install.changeApp" = "Changer d'app…";
+"install.changeApp.help" = "Choisis un autre .ipa, ou glisse-le sur cette fenêtre";

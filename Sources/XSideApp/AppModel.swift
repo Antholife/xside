@@ -115,6 +115,8 @@ final class AppModel {
     let icons: AppIcons
     /// XSide's own updates (Sparkle).
     let updater = Updater()
+    /// The page Settings shows: set before opening it (a signing problem opens on its fix).
+    var settingsPane = SettingsPane.general
     /// Runs every tool with `DEVELOPER_DIR` set to the Xcode in use (see `resolveXcode`).
     private let runner: ProcessRunner
     /// Without the override: what `xcode-select -p` itself points to.
