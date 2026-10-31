@@ -990,6 +990,14 @@ final class AppModel {
         // A new App ID unless the record is known and keeps its bundle id.
         let customID = flow.draft.bundleID.trimmingCharacters(in: .whitespaces)
         let needsNewAppID = existing.map { !customID.isEmpty && customID != $0.signedBundleID } ?? true
+        #if DEBUG
+        // Debug-only: XSIDE_FAKE_PREFLIGHT=1 shows every warning, on the first selected device.
+        if ProcessInfo.processInfo.environment["XSIDE_FAKE_PREFLIGHT"] == "1", let first = targets.first {
+            return [.iOSTooOld(deviceID: first.deviceID, required: "99.0", actual: first.osVersion ?? "?"),
+                    .deviceFull(deviceID: first.deviceID, apps: first.otherApps),
+                    .noAppIDLeft]
+        }
+        #endif
         return InstallPreflight.check(minimumOS: minOS.isEmpty ? info.minimumOSVersion : minOS, targets: targets,
                                       needsNewAppID: needsNewAppID, appIDsRemaining: appIDsRemaining)
     }

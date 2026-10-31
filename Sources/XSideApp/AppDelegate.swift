@@ -35,13 +35,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let job { model.highlight(JobKey(recordID: job.recordID, deviceID: job.deviceID)) }
             self?.popover.show()
         }
+        // The panel opens on the app: it follows the refresh there, or says why it couldn't start
+        // (device not seen yet, already running, setup to fix).
         Notifier.refreshHandler = { [weak self] job in
             Self.logger.notice("refresh from a notification")
-            // Can't start now (device not seen yet, already running, setup to fix): the panel says why.
-            if !model.refreshNow(job) {
-                model.highlight(JobKey(recordID: job.recordID, deviceID: job.deviceID))
-                self?.popover.show()
-            }
+            model.refreshNow(job)
+            model.highlight(JobKey(recordID: job.recordID, deviceID: job.deviceID))
+            self?.popover.show()
         }
         if let window = popover.button?.window { menuBarDrop.attach(to: window) }
         #if DEBUG
@@ -66,9 +66,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// A click on the Dock icon with no window open: the install window (the install in progress,
     /// or a place to drop or pick an .ipa).
+    /// A notification's click also "reopens" the app: what it opens comes after, from the
+    /// notification's handler, so the install window waits a moment and steps aside for it.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
         guard !hasVisibleWindows, let model = Self.model else { return true }
-        model.showInstallWindow?()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            guard Date().timeIntervalSince(Notifier.lastResponse) > 2 else { return }
+            model.showInstallWindow?()
+        }
         return false
     }
 

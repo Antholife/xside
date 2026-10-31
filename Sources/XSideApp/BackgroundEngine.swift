@@ -45,6 +45,25 @@ final class BackgroundEngine {
         started = true
         Self.logger.notice("engine started (threshold \(Self.threshold / 86_400) d)")
         notifier.start()
+        #if DEBUG
+        // Debug-only: XSIDE_TEST_NOTIFICATIONS=1 posts a refresh failure about the first app, then
+        // its expiry reminder a minute later, to try their buttons.
+        if ProcessInfo.processInfo.environment["XSIDE_TEST_NOTIFICATIONS"] == "1" {
+            Task { [weak self] in
+                await NotificationPermission().request()
+                try? await Task.sleep(for: .seconds(4))
+                guard let self, let record = self.model.records.first,
+                      let installation = record.installations.first else { return }
+                let job = RefreshJob(recordID: record.id, deviceID: installation.deviceID)
+                _ = await self.notifier.refreshFailed(appName: Self.appName(record), errorKey: XSideError.deviceUnavailable.key,
+                                                      message: XSideError.deviceUnavailable.localizedMessage,
+                                                      job: job, id: "test.failure")
+                await self.notifier.scheduleExpiryReminder(recordID: record.id, deviceID: installation.deviceID,
+                                                           appName: Self.appName(record), deviceName: "iPhone",
+                                                           expiresAt: Date().addingTimeInterval(86_400 + 60))
+            }
+        }
+        #endif
 
         model.onNeedsEvaluation = { [weak self] in self?.evaluate(reason: "change") }
         model.onDeviceRemoved = { [weak self] id in self?.forgetDevice(id) }

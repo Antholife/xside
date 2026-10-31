@@ -21,6 +21,10 @@ final class Notifier: NSObject {
     /// Keys of an app notification's `userInfo`.
     private nonisolated static let recordKey = "recordID", deviceKey = "deviceID"
 
+    /// When a notification was last clicked (or one of its buttons): the reopen it causes is not
+    /// a click on the Dock icon (see `AppDelegate.applicationShouldHandleReopen`).
+    static var lastResponse = Date.distantPast
+
     /// Installed by the app: refreshes one app (a notification's "Refresh now").
     static var refreshHandler: (@MainActor (RefreshJob) -> Void)?
     /// Installed by the app: opens the menu-bar panel, on the notification's app if it has one.
@@ -57,8 +61,9 @@ final class Notifier: NSObject {
         center.delegate = self
         let open = UNNotificationAction(identifier: Self.openXcodeAction, title: L("notification.openXcode"),
                                         options: [.foreground])
+        // Foreground: the panel opens on the app, to follow the refresh.
         let refresh = UNNotificationAction(identifier: Self.refreshAction, title: L("notification.action.refresh"),
-                                           options: [])
+                                           options: [.foreground])
         let panel = UNNotificationAction(identifier: Self.openPanelAction, title: L("notification.action.open"),
                                          options: [.foreground])
         center.setNotificationCategories([
@@ -305,6 +310,7 @@ extension Notifier: UNUserNotificationCenterDelegate {
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             didReceive response: UNNotificationResponse) async {
         let request = response.notification.request
+        await MainActor.run { Self.lastResponse = Date() }
         if response.actionIdentifier == Self.openXcodeAction {
             await openXcode()
         } else if response.actionIdentifier == Self.refreshAction, let job = Self.job(of: response.notification) {
