@@ -305,7 +305,6 @@
 
 "menuBar.attention" = "XSide: something needs your attention";
 "install.field.shareKeychain" = "Keychain shared with %@";
-"install.warning.shareKeychain" = "The app asks to share these groups with its vendor's other apps: %@. Turn this on only for an IPA you trust: a tampered app could read the other apps' sign-ins.";
 
 "settings.xcode.betaNotReady" = "Xcode beta found, but not ready yet: open it once to accept its license.";
 
@@ -415,3 +414,5 @@
 "install.empty.choose" = "Choose an .ipa…";
 "preflight.title" = "Before you install";
 "preflight.title.note" = "Good to know";
+"install.keychain.what" = "Lets this app share sign-ins with the same publisher's other apps installed by XSide (e.g. stay signed in across Google apps). Off, it keeps its own.";
+"install.keychain.risk" = "Only for an IPA you trust: a modified app could read the other apps' sign-ins.";
