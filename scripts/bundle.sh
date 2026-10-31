@@ -35,6 +35,14 @@ cp -R Resources/ProvisioningTemplate "$APP/Contents/Resources/ProvisioningTempla
 mkdir -p "$APP/Contents/Frameworks"
 cp -R "$(dirname "$BIN")/Sparkle.framework" "$APP/Contents/Frameworks/"
 install_name_tool -add_rpath @executable_path/../Frameworks "$APP/Contents/MacOS/XSide" 2>/dev/null || true
+# Only the system's Swift and the bundle's own Frameworks: the toolchain's paths (inside
+# Xcode.app, writable by an admin) are searched before Frameworks, and library validation is off.
+otool -l "$APP/Contents/MacOS/XSide" | awk '/LC_RPATH/ { getline; getline; print $2 }' | sort -u | while read -r path; do
+    case "$path" in
+        /usr/lib/swift|@executable_path/../Frameworks) ;;
+        *) while install_name_tool -delete_rpath "$path" "$APP/Contents/MacOS/XSide" 2>/dev/null; do :; done ;;
+    esac
+done
 # The debug app never updates itself (it would become the release app).
 [ "$CONFIG" = debug ] && plutil -remove SUFeedURL "$APP/Contents/Info.plist"
 
