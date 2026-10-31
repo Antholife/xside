@@ -94,4 +94,9 @@ func localizedRowError(key: String) -> String {
 }
 
 /// Locale matching the in-app language, for dates.
+/// "62 %" in French, "62%" in English: a whole percentage in the app's language.
+func percentText(_ percent: Int) -> String {
+    (Double(percent) / 100).formatted(.percent.precision(.fractionLength(0)).locale(appLocale))
+}
+
 var appLocale: Locale { Locale(identifier: AppLanguage.current.resolvedCode) }

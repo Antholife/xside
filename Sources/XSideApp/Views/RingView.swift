@@ -84,6 +84,7 @@ struct RingView: View {
 private struct SpinningArc: View {
     let lineWidth: CGFloat
     @State private var turning = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Circle()
@@ -92,7 +93,7 @@ private struct SpinningArc: View {
                                     startAngle: .zero, endAngle: .degrees(100)),
                     style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
             .rotationEffect(.degrees(turning ? 360 : 0))
-            .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: turning)
-            .onAppear { turning = true }
+            .animation(reduceMotion ? nil : .linear(duration: 1).repeatForever(autoreverses: false), value: turning)
+            .onAppear { turning = !reduceMotion } // Reduce Motion: a still arc
     }
 }

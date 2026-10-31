@@ -113,7 +113,7 @@ struct InstallProgressCard: View {
     /// "iPhone de Anthony · Signature" while running; the failure, Wi-Fi check or result after.
     private var detail: String {
         if flow.isRunning, let current {
-            let stage = model.runPercent(flow).map { "\(current.stage.label) · \($0) %" } ?? current.stage.label
+            let stage = model.runPercent(flow).map { "\(current.stage.label) · \(percentText($0))" } ?? current.stage.label
             guard let name = current.name else { return stage }
             return L("popover.installCard.step", name, stage)
         }

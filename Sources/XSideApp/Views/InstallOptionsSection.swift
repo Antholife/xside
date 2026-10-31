@@ -28,6 +28,7 @@ struct InstallOptionsSection: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityValue(L(isExpanded ? "a11y.expanded" : "a11y.collapsed"))
                 if isExpanded {
                     grid
                         .padding(.horizontal, 12)
@@ -40,7 +41,8 @@ struct InstallOptionsSection: View {
                     OptionRow(symbol: "key.fill",
                               title: L("install.field.shareKeychain", info.sharedKeychainVendor ?? Self.vendor(of: info.bundleID)),
                               detail: nil) {
-                        Toggle("", isOn: $flow.draft.shareKeychain)
+                        Toggle(L("install.field.shareKeychain", info.sharedKeychainVendor ?? Self.vendor(of: info.bundleID)),
+                               isOn: $flow.draft.shareKeychain)
                             .labelsHidden()
                             .toggleStyle(.switch)
                             .controlSize(.mini)

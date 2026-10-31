@@ -106,7 +106,9 @@ private struct PopoverContent: View {
             }
             .buttonStyle(ActionTileStyle(prominent: false))
             .disabled(refreshable == 0)
-            .help(refreshable == 0 ? L("popover.tile.refreshAll.none") : L("popover.tile.refreshAll.help", refreshable))
+            // Says why it's off, or how many it refreshes (system tooltips don't show in a popover).
+            .hoverBubble(refreshable == 0 ? L("popover.tile.refreshAll.none") : L("popover.tile.refreshAll.help", refreshable),
+                         alignment: .trailing, below: true)
         }
     }
 
@@ -472,8 +474,6 @@ private struct AppIDStrip: View {
                     Capsule()
                         .fill(release == nil ? AnyShapeStyle(Color.primary.opacity(0.1)) : AnyShapeStyle(Theme.brand))
                         .frame(height: 5)
-                        .help(release.map { L("popover.appIDs.frees", $0.formatted(.dateTime.weekday(.wide).hour().minute().locale(appLocale))) }
-                              ?? L("popover.appIDs.free"))
                 }
             }
             HStack(spacing: 4) {
@@ -570,7 +570,6 @@ private struct IconTile: View {
     var tipAlignment: HorizontalAlignment = .center
     let action: () -> Void
     @State private var isHovering = false
-    @State private var showsTip = false
 
     init(symbol: String, help: String, tipAlignment: HorizontalAlignment = .center, action: @escaping () -> Void) {
         self.init(image: Image(systemName: symbol), help: help, tipAlignment: tipAlignment, action: action)
@@ -594,33 +593,55 @@ private struct IconTile: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        // System tooltips don't show in a popover: a bubble above the tile after a short pause.
-        .overlay(alignment: Alignment(horizontal: tipAlignment, vertical: .top)) {
-            if showsTip {
-                Text(help)
-                    .font(.system(size: 11, weight: .medium))
-                    .fixedSize()
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5))
-                    .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
-                    .offset(y: -30)
-                    .transition(.opacity.combined(with: .offset(y: 4)))
-                    .allowsHitTesting(false)
-            }
-        }
-        .zIndex(showsTip ? 1 : 0)
-        .task(id: isHovering) {
-            guard isHovering else { showsTip = false; return }
-            try? await Task.sleep(for: .milliseconds(450))
-            if !Task.isCancelled { showsTip = true }
-        }
-        .onHover { isHovering = $0 }
+        .hoverBubble(help, alignment: tipAlignment)
         .accessibilityLabel(help)
         .animation(.easeOut(duration: 0.12), value: isHovering)
-        .animation(.easeOut(duration: 0.15), value: showsTip)
+    }
+}
+
+extension View {
+    /// A label bubble shown after a short pause on hover, above the view (or below it). System
+    /// tooltips don't show in a popover. Works on disabled controls too.
+    func hoverBubble(_ text: String, alignment: HorizontalAlignment = .center, below: Bool = false) -> some View {
+        modifier(HoverBubble(text: text, alignment: alignment, below: below))
+    }
+}
+
+private struct HoverBubble: ViewModifier {
+    let text: String
+    let alignment: HorizontalAlignment
+    let below: Bool
+    @State private var isHovering = false
+    @State private var shows = false
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(alignment: Alignment(horizontal: alignment, vertical: below ? .bottom : .top)) {
+                if shows {
+                    Text(text)
+                        .font(.system(size: 11, weight: .medium))
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: 240, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5))
+                        .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
+                        .alignmentGuide(below ? .bottom : .top) { d in below ? d[.top] - 6 : d[.bottom] + 6 }
+                        .transition(.opacity)
+                        .allowsHitTesting(false)
+                }
+            }
+            .zIndex(shows ? 1 : 0)
+            .onHover { isHovering = $0 }
+            .task(id: isHovering) {
+                guard isHovering else { shows = false; return }
+                try? await Task.sleep(for: .milliseconds(450))
+                if !Task.isCancelled { shows = true }
+            }
+            .animation(.easeOut(duration: 0.15), value: shows)
     }
 }
 

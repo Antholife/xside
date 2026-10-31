@@ -61,7 +61,7 @@ struct InstallProgressView: View {
                     }
                 }
                 if status == .active, let activePercent {
-                    Text("\(activePercent) %")
+                    Text(percentText(activePercent))
                         .font(.system(size: 12, weight: .semibold, design: .rounded))
                         .monospacedDigit()
                         .foregroundStyle(Theme.brand)
@@ -118,14 +118,15 @@ struct InstallProgressView: View {
 /// The step running now: a brand dot in a softly pulsing halo.
 private struct ActiveDot: View {
     @State private var pulse = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Circle()
             .fill(Theme.brand)
             .frame(width: 10, height: 10)
             .background(Circle().fill(Theme.violet.opacity(0.3)).scaleEffect(pulse ? 1.8 : 1.2))
-            .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: pulse)
-            .onAppear { pulse = true }
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: pulse)
+            .onAppear { pulse = !reduceMotion }
     }
 }
 

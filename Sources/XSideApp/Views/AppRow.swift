@@ -135,7 +135,7 @@ struct AppRow: View {
 
     private func subtitle(validity: Validity, now: Date) -> String {
         if isUninstalling { return L("popover.app.uninstalling") }
-        if let step { return percent.map { "\(step.rowText) \($0) %" } ?? step.rowText }
+        if let step { return percent.map { "\(step.rowText) \(percentText($0))" } ?? step.rowText }
         if isPaused {
             if validity.isExpired { return L("popover.paused.expired") }
             if Calendar.current.isDateInToday(validity.expiresAt) { return L("popover.paused.expiresToday") }
@@ -155,6 +155,7 @@ private struct HighlightGlow: View {
     enum Part { case fill, border }
     let part: Part
     @State private var bright = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 8, style: .continuous) }
 
@@ -171,6 +172,8 @@ private struct HighlightGlow: View {
         .allowsHitTesting(false)
         .transition(.opacity)
         .onAppear {
+            // Reduce Motion: lit, without pulsing.
+            if reduceMotion { bright = true; return }
             withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) { bright = true }
         }
     }

@@ -207,7 +207,7 @@
 "popover.device.remove" = "Remove this device";
 "popover.device.removeBusy" = "An install is running on this device";
 "popover.device.removeTitle" = "Remove this device?";
-"popover.device.removeMessage" = "XSide stops refreshing its apps and hides it here. They stay installed until they expire. To bring the device back, install an app on it: it's still offered in the install window.";
+"popover.device.removeMessage" = "XSide will stop refreshing this device's apps and hide it from the list. The apps stay installed until they expire. To bring the device back, install an app on it from the install window.";
 "notification.needsUSB.title" = "%@: plug in your device";
 "notification.needsUSB.body" = "Plug %1$@ in with USB to refresh %2$@, otherwise it will expire on %3$@.";
 
@@ -375,8 +375,8 @@
 /* Updates */
 "updates.title" = "Updates";
 "updates.automatic" = "Check for updates automatically";
-"updates.checkNow" = "Check Now";
-"updates.current" = "XSide %@ (beta)";
+"updates.checkNow" = "Check now";
+"updates.current" = "XSide %@ β";
 "updates.lastCheck" = "Last checked %@";
 "updates.frequency" = "Check";
 "updates.frequency.daily" = "Every day";
@@ -385,7 +385,7 @@
 "updates.channel" = "Channel";
 "updates.channel.beta" = "Beta";
 "updates.channel.stable" = "Stable";
-"updates.channel.noStable" = "XSide is in beta: there's no stable release yet. The stable channel opens with version 1.0.";
+"updates.channel.noStable" = "XSide is still in beta: there's no stable release yet. The stable channel opens with the first non-beta release.";
 
 /* Settings pages */
 "settings.pane.general" = "General";
@@ -404,34 +404,34 @@
 "preflight.deviceFull" = "%@ already has 3 apps from XSide, the most a free account allows. Which one should go?";
 "preflight.noAppIDLeft" = "No App ID left this week (estimate): installing a new app will likely fail until one frees up.";
 "preflight.lastAppID" = "This install uses your last App ID of the week (estimate).";
-"notification.action.refresh" = "Refresh Now";
+"notification.action.refresh" = "Refresh now";
 "notification.action.open" = "Open XSide";
 "settings.keepInDock" = "Keep in the Dock";
-"settings.keepInDock.detail" = "Keeps XSide in the Dock, even when it's closed; a click on the icon opens the install window. Otherwise it shows there only while one of its windows is open.";
+"settings.keepInDock.detail" = "Keeps XSide in the Dock, even with no window open; a click on the icon opens the install window. Otherwise it shows there only while one of its windows is open.";
 "install.empty.title" = "Install an app";
 "install.empty.text" = "Drop an .ipa here, or choose one.";
 "install.empty.choose" = "Choose an .ipa…";
 "preflight.title" = "Before you install";
 "preflight.title.note" = "Good to know";
-"install.keychain.what" = "Lets this app share sign-ins with the same publisher's other apps installed by XSide (e.g. stay signed in across Google apps). Off, it keeps its own.";
+"install.keychain.what" = "Lets this app share sign-ins with the same publisher's other apps installed by XSide (e.g. stay signed in across Google apps). When off, it keeps its own.";
 "install.keychain.risk" = "Only for an IPA you trust: a modified app could read the other apps' sign-ins.";
 "install.installOn" = "Install on";
 "install.options.customize" = "Name, bundle ID, version, icon…";
-"install.options.customize.hint" = "As in the app";
+"install.options.customize.hint" = "Unchanged";
 "install.progress.title" = "Installing %@";
 "install.progress.subtitle" = "on %1$@ · step %2$d of %3$d";
-"install.progress.subtitlePercent" = "on %1$@ · %2$@ · %3$d %%";
+"install.progress.subtitlePercent" = "on %1$@ · %2$@ · %3$@";
 "install.progress.on" = "on %@";
-"popover.appIDs.next" = "+1 free %@";
-"popover.appIDs.frees" = "Used, frees up %@ (estimate)";
-"popover.appIDs.free" = "Free";
+"popover.appIDs.next" = "+1 %@";
 "whatsNew.103.updates.title" = "Automatic updates";
-"whatsNew.103.updates.text" = "XSide now updates itself, from Settings > Updates. This is the last version you had to install by hand.";
+"whatsNew.103.updates.text" = "XSide now updates itself, from Settings > Updates. This is the last version you'll need to install by hand.";
 "whatsNew.103.design.title" = "A new look";
-"whatsNew.103.design.text" = "A real popover under the icon with each app's icon, Settings with a sidebar, and a redone install window.";
+"whatsNew.103.design.text" = "A real panel under the menu bar icon with each app's icon, Settings with a sidebar, and a redesigned install window.";
 "whatsNew.103.preflight.title" = "Checks before installing";
-"whatsNew.103.preflight.text" = "iOS too old, a device already holding 3 apps (uninstall one right there), no App ID left: you know before.";
+"whatsNew.103.preflight.text" = "iOS too old, a device already holding 3 apps (uninstall one right there), no App ID left: you find out before installing.";
 "whatsNew.103.notifications.title" = "Buttons in notifications";
 "whatsNew.103.notifications.text" = "\"Refresh now\" or \"Open XSide\" right from the alert; the app glows in the panel.";
 "whatsNew.103.progress.title" = "Real progress";
 "whatsNew.103.progress.text" = "Percentages while signing, time spent while sending, and the week's App IDs as a strip.";
+"a11y.expanded" = "Expanded";
+"a11y.collapsed" = "Collapsed";

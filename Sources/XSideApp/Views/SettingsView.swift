@@ -115,6 +115,7 @@ private struct SidebarRow: View {
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityValue(needsAttention ? L("settings.signing.hero.todo") : "")
     }
 }
 
@@ -128,6 +129,7 @@ private struct PaneIcon: View {
             .foregroundStyle(.white)
             .frame(width: 22, height: 22)
             .background(Theme.brand, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .accessibilityHidden(true)
     }
 }
 
@@ -231,10 +233,13 @@ private struct SigningHero: View {
                 Text(L(ready ? "settings.signing.hero.ready" : model.environment == nil
                        ? "settings.signing.checking" : "settings.signing.hero.todo"))
                     .font(.system(size: 14, weight: .semibold))
-                Text(L(ready ? "settings.signing.hero.readyText" : "settings.signing.hero.todoText"))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                // Nothing to say yet while checking.
+                if model.environment != nil {
+                    Text(L(ready ? "settings.signing.hero.readyText" : "settings.signing.hero.todoText"))
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer(minLength: 0)
         }

@@ -90,7 +90,7 @@ extension ProgressHeader {
     fileprivate func subtitle(now: Date) -> String {
         let device = flow.runs.first?.name ?? ""
         if let percent, let step = timeline.current {
-            return L("install.progress.subtitlePercent", device, step.label, percent)
+            return L("install.progress.subtitlePercent", device, step.label, percentText(percent))
         }
         if timeline.current == .installing, let started = model.runStepStarted(flow) {
             let elapsed = Duration.seconds(max(0, now.timeIntervalSince(started)))
@@ -320,7 +320,7 @@ struct InstallSheet: View {
                 }
                 Text(flow.info?.bundleID ?? flow.ipa.lastPathComponent)
                     .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.65))
+                    .foregroundStyle(.white.opacity(0.85))
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -350,8 +350,6 @@ struct InstallSheet: View {
             ZStack {
                 Theme.brand
                 Circle().fill(.white.opacity(0.16)).frame(width: 240).blur(radius: 40).offset(x: -170, y: -60)
-                Circle().fill(Color(red: 1, green: 0.85, blue: 0.3).opacity(0.25)).frame(width: 180)
-                    .blur(radius: 50).offset(x: 190, y: 40)
             }
             .clipped()
             .ignoresSafeArea(edges: .top)
@@ -725,6 +723,9 @@ private struct DeviceTile: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            // The tile's button only: the Wi-Fi switch below stays its own element.
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
             if isSelected {
                 Toggle(L("popover.device.wifiRefresh"), isOn: $wifiRefresh)
                     .toggleStyle(.switch)
@@ -742,8 +743,6 @@ private struct DeviceTile: View {
         .opacity(isEnabled ? 1 : 0.5)
         .onHover { isHovering = $0 }
         .animation(.easeOut(duration: 0.15), value: isSelected)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
@@ -766,6 +765,7 @@ private struct NewDeviceTile: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityValue(L(isOpen ? "a11y.expanded" : "a11y.collapsed"))
     }
 }
 

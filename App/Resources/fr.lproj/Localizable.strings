@@ -207,7 +207,7 @@
 "popover.device.remove" = "Retirer cet appareil";
 "popover.device.removeBusy" = "Une installation est en cours sur cet appareil";
 "popover.device.removeTitle" = "Retirer cet appareil ?";
-"popover.device.removeMessage" = "XSide arrête de rafraîchir ses apps et le masque ici. Elles restent installées jusqu'à leur expiration. Pour le faire revenir, installe une app dessus : il reste proposé dans la fenêtre d'installation.";
+"popover.device.removeMessage" = "XSide arrêtera de rafraîchir les apps de cet appareil et le masquera de la liste. Les apps restent installées jusqu'à leur expiration. Pour le retrouver, installe une app dessus depuis la fenêtre d'installation.";
 "notification.needsUSB.title" = "%@ : branche ton appareil";
 "notification.needsUSB.body" = "Branche %1$@ en USB pour rafraîchir %2$@, sinon elle expirera le %3$@.";
 
@@ -376,7 +376,7 @@
 "updates.title" = "Mises à jour";
 "updates.automatic" = "Rechercher les mises à jour automatiquement";
 "updates.checkNow" = "Rechercher maintenant";
-"updates.current" = "XSide %@ (bêta)";
+"updates.current" = "XSide %@ β";
 "updates.lastCheck" = "Dernière vérification %@";
 "updates.frequency" = "Vérifier";
 "updates.frequency.daily" = "Chaque jour";
@@ -385,7 +385,7 @@
 "updates.channel" = "Canal";
 "updates.channel.beta" = "Bêta";
 "updates.channel.stable" = "Stable";
-"updates.channel.noStable" = "XSide est en bêta : il n'y a pas encore de version stable. Le canal stable ouvrira avec la version 1.0.";
+"updates.channel.noStable" = "XSide est encore en bêta : pas encore de version stable. Le canal stable ouvrira avec la première version finale.";
 
 /* Pages des réglages */
 "settings.pane.general" = "Général";
@@ -397,17 +397,17 @@
 "settings.signing.hero.todoText" = "Tant que ce n'est pas réglé, XSide ne peut ni installer ni rafraîchir. Suis les étapes ci-dessous.";
 "popover.reportBug" = "Signaler un bug sur GitHub";
 "install.changeApp" = "Changer d'app…";
-"install.changeApp.help" = "Choisis un autre .ipa, ou glisse-le sur cette fenêtre";
+"install.changeApp.help" = "Choisis un autre .ipa, ou glisses-en un sur cette fenêtre";
 
 /* Vérifications avant installation */
-"preflight.iOSTooOld" = "%1$@ est en iOS %2$@, mais cette app demande iOS %3$@ : elle ne s'ouvrira pas dessus.";
-"preflight.deviceFull" = "%@ a déjà 3 apps de XSide, le maximum avec un compte gratuit. Laquelle retirer ?";
-"preflight.noAppIDLeft" = "Plus d'App ID cette semaine (estimation) : installer une nouvelle app échouera sûrement jusqu'à ce qu'un se libère.";
+"preflight.iOSTooOld" = "%1$@ est sous iOS %2$@, mais cette app demande iOS %3$@ : elle ne s'y ouvrira pas.";
+"preflight.deviceFull" = "%@ a déjà 3 apps de XSide, le maximum avec un compte gratuit. Laquelle désinstaller ?";
+"preflight.noAppIDLeft" = "Plus d'App ID cette semaine (estimation) : installer une nouvelle app échouera sûrement jusqu'à ce qu'il s'en libère un.";
 "preflight.lastAppID" = "Cette installation utilise ton dernier App ID de la semaine (estimation).";
 "notification.action.refresh" = "Rafraîchir maintenant";
 "notification.action.open" = "Ouvrir XSide";
 "settings.keepInDock" = "Garder dans le Dock";
-"settings.keepInDock.detail" = "Garde XSide dans le Dock, même fermé ; un clic sur l'icône ouvre la fenêtre d'installation. Sinon, il n'y apparaît que pendant qu'une de ses fenêtres est ouverte.";
+"settings.keepInDock.detail" = "Garde XSide dans le Dock, même sans fenêtre ouverte ; un clic sur l'icône ouvre la fenêtre d'installation. Sinon, il n'y apparaît que pendant qu'une de ses fenêtres est ouverte.";
 "install.empty.title" = "Installer une app";
 "install.empty.text" = "Glisse un .ipa ici, ou choisis-en un.";
 "install.empty.choose" = "Choisir un .ipa…";
@@ -417,21 +417,21 @@
 "install.keychain.risk" = "Seulement pour une IPA de confiance : une app modifiée pourrait lire les connexions des autres apps.";
 "install.installOn" = "Installer sur";
 "install.options.customize" = "Nom, identifiant, version, icône…";
-"install.options.customize.hint" = "Comme dans l'app";
+"install.options.customize.hint" = "Inchangé";
 "install.progress.title" = "Installation de %@";
 "install.progress.subtitle" = "sur %1$@ · étape %2$d sur %3$d";
-"install.progress.subtitlePercent" = "sur %1$@ · %2$@ · %3$d %%";
+"install.progress.subtitlePercent" = "sur %1$@ · %2$@ · %3$@";
 "install.progress.on" = "sur %@";
-"popover.appIDs.next" = "+1 libre %@";
-"popover.appIDs.frees" = "Utilisé, se libère %@ (estimation)";
-"popover.appIDs.free" = "Libre";
+"popover.appIDs.next" = "+1 %@";
 "whatsNew.103.updates.title" = "Mises à jour automatiques";
 "whatsNew.103.updates.text" = "XSide se met maintenant à jour tout seul, depuis Réglages > Mises à jour. C'est la dernière version à installer à la main.";
 "whatsNew.103.design.title" = "Un nouveau look";
-"whatsNew.103.design.text" = "Un vrai popover sous l'icône avec l'icône de chaque app, des Réglages avec une barre latérale, et une fenêtre d'installation refaite.";
+"whatsNew.103.design.text" = "Un vrai panneau sous l'icône de la barre des menus avec l'icône de chaque app, des Réglages avec une barre latérale, et une fenêtre d'installation repensée.";
 "whatsNew.103.preflight.title" = "Des vérifications avant d'installer";
-"whatsNew.103.preflight.text" = "iOS trop ancien, appareil qui a déjà 3 apps (désinstalles-en une sur place), plus d'App ID : tu le sais avant.";
+"whatsNew.103.preflight.text" = "iOS trop ancien, appareil qui a déjà 3 apps (désinstalles-en une sur place), plus d'App ID : tu le sais avant d'installer.";
 "whatsNew.103.notifications.title" = "Des boutons dans les notifications";
 "whatsNew.103.notifications.text" = "« Rafraîchir maintenant » ou « Ouvrir XSide » directement depuis l'alerte ; l'app brille dans le panneau.";
 "whatsNew.103.progress.title" = "Une vraie progression";
 "whatsNew.103.progress.text" = "Des pourcentages pendant la signature, le temps écoulé pendant l'envoi, et les App ID de la semaine en frise.";
+"a11y.expanded" = "Déplié";
+"a11y.collapsed" = "Replié";
