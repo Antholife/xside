@@ -424,8 +424,7 @@ private struct PopoverFooter: View {
                     }
                     IconTile(symbol: "sparkles", help: L("whatsNew.window")) {
                         dismiss()
-                        openWindow(id: WhatsNewWindow.id)
-                        NSApp.activate()
+                        openWindow.presentWhatsNew()
                     }
                     IconTile(symbol: "doc.text.magnifyingglass", help: L("logs.exportLink")) {
                         dismiss()

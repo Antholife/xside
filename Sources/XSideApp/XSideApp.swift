@@ -158,8 +158,7 @@ struct MenuBarLabel: View {
                                setupDone: journeyCompleted, hasNotes: ReleaseNotes.current != nil) {
         case .show:
             defaults.set(current, forKey: WhatsNew.lastSeenKey)
-            openWindow(id: WhatsNewWindow.id)
-            NSApp.activate()
+            openWindow.presentWhatsNew()
         case .markSeen:
             defaults.set(current, forKey: WhatsNew.lastSeenKey)
         case .nothing:

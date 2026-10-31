@@ -55,8 +55,7 @@ struct AboutCard: View {
                     Label { Text(L("settings.github")) } icon: { Image.githubMark }
                 }
                 Button {
-                    openWindow(id: WhatsNewWindow.id)
-                    NSApp.activate()
+                    openWindow.presentWhatsNew()
                 } label: {
                     Label(L("whatsNew.open"), systemImage: "sparkles")
                 }

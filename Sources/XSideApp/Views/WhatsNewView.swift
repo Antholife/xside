@@ -6,6 +6,19 @@ enum WhatsNewWindow {
     static let id = "whatsNew"
 }
 
+extension OpenWindowAction {
+    /// Opens What's New in front: opened from the closing popover, XSide (a menu-bar agent) isn't
+    /// active yet and the window would stay behind the others.
+    @MainActor func presentWhatsNew() {
+        self(id: WhatsNewWindow.id)
+        DispatchQueue.main.async {
+            NSApp.activate()
+            NSApp.windows.first { $0.identifier?.rawValue.hasPrefix(WhatsNewWindow.id) == true }?
+                .makeKeyAndOrderFront(nil)
+        }
+    }
+}
+
 /// What a version brings, shown once after the update (see `WhatsNew.decide`) and from Settings.
 struct ReleaseNotes {
     struct Item: Identifiable {
