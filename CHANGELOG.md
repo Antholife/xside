@@ -2,13 +2,19 @@
 
 All notable changes to XSide. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.0.3-beta] - 2026-10-31
 
 ### Added
 - **Automatic updates** with [Sparkle](https://sparkle-project.org): XSide checks once a day and offers new versions, signed with the project's EdDSA key. *Settings > Updates* to turn it off or check now. Versions before this one have to be updated by hand once.
 - The panel is a real popover, with its arrow under the menu-bar icon, and a new look: Install / Refresh all tiles, each app's own icon, icon footer (Settings, What's New, logs, GitHub, report a bug) with hover labels.
 - Settings redone with a sidebar, one short page per topic; update check frequency (daily, weekly, monthly) and channel (beta; stable opens with 1.0).
 - Change the app right from the install window, with a button or by dropping another `.ipa` on it.
+- The install window redone: the app on a gradient header, devices as tiles, options as rows, and while installing the app's icon in a progress ring with the steps below.
+- **Checks before installing**: an iOS too old for the app, a device already holding its 3 apps (uninstall one right there), no App ID left this week.
+- **Notification buttons**: "Refresh now" and "Open XSide" on expiry reminders and refresh failures; the app glows in the panel.
+- **Real progress**: percentages for the unzip and the signing, time spent and size while sending to the device; on the Dock icon too.
+- The week's App IDs as a strip in the panel, with when the next one frees up.
+- **Keep in the Dock**, synced with the Dock's own setting; a click on the Dock icon opens the install window.
 
 ### Fixed
 - Removing a device that is still paired now hides it until an app is installed on it again.
@@ -56,6 +62,7 @@ First public beta.
 - English and French.
 - Universal app: Apple silicon and Intel.
 
+[1.0.3-beta]: https://github.com/Antholife/xside/compare/v1.0.2-beta...v1.0.3-beta
 [1.0.2-beta]: https://github.com/Antholife/xside/compare/v1.0.1-beta...v1.0.2-beta
 [1.0.1-beta]: https://github.com/Antholife/xside/compare/v1.0.0-beta...v1.0.1-beta
 [1.0.0-beta]: https://github.com/Antholife/xside/releases/tag/v1.0.0-beta

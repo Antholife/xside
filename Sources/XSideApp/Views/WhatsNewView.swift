@@ -54,6 +54,18 @@ struct ReleaseNotes {
 
     static var all: [ReleaseNotes] {
         [
+            ReleaseNotes(version: "1.0.3", label: "beta", items: [
+                Item(symbol: "arrow.down.circle.fill",
+                     title: L("whatsNew.103.updates.title"), text: L("whatsNew.103.updates.text")),
+                Item(symbol: "rectangle.on.rectangle",
+                     title: L("whatsNew.103.design.title"), text: L("whatsNew.103.design.text")),
+                Item(symbol: "checklist",
+                     title: L("whatsNew.103.preflight.title"), text: L("whatsNew.103.preflight.text")),
+                Item(symbol: "bell.badge.fill",
+                     title: L("whatsNew.103.notifications.title"), text: L("whatsNew.103.notifications.text")),
+                Item(symbol: "gauge.with.dots.needle.67percent",
+                     title: L("whatsNew.103.progress.title"), text: L("whatsNew.103.progress.text")),
+            ], thanks: []),
             ReleaseNotes(version: "1.0.2", label: "beta", items: [
                 Item(symbol: "doc.zipper",
                      title: L("whatsNew.102.ipa.title"), text: L("whatsNew.102.ipa.text")),

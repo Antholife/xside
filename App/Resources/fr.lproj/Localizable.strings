@@ -425,3 +425,13 @@
 "popover.appIDs.next" = "le prochain %@";
 "popover.appIDs.frees" = "Utilisé, se libère %@ (estimation)";
 "popover.appIDs.free" = "Libre";
+"whatsNew.103.updates.title" = "Mises à jour automatiques";
+"whatsNew.103.updates.text" = "XSide se met maintenant à jour tout seul, depuis Réglages > Mises à jour. C'est la dernière version à installer à la main.";
+"whatsNew.103.design.title" = "Un nouveau look";
+"whatsNew.103.design.text" = "Un vrai popover sous l'icône avec l'icône de chaque app, des Réglages avec une barre latérale, et une fenêtre d'installation refaite.";
+"whatsNew.103.preflight.title" = "Des vérifications avant d'installer";
+"whatsNew.103.preflight.text" = "iOS trop ancien, appareil qui a déjà 3 apps (désinstalles-en une sur place), plus d'App ID : tu le sais avant.";
+"whatsNew.103.notifications.title" = "Des boutons dans les notifications";
+"whatsNew.103.notifications.text" = "« Rafraîchir maintenant » ou « Ouvrir XSide » directement depuis l'alerte ; l'app brille dans le panneau.";
+"whatsNew.103.progress.title" = "Une vraie progression";
+"whatsNew.103.progress.text" = "Des pourcentages pendant la signature, le temps écoulé pendant l'envoi, et les App ID de la semaine en frise.";
