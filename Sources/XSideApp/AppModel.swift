@@ -60,7 +60,27 @@ final class AppModel {
     /// Who is signed in to Xcode: the Apple ID e-mail from the certificate, else the Personal
     /// Team's name (Xcode's preferences hold no e-mail). Read once per probe, not per render.
     private(set) var accountName: String? {
-        didSet { LogStore.shared.register(accountName, as: "account") }
+        didSet {
+            LogStore.shared.register(accountName, as: "account")
+            #if DEBUG
+            if Self.isDemo, accountName != nil, accountName != Self.demoAccount { accountName = Self.demoAccount }
+            #endif
+        }
+    }
+
+    #if DEBUG
+    /// Debug-only: XSIDE_DEMO=1 replaces personal details on screen (device names, account,
+    /// certificate), for screenshots.
+    static let isDemo = ProcessInfo.processInfo.environment["XSIDE_DEMO"] == "1"
+    static let demoAccount = "you@icloud.com"
+    #endif
+
+    /// The signing certificate's name as shown (fictitious in the debug demo mode).
+    var shownIdentityName: String? {
+        #if DEBUG
+        if Self.isDemo, signingEnvironment != nil { return "Apple Development: \(Self.demoAccount) (ABCDE12345)" }
+        #endif
+        return signingEnvironment?.identityName
     }
     /// "Create the certificate" is running (an Xcode build, up to a minute).
     private(set) var isCreatingCertificate = false
@@ -560,6 +580,16 @@ final class AppModel {
             #if DEBUG
             // Debug-only: XSIDE_FAKE_NO_DEVICES=1 shows the "no device yet" screens.
             if ProcessInfo.processInfo.environment["XSIDE_FAKE_NO_DEVICES"] == "1" { listed = [] }
+            #endif
+            #if DEBUG
+            // Debug-only: XSIDE_DEMO=1 names devices by their kind ("iPhone"), for screenshots.
+            if Self.isDemo {
+                listed = listed.map {
+                    Device(id: $0.id, udid: $0.udid, name: $0.kind == .iPad ? "iPad" : "iPhone", model: $0.model, kind: $0.kind,
+                           transport: $0.transport, isPaired: $0.isPaired, isAvailable: $0.isAvailable,
+                           developerModeEnabled: $0.developerModeEnabled, osVersion: $0.osVersion)
+                }
+            }
             #endif
             let changed = listed != devices
             devices = listed

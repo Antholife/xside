@@ -56,7 +56,7 @@ struct SigningSettingsSection: View {
             let certificateOK = probed && (blocking == nil || signedOutOnly)
             row(L("settings.signing.certificate"),
                 state: !probed ? .checking : checkFailure ? .unknown : certificateOK ? .ok : .todo,
-                detail: model.signingEnvironment?.identityName) {
+                detail: model.shownIdentityName) {
                 if checkFailure {
                     EmptyView()
                 } else if blocking == .xcode || (blocking == .account && !signedOutOnly) {
