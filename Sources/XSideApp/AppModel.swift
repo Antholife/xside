@@ -1121,6 +1121,13 @@ final class AppModel {
                 flow.draft = OptionsDraft(existing?.options ?? InstallOptions())
                 flow.phase = .editing(error: nil)
                 autoselectDevice() // the default now depends on where the app is installed
+                #if DEBUG
+                // Debug-only: XSIDE_FAKE_RUNNING=1 shows the window mid-install (signing), to look at it.
+                if ProcessInfo.processInfo.environment["XSIDE_FAKE_RUNNING"] == "1", let device = devices.first {
+                    flow.runs = [DeviceRun(deviceID: device.id, name: device.name)]
+                    flow.phase = .running(.step(.signing))
+                }
+                #endif
             } catch {
                 guard install === flow else { return }
                 flow.phase = .rejected(localizedMessage(error))

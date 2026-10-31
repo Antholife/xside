@@ -58,7 +58,6 @@
 "install.noAvailableDevice" = "The chosen device can't be reached anymore.";
 "install.queued" = "Next: %@";
 "install.devices" = "Devices";
-"install.onDevices" = "Install on %d devices";
 "install.successMany" = "Installed on %d devices";
 "install.successSome" = "Installed on %1$d of %2$d devices";
 "install.failedAll" = "Installation failed on every device.";
@@ -417,3 +416,7 @@
 "install.keychain.what" = "Lets this app share sign-ins with the same publisher's other apps installed by XSide (e.g. stay signed in across Google apps). Off, it keeps its own.";
 "install.keychain.risk" = "Only for an IPA you trust: a modified app could read the other apps' sign-ins.";
 "install.installOn" = "Install on";
+"install.options.customize" = "Name, bundle ID, version, icon…";
+"install.options.customize.hint" = "As in the app";
+"install.progress.title" = "Installing %@";
+"install.progress.subtitle" = "on %1$@ · step %2$d of %3$d";

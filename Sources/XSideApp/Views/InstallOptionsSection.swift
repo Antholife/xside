@@ -3,33 +3,66 @@ import SwiftUI
 import UniformTypeIdentifiers
 import XSideCore
 
-/// The folded "Options" section: prefilled with the options remembered for the app.
+/// "Options": a card of rows with an icon tile, as in Settings. "Customize" unfolds the fields
+/// (name, bundle id, version, icon, capabilities, minimum iOS); sharing the keychain, offered
+/// only to apps that ask for it, has its own row. Prefilled with the options remembered for the app.
 struct InstallOptionsSection: View {
     let model: AppModel
     @Bindable var flow: InstallFlow
     @State private var isExpanded = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button {
-                withAnimation(.smooth(duration: 0.2)) { isExpanded.toggle() }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.secondary)
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    Text(L("install.options"))
-                        .font(.system(size: 12, weight: .semibold))
-                    Spacer()
+        VStack(alignment: .leading, spacing: 6) {
+            SectionTitle(L("install.options"))
+            VStack(alignment: .leading, spacing: 0) {
+                Button {
+                    withAnimation(.smooth(duration: 0.2)) { isExpanded.toggle() }
+                } label: {
+                    OptionRow(symbol: "slider.horizontal.3", title: L("install.options.customize"),
+                              detail: customizedSummary) {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    }
+                    .contentShape(Rectangle())
                 }
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                if isExpanded {
+                    grid
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 12)
+                        .transition(.opacity)
+                }
+                // Only offered when the app asks for shared groups; off unless the user trusts the IPA.
+                if let info = flow.info, !info.sharedKeychainGroups.isEmpty {
+                    Divider().padding(.leading, 48)
+                    OptionRow(symbol: "key.fill",
+                              title: L("install.field.shareKeychain", info.sharedKeychainVendor ?? Self.vendor(of: info.bundleID)),
+                              detail: nil) {
+                        Toggle("", isOn: $flow.draft.shareKeychain)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .controlSize(.mini)
+                            .tint(Theme.violet)
+                    }
+                    KeychainShareNote(groups: info.sharedKeychainGroups, isOn: flow.draft.shareKeychain)
+                        .padding(.leading, 48)
+                        .padding(.trailing, 12)
+                        .padding(.bottom, 10)
+                }
             }
-            .buttonStyle(.plain)
-            if isExpanded { grid.transition(.opacity) }
+            .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .disabled(flow.isRunning)
         }
-        .padding(10)
-        .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    /// What's changed from the app's own values, or a hint of what's inside.
+    private var customizedSummary: String {
+        let d = flow.draft
+        let changed = [!d.name.isEmpty, !d.bundleID.isEmpty, !d.version.isEmpty, d.iconPath != nil,
+                       d.fileSharing, d.iPadFullScreen, d.proMotion, !d.minOS.isEmpty].filter { $0 }.count
+        return changed == 0 ? L("install.options.customize.hint") : L("install.options.customize.changed", changed)
     }
 
     private var grid: some View {
@@ -46,19 +79,9 @@ struct InstallOptionsSection: View {
                 if !flow.draft.minOS.trimmingCharacters(in: .whitespaces).isEmpty {
                     warning(L("install.warning.minOS"))
                 }
-                // Only offered when the app asks for shared groups; off unless the user trusts the IPA.
-                if let info = flow.info, !info.sharedKeychainGroups.isEmpty {
-                    toggle(L("install.field.shareKeychain", info.sharedKeychainVendor ?? Self.vendor(of: info.bundleID)), isOn: $flow.draft.shareKeychain)
-                    GridRow {
-                        Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
-                        KeychainShareNote(groups: info.sharedKeychainGroups, isOn: flow.draft.shareKeychain)
-                    }
-                }
             }
             .font(.system(size: 12))
-            .padding(.top, 10)
-            .padding(.leading, 4)
-            .disabled(flow.isRunning)
+            .padding(.top, 2)
     }
 
     /// "com.google" for com.google.ios.youtube (fallback when the entitlements name no vendor).
@@ -207,5 +230,33 @@ private struct WrapLayout: Layout {
             x += size.width + spacing
             line = max(line, size.height)
         }
+    }
+}
+
+/// One option line: brand icon tile, title (and a detail line), the control on the right.
+private struct OptionRow<Accessory: View>: View {
+    let symbol: String
+    let title: String
+    let detail: String?
+    @ViewBuilder let accessory: Accessory
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 26, height: 26)
+                .background(Theme.brand, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.system(size: 13))
+                if let detail {
+                    Text(detail).font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 8)
+            accessory
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
     }
 }

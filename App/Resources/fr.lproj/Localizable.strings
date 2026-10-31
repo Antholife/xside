@@ -58,7 +58,6 @@
 "install.noAvailableDevice" = "L'appareil choisi n'est plus joignable.";
 "install.queued" = "Ensuite : %@";
 "install.devices" = "Appareils";
-"install.onDevices" = "Installer sur %d appareils";
 "install.successMany" = "Installée sur %d appareils";
 "install.successSome" = "Installée sur %1$d des %2$d appareils";
 "install.failedAll" = "L'installation a échoué sur tous les appareils.";
@@ -417,3 +416,7 @@
 "install.keychain.what" = "Permet à cette app de partager ses connexions avec les autres apps du même éditeur installées par XSide (par exemple rester connecté entre les apps Google). Désactivé, elle garde les siennes.";
 "install.keychain.risk" = "Seulement pour une IPA de confiance : une app modifiée pourrait lire les connexions des autres apps.";
 "install.installOn" = "Installer sur";
+"install.options.customize" = "Nom, identifiant, version, icône…";
+"install.options.customize.hint" = "Comme dans l'app";
+"install.progress.title" = "Installation de %@";
+"install.progress.subtitle" = "sur %1$@ · étape %2$d sur %3$d";

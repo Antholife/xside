@@ -6,13 +6,17 @@ import XSideCore
 struct InstallProgressView: View {
     let timeline: StepTimeline
     var failureMessage: String?
+    /// The bar above the steps; off when a progress ring already shows it (install window header).
+    var showsBar = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            ProgressView(value: Double(timeline.completedCount), total: Double(max(timeline.total, 1)))
-                .progressViewStyle(.linear)
-                .tint(timeline.isFailed ? Color(nsColor: .systemRed) : Theme.violet)
-                .accessibilityHidden(true)
+            if showsBar {
+                ProgressView(value: Double(timeline.completedCount), total: Double(max(timeline.total, 1)))
+                    .progressViewStyle(.linear)
+                    .tint(timeline.isFailed ? Color(nsColor: .systemRed) : Theme.violet)
+                    .accessibilityHidden(true)
+            }
             VStack(alignment: .leading, spacing: 7) {
                 ForEach(timeline.steps, id: \.self) { step in
                     row(step)
@@ -66,7 +70,7 @@ struct InstallProgressView: View {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(Color(nsColor: .systemGreen))
         case .active:
-            ProgressView().controlSize(.small)
+            ActiveDot()
         case .waiting:
             Image(systemName: "clock.fill")
                 .foregroundStyle(.secondary)
@@ -80,6 +84,20 @@ struct InstallProgressView: View {
             Image(systemName: "circle")
                 .foregroundStyle(.tertiary)
         }
+    }
+}
+
+/// The step running now: a brand dot in a softly pulsing halo.
+private struct ActiveDot: View {
+    @State private var pulse = false
+
+    var body: some View {
+        Circle()
+            .fill(Theme.brand)
+            .frame(width: 10, height: 10)
+            .background(Circle().fill(Theme.violet.opacity(0.3)).scaleEffect(pulse ? 1.8 : 1.2))
+            .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: pulse)
+            .onAppear { pulse = true }
     }
 }
 

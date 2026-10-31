@@ -50,5 +50,37 @@
 			<string>Refresh stopped · expires in %ld days</string>
 		</dict>
 	</dict>
+	<key>install.onDevicesCount</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@devices@</string>
+		<key>devices</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>ld</string>
+			<key>one</key>
+			<string>Install on %ld device</string>
+			<key>other</key>
+			<string>Install on %ld devices</string>
+		</dict>
+	</dict>
+	<key>install.options.customize.changed</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@changes@</string>
+		<key>changes</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>ld</string>
+			<key>one</key>
+			<string>%ld change</string>
+			<key>other</key>
+			<string>%ld changes</string>
+		</dict>
+	</dict>
 </dict>
 </plist>

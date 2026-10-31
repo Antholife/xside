@@ -30,6 +30,68 @@ struct InstallWindowRoot: View {
     }
 }
 
+/// While installing on one device: the app's icon in a progress ring on the brand gradient, what
+/// is installed where, and how far along.
+private struct ProgressHeader: View {
+    let model: AppModel
+    let flow: InstallFlow
+    let timeline: StepTimeline
+
+    private var fraction: Double { Double(timeline.completedCount) / Double(max(timeline.total, 1)) }
+
+    var body: some View {
+        VStack(spacing: 10) {
+            ZStack {
+                Circle().stroke(.white.opacity(0.22), lineWidth: 5)
+                Circle()
+                    .trim(from: 0, to: max(fraction, 0.02))
+                    .stroke(.white, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .animation(.smooth(duration: 0.5), value: fraction)
+                if !timeline.isWaiting { TurningGlint() }
+                AppGlyph(iconURL: flow.draft.iconPath.map(model.iconURL) ?? flow.appIcon, size: 66)
+                    .shadow(color: .black.opacity(0.25), radius: 8, y: 3)
+            }
+            .frame(width: 104, height: 104)
+            Text(L("install.progress.title", flow.info?.name ?? flow.ipa.deletingPathExtension().lastPathComponent))
+                .font(.system(size: 17, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+            Text(L("install.progress.subtitle", flow.runs.first?.name ?? "", min(timeline.completedCount + 1, timeline.total), timeline.total))
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.white.opacity(0.8))
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 4)
+        .padding(.bottom, 20)
+        .padding(.horizontal, 20)
+        .background {
+            ZStack {
+                LinearGradient(colors: [Theme.violet, Theme.pink], startPoint: .top, endPoint: .bottomTrailing)
+                Circle().fill(.white.opacity(0.16)).frame(width: 260).blur(radius: 50).offset(y: -90)
+            }
+            .clipped()
+            .ignoresSafeArea(edges: .top)
+        }
+    }
+}
+
+/// A short bright arc going round the progress ring while a step runs.
+private struct TurningGlint: View {
+    @State private var turning = false
+
+    var body: some View {
+        Circle()
+            .trim(from: 0, to: 0.12)
+            .stroke(.white.opacity(0.9), style: StrokeStyle(lineWidth: 5, lineCap: .round))
+            .blur(radius: 1)
+            .rotationEffect(.degrees(turning ? 360 : 0))
+            .animation(.linear(duration: 1.4).repeatForever(autoreverses: false), value: turning)
+            .onAppear { turning = true }
+    }
+}
+
 /// The install window with no install yet (opened from the Dock): drop an .ipa, or pick one.
 private struct InstallDropZone: View {
     let open: (URL) -> Void
@@ -88,7 +150,11 @@ struct InstallSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
+            if case .running(let stage) = flow.phase, !flow.isMultiDevice {
+                ProgressHeader(model: model, flow: flow, timeline: StepTimeline(steps: steps, stage: stage))
+            } else {
+                header
+            }
             VStack(alignment: .leading, spacing: 16) {
                 // Only the middle scrolls: the app header and the buttons stay in view, and the window
                 // never grows past the screen (the options can be long once unfolded).
@@ -132,10 +198,13 @@ struct InstallSheet: View {
             case .rejected(let message):
                 ErrorText(message)
                 ExportLogsLink(model: model)
+            case .running(let stage) where !flow.isMultiDevice:
+                // One device: the header shows the ring, the steps follow, nothing else.
+                InstallProgressView(timeline: StepTimeline(steps: steps, stage: stage), showsBar: false)
             case .editing, .running:
                 // The run's status comes first, right under the app header.
-                if case .running(let stage) = flow.phase {
-                    if !flow.isMultiDevice { InstallProgressView(timeline: StepTimeline(steps: steps, stage: stage)) }
+                if case .running = flow.phase {
+                    EmptyView()
                 } else if let failure = flow.failure, case .editing = flow.phase {
                     InstallProgressView(timeline: StepTimeline(steps: steps, stage: failure.stage, failed: true),
                                         failureMessage: failure.message)
@@ -313,18 +382,20 @@ struct InstallSheet: View {
                         .keyboardShortcut(.cancelAction)
                         .controlSize(.large)
                 }
-                Button(installLabel, action: model.startInstall)
-                    .buttonStyle(GradientButtonStyle())
-                    .controlSize(.large)
-                    .frame(maxWidth: .infinity)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!canInstall)
+                if !flow.isRunning {
+                    Button(installLabel, action: model.startInstall)
+                        .buttonStyle(GradientButtonStyle())
+                        .controlSize(.large)
+                        .frame(maxWidth: .infinity)
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(!canInstall)
+                }
             }
         }
     }
 
     private var installLabel: String {
-        flow.deviceIDs.count > 1 ? L("install.onDevices", flow.deviceIDs.count) : L("install.title")
+        flow.deviceIDs.isEmpty ? L("install.title") : L("install.onDevicesCount", flow.deviceIDs.count)
     }
 
     private var canInstall: Bool {

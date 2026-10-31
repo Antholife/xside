@@ -50,5 +50,37 @@
 			<string>Rafraîchissement arrêté · expire dans %ld jours</string>
 		</dict>
 	</dict>
+	<key>install.onDevicesCount</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@devices@</string>
+		<key>devices</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>ld</string>
+			<key>one</key>
+			<string>Installer sur %ld appareil</string>
+			<key>other</key>
+			<string>Installer sur %ld appareils</string>
+		</dict>
+	</dict>
+	<key>install.options.customize.changed</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@changes@</string>
+		<key>changes</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>ld</string>
+			<key>one</key>
+			<string>%ld modification</string>
+			<key>other</key>
+			<string>%ld modifications</string>
+		</dict>
+	</dict>
 </dict>
 </plist>
