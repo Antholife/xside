@@ -10,11 +10,15 @@ extension OpenWindowAction {
     /// Opens What's New in front: opened from the closing popover, XSide (a menu-bar agent) isn't
     /// active yet and the window would stay behind the others.
     @MainActor func presentWhatsNew() {
+        // Active first, while the click still counts (as Settings does), then the window.
+        NSApp.activate(ignoringOtherApps: true)
         self(id: WhatsNewWindow.id)
         DispatchQueue.main.async {
-            NSApp.activate()
-            NSApp.windows.first { $0.identifier?.rawValue.hasPrefix(WhatsNewWindow.id) == true }?
-                .makeKeyAndOrderFront(nil)
+            guard let window = NSApp.windows.first(where: { $0.identifier?.rawValue.hasPrefix(WhatsNewWindow.id) == true })
+            else { return }
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            window.orderFrontRegardless()
         }
     }
 }
