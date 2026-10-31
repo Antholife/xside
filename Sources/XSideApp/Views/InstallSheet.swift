@@ -87,25 +87,27 @@ struct InstallSheet: View {
     @State private var contentHeight: CGFloat = 120
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 0) {
             header
-            // Only the middle scrolls: the app header and the buttons stay in view, and the window
-            // never grows past the screen (the options can be long once unfolded).
-            // The middle gets its measured height, capped: a ScrollView alone has no ideal height,
-            // so the window would stay at its old size and clip everything when the options unfold.
-            ScrollView(.vertical) {
-                content
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 2)
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+            VStack(alignment: .leading, spacing: 16) {
+                // Only the middle scrolls: the app header and the buttons stay in view, and the window
+                // never grows past the screen (the options can be long once unfolded).
+                // The middle gets its measured height, capped: a ScrollView alone has no ideal height,
+                // so the window would stay at its old size and clip everything when the options unfold.
+                ScrollView(.vertical) {
+                    content
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 2)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+                }
+                .scrollBounceBehavior(.basedOnSize)
+                .frame(height: min(contentHeight, Self.maxContentHeight))
+                .padding(.horizontal, -20)
+                if !model.queuedIPAs.isEmpty { QueueLine(files: model.queuedIPAs) }
+                buttons
             }
-            .scrollBounceBehavior(.basedOnSize)
-            .frame(height: min(contentHeight, Self.maxContentHeight))
-            .padding(.horizontal, -20)
-            if !model.queuedIPAs.isEmpty { QueueLine(files: model.queuedIPAs) }
-            buttons
+            .padding(20)
         }
-        .padding(20)
         .animation(.smooth(duration: 0.25), value: flow.phase)
         // An .ipa dropped on the window replaces this one (queued while an install runs).
         .dropDestination(for: URL.self) { urls, _ in
@@ -117,7 +119,7 @@ struct InstallSheet: View {
 
     /// Room left for the scrolling middle on the current screen, minus header, buttons and chrome.
     private static var maxContentHeight: CGFloat {
-        max(240, (NSScreen.main?.visibleFrame.height ?? 800) - 240)
+        max(240, (NSScreen.main?.visibleFrame.height ?? 800) - 300)
     }
 
     @ViewBuilder private var content: some View {
@@ -218,19 +220,27 @@ struct InstallSheet: View {
         if flow.wasCancelled { CancelledNote() }
     }
 
+    /// The app on a brand gradient that runs under the hidden title bar, like What's New.
     private var header: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
             // A custom icon chosen in the options wins over the app's own.
-            AppGlyph(iconURL: flow.draft.iconPath.map(model.iconURL) ?? flow.appIcon)
-            VStack(alignment: .leading, spacing: 2) {
+            AppGlyph(iconURL: flow.draft.iconPath.map(model.iconURL) ?? flow.appIcon, size: 60)
+                .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
+            VStack(alignment: .leading, spacing: 3) {
                 Text(flow.info?.name ?? flow.ipa.deletingPathExtension().lastPathComponent)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 19, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
                     .lineLimit(1)
-                Text(subtitle)
+                if let version = flow.info?.version {
+                    Text(L("whatsNew.version", version))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.85))
+                }
+                Text(flow.info?.bundleID ?? flow.ipa.lastPathComponent)
                     .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.white.opacity(0.65))
                     .lineLimit(1)
-                    .truncationMode(.middle)
+                    .truncationMode(.tail)
             }
             Spacer(minLength: 0)
             // Another .ipa without starting over: it replaces this one until an install starts.
@@ -239,16 +249,31 @@ struct InstallSheet: View {
                     if let url = chooseIPA() { model.pendingIPA = url }
                 } label: {
                     Label(L("install.changeApp"), systemImage: "arrow.left.arrow.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(.white.opacity(0.18), in: Capsule())
+                        .overlay(Capsule().strokeBorder(.white.opacity(0.3), lineWidth: 0.5))
+                        .contentShape(Capsule())
                 }
-                .controlSize(.small)
+                .buttonStyle(.plain)
                 .help(L("install.changeApp.help"))
             }
         }
-    }
-
-    private var subtitle: String {
-        guard let info = flow.info else { return flow.ipa.lastPathComponent }
-        return [info.version, info.bundleID].compactMap { $0 }.joined(separator: " · ")
+        .padding(.horizontal, 20)
+        .padding(.top, 6)
+        .padding(.bottom, 18)
+        .background {
+            ZStack {
+                Theme.brand
+                Circle().fill(.white.opacity(0.16)).frame(width: 240).blur(radius: 40).offset(x: -170, y: -60)
+                Circle().fill(Color(red: 1, green: 0.85, blue: 0.3).opacity(0.25)).frame(width: 180)
+                    .blur(radius: 50).offset(x: 190, y: 40)
+            }
+            .clipped()
+            .ignoresSafeArea(edges: .top)
+        }
     }
 
     @ViewBuilder private var buttons: some View {
@@ -290,7 +315,8 @@ struct InstallSheet: View {
                 }
                 Button(installLabel, action: model.startInstall)
                     .buttonStyle(GradientButtonStyle())
-                    .frame(width: flow.deviceIDs.count > 1 ? 200 : 130)
+                    .controlSize(.large)
+                    .frame(maxWidth: .infinity)
                     .keyboardShortcut(.defaultAction)
                     .disabled(!canInstall)
             }
@@ -507,33 +533,21 @@ private struct DevicePicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            SectionTitle(devices.count > 1 ? L("install.devices") : L("install.device"))
-            VStack(spacing: 0) {
+            SectionTitle(L("install.installOn"))
+            // Tiles, two per row; the last one adds a device.
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
                 ForEach(devices) { device in
-                    DeviceChoice(device: device, isSelected: flow.deviceIDs.contains(device.id)) {
+                    DeviceTile(device: device, isSelected: flow.deviceIDs.contains(device.id),
+                               wifiRefresh: Binding(get: { model.devicePrefs.wifiRefresh(for: device.id) },
+                                                    set: { model.setWifiRefresh($0, for: device.id) }),
+                               isRunning: flow.isRunning) {
                         flow.toggle(device.id)
                     }
                     .disabled(!device.isAvailable || flow.isRunning)
-                    // Per device, the same setting as in the popover: refresh this one over Wi-Fi.
-                    if flow.deviceIDs.contains(device.id) {
-                        Toggle(L("popover.device.wifiRefresh"), isOn: Binding(
-                            get: { model.devicePrefs.wifiRefresh(for: device.id) },
-                            set: { model.setWifiRefresh($0, for: device.id) }))
-                            .toggleStyle(.checkbox)
-                            .tint(Theme.violet)
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(.secondary)
-                            .padding(.leading, 38)
-                            .padding(.bottom, 8)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .disabled(flow.isRunning)
-                    }
-                    Divider().padding(.leading, 38)
                 }
-                NewDeviceRow(isOpen: showHelper) { helperRequested.toggle() }
+                NewDeviceTile(isOpen: showHelper) { helperRequested.toggle() }
                     .disabled(flow.isRunning)
             }
-            .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             if let detectedName {
                 Label(L("install.newDevice.detected", detectedName), systemImage: "checkmark.circle.fill")
                     .font(.system(size: 12, weight: .medium))
@@ -574,67 +588,100 @@ private struct DevicePicker: View {
     }
 }
 
-private struct NewDeviceRow: View {
+/// A device to install on: big symbol, name, iOS and connection, a check when chosen; chosen, it
+/// also offers its "Refresh over Wi-Fi" (the popover's per-device setting).
+private struct DeviceTile: View {
+    let device: Device
+    let isSelected: Bool
+    @Binding var wifiRefresh: Bool
+    let isRunning: Bool
+    let select: () -> Void
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovering = false
+
+    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 12, style: .continuous) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button(action: select) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(alignment: .top) {
+                        Image(systemName: device.symbolName)
+                            .font(.system(size: 24, weight: .light))
+                            .foregroundStyle(isSelected ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(.secondary))
+                        Spacer()
+                        ZStack {
+                            Circle().strokeBorder(isSelected ? Color.clear : Color.secondary.opacity(0.5), lineWidth: 1.5)
+                            if isSelected {
+                                Circle().fill(Theme.violet)
+                                Image(systemName: "checkmark").font(.system(size: 9, weight: .heavy)).foregroundStyle(.white)
+                            }
+                        }
+                        .frame(width: 18, height: 18)
+                    }
+                    Text(device.name)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        if let os = device.osVersion {
+                            Text("iOS \(os)").font(.system(size: 11)).foregroundStyle(.secondary)
+                        }
+                        HStack(spacing: 4) {
+                            Circle().fill(device.isAvailable ? Theme.reachable : Theme.unreachable).frame(width: 6, height: 6)
+                            Text(device.transportLabel)
+                        }
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(Theme.cardFill, in: Capsule())
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if isSelected {
+                Toggle(L("popover.device.wifiRefresh"), isOn: $wifiRefresh)
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .tint(Theme.violet)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .disabled(isRunning)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(shape.fill(isSelected ? Theme.violet.opacity(0.13) : isHovering ? Theme.hoverFill : Theme.cardFill))
+        .overlay(shape.strokeBorder(isSelected ? Theme.violet : Color.primary.opacity(0.06), lineWidth: isSelected ? 1.5 : 0.5))
+        .opacity(isEnabled ? 1 : 0.5)
+        .onHover { isHovering = $0 }
+        .animation(.easeOut(duration: 0.15), value: isSelected)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+/// The last tile: how to add a device (opens the help below).
+private struct NewDeviceTile: View {
     let isOpen: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: "plus.circle.fill")
-                    .font(.system(size: 16))
-                    .frame(width: 18)
-                    .foregroundStyle(Theme.violet)
-                Text(L("install.newDevice")).font(.system(size: 13, weight: .medium))
-                Spacer()
-                Image(systemName: isOpen ? "chevron.up" : "chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.tertiary)
+            VStack(spacing: 6) {
+                Image(systemName: isOpen ? "xmark.circle.fill" : "plus.circle.fill")
+                    .font(.system(size: 22))
+                    .foregroundStyle(Theme.brand)
+                Text(L("install.newDevice")).font(.system(size: 12, weight: .medium))
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, minHeight: 92)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.15), style: StrokeStyle(lineWidth: 1, dash: [5, 4])))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-}
-
-private struct DeviceChoice: View {
-    let device: Device
-    let isSelected: Bool
-    let select: () -> Void
-    @Environment(\.isEnabled) private var isEnabled
-
-    var body: some View {
-        Button(action: select) {
-            HStack(spacing: 10) {
-                Image(systemName: device.symbolName)
-                    .font(.system(size: 16))
-                    .frame(width: 18)
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(device.name).font(.system(size: 13, weight: .medium))
-                    HStack(spacing: 5) {
-                        StatusDot(isOn: device.isAvailable)
-                            .scaleEffect(0.75)
-                        Text(device.transportLabel)
-                    }
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 16))
-                    .foregroundStyle(isSelected ? AnyShapeStyle(Theme.violet) : AnyShapeStyle(.tertiary))
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .contentShape(Rectangle())
-            .opacity(isEnabled ? 1 : 0.5)
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 

@@ -416,3 +416,4 @@
 "preflight.title.note" = "Good to know";
 "install.keychain.what" = "Lets this app share sign-ins with the same publisher's other apps installed by XSide (e.g. stay signed in across Google apps). Off, it keeps its own.";
 "install.keychain.risk" = "Only for an IPA you trust: a modified app could read the other apps' sign-ins.";
+"install.installOn" = "Install on";

@@ -36,6 +36,7 @@ struct XSideApp: App {
         Window("XSide", id: InstallWindow.id) {
             InstallWindowRoot(model: model)
         }
+        .windowStyle(.hiddenTitleBar) // the app's gradient header runs under it
         .windowResizability(.contentSize)
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)

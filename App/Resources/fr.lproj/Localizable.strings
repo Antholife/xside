@@ -416,3 +416,4 @@
 "preflight.title.note" = "Bon à savoir";
 "install.keychain.what" = "Permet à cette app de partager ses connexions avec les autres apps du même éditeur installées par XSide (par exemple rester connecté entre les apps Google). Désactivé, elle garde les siennes.";
 "install.keychain.risk" = "Seulement pour une IPA de confiance : une app modifiée pourrait lire les connexions des autres apps.";
+"install.installOn" = "Installer sur";
