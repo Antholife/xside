@@ -12,6 +12,7 @@
       <sparkle:channel>beta</sparkle:channel>
       <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
       <sparkle:releaseNotesLink>https://github.com/Antholife/xside/releases/tag/v1.0.3-beta</sparkle:releaseNotesLink>
+      <sparkle:fullReleaseNotesLink>https://github.com/Antholife/xside/releases</sparkle:fullReleaseNotesLink>
       <enclosure url="https://github.com/Antholife/xside/releases/download/v1.0.3-beta/XSide-1.0.3-beta.zip" sparkle:edSignature="3kPMFdiDDcOxghvTob3CRn+l8FDfgEnz70RtSVXlW/TGSiDwNS8L06dyj5xlqqWRLzrK2f7WVsKOcqUyjHL3Cw==" length="5548150" type="application/octet-stream"/>
     </item>
   </channel>

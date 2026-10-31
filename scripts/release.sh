@@ -42,6 +42,7 @@ ITEM="    <item>
       <sparkle:shortVersionString>$TAG</sparkle:shortVersionString>$CHANNEL
       <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
       <sparkle:releaseNotesLink>$NOTES</sparkle:releaseNotesLink>
+      <sparkle:fullReleaseNotesLink>https://github.com/Antholife/xside/releases</sparkle:fullReleaseNotesLink>
       <enclosure url=\"$URL\" $SIGNATURE type=\"application/octet-stream\"/>
     </item>"
 
