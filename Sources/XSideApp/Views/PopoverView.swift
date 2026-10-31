@@ -570,6 +570,7 @@ private struct IconTile: View {
     var tipAlignment: HorizontalAlignment = .center
     let action: () -> Void
     @State private var isHovering = false
+    @State private var showsTip = false
 
     init(symbol: String, help: String, tipAlignment: HorizontalAlignment = .center, action: @escaping () -> Void) {
         self.init(image: Image(systemName: symbol), help: help, tipAlignment: tipAlignment, action: action)
@@ -593,9 +594,34 @@ private struct IconTile: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .hoverBubble(help, alignment: tipAlignment)
+        // System tooltips don't show in a popover: a bubble above the tile after a short pause.
+        // Its own (one hover tracking per tile: the hoverBubble modifier would add a second).
+        .overlay(alignment: Alignment(horizontal: tipAlignment, vertical: .top)) {
+            if showsTip {
+                Text(help)
+                    .font(.system(size: 11, weight: .medium))
+                    .fixedSize()
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5))
+                    .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
+                    .offset(y: -30)
+                    .transition(.opacity.combined(with: .offset(y: 4)))
+                    .allowsHitTesting(false)
+            }
+        }
+        .onHover { isHovering = $0 }
+        .zIndex(showsTip ? 1 : 0)
+        .task(id: isHovering) {
+            guard isHovering else { showsTip = false; return }
+            try? await Task.sleep(for: .milliseconds(450))
+            if !Task.isCancelled { showsTip = true }
+        }
         .accessibilityLabel(help)
         .animation(.easeOut(duration: 0.12), value: isHovering)
+        .animation(.easeOut(duration: 0.15), value: showsTip)
     }
 }
 
