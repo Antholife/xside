@@ -1,1 +1,5 @@
-blank_issues_enabled: true
+blank_issues_enabled: false
+contact_links:
+  - name: XSide on GitHub
+    url: https://github.com/Antholife/xside
+    about: Read the README, the changelog and the latest release.

@@ -1,0 +1,14 @@
+name: Question or contact
+description: Ask a question, or just get in touch
+labels: [question]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Hi! 👋 Ask anything about XSide, or just say hello. For a bug, the **Bug report** form gets it fixed faster (it asks for the logs).
+  - type: textarea
+    id: message
+    attributes:
+      label: Your message
+    validations:
+      required: true
