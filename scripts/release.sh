@@ -28,12 +28,16 @@ BUILD="$(plutil -extract CFBundleVersion raw "$APP/Contents/Info.plist")"
 URL="https://github.com/Antholife/xside/releases/download/v$TAG/XSide-$TAG.zip"
 NOTES="https://github.com/Antholife/xside/releases/tag/v$TAG"
 DATE="$(LC_ALL=C date -R)"
+# Pre-releases ("1.0.3-beta") go to the beta channel; a stable release has none.
+CHANNEL=""
+[ "$TAG" != "$VERSION" ] && CHANNEL="
+      <sparkle:channel>beta</sparkle:channel>"
 
 ITEM="    <item>
       <title>XSide $TAG</title>
       <pubDate>$DATE</pubDate>
       <sparkle:version>$BUILD</sparkle:version>
-      <sparkle:shortVersionString>$TAG</sparkle:shortVersionString>
+      <sparkle:shortVersionString>$TAG</sparkle:shortVersionString>$CHANNEL
       <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
       <sparkle:releaseNotesLink>$NOTES</sparkle:releaseNotesLink>
       <enclosure url=\"$URL\" $SIGNATURE type=\"application/octet-stream\"/>

@@ -381,3 +381,11 @@
 "updates.checkNow" = "Rechercher maintenant";
 "updates.current" = "XSide %@ (bêta)";
 "updates.lastCheck" = "Dernière vérification %@";
+"updates.frequency" = "Vérifier";
+"updates.frequency.daily" = "Chaque jour";
+"updates.frequency.weekly" = "Chaque semaine";
+"updates.frequency.monthly" = "Chaque mois";
+"updates.channel" = "Canal";
+"updates.channel.beta" = "Bêta";
+"updates.channel.stable" = "Stable";
+"updates.channel.noStable" = "XSide est en bêta : il n'y a pas encore de version stable. Le canal stable ouvrira avec la version 1.0.";

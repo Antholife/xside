@@ -98,15 +98,39 @@ struct SettingsView: View {
     }
 }
 
-/// Automatic checks, "Check now" and when the last check ran.
+/// Automatic checks and how often, the channel, "Check now" and when the last check ran.
 private struct UpdatesSection: View {
     let updater: Updater
     @State private var automatic = false
+    @State private var frequency = Updater.Frequency.daily
+    @State private var channel = Updater.Channel.beta
 
     var body: some View {
         Section(L("updates.title")) {
             Toggle(L("updates.automatic"), isOn: $automatic)
                 .onChange(of: automatic) { _, on in updater.automaticallyChecks = on }
+            Picker(L("updates.frequency"), selection: $frequency) {
+                Text(L("updates.frequency.daily")).tag(Updater.Frequency.daily)
+                Text(L("updates.frequency.weekly")).tag(Updater.Frequency.weekly)
+                Text(L("updates.frequency.monthly")).tag(Updater.Frequency.monthly)
+            }
+            .disabled(!automatic)
+            .onChange(of: frequency) { _, value in updater.frequency = value }
+            LabeledContent {
+                Picker(L("updates.channel"), selection: $channel) {
+                    Text(L("updates.channel.beta")).tag(Updater.Channel.beta)
+                    Text(L("updates.channel.stable")).tag(Updater.Channel.stable)
+                        .selectionDisabled(!Updater.Channel.stableAvailable)
+                }
+                .labelsHidden()
+                .fixedSize()
+                .onChange(of: channel) { _, value in Updater.channel = value }
+            } label: {
+                Text(L("updates.channel"))
+                if !Updater.Channel.stableAvailable {
+                    Text(L("updates.channel.noStable"))
+                }
+            }
             LabeledContent {
                 Button(L("updates.checkNow"), action: updater.checkNow)
                     .disabled(!updater.canCheck)
@@ -117,6 +141,10 @@ private struct UpdatesSection: View {
                 }
             }
         }
-        .onAppear { automatic = updater.automaticallyChecks }
+        .onAppear {
+            automatic = updater.automaticallyChecks
+            frequency = updater.frequency
+            channel = Updater.channel
+        }
     }
 }
