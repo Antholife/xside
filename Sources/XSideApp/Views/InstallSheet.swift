@@ -48,7 +48,6 @@ private struct ProgressHeader: View {
                     .stroke(.white, style: StrokeStyle(lineWidth: 5, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                     .animation(.smooth(duration: 0.5), value: fraction)
-                if !timeline.isWaiting { TurningGlint() }
                 AppGlyph(iconURL: flow.draft.iconPath.map(model.iconURL) ?? flow.appIcon, size: 66)
                     .shadow(color: .black.opacity(0.25), radius: 8, y: 3)
             }
@@ -74,21 +73,6 @@ private struct ProgressHeader: View {
             .clipped()
             .ignoresSafeArea(edges: .top)
         }
-    }
-}
-
-/// A short bright arc going round the progress ring while a step runs.
-private struct TurningGlint: View {
-    @State private var turning = false
-
-    var body: some View {
-        Circle()
-            .trim(from: 0, to: 0.12)
-            .stroke(.white.opacity(0.9), style: StrokeStyle(lineWidth: 5, lineCap: .round))
-            .blur(radius: 1)
-            .rotationEffect(.degrees(turning ? 360 : 0))
-            .animation(.linear(duration: 1.4).repeatForever(autoreverses: false), value: turning)
-            .onAppear { turning = true }
     }
 }
 
