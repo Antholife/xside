@@ -422,7 +422,7 @@
 "install.progress.subtitle" = "on %1$@ · step %2$d of %3$d";
 "install.progress.subtitlePercent" = "on %1$@ · %2$@ · %3$d %%";
 "install.progress.on" = "on %@";
-"popover.appIDs.next" = "next one %@";
+"popover.appIDs.next" = "+1 free %@";
 "popover.appIDs.frees" = "Used, frees up %@ (estimate)";
 "popover.appIDs.free" = "Free";
 "whatsNew.103.updates.title" = "Automatic updates";
