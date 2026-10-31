@@ -12,7 +12,7 @@
 "popover.installCard.accessibility" = "%1$@, %2$@, %3$ld %%";
 "popover.settings" = "Réglages";
 "popover.quit" = "Quitter";
-"popover.appIDsRemaining" = "~%d/10 App ID restants cette semaine · estimation d'après ce Mac";
+"popover.appIDsRemaining" = "~%d/10 App ID libres cette semaine";
 "popover.unreachableHint" = "Introuvable sur ce réseau : branche-le en USB ou connecte-le au même Wi-Fi que ce Mac.";
 "popover.newDevice" = "Nouvel appareil détecté";
 "popover.pair" = "Appairer";
@@ -422,3 +422,6 @@
 "install.progress.subtitle" = "sur %1$@ · étape %2$d sur %3$d";
 "install.progress.subtitlePercent" = "sur %1$@ · %2$@ · %3$d %%";
 "install.progress.on" = "sur %@";
+"popover.appIDs.next" = "le prochain %@";
+"popover.appIDs.frees" = "Utilisé, se libère %@ (estimation)";
+"popover.appIDs.free" = "Libre";

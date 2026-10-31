@@ -145,3 +145,19 @@ private func profile(_ team: String, _ bundle: String, daysAgo: Double, now: Dat
         #expect(runner.calls.count == 2)
     }
 }
+
+struct AppIDReleaseTests {
+    @Test func eachUsedAppIDFreesUpAWeekAfterItsFirstUse() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        func profile(_ id: String, daysAgo: Double) -> ProvisioningProfile {
+            ProvisioningProfile(uuid: UUID().uuidString, teamID: "T1", bundleID: id,
+                                creationDate: now.addingTimeInterval(-daysAgo * 86_400),
+                                expirationDate: now.addingTimeInterval(7 * 86_400), deviceUDIDs: [], entitlements: Data())
+        }
+        let profiles = [profile("a", daysAgo: 1), profile("a", daysAgo: 6), profile("b", daysAgo: 3), profile("c", daysAgo: 8)]
+        let releases = AppIDCounter.releases(profiles, teamID: "T1", now: now)
+        // "a" counts from its oldest profile (6 days ago); "c" is already free.
+        #expect(releases == [now.addingTimeInterval(86_400), now.addingTimeInterval(4 * 86_400)])
+        #expect(AppIDCounter.remaining(profiles, teamID: "T1", now: now) == 8)
+    }
+}

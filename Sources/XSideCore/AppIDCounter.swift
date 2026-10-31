@@ -10,6 +10,14 @@ public enum AppIDCounter {
     public static func remaining(_ profiles: [ProvisioningProfile], teamID: String, now: Date,
                                  firstUse: [String: Date] = [:],
                                  limit: Int = 10, window: TimeInterval = 7 * 86_400) -> Int {
+        max(0, limit - releases(profiles, teamID: teamID, now: now, firstUse: firstUse, window: window).count)
+    }
+
+    /// When each App ID counted this week frees up (its first use + `window`), soonest first:
+    /// the same estimate as `remaining`, one date per App ID.
+    public static func releases(_ profiles: [ProvisioningProfile], teamID: String, now: Date,
+                                firstUse: [String: Date] = [:],
+                                window: TimeInterval = 7 * 86_400) -> [Date] {
         var oldest: [String: Date] = [:]
         for p in profiles where p.teamID == teamID && p.bundleID != "*" {
             if let d = oldest[p.bundleID], d <= p.creationDate { continue }
@@ -18,8 +26,9 @@ public enum AppIDCounter {
         for (bundleID, date) in oldest {
             if let known = firstUse[bundleID], known < date { oldest[bundleID] = known }
         }
-        let used = oldest.values.filter { now.timeIntervalSince($0) < window }.count
-        return max(0, limit - used)
+        return oldest.values.filter { now.timeIntervalSince($0) < window }
+            .map { $0.addingTimeInterval(window) }
+            .sorted()
     }
 
     /// First XSide install per signed bundle id across `records`. Records written before this was

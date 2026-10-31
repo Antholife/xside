@@ -86,6 +86,8 @@ final class AppModel {
         }
     }
     private(set) var appIDsRemaining: Int?
+    /// When each App ID used this week frees up, soonest first (estimate, like the count).
+    private(set) var appIDReleases: [Date] = []
     /// Current step of each running install/refresh, per app row.
     private(set) var jobs: [JobKey: JobStage] = [:]
     private(set) var pairing: Set<String> = []
@@ -767,6 +769,7 @@ final class AppModel {
         appIDCounterDate = Date()
         let profiles = await ProfileReader(runner: runner).scan(paths.xcodeProfileDirs)
         let firstUse = AppIDCounter.firstUses(await library.records())
+        appIDReleases = AppIDCounter.releases(profiles, teamID: env.teamID, now: Date(), firstUse: firstUse)
         appIDsRemaining = AppIDCounter.remaining(profiles, teamID: env.teamID, now: Date(), firstUse: firstUse)
     }
 

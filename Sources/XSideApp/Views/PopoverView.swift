@@ -72,7 +72,7 @@ private struct PopoverContent: View {
             }
             PopoverDivider()
             devices(groups)
-            PopoverFooter(model: model, appIDsRemaining: model.appIDsRemaining)
+            PopoverFooter(model: model, appIDsRemaining: model.appIDsRemaining, appIDReleases: model.appIDReleases)
         }
         .padding(12)
         .frame(width: 340)
@@ -399,6 +399,7 @@ private struct DropHighlight: View {
 private struct PopoverFooter: View {
     let model: AppModel
     let appIDsRemaining: Int?
+    var appIDReleases: [Date] = []
     var showsSettings = true
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
@@ -409,11 +410,7 @@ private struct PopoverFooter: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let appIDsRemaining {
-                Text(L("popover.appIDsRemaining", appIDsRemaining))
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 4)
+                AppIDStrip(remaining: appIDsRemaining, releases: appIDReleases)
             }
             PopoverDivider()
             HStack(spacing: 6) {
@@ -457,6 +454,42 @@ private struct PopoverFooter: View {
                 .keyboardShortcut("q")
             }
         }
+    }
+}
+
+/// The week's 10 App IDs as segments (used ones in the brand gradient, each with the day it frees
+/// up), the count, and when the next one frees up.
+private struct AppIDStrip: View {
+    let remaining: Int
+    let releases: [Date]
+    static let limit = 10
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 3) {
+                ForEach(0..<Self.limit, id: \.self) { index in
+                    let release = index < releases.count ? releases[index] : nil
+                    Capsule()
+                        .fill(release == nil ? AnyShapeStyle(Color.primary.opacity(0.1)) : AnyShapeStyle(Theme.brand))
+                        .frame(height: 5)
+                        .help(release.map { L("popover.appIDs.frees", $0.formatted(.dateTime.weekday(.wide).hour().minute().locale(appLocale))) }
+                              ?? L("popover.appIDs.free"))
+                }
+            }
+            HStack(spacing: 4) {
+                Text(L("popover.appIDsRemaining", remaining))
+                if let next = releases.first {
+                    Text("·")
+                    Text(L("popover.appIDs.next", next.formatted(.relative(presentation: .named).locale(appLocale))))
+                }
+            }
+            .font(.system(size: 10.5))
+            .foregroundStyle(.tertiary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
+        }
+        .padding(.horizontal, 4)
+        .accessibilityElement(children: .combine)
     }
 }
 
