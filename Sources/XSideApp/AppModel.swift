@@ -992,7 +992,8 @@ final class AppModel {
         let needsNewAppID = existing.map { !customID.isEmpty && customID != $0.signedBundleID } ?? true
         #if DEBUG
         // Debug-only: XSIDE_FAKE_PREFLIGHT=1 shows every warning, on the first selected device.
-        if ProcessInfo.processInfo.environment["XSIDE_FAKE_PREFLIGHT"] == "1", let first = targets.first {
+        if ProcessInfo.processInfo.environment["XSIDE_FAKE_PREFLIGHT"] == "1",
+           let first = targets.max(by: { $0.otherApps.count < $1.otherApps.count }) {
             return [.iOSTooOld(deviceID: first.deviceID, required: "99.0", actual: first.osVersion ?? "?"),
                     .deviceFull(deviceID: first.deviceID, apps: first.otherApps),
                     .noAppIDLeft]

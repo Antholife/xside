@@ -413,3 +413,5 @@
 "install.empty.title" = "Installer une app";
 "install.empty.text" = "Glisse un .ipa ici, ou choisis-en un.";
 "install.empty.choose" = "Choisir un .ipa…";
+"preflight.title" = "Avant d'installer";
+"preflight.title.note" = "Bon à savoir";

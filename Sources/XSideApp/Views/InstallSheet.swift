@@ -315,19 +315,53 @@ private struct PreflightNotes: View {
     let model: AppModel
     let flow: InstallFlow
 
+    /// Only "last App ID" left: a note, not a warning.
+    private var isNoteOnly: Bool { warnings == [.lastAppID] }
+
     var body: some View {
         if !warnings.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(Array(warnings.enumerated()), id: \.offset) { _, warning in
-                    Label(text(warning), systemImage: warning == .lastAppID ? "info.circle.fill" : "exclamationmark.triangle.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(warning == .lastAppID ? Color.secondary : Color(nsColor: .systemOrange))
-                        .fixedSize(horizontal: false, vertical: true)
-                    if case .deviceFull(let deviceID, _) = warning {
-                        FreeASlot(model: model, entries: entries(on: deviceID), deviceName: name(deviceID))
+            VStack(alignment: .leading, spacing: 0) {
+                Label(L(isNoteOnly ? "preflight.title.note" : "preflight.title"),
+                      systemImage: isNoteOnly ? "info.circle.fill" : "exclamationmark.triangle.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(isNoteOnly ? Color.secondary : Color(nsColor: .systemOrange))
+                    .padding(.bottom, 8)
+                ForEach(Array(warnings.enumerated()), id: \.offset) { index, warning in
+                    if index > 0 { Divider().padding(.vertical, 8) }
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Image(systemName: symbol(warning))
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 14)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(text(warning))
+                                .font(.system(size: 12))
+                                .fixedSize(horizontal: false, vertical: true)
+                            if case .deviceFull(let deviceID, _) = warning {
+                                let entries = entries(on: deviceID)
+                                if !entries.isEmpty {
+                                    FreeASlot(model: model, entries: entries, deviceName: name(deviceID))
+                                }
+                            }
+                        }
                     }
                 }
             }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(isNoteOnly ? Theme.cardFill : Color(nsColor: .systemOrange).opacity(0.09)))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(isNoteOnly ? Color.primary.opacity(0.06) : Color(nsColor: .systemOrange).opacity(0.25),
+                              lineWidth: 0.5))
+        }
+    }
+
+    private func symbol(_ warning: InstallPreflight.Warning) -> String {
+        switch warning {
+        case .iOSTooOld: "iphone.gen3.slash"
+        case .deviceFull: "square.stack.3d.up.fill"
+        case .noAppIDLeft, .lastAppID: "number"
         }
     }
 
@@ -381,8 +415,7 @@ private struct FreeASlot: View {
                 if entry.id != entries.last?.id { Divider().padding(.leading, 48) }
             }
         }
-        .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .padding(.leading, 22)
+        .background(.background.opacity(0.6), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private func appName(_ entry: AppEntry) -> String { entry.record.options.displayName ?? entry.record.displayName }
