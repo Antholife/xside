@@ -50,8 +50,12 @@ enum Diagnostics {
             .appendingPathComponent("XSide-logs", isDirectory: true)
         do {
             try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            // Masked again: a value registered after a line was written (a device seen later) is
+            // hidden in the export too.
             for file in LogStore.shared.files() {
-                try fm.copyItem(at: file, to: folder.appendingPathComponent(file.lastPathComponent))
+                let text = try String(contentsOf: file, encoding: .utf8)
+                try LogStore.shared.redact(text)
+                    .write(to: folder.appendingPathComponent(file.lastPathComponent), atomically: true, encoding: .utf8)
             }
             try LogStore.shared.redact(model.diagnosticSummary(header: summary))
                 .write(to: folder.appendingPathComponent("summary.txt"), atomically: true, encoding: .utf8)

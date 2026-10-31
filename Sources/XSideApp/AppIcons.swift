@@ -13,8 +13,9 @@ final class AppIcons {
     @ObservationIgnored private let runner: CommandRunning
     /// Bumped when an icon appears: rows read it to load the new file.
     private(set) var revision = 0
-    /// Loaded icons, and files found missing (nil): each file is read once, not at every render.
-    @ObservationIgnored private var images: [URL: NSImage?] = [:]
+    /// Loaded icons by file and modification date (nil date: missing): a file is read again only
+    /// once it changes (a new custom icon is saved at the same path).
+    @ObservationIgnored private var images: [URL: (modified: Date?, image: NSImage?)] = [:]
     @ObservationIgnored private var backfilling = false
 
     init(library: AppLibrary, runner: CommandRunning) {
@@ -31,8 +32,11 @@ final class AppIcons {
         let candidates = [record.options.iconPath.flatMap { $0.isEmpty ? nil : library.root.appendingPathComponent($0) },
                           file(for: record.id)].compactMap { $0 }
         for url in candidates {
-            if images[url] == nil { images[url] = .some(NSImage(contentsOf: url)) }
-            if let image = images[url] ?? nil { return image }
+            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            if images[url] == nil || images[url]?.modified != modified {
+                images[url] = (modified, modified == nil ? nil : NSImage(contentsOf: url))
+            }
+            if let image = images[url]?.image { return image }
         }
         return nil
     }

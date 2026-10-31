@@ -40,6 +40,7 @@ final class AppModel {
                 LogStore.shared.register(env.teamID, as: "team")
                 LogStore.shared.registerIdentity(name: env.identityName, sha1: env.identitySHA1)
                 Self.logger.notice("environment OK: \(env.developerDir.path), team \(env.teamID)")
+                retryQueuedRefresh()
             } else if case .failure(let error)? = environment {
                 Self.logger.notice("environment problem: \(error.key)")
             }
@@ -565,6 +566,7 @@ final class AppModel {
             rememberNames(devices)
             autoselectDevice()
             if changed { onNeedsEvaluation?() }
+            retryQueuedRefresh()
         } catch {
             Self.logger.error("device list failed: \(String(describing: error))")
         }
@@ -581,6 +583,7 @@ final class AppModel {
             defer { pairing.remove(device.id) }
             do {
                 try await DeviceService(runner: runner).pair(device.id)
+                unhide(device.id) // paired again on purpose: shown again
             } catch {
                 Self.logger.error("pairing \(device.id) failed: \(error)")
                 pairErrors[device.id] = localizedMessage(error)
@@ -982,17 +985,21 @@ final class AppModel {
         guard let info = flow.info else { return [] }
         let existing = flow.existing
         let minOS = flow.draft.minOS.trimmingCharacters(in: .whitespaces)
+        // A new App ID unless the record is known and keeps its bundle id (the field, or the default).
+        let customID = flow.draft.bundleID.trimmingCharacters(in: .whitespaces)
+        let signedID = customID.isEmpty ? defaultBundleID(for: flow) : customID
+        let needsNewAppID = existing.map { signedID != $0.signedBundleID } ?? true
         let targets = flow.deviceIDs.compactMap { id -> InstallPreflight.Target? in
             guard let device = devices.first(where: { $0.id == id }) else { return nil }
             let others = records.filter { r in r.id != existing?.id && r.installations.contains { $0.deviceID == id } }
             return InstallPreflight.Target(
                 deviceID: id, osVersion: device.osVersion,
                 otherApps: others.map { $0.options.displayName ?? $0.displayName },
-                hasThisApp: existing?.installations.contains { $0.deviceID == id } ?? false)
+                // Under another bundle id, it's installed beside the old one: a slot of its own.
+                hasThisApp: existing?.installations.contains {
+                    $0.deviceID == id && ($0.signedBundleID ?? existing?.signedBundleID) == signedID
+                } ?? false)
         }
-        // A new App ID unless the record is known and keeps its bundle id.
-        let customID = flow.draft.bundleID.trimmingCharacters(in: .whitespaces)
-        let needsNewAppID = existing.map { !customID.isEmpty && customID != $0.signedBundleID } ?? true
         #if DEBUG
         // Debug-only: XSIDE_FAKE_PREFLIGHT=1 shows every warning, on the first selected device.
         if ProcessInfo.processInfo.environment["XSIDE_FAKE_PREFLIGHT"] == "1",
@@ -1020,7 +1027,9 @@ final class AppModel {
     }
 
     fileprivate func setStepPercent(_ percent: Int, for key: JobKey) {
-        guard jobs[key] != nil, stepPercent[key] != percent else { return }
+        // Only the signing reports progress: a report arriving after it ended (they hop to the
+        // main actor separately) must not show "100 %" on the transfer.
+        guard jobs[key] == .step(.signing), stepPercent[key] != percent else { return }
         stepPercent[key] = percent
         updateDockBadge()
     }
@@ -1035,12 +1044,39 @@ final class AppModel {
     /// The Dock icon (when shown) carries the percentage of the install in the window, else of
     /// the only running job.
     private func updateDockBadge() {
-        let percent = install.flatMap(runPercent) ?? (stepPercent.count == 1 ? stepPercent.values.first : nil)
+        let percent = install?.isRunning == true ? install.flatMap(runPercent)
+            : (stepPercent.count == 1 ? stepPercent.values.first : nil)
         onDockBadge?(percent.map { "\($0)%" })
     }
 
     /// Set by the app delegate: shows a label on the Dock icon (nil removes it).
     var onDockBadge: ((String?) -> Void)?
+
+    /// A refresh asked before XSide could run it (a notification's "Refresh now" that launched it):
+    /// tried again once the devices are listed and the environment checked.
+    private var queuedRefresh: RefreshJob?
+
+    /// Starts the refresh now, or as soon as it can start (XSide just launched). False when it
+    /// was queued.
+    @discardableResult
+    func refreshWhenReady(_ job: RefreshJob) -> Bool {
+        if refreshNow(job) { return true }
+        queuedRefresh = job
+        return false
+    }
+
+    private func retryQueuedRefresh() {
+        guard let job = queuedRefresh, signingEnvironment != nil else { return }
+        queuedRefresh = nil
+        if !refreshNow(job) { Self.logger.notice("queued refresh couldn't start") }
+    }
+
+    private func unhide(_ deviceID: String) {
+        guard devicePrefs.isHidden(deviceID) else { return }
+        var prefs = devicePrefs
+        prefs.setHidden(false, deviceID)
+        savePrefs(prefs)
+    }
 
     /// Refreshes every app that can be now (reachable, not paused, not already running).
     func refreshAll() {
@@ -1120,6 +1156,7 @@ final class AppModel {
                         self.jobs[key] = .step(step)
                         self.stepPercent[key] = nil // a new step starts from nothing
                         self.stepStarted[key] = Date()
+                        self.updateDockBadge()
                         progress(.step(step))
                     }
                 }
@@ -1305,11 +1342,6 @@ final class AppModel {
         flow.lastStage = .preparing
         flow.phase = .running(.preparing)
         flow.setStatus(.running(.preparing), for: deviceID)
-        if devicePrefs.isHidden(deviceID) {
-            var prefs = devicePrefs
-            prefs.setHidden(false, deviceID) // installing on it brings it back
-            savePrefs(prefs)
-        }
         // Looked up now: the device may have gone (or changed transport) during the earlier ones.
         guard !removingDevices.contains(deviceID),
               let device = devices.first(where: { $0.id == deviceID && $0.isAvailable }) else {
@@ -1317,6 +1349,7 @@ final class AppModel {
                            for: deviceID)
             return
         }
+        unhide(deviceID) // installing on it brings it back
         do {
             try await importAndInstall(flow.ipa, on: device, options: flow.runOptions,
                                        importedInto: flow.importedRecordID,

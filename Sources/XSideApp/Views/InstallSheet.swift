@@ -874,9 +874,21 @@ struct AppGlyph: View {
     let iconURL: URL?
     var size: CGFloat = 48
 
+    /// Icons already read, by file and modification date: the header redraws on every progress
+    /// change, the file is read once.
+    @MainActor private static var cache: [URL: (modified: Date?, image: NSImage?)] = [:]
+
+    @MainActor private static func image(at url: URL) -> NSImage? {
+        let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        if let hit = cache[url], hit.modified == modified { return hit.image }
+        let image = NSImage(contentsOf: url)
+        cache[url] = (modified, image)
+        return image
+    }
+
     var body: some View {
         Group {
-            if let iconURL, let image = NSImage(contentsOf: iconURL) {
+            if let iconURL, let image = Self.image(at: iconURL) {
                 Image(nsImage: image).resizable().scaledToFill()
             } else {
                 ZStack {

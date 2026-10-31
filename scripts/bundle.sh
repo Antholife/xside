@@ -53,6 +53,9 @@ SIGN_OPTIONS=()
 # Sparkle comes signed by its own team: re-signed ad hoc, innermost first (helpers, then the
 # framework), or the hardened runtime refuses to load it into XSide ("different Team IDs").
 SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
+# XSide isn't sandboxed: Sparkle's XPC services are for sandboxed apps only (its docs allow
+# removing them), and less code ships in a process without library validation.
+rm -rf "$SPARKLE/Versions/B/XPCServices"
 for helper in "$SPARKLE"/Versions/B/XPCServices/*.xpc "$SPARKLE"/Versions/B/Autoupdate "$SPARKLE"/Versions/B/Updater.app; do
     [ -e "$helper" ] && codesign -s - --force "${SIGN_OPTIONS[@]+"${SIGN_OPTIONS[@]}"}" "$helper"
 done

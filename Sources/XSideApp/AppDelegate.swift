@@ -40,7 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // (device not seen yet, already running, setup to fix).
         Notifier.refreshHandler = { [weak self] job in
             Self.logger.notice("refresh from a notification")
-            model.refreshNow(job)
+            model.refreshWhenReady(job) // just launched by the notification: runs once ready
             model.highlight(JobKey(recordID: job.recordID, deviceID: job.deviceID))
             self?.popover.show()
         }
@@ -135,8 +135,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         dispatch(urls)
     }
 
+    /// A local `.ipa` file (a dragged web link ending in .ipa isn't one).
     static func isIPA(_ url: URL) -> Bool {
-        url.pathExtension.lowercased() == "ipa"
+        url.isFileURL && url.pathExtension.lowercased() == "ipa"
     }
 
     private func dispatch(_ urls: [URL]) {

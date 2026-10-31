@@ -11,14 +11,27 @@ final class DockPresence {
     private static let log = Log("app")
     private var observers: [NSObjectProtocol] = []
 
-    private static var always: Bool { isPinnedInDock }
+    private static var always: Bool { cachedPinned }
 
     /// Adds XSide to the Dock's kept apps, or removes it, then restarts the Dock (it reads its
     /// preferences only at launch; it blinks for a moment).
-    static func setPinnedInDock(_ pinned: Bool) {
-        guard pinned != isPinnedInDock, let bundleID = Bundle.main.bundleIdentifier else { return }
+    /// Refused (false) when it can't be done safely: the Dock's list unreadable or managed by the
+    /// organization (writing would replace the user's whole Dock), or XSide running from a
+    /// translocated copy (the tile would point at a path that goes away).
+    @discardableResult
+    static func setPinnedInDock(_ pinned: Bool) -> Bool {
+        guard pinned != isPinnedInDock, let bundleID = Bundle.main.bundleIdentifier else { return true }
         let dock = "com.apple.dock" as CFString, key = "persistent-apps" as CFString
-        var apps = CFPreferencesCopyAppValue(key, dock) as? [[String: Any]] ?? []
+        CFPreferencesAppSynchronize(dock)
+        guard !CFPreferencesAppValueIsForced(key, dock),
+              var apps = CFPreferencesCopyAppValue(key, dock) as? [Any] else {
+            log.error("Dock list unreadable or managed: not changed")
+            return false
+        }
+        if pinned, Bundle.main.bundlePath.contains("/AppTranslocation/") {
+            log.error("running from a translocated copy: not pinned")
+            return false
+        }
         if pinned {
             apps.append([
                 "tile-type": "file-tile",
@@ -29,24 +42,36 @@ final class DockPresence {
                 ] as [String: Any],
             ])
         } else {
-            apps.removeAll { (($0["tile-data"] as? [String: Any])?["bundle-identifier"] as? String) == bundleID }
+            // Entries that don't parse are kept as they are.
+            apps.removeAll { ((($0 as? [String: Any])?["tile-data"] as? [String: Any])?["bundle-identifier"] as? String) == bundleID }
         }
         CFPreferencesSetAppValue(key, apps as CFArray, dock)
         CFPreferencesAppSynchronize(dock)
         log.notice(pinned ? "pinned in the Dock" : "unpinned from the Dock")
+        cachedPinned = pinned
         NotificationCenter.default.post(name: pinChanged, object: nil)
         Task { _ = try? await ProcessRunner().run("/usr/bin/killall", ["Dock"], cwd: nil) }
+        return true
     }
+
+    /// Last read of `isPinnedInDock`: the windows' frequent notifications use it instead of
+    /// reading the Dock's preferences each time (refreshed when XSide comes forward).
+    private static var cachedPinned = false
 
     static let pinChanged = Notification.Name("XSideDockPinChanged")
 
-    /// XSide is among the Dock's kept apps (`com.apple.dock` `persistent-apps`).
+    /// XSide is among the Dock's kept apps (`com.apple.dock` `persistent-apps`). Reads the Dock's
+    /// preferences, and remembers the answer (`cachedPinned`).
     static var isPinnedInDock: Bool {
         let dock = "com.apple.dock" as CFString
         CFPreferencesAppSynchronize(dock)
-        guard let apps = CFPreferencesCopyAppValue("persistent-apps" as CFString, dock) as? [[String: Any]],
+        guard let apps = CFPreferencesCopyAppValue("persistent-apps" as CFString, dock) as? [Any],
               let bundleID = Bundle.main.bundleIdentifier else { return false }
-        return apps.contains { (($0["tile-data"] as? [String: Any])?["bundle-identifier"] as? String) == bundleID }
+        let pinned = apps.contains {
+            ((($0 as? [String: Any])?["tile-data"] as? [String: Any])?["bundle-identifier"] as? String) == bundleID
+        }
+        cachedPinned = pinned
+        return pinned
     }
 
     func start() {
@@ -55,7 +80,10 @@ final class DockPresence {
         // pins or unpins it (`pinChanged`).
         for name in [NSApplication.didBecomeActiveNotification, Self.pinChanged] {
             observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.update(closing: nil) }
+                MainActor.assumeIsolated {
+                    _ = Self.isPinnedInDock // read again: it may have changed from the Dock
+                    self?.update(closing: nil)
+                }
             })
         }
         for name in [NSWindow.didBecomeKeyNotification, NSWindow.didChangeOcclusionStateNotification] {
@@ -67,6 +95,7 @@ final class DockPresence {
             let window = note.object as? NSWindow
             MainActor.assumeIsolated { self?.update(closing: window) }
         })
+        _ = Self.isPinnedInDock
         update(closing: nil) // "Keep in the Dock" applies from launch
     }
 
@@ -119,8 +148,8 @@ struct KeepInDockToggle: View {
 
     var body: some View {
         Toggle(isOn: Binding(get: { isOn }, set: { on in
-            isOn = on
-            DockPresence.setPinnedInDock(on)
+            // Refused (Dock list unreadable or managed, translocated copy): the switch goes back.
+            isOn = DockPresence.setPinnedInDock(on) ? on : !on
         })) {
             Text(L("settings.keepInDock"))
             Text(L("settings.keepInDock.detail"))

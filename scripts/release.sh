@@ -13,9 +13,11 @@ TAG="${1:?usage: scripts/release.sh <version>, e.g. 1.0.3-beta}"
 VERSION="${TAG%%-*}"
 PLIST_VERSION="$(plutil -extract CFBundleShortVersionString raw App/Info.plist)"
 [ "$VERSION" = "$PLIST_VERSION" ] || { echo "App/Info.plist says $PLIST_VERSION, not $VERSION" >&2; exit 1; }
-git diff --quiet HEAD -- || { echo "Commit first: the build is stamped with the commit" >&2; exit 1; }
+# Untracked files count too: SwiftPM builds every file under Sources/.
+[ -z "$(git status --porcelain)" ] || { echo "Commit first (untracked files too): the build is stamped with the commit" >&2; exit 1; }
+grep -q "<sparkle:shortVersionString>$TAG<" appcast.xml 2>/dev/null && { echo "$TAG is already in appcast.xml" >&2; exit 1; }
 
-scripts/bundle.sh
+CONFIG=release scripts/bundle.sh
 APP=build/XSide.app
 ZIP="build/release/XSide-$TAG.zip"
 mkdir -p build/release
@@ -57,10 +59,12 @@ EOF
 fi
 # Newest first, right after the marker.
 ITEM="$ITEM" python3 -I -c '
-import os
+import os, sys
 path = "appcast.xml"
 text = open(path).read()
 marker = "    <!-- items -->\n"
+if marker not in text:
+    sys.exit("appcast.xml has no <!-- items --> marker: nothing added")
 open(path, "w").write(text.replace(marker, marker + os.environ["ITEM"] + "\n", 1))
 '
 
