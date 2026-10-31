@@ -424,7 +424,7 @@
 "install.progress.on" = "sur %@";
 "popover.appIDs.next" = "+1 %@";
 "whatsNew.103.updates.title" = "Mises à jour automatiques";
-"whatsNew.103.updates.text" = "XSide se met maintenant à jour tout seul, depuis Réglages > Mises à jour. C'est la dernière version à installer à la main.";
+"whatsNew.103.updates.text" = "XSide se met maintenant à jour tout seul : choisis la fréquence et le canal dans Réglages > Mises à jour. C'est la dernière version à installer à la main.";
 "whatsNew.103.design.title" = "Un nouveau look";
 "whatsNew.103.design.text" = "Un vrai panneau sous l'icône de la barre des menus avec l'icône de chaque app, des Réglages avec une barre latérale, et une fenêtre d'installation repensée.";
 "whatsNew.103.preflight.title" = "Des vérifications avant d'installer";
@@ -432,6 +432,13 @@
 "whatsNew.103.notifications.title" = "Des boutons dans les notifications";
 "whatsNew.103.notifications.text" = "« Rafraîchir maintenant » ou « Ouvrir XSide » directement depuis l'alerte ; l'app brille dans le panneau.";
 "whatsNew.103.progress.title" = "Une vraie progression";
-"whatsNew.103.progress.text" = "Des pourcentages pendant la signature, le temps écoulé pendant l'envoi, et les App ID de la semaine en frise.";
+"whatsNew.103.progress.text" = "Des pourcentages pendant la signature, le temps écoulé pendant l'envoi sur l'appareil, et le pourcentage sur l'icône du Dock.";
 "a11y.expanded" = "Déplié";
 "a11y.collapsed" = "Replié";
+"whatsNew.103.appIDs.title" = "Tes App ID de la semaine";
+"whatsNew.103.appIDs.text" = "Une frise en bas du panneau montre les 10 App ID de la semaine, ceux utilisés, et quand le prochain se libère.";
+"whatsNew.103.dock.title" = "Garder dans le Dock";
+"whatsNew.103.dock.text" = "Garde XSide dans le Dock, synchronisé avec le réglage du Dock lui-même. Un clic sur son icône ouvre la fenêtre d'installation.";
+"whatsNew.103.more.title" = "Et aussi";
+"whatsNew.103.more.text" = "Changer d'app directement depuis la fenêtre d'installation, des boutons GitHub et Signaler un bug dans le panneau, et un appareil retiré ne revient plus dans la liste.";
+"whatsNew.changelog" = "Historique complet";

@@ -65,6 +65,12 @@ struct ReleaseNotes {
                      title: L("whatsNew.103.notifications.title"), text: L("whatsNew.103.notifications.text")),
                 Item(symbol: "gauge.with.dots.needle.67percent",
                      title: L("whatsNew.103.progress.title"), text: L("whatsNew.103.progress.text")),
+                Item(symbol: "number",
+                     title: L("whatsNew.103.appIDs.title"), text: L("whatsNew.103.appIDs.text")),
+                Item(symbol: "dock.rectangle",
+                     title: L("whatsNew.103.dock.title"), text: L("whatsNew.103.dock.text")),
+                Item(symbol: "plus.square.on.square",
+                     title: L("whatsNew.103.more.title"), text: L("whatsNew.103.more.text")),
             ], thanks: []),
             ReleaseNotes(version: "1.0.2", label: "beta", items: [
                 Item(symbol: "doc.zipper",
@@ -102,78 +108,108 @@ struct WhatsNewWindowRoot: View {
             }
         }
         .id(language)
-        .frame(width: 460)
+        .frame(width: 580)
         .navigationTitle(L("whatsNew.window"))
     }
 }
 
+/// A compact header, the first item as a featured card, the others as a two-column grid of
+/// tiles, the thanks, then the full changelog link and "Let's go". Scrolls only past the screen.
 private struct WhatsNewView: View {
     let notes: ReleaseNotes
     @Environment(\.dismissWindow) private var dismissWindow
     @State private var appeared = false
+    /// Natural height of the content, to size the window to it.
+    @State private var contentHeight: CGFloat = 400
+
+    private static var maxContentHeight: CGFloat {
+        max(300, (NSScreen.main?.visibleFrame.height ?? 800) - 220)
+    }
+
+    private var featured: ReleaseNotes.Item? { notes.items.first }
+    private var others: [ReleaseNotes.Item] { Array(notes.items.dropFirst()) }
+    private var paired: [ReleaseNotes.Item] { others.count.isMultiple(of: 2) ? others : Array(others.dropLast()) }
+    private var lastAlone: ReleaseNotes.Item? { others.count.isMultiple(of: 2) ? nil : others.last }
 
     var body: some View {
         VStack(spacing: 0) {
-            hero
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(Array(notes.items.enumerated()), id: \.element.id) { index, item in
-                    ItemCard(item: item)
-                        .opacity(appeared ? 1 : 0)
-                        .offset(y: appeared ? 0 : 10)
-                        .animation(.smooth(duration: 0.45).delay(0.12 + Double(index) * 0.07), value: appeared)
+            header
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: 12) {
+                    if let featured {
+                        FeaturedCard(item: featured).appearing(appeared, index: 0)
+                    }
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
+                              alignment: .leading, spacing: 12) {
+                        ForEach(Array(paired.enumerated()), id: \.element.id) { index, item in
+                            ItemTile(item: item).appearing(appeared, index: index + 1)
+                        }
+                    }
+                    // An odd one out takes the whole width rather than half a row.
+                    if let last = lastAlone {
+                        ItemTile(item: last).appearing(appeared, index: others.count)
+                    }
+                    ForEach(notes.thanks, id: \.handle) { thanks in
+                        ThanksCard(thanks: thanks).appearing(appeared, index: notes.items.count)
+                    }
                 }
-                ForEach(notes.thanks, id: \.handle) { thanks in
-                    ThanksCard(thanks: thanks)
-                        .opacity(appeared ? 1 : 0)
-                        .offset(y: appeared ? 0 : 10)
-                        .animation(.smooth(duration: 0.45).delay(0.12 + Double(notes.items.count) * 0.07),
-                                   value: appeared)
-                }
+                .padding(20)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
             }
-            .padding(.horizontal, 24)
-            .padding(.top, 20)
-            Button(L("whatsNew.done")) { dismissWindow(id: WhatsNewWindow.id) }
-                .buttonStyle(GradientButtonStyle())
-                .keyboardShortcut(.defaultAction)
-                .padding(24)
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(height: min(contentHeight, Self.maxContentHeight))
+            Divider()
+            HStack {
+                Link(destination: URL(string: "https://github.com/Antholife/xside/blob/main/CHANGELOG.md")!) {
+                    Label(L("whatsNew.changelog"), systemImage: "list.bullet.rectangle")
+                }
+                .font(.system(size: 12, weight: .medium))
+                Spacer()
+                Button(L("whatsNew.done")) { dismissWindow(id: WhatsNewWindow.id) }
+                    .buttonStyle(GradientButtonStyle())
+                    .frame(width: 160)
+                    .keyboardShortcut(.defaultAction)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
         }
         .onAppear { appeared = true }
     }
 
-    /// Brand gradient with soft light blobs, the icon, the title and the version pill.
-    private var hero: some View {
-        VStack(spacing: 10) {
+    /// Icon, title and version on one line, on the brand gradient under the hidden title bar.
+    private var header: some View {
+        HStack(spacing: 14) {
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
                 .interpolation(.high)
-                .frame(width: 76, height: 76)
-                .shadow(color: .black.opacity(0.25), radius: 12, y: 6)
-                .scaleEffect(appeared ? 1 : 0.8)
+                .frame(width: 58, height: 58)
+                .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
+                .scaleEffect(appeared ? 1 : 0.85)
                 .animation(.spring(duration: 0.6, bounce: 0.4), value: appeared)
                 .accessibilityHidden(true)
-            Text(L("whatsNew.title"))
-                .font(.system(size: 24, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
-            Text([L("whatsNew.version", notes.version), notes.label].compactMap { $0 }.joined(separator: " · "))
-                .font(.system(size: 11, weight: .semibold))
-                .textCase(.uppercase)
-                .kerning(0.6)
-                .foregroundStyle(.white)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(.white.opacity(0.2), in: Capsule())
-                .overlay(Capsule().strokeBorder(.white.opacity(0.3), lineWidth: 0.5))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(L("whatsNew.title"))
+                    .font(.system(size: 21, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                Text([L("whatsNew.version", notes.version), notes.label].compactMap { $0 }.joined(separator: " · "))
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .textCase(.uppercase)
+                    .kerning(0.6)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 3)
+                    .background(.white.opacity(0.2), in: Capsule())
+                    .overlay(Capsule().strokeBorder(.white.opacity(0.3), lineWidth: 0.5))
+            }
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 8)
-        .padding(.bottom, 24)
+        .padding(.horizontal, 22)
+        .padding(.top, 4)
+        .padding(.bottom, 18)
         .background {
-            // The gradient alone goes under the hidden title bar; the content stays below it.
             ZStack {
                 Theme.brand
-                Circle().fill(.white.opacity(0.18)).frame(width: 220).blur(radius: 40).offset(x: -150, y: -70)
-                Circle().fill(Color(red: 1, green: 0.85, blue: 0.3).opacity(0.35)).frame(width: 180)
-                    .blur(radius: 50).offset(x: 170, y: 60)
+                Circle().fill(.white.opacity(0.16)).frame(width: 260).blur(radius: 45).offset(x: -200, y: -50)
             }
             .clipped()
             .ignoresSafeArea(edges: .top)
@@ -181,27 +217,68 @@ private struct WhatsNewView: View {
     }
 }
 
-private struct ItemCard: View {
+extension View {
+    /// Fades and slides in, one after the other.
+    fileprivate func appearing(_ appeared: Bool, index: Int) -> some View {
+        opacity(appeared ? 1 : 0)
+            .offset(y: appeared ? 0 : 10)
+            .animation(.smooth(duration: 0.45).delay(0.1 + Double(index) * 0.06), value: appeared)
+    }
+}
+
+/// The main novelty: a wide card with a large gradient icon on a soft brand wash.
+private struct FeaturedCard: View {
     let item: ReleaseNotes.Item
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .center, spacing: 16) {
             Image(systemName: item.symbol)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: 26, weight: .semibold))
                 .foregroundStyle(.white)
-                .frame(width: 34, height: 34)
-                .background(Theme.brand, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                .shadow(color: Theme.violet.opacity(0.25), radius: 4, y: 2)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(item.title).font(.system(size: 13, weight: .semibold))
+                .frame(width: 58, height: 58)
+                .background(Theme.brand, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                .shadow(color: Theme.violet.opacity(0.35), radius: 8, y: 3)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.title).font(.system(size: 15, weight: .bold))
                 Text(item.text)
-                    .font(.system(size: 12))
+                    .font(.system(size: 12.5))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
         }
-        .padding(12)
+        .padding(16)
+        .background(LinearGradient(colors: [Theme.violet.opacity(0.14), Theme.pink.opacity(0.08)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing),
+                    in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .strokeBorder(Theme.violet.opacity(0.25), lineWidth: 0.5))
+    }
+}
+
+/// One novelty in the grid: icon tile, title, a few lines.
+private struct ItemTile: View {
+    let item: ReleaseNotes.Item
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 9) {
+                Image(systemName: item.symbol)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 28, height: 28)
+                    .background(Theme.brand, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                Text(item.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Text(item.text)
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
