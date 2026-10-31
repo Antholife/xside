@@ -17,11 +17,7 @@ struct InstallWindowRoot: View {
                     if !model.dismissFlow() { dismissWindow(id: InstallWindow.id) }
                 }
             } else {
-                Button(L("popover.install")) {
-                    if let url = chooseIPA() { openWindow.presentInstall(url, model: model) }
-                }
-                .buttonStyle(GradientButtonStyle())
-                .padding(24)
+                InstallDropZone { url in openWindow.presentInstall(url, model: model) }
             }
         }
         .frame(width: 440)
@@ -31,6 +27,53 @@ struct InstallWindowRoot: View {
         .id(language)
         .onAppear(perform: model.installWindowAppeared)
         .onDisappear(perform: model.installWindowDisappeared)
+    }
+}
+
+/// The install window with no install yet (opened from the Dock): drop an .ipa, or pick one.
+private struct InstallDropZone: View {
+    let open: (URL) -> Void
+    @State private var isTargeted = false
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "arrow.down.app.fill")
+                .font(.system(size: 30, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 64, height: 64)
+                .background(Theme.brand, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .shadow(color: Theme.violet.opacity(0.35), radius: 10, y: 4)
+                .scaleEffect(isTargeted ? 1.08 : 1)
+            VStack(spacing: 4) {
+                Text(L("install.empty.title")).font(.system(size: 15, weight: .semibold))
+                Text(L("install.empty.text"))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Button(L("install.empty.choose")) {
+                if let url = chooseIPA() { open(url) }
+            }
+            .buttonStyle(GradientButtonStyle())
+            .frame(width: 200)
+        }
+        .padding(28)
+        .frame(maxWidth: .infinity)
+        .background {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(isTargeted ? Theme.violet.opacity(0.12) : Theme.cardFill)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(isTargeted ? Theme.violet : Color.primary.opacity(0.15),
+                              style: StrokeStyle(lineWidth: 1.5, dash: [7, 5]))
+        }
+        .padding(20)
+        .animation(.easeOut(duration: 0.15), value: isTargeted)
+        .dropDestination(for: URL.self) { urls, _ in
+            guard let url = urls.first(where: AppDelegate.isIPA) else { return false }
+            open(url)
+            return true
+        } isTargeted: { isTargeted = $0 }
     }
 }
 

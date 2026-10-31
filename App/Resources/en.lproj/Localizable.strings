@@ -5,7 +5,6 @@
 "popover.expires.today" = "Expires today";
 "popover.expired" = "Expired";
 "popover.nextRefresh" = "Next refresh: %@";
-"popover.install" = "＋ Install an app";
 "popover.installCard.title" = "Installing %@";
 "popover.installCard.step" = "%1$@ · %2$@";
 "popover.installCard.failed" = "Failed — see details";
@@ -410,4 +409,7 @@
 "notification.action.refresh" = "Refresh Now";
 "notification.action.open" = "Open XSide";
 "settings.keepInDock" = "Keep in the Dock";
-"settings.keepInDock.detail" = "Otherwise XSide shows in the Dock only while one of its windows is open. A click on the icon opens the panel.";
+"settings.keepInDock.detail" = "Otherwise XSide shows in the Dock only while one of its windows is open. A click on the icon opens the install window.";
+"install.empty.title" = "Install an app";
+"install.empty.text" = "Drop an .ipa here, or choose one.";
+"install.empty.choose" = "Choose an .ipa…";
