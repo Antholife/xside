@@ -36,6 +36,9 @@ final class Updater {
     init() {
         guard Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil else {
             controller = nil
+            #if DEBUG
+            canCheck = AppModel.isDemo // the demo's button looks live (it does nothing)
+            #endif
             return
         }
         let controller = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: channels,
@@ -49,11 +52,21 @@ final class Updater {
         Self.log.notice("updater started, automatic checks \(controller.updater.automaticallyChecksForUpdates), every \(Int(controller.updater.updateCheckInterval)) s, channel \(Self.channel.rawValue)")
     }
 
-    var isAvailable: Bool { controller != nil }
+    var isAvailable: Bool {
+        #if DEBUG
+        if AppModel.isDemo { return true } // shown for screenshots, Sparkle never started
+        #endif
+        return controller != nil
+    }
 
     /// Background checks (Sparkle shows the update when one is found).
     var automaticallyChecks: Bool {
-        get { controller?.updater.automaticallyChecksForUpdates ?? false }
+        get {
+            #if DEBUG
+            if AppModel.isDemo { return true }
+            #endif
+            return controller?.updater.automaticallyChecksForUpdates ?? false
+        }
         set { controller?.updater.automaticallyChecksForUpdates = newValue }
     }
 
@@ -76,7 +89,12 @@ final class Updater {
         set { UserDefaults.standard.set(newValue.rawValue, forKey: Channel.storageKey) }
     }
 
-    var lastCheck: Date? { controller?.updater.lastUpdateCheckDate }
+    var lastCheck: Date? {
+        #if DEBUG
+        if AppModel.isDemo { return Date().addingTimeInterval(-2 * 3600) }
+        #endif
+        return controller?.updater.lastUpdateCheckDate
+    }
 
     func checkNow() {
         Self.log.notice("checking for updates")

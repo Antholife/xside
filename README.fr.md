@@ -42,7 +42,8 @@ XSide installe des fichiers `.ipa` sur ton iPhone et ton iPad avec un compte App
 </p>
 
 <p align="center">
-  <img src="docs/assets/screenshots/settings-dark.png" width="560" alt="Les Réglages : une barre latérale ; Xcode et signature, tout est prêt">
+  <img src="docs/assets/screenshots/settings-dark.png" width="370" alt="Les Réglages : une barre latérale ; Xcode et signature, tout est prêt">
+  <img src="docs/assets/screenshots/updates-dark.png" width="370" alt="Les Réglages : mises à jour automatiques (Sparkle), fréquence et canal">
 </p>
 
 ## ✨ Fonctionnalités
