@@ -409,8 +409,7 @@
 "notification.action.refresh" = "Refresh Now";
 "notification.action.open" = "Open XSide";
 "settings.keepInDock" = "Keep in the Dock";
-"settings.keepInDock.detail" = "Otherwise XSide shows in the Dock only while one of its windows is open. A click on the icon opens the install window.";
+"settings.keepInDock.detail" = "Keeps XSide in the Dock, even when it's closed; a click on the icon opens the install window. Otherwise it shows there only while one of its windows is open.";
 "install.empty.title" = "Install an app";
 "install.empty.text" = "Drop an .ipa here, or choose one.";
 "install.empty.choose" = "Choose an .ipa…";
-"settings.keepInDock.pinned" = "XSide is kept in the Dock by the Dock itself. To remove it: right-click its icon > Options > Keep in Dock.";

@@ -1,19 +1,44 @@
 import AppKit
 import SwiftUI
+import XSideCore
 
 /// Shows XSide in the Dock while one of its windows (journey, install, settings) is open, and goes
-/// back to menu-bar only when the last one closes; always, when "Keep in the Dock" is on
-/// (`alwaysKey`). The first time, a short alert explains that XSide keeps running in the menu bar.
+/// back to menu-bar only when the last one closes; always, while XSide is kept in the Dock (the
+/// Dock's own "Keep in Dock", also set from Settings: `KeepInDockToggle`). The first time, a short alert explains that XSide keeps running in the menu bar.
 @MainActor
 final class DockPresence {
     static let hintShownKey = "backgroundHintShown"
-    /// Settings > General: the Dock icon stays even with no window open.
-    static let alwaysKey = "keepInDock"
+    private static let log = Log("app")
     private var observers: [NSObjectProtocol] = []
 
-    /// The setting, or XSide pinned in the Dock (the Dock's own "Keep in Dock"): the Dock is the
-    /// reference, XSide can't unpin itself.
-    private static var always: Bool { UserDefaults.standard.bool(forKey: alwaysKey) || isPinnedInDock }
+    private static var always: Bool { isPinnedInDock }
+
+    /// Adds XSide to the Dock's kept apps, or removes it, then restarts the Dock (it reads its
+    /// preferences only at launch; it blinks for a moment).
+    static func setPinnedInDock(_ pinned: Bool) {
+        guard pinned != isPinnedInDock, let bundleID = Bundle.main.bundleIdentifier else { return }
+        let dock = "com.apple.dock" as CFString, key = "persistent-apps" as CFString
+        var apps = CFPreferencesCopyAppValue(key, dock) as? [[String: Any]] ?? []
+        if pinned {
+            apps.append([
+                "tile-type": "file-tile",
+                "tile-data": [
+                    "bundle-identifier": bundleID,
+                    "file-label": "XSide",
+                    "file-data": ["_CFURLString": Bundle.main.bundleURL.absoluteString, "_CFURLStringType": 15],
+                ] as [String: Any],
+            ])
+        } else {
+            apps.removeAll { (($0["tile-data"] as? [String: Any])?["bundle-identifier"] as? String) == bundleID }
+        }
+        CFPreferencesSetAppValue(key, apps as CFArray, dock)
+        CFPreferencesAppSynchronize(dock)
+        log.notice(pinned ? "pinned in the Dock" : "unpinned from the Dock")
+        NotificationCenter.default.post(name: pinChanged, object: nil)
+        Task { _ = try? await ProcessRunner().run("/usr/bin/killall", ["Dock"], cwd: nil) }
+    }
+
+    static let pinChanged = Notification.Name("XSideDockPinChanged")
 
     /// XSide is among the Dock's kept apps (`com.apple.dock` `persistent-apps`).
     static var isPinnedInDock: Bool {
@@ -26,9 +51,9 @@ final class DockPresence {
 
     func start() {
         let center = NotificationCenter.default
-        // The setting changed (or anything else in the defaults): applied at once. Pinning in the
-        // Dock sends nothing: looked at again each time XSide comes forward.
-        for name in [UserDefaults.didChangeNotification, NSApplication.didBecomeActiveNotification] {
+        // Pinning sends nothing: looked at again each time XSide comes forward, and when Settings
+        // pins or unpins it (`pinChanged`).
+        for name in [NSApplication.didBecomeActiveNotification, Self.pinChanged] {
             observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.update(closing: nil) }
             })
@@ -87,21 +112,21 @@ final class DockPresence {
     }
 }
 
-/// "Keep in the Dock", in Settings and in the welcome journey. On and locked while XSide is pinned
-/// in the Dock: only the Dock can unpin it.
+/// "Keep in the Dock", in Settings and in the welcome journey: the Dock's own pin, both ways (it
+/// shows what the Dock says, and pins or unpins XSide there).
 struct KeepInDockToggle: View {
-    @AppStorage(DockPresence.alwaysKey) private var keepInDock = false
-    @State private var pinned = DockPresence.isPinnedInDock
+    @State private var isOn = DockPresence.isPinnedInDock
 
     var body: some View {
-        Toggle(isOn: Binding(get: { keepInDock || pinned }, set: { keepInDock = $0 })) {
+        Toggle(isOn: Binding(get: { isOn }, set: { on in
+            isOn = on
+            DockPresence.setPinnedInDock(on)
+        })) {
             Text(L("settings.keepInDock"))
-            Text(L(pinned ? "settings.keepInDock.pinned" : "settings.keepInDock.detail"))
+            Text(L("settings.keepInDock.detail"))
         }
-        .disabled(pinned)
-        .onAppear { pinned = DockPresence.isPinnedInDock }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            pinned = DockPresence.isPinnedInDock
+            isOn = DockPresence.isPinnedInDock
         }
     }
 }
