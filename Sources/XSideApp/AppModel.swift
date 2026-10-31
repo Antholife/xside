@@ -115,6 +115,17 @@ final class AppModel {
     let icons: AppIcons
     /// XSide's own updates (Sparkle).
     let updater = Updater()
+    /// The row a notification was about: it glows for a few seconds once the panel shows it.
+    private(set) var highlightedRow: JobKey?
+
+    func highlight(_ key: JobKey) {
+        highlightedRow = key
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            if self?.highlightedRow == key { self?.highlightedRow = nil }
+        }
+    }
+
     /// The page Settings shows: set before opening it (a signing problem opens on its fix).
     var settingsPane = SettingsPane.general
     /// Runs every tool with `DEVELOPER_DIR` set to the Xcode in use (see `resolveXcode`).

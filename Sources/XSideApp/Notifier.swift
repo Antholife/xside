@@ -23,8 +23,8 @@ final class Notifier: NSObject {
 
     /// Installed by the app: refreshes one app (a notification's "Refresh now").
     static var refreshHandler: (@MainActor (RefreshJob) -> Void)?
-    /// Installed by the app: opens the menu-bar panel.
-    static var openPanelHandler: (@MainActor () -> Void)?
+    /// Installed by the app: opens the menu-bar panel, on the notification's app if it has one.
+    static var openPanelHandler: (@MainActor (RefreshJob?) -> Void)?
     /// Causes the user fixes in Xcode itself (its account settings): their notification has
     /// "Open Xcode", and a tap opens Settings.
     static let xcodeErrorKeys: Set<String> = ["xcodeNotSignedIn", "noSigningIdentity", "provisioningFailed", "xcodeMissing"]
@@ -313,9 +313,10 @@ extension Notifier: UNUserNotificationCenterDelegate {
                     || (response.actionIdentifier == UNNotificationDefaultActionIdentifier
                         && request.content.categoryIdentifier == Self.appCategory) {
             // About one app: the panel shows it, with its menu.
+            let job = Self.job(of: response.notification)
             await MainActor.run {
                 NSApp.activate()
-                Self.openPanelHandler?()
+                Self.openPanelHandler?(job)
             }
         } else if response.actionIdentifier == UNNotificationDefaultActionIdentifier,
                   Self.opensSettings(request.identifier)

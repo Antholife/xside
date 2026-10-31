@@ -136,6 +136,7 @@ private struct PopoverContent: View {
                                    canManage: model.canManage(entry),
                                    isUninstalling: model.uninstalling.contains(entry.id),
                                    needsUSB: group.needsUSB, deviceName: group.name,
+                                   isHighlighted: model.highlightedRow == entry.id,
                                    icon: model.icons.image(for: entry.record),
                                    onRefresh: { model.refreshNow(entry.job) },
                                    onUninstall: { uninstall(entry, deviceName: group.name) },

@@ -15,6 +15,8 @@ struct AppRow: View {
     /// Wi-Fi refresh is off and the device is only on Wi-Fi.
     let needsUSB: Bool
     let deviceName: String
+    /// A notification was about this app: the row glows while the panel opens.
+    var isHighlighted = false
     /// The app's icon (custom or its own), nil until known.
     let icon: NSImage?
     let onRefresh: () -> Void
@@ -36,6 +38,9 @@ struct AppRow: View {
         .padding(.vertical, 6)
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
             .fill(isHovering ? Theme.hoverFill : .clear))
+        .background { if isHighlighted { HighlightGlow(part: .fill) } }
+        .overlay { if isHighlighted { HighlightGlow(part: .border) } }
+        .animation(.easeOut(duration: 0.4), value: isHighlighted)
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
         .contextMenu { actions }
@@ -139,6 +144,33 @@ struct AppRow: View {
         guard next > now else { return L("popover.refreshPending") }
         let when = next.formatted(.dateTime.weekday(.wide).hour().minute().locale(appLocale))
         return L("popover.nextRefresh", when)
+    }
+}
+
+/// A violet halo pulsing around a row: "this is the one". The fill goes behind the row (the
+/// app's icon stays crisp), the border over it.
+private struct HighlightGlow: View {
+    enum Part { case fill, border }
+    let part: Part
+    @State private var bright = false
+
+    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 8, style: .continuous) }
+
+    var body: some View {
+        Group {
+            switch part {
+            case .fill:
+                shape.fill(Theme.violet.opacity(bright ? 0.18 : 0.06))
+                    .shadow(color: Theme.violet.opacity(bright ? 0.5 : 0), radius: 8)
+            case .border:
+                shape.strokeBorder(Theme.brand, lineWidth: 1.5).opacity(bright ? 1 : 0.4)
+            }
+        }
+        .allowsHitTesting(false)
+        .transition(.opacity)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) { bright = true }
+        }
     }
 }
 

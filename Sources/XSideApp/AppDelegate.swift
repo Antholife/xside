@@ -31,17 +31,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.install(label: MenuBarLabel(model: model, appDelegate: self), content: PopoverView(model: model),
                         onVisibilityChange: { model.popoverVisibilityChanged($0) })
         spinner.button = popover.button
-        Notifier.openPanelHandler = { [weak self] in self?.popover.show() }
+        Notifier.openPanelHandler = { [weak self] job in
+            if let job { model.highlight(JobKey(recordID: job.recordID, deviceID: job.deviceID)) }
+            self?.popover.show()
+        }
         Notifier.refreshHandler = { [weak self] job in
             Self.logger.notice("refresh from a notification")
             // Can't start now (device not seen yet, already running, setup to fix): the panel says why.
-            if !model.refreshNow(job) { self?.popover.show() }
+            if !model.refreshNow(job) {
+                model.highlight(JobKey(recordID: job.recordID, deviceID: job.deviceID))
+                self?.popover.show()
+            }
         }
         if let window = popover.button?.window { menuBarDrop.attach(to: window) }
         #if DEBUG
         // Debug-only: XSIDE_OPEN_POPOVER=1 opens the panel at launch, to look at it.
         if ProcessInfo.processInfo.environment["XSIDE_OPEN_POPOVER"] == "1" {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.popover.show() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                // XSIDE_HIGHLIGHT=1: as if a notification about the first app was clicked.
+                if ProcessInfo.processInfo.environment["XSIDE_HIGHLIGHT"] == "1",
+                   let record = model.records.first, let installation = record.installations.first {
+                    model.highlight(JobKey(recordID: record.id, deviceID: installation.deviceID))
+                }
+                self?.popover.show()
+            }
         }
         #endif
     }
