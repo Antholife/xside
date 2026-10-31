@@ -29,6 +29,9 @@ final class AppIcons {
 
     func image(for record: AppRecord) -> NSImage? {
         _ = revision
+        #if DEBUG
+        if let demo = AppModel.demoApps.first(where: { $0.id == record.id }) { return Self.demoIcon(demo.symbol, demo.color) }
+        #endif
         let candidates = [record.options.iconPath.flatMap { $0.isEmpty ? nil : library.root.appendingPathComponent($0) },
                           file(for: record.id)].compactMap { $0 }
         for url in candidates {
@@ -40,6 +43,23 @@ final class AppIcons {
         }
         return nil
     }
+
+    #if DEBUG
+    /// A demo app's icon: a white symbol on a colored rounded square.
+    private static func demoIcon(_ symbol: String, _ color: (Double, Double, Double)) -> NSImage {
+        NSImage(size: NSSize(width: 120, height: 120), flipped: false) { rect in
+            NSColor(red: color.0, green: color.1, blue: color.2, alpha: 1).setFill()
+            NSBezierPath(roundedRect: rect, xRadius: 27, yRadius: 27).fill()
+            let config = NSImage.SymbolConfiguration(pointSize: 58, weight: .semibold)
+                .applying(.init(paletteColors: [.white]))
+            if let glyph = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(config) {
+                let s = glyph.size
+                glyph.draw(in: NSRect(x: (rect.width - s.width) / 2, y: (rect.height - s.height) / 2, width: s.width, height: s.height))
+            }
+            return true
+        }
+    }
+    #endif
 
     /// Keeps the icon extracted when the .ipa was opened.
     func keep(_ extracted: URL, for id: UUID) {

@@ -13,6 +13,11 @@ final class StatusPopover: NSObject, NSPopoverDelegate {
     private let popover = NSPopover()
     private var item: NSStatusItem?
     var button: NSStatusBarButton? { item?.button }
+
+    /// Forces the panel's look (it otherwise follows the menu bar's, set by the wallpaper).
+    func setAppearance(_ appearance: NSAppearance?) {
+        popover.appearance = appearance
+    }
     private var onVisibilityChange: (Bool) -> Void = { _ in }
 
     func install<Label: View, Content: View>(label: Label, content: Content,

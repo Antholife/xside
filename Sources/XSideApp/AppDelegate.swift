@@ -86,8 +86,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #if DEBUG
         // Debug-only: XSIDE_APPEARANCE=dark|light forces the appearance, to check both looks.
         switch ProcessInfo.processInfo.environment["XSIDE_APPEARANCE"] {
-        case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
-        case "light": NSApp.appearance = NSAppearance(named: .aqua)
+        case "dark":
+            NSApp.appearance = NSAppearance(named: .darkAqua)
+            popover.setAppearance(NSAppearance(named: .darkAqua))
+        case "light":
+            NSApp.appearance = NSAppearance(named: .aqua)
+            popover.setAppearance(NSAppearance(named: .aqua))
         default: break
         }
         #endif

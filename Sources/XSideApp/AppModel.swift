@@ -73,6 +73,11 @@ final class AppModel {
     /// certificate), for screenshots.
     static let isDemo = ProcessInfo.processInfo.environment["XSIDE_DEMO"] == "1"
     static let demoAccount = "you@icloud.com"
+    /// The made-up apps of the demo mode: name, icon symbol and color, days left.
+    static let demoApps: [(id: UUID, name: String, symbol: String, color: (Double, Double, Double), daysLeft: Double)] = [
+        (UUID(uuidString: "D0D0D0D0-0000-0000-0000-000000000001")!, "Lumen", "camera.aperture", (1.0, 0.55, 0.2), 4.6),
+        (UUID(uuidString: "D0D0D0D0-0000-0000-0000-000000000002")!, "Tempo", "music.note", (0.2, 0.75, 0.45), 1.4),
+    ]
     #endif
 
     /// The signing certificate's name as shown (fictitious in the debug demo mode).
@@ -646,6 +651,23 @@ final class AppModel {
                                       kind: .iPhone, apps: entries.filter { $0.installation.deviceID == id },
                                       wifiRefresh: devicePrefs.wifiRefresh(for: id), canRemove: canRemoveDevice(id)))
         }
+        #if DEBUG
+        // Debug-only demo: two made-up apps on the first device, for screenshots. Display only:
+        // the refresh engine reads the library, which doesn't have them.
+        if Self.isDemo, let first = groups.indices.first {
+            let device = groups[first].id
+            let fake = Self.demoApps.map { app in
+                AppEntry(record: AppRecord(id: app.id, displayName: app.name, originalBundleID: "com.example.\(app.name.lowercased())",
+                                           signedBundleID: "com.example.\(app.name.lowercased())", ipaPath: "",
+                                           options: InstallOptions(), installations: [], teamID: ""),
+                         installation: Installation(deviceID: device, installedAt: Date(),
+                                                    expiresAt: Date().addingTimeInterval(app.daysLeft * 86_400)))
+            }
+            let g = groups[first]
+            groups[first] = DeviceGroup(id: g.id, device: g.device, name: g.name, kind: g.kind, apps: g.apps + fake,
+                                        wifiRefresh: g.wifiRefresh, needsUSB: g.needsUSB, canRemove: g.canRemove)
+        }
+        #endif
         return groups
     }
 
