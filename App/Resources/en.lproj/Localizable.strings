@@ -409,3 +409,5 @@
 "preflight.lastAppID" = "This install uses your last App ID of the week (estimate).";
 "notification.action.refresh" = "Refresh Now";
 "notification.action.open" = "Open XSide";
+"settings.keepInDock" = "Keep in the Dock";
+"settings.keepInDock.detail" = "Otherwise XSide shows in the Dock only while one of its windows is open. A click on the icon opens the panel.";

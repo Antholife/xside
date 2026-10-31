@@ -137,6 +137,7 @@ private struct SettingsPage: View {
     let pane: SettingsPane
     @AppStorage(AppLanguage.storageKey) private var language = AppLanguage.system.rawValue
     @AppStorage(Notifier.notifyRefreshSuccessKey) private var notifyRefreshSuccess = true
+    @AppStorage(DockPresence.alwaysKey) private var keepInDock = false
     @Environment(\.openWindow) private var openWindow
     @State private var login = LaunchAtLogin()
     @State private var notifications = NotificationPermission()
@@ -171,6 +172,10 @@ private struct SettingsPage: View {
                 Text(L("settings.language.system")).tag(AppLanguage.system.rawValue)
                 Text(L("settings.language.en")).tag(AppLanguage.en.rawValue)
                 Text(L("settings.language.fr")).tag(AppLanguage.fr.rawValue)
+            }
+            Toggle(isOn: $keepInDock) {
+                Text(L("settings.keepInDock"))
+                Text(L("settings.keepInDock.detail"))
             }
         }
         if let issue = model.library.loadIssue {

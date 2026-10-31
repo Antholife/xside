@@ -31,6 +31,8 @@ struct Validity {
 struct RingView: View {
     let validity: Validity
     var isPaused = false
+    /// A job runs on the row: a bright arc turns around the ring.
+    var isBusy = false
 
     /// 34 on its own; smaller next to the app's icon.
     var size: CGFloat = 34
@@ -53,7 +55,9 @@ struct RingView: View {
                                         startAngle: .zero, endAngle: .degrees(360 * max(validity.fraction, 0.01))),
                         style: StrokeStyle(lineWidth: line, lineCap: .round))
                 .rotationEffect(.degrees(-90))
+                .opacity(isBusy ? 0.35 : 1)
                 .animation(.smooth, value: validity.fraction)
+            if isBusy { SpinningArc(lineWidth: line) }
             center
         }
         .frame(width: size, height: size)
@@ -73,5 +77,22 @@ struct RingView: View {
                 .monospacedDigit()
                 .foregroundStyle(isPaused ? .secondary : .primary)
         }
+    }
+}
+
+/// A short brand-colored arc going round, over the ring, while its app is being refreshed.
+private struct SpinningArc: View {
+    let lineWidth: CGFloat
+    @State private var turning = false
+
+    var body: some View {
+        Circle()
+            .trim(from: 0, to: 0.28)
+            .stroke(AngularGradient(colors: [Theme.violet.opacity(0), Theme.violet, Theme.pink], center: .center,
+                                    startAngle: .zero, endAngle: .degrees(100)),
+                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+            .rotationEffect(.degrees(turning ? 360 : 0))
+            .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: turning)
+            .onAppear { turning = true }
     }
 }

@@ -409,3 +409,5 @@
 "preflight.lastAppID" = "Cette installation utilise ton dernier App ID de la semaine (estimation).";
 "notification.action.refresh" = "Rafraîchir maintenant";
 "notification.action.open" = "Ouvrir XSide";
+"settings.keepInDock" = "Garder dans le Dock";
+"settings.keepInDock.detail" = "Sinon, XSide n'apparaît dans le Dock que pendant qu'une de ses fenêtres est ouverte. Un clic sur l'icône ouvre le panneau.";

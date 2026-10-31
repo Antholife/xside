@@ -64,6 +64,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         spinner.setWorking(working)
     }
 
+    /// A click on the Dock icon with no window open: the install in progress if there is one,
+    /// else the menu-bar panel.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        guard !hasVisibleWindows, let model = Self.model else { return true }
+        if model.install != nil {
+            model.showInstallWindow?()
+        } else {
+            popover.show()
+        }
+        return false
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.servicesProvider = self
         NSUpdateDynamicServices()
