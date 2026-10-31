@@ -34,11 +34,15 @@ XSide installe des fichiers `.ipa` sur ton iPhone et ton iPad avec un compte App
 | | |
 |---|---|
 | 📥 **Glisser pour installer** | Glisse un `.ipa` sur l'icône de la barre des menus, ou choisis-le, et installe-le sur un ou plusieurs appareils. |
-| 🔄 **Rafraîchissement auto** | Les apps sont rafraîchies 2 jours avant leur expiration, en USB ou en Wi-Fi (au choix, par appareil). |
-| 🔔 **Aucune expiration ratée** | Rappels, pastille sur l'icône quand il faut agir, et notifications qui ouvrent le bon endroit pour corriger. |
+| ✅ **Vérifications avant installation** | iOS trop ancien pour l'app, appareil qui a déjà ses 3 apps (désinstalles-en une sur place), plus d'App ID : tu le sais avant. |
+| 🔄 **Rafraîchissement auto** | Les apps sont rafraîchies 2 jours avant leur expiration, en USB ou en Wi-Fi (au choix, par appareil), ou toutes d'un coup avec *Tout rafraîchir*. |
+| 🔔 **Aucune expiration ratée** | Rappels, pastille sur l'icône de la barre des menus, et notifications avec les boutons *Rafraîchir maintenant* et *Ouvrir XSide*. |
+| 📱 **D'un coup d'œil** | Un panneau sous l'icône de la barre des menus : l'icône de chaque app, ses appareils, les jours restants, et les App ID de la semaine en frise. |
+| 📊 **Vraie progression** | Des pourcentages pendant la signature, le temps écoulé pendant l'envoi sur l'appareil, et le pourcentage sur l'icône du Dock. |
 | 🎛️ **Contrôle par app** | Rafraîchir maintenant, mettre en pause ou désinstaller de l'appareil. |
-| 📱 **D'un coup d'œil** | L'icône de chaque app, ses appareils et les jours restants, directement dans la popup. |
+| ⬆️ **Se met à jour tout seul** | Les nouvelles versions arrivent automatiquement (Sparkle, signées) ; choisis la fréquence et le canal. |
 | 🧭 **Configuration guidée** | Un parcours au premier lancement : Xcode, Apple Account, certificat de signature, notifications, appareils. |
+| 🐞 **Signaler un bug facilement** | Des logs où tes infos personnelles sont masquées, exportés en un clic, et un bouton bug dans le panneau. |
 | 🌍 **Traduit** | Français et anglais. |
 
 ## ⚙️ Comment ça marche

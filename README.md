@@ -34,11 +34,15 @@ XSide installs `.ipa` files on your iPhone and iPad with a free Apple Account, t
 | | |
 |---|---|
 | 📥 **Drop to install** | Drop an `.ipa` onto the menu-bar icon, or pick one, and install it on one or several devices. |
-| 🔄 **Auto-refresh** | Apps are refreshed 2 days before they expire, over USB or Wi-Fi (your choice, per device). |
-| 🔔 **Never miss an expiry** | Reminders, a badge on the menu-bar icon when something needs you, and notifications that open the right place to fix it. |
+| ✅ **Checks before installing** | An iOS too old for the app, a device already holding its 3 apps (uninstall one right there), no App ID left: you know before. |
+| 🔄 **Auto-refresh** | Apps are refreshed 2 days before they expire, over USB or Wi-Fi (your choice, per device), or all at once with *Refresh all*. |
+| 🔔 **Never miss an expiry** | Reminders, a badge on the menu-bar icon, and notifications with *Refresh now* and *Open XSide* buttons. |
+| 📱 **At a glance** | A panel under the menu-bar icon: each app's own icon, its devices, the days left, and the week's App IDs as a strip. |
+| 📊 **Real progress** | Percentages while signing, time spent while sending to the device, and the percentage on the Dock icon. |
 | 🎛️ **Per-app controls** | Refresh now, pause refreshing, or uninstall from the device. |
-| 📱 **At a glance** | Each app's icon, its devices and the days left, right in the popover. |
+| ⬆️ **Updates itself** | New versions arrive automatically (Sparkle, signed); choose how often and the channel. |
 | 🧭 **Guided setup** | A first-launch walkthrough: Xcode, Apple Account, signing certificate, notifications, devices. |
+| 🐞 **Easy bug reports** | Logs with your personal details masked, exported in one click, and a bug button in the panel. |
 | 🌍 **Localized** | English and French. |
 
 ## ⚙️ How it works
