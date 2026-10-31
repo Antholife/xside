@@ -26,6 +26,20 @@ struct LaunchAtLoginStepView: View {
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5))
                 LaunchAtLoginNotes(login: login)
+                HStack(spacing: 12) {
+                    Image(systemName: "dock.rectangle")
+                        .font(.system(size: 18))
+                        .foregroundStyle(Theme.brand)
+                        .frame(width: 24)
+                    KeepInDockToggle()
+                        .toggleStyle(.switch)
+                        .tint(Theme.violet)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5))
             }
         }
         .onAppear(perform: login.refresh)

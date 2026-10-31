@@ -413,3 +413,4 @@
 "install.empty.title" = "Install an app";
 "install.empty.text" = "Drop an .ipa here, or choose one.";
 "install.empty.choose" = "Choose an .ipa…";
+"settings.keepInDock.pinned" = "XSide is kept in the Dock by the Dock itself. To remove it: right-click its icon > Options > Keep in Dock.";

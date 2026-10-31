@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 /// Shows XSide in the Dock while one of its windows (journey, install, settings) is open, and goes
 /// back to menu-bar only when the last one closes; always, when "Keep in the Dock" is on
@@ -10,14 +11,28 @@ final class DockPresence {
     static let alwaysKey = "keepInDock"
     private var observers: [NSObjectProtocol] = []
 
-    private static var always: Bool { UserDefaults.standard.bool(forKey: alwaysKey) }
+    /// The setting, or XSide pinned in the Dock (the Dock's own "Keep in Dock"): the Dock is the
+    /// reference, XSide can't unpin itself.
+    private static var always: Bool { UserDefaults.standard.bool(forKey: alwaysKey) || isPinnedInDock }
+
+    /// XSide is among the Dock's kept apps (`com.apple.dock` `persistent-apps`).
+    static var isPinnedInDock: Bool {
+        let dock = "com.apple.dock" as CFString
+        CFPreferencesAppSynchronize(dock)
+        guard let apps = CFPreferencesCopyAppValue("persistent-apps" as CFString, dock) as? [[String: Any]],
+              let bundleID = Bundle.main.bundleIdentifier else { return false }
+        return apps.contains { (($0["tile-data"] as? [String: Any])?["bundle-identifier"] as? String) == bundleID }
+    }
 
     func start() {
         let center = NotificationCenter.default
-        // The setting changed (or anything else in the defaults): applied at once.
-        observers.append(center.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.update(closing: nil) }
-        })
+        // The setting changed (or anything else in the defaults): applied at once. Pinning in the
+        // Dock sends nothing: looked at again each time XSide comes forward.
+        for name in [UserDefaults.didChangeNotification, NSApplication.didBecomeActiveNotification] {
+            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.update(closing: nil) }
+            })
+        }
         for name in [NSWindow.didBecomeKeyNotification, NSWindow.didChangeOcclusionStateNotification] {
             observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.update(closing: nil) }
@@ -68,6 +83,25 @@ final class DockPresence {
             if !NSApp.windows.contains(where: Self.isAppWindow) {
                 NSApp.setActivationPolicy(.accessory)
             }
+        }
+    }
+}
+
+/// "Keep in the Dock", in Settings and in the welcome journey. On and locked while XSide is pinned
+/// in the Dock: only the Dock can unpin it.
+struct KeepInDockToggle: View {
+    @AppStorage(DockPresence.alwaysKey) private var keepInDock = false
+    @State private var pinned = DockPresence.isPinnedInDock
+
+    var body: some View {
+        Toggle(isOn: Binding(get: { keepInDock || pinned }, set: { keepInDock = $0 })) {
+            Text(L("settings.keepInDock"))
+            Text(L(pinned ? "settings.keepInDock.pinned" : "settings.keepInDock.detail"))
+        }
+        .disabled(pinned)
+        .onAppear { pinned = DockPresence.isPinnedInDock }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            pinned = DockPresence.isPinnedInDock
         }
     }
 }
