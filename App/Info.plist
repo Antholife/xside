@@ -13,6 +13,9 @@
 	<key>LSMinimumSystemVersion</key><string>15.0</string>
 	<key>LSUIElement</key><true/>
 	<key>NSPrincipalClass</key><string>NSApplication</string>
+	<key>SUFeedURL</key><string>https://raw.githubusercontent.com/Antholife/xside/main/appcast.xml</string>
+	<key>SUPublicEDKey</key><string>5HgRqXUjxnku7VYVUfbdomHMQuI+eyuIjRid/jz9wUE=</string>
+	<key>SUEnableAutomaticChecks</key><true/>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>

@@ -113,6 +113,8 @@ final class AppModel {
     let library: AppLibrary
     /// The icon of each app (popover rows).
     let icons: AppIcons
+    /// XSide's own updates (Sparkle).
+    let updater = Updater()
     /// Runs every tool with `DEVELOPER_DIR` set to the Xcode in use (see `resolveXcode`).
     private let runner: ProcessRunner
     /// Without the override: what `xcode-select -p` itself points to.

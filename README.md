@@ -89,7 +89,7 @@ scripts/bundle.sh   # builds build/XSide.app
 > [!IMPORTANT]
 > The app isn't notarized. If macOS blocks it, go to **System Settings > Privacy & Security** and click **Open Anyway**.
 
-Keep XSide running in the menu bar (turn on *Launch at login* in its settings): that's what refreshes your apps.
+Keep XSide running in the menu bar (turn on *Launch at login* in its settings): that's what refreshes your apps. XSide then updates itself (Sparkle), from *Settings > Updates*.
 
 ## 🛠️ Development
 

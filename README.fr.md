@@ -89,7 +89,7 @@ scripts/bundle.sh   # crée build/XSide.app
 > [!IMPORTANT]
 > L'app n'est pas notarisée. Si macOS la bloque, va dans **Réglages Système > Confidentialité et sécurité** et clique sur **Ouvrir quand même**.
 
-Laisse XSide tourner dans la barre des menus (active *Lancer à l'ouverture de session* dans ses réglages) : c'est lui qui rafraîchit tes apps.
+Laisse XSide tourner dans la barre des menus (active *Lancer à l'ouverture de session* dans ses réglages) : c'est lui qui rafraîchit tes apps. XSide se met ensuite à jour tout seul (Sparkle), depuis *Réglages > Mises à jour*.
 
 ## 🛠️ Développement
 

@@ -2,6 +2,16 @@
 
 All notable changes to XSide. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Automatic updates** with [Sparkle](https://sparkle-project.org): XSide checks once a day and offers new versions, signed with the project's EdDSA key. *Settings > Updates* to turn it off or check now. Versions before this one have to be updated by hand once.
+- The panel is a real popover, with its arrow under the menu-bar icon, and a new look: Install / Refresh all tiles, each app's own icon, icon footer.
+
+### Fixed
+- Removing a device that is still paired now hides it until an app is installed on it again.
+- The panel closes before quitting and before the "Remove this device" confirmation.
+
 ## [1.0.2-beta] - 2026-10-30
 
 ### Added

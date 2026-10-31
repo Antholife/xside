@@ -374,3 +374,10 @@
 "popover.tile.refreshAll" = "Refresh all";
 "popover.tile.refreshAll.help" = "Refresh every app that can be right now (%d)";
 "popover.tile.refreshAll.none" = "Nothing to refresh right now: no app is reachable, or they're all paused or already running";
+
+/* Updates */
+"updates.title" = "Updates";
+"updates.automatic" = "Check for updates automatically";
+"updates.checkNow" = "Check Now";
+"updates.current" = "XSide %@ (beta)";
+"updates.lastCheck" = "Last checked %@";

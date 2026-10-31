@@ -75,6 +75,9 @@ struct SettingsView: View {
             Section {
                 Button(L("settings.replayJourney")) { openWindow.presentJourney(model, at: .language) }
             }
+            if model.updater.isAvailable {
+                UpdatesSection(updater: model.updater)
+            }
             Section {
                 LabeledContent {
                     HStack(spacing: 8) {
@@ -92,5 +95,28 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+/// Automatic checks, "Check now" and when the last check ran.
+private struct UpdatesSection: View {
+    let updater: Updater
+    @State private var automatic = false
+
+    var body: some View {
+        Section(L("updates.title")) {
+            Toggle(L("updates.automatic"), isOn: $automatic)
+                .onChange(of: automatic) { _, on in updater.automaticallyChecks = on }
+            LabeledContent {
+                Button(L("updates.checkNow"), action: updater.checkNow)
+                    .disabled(!updater.canCheck)
+            } label: {
+                Text(L("updates.current", Bundle.main.shortVersion ?? "?"))
+                if let last = updater.lastCheck {
+                    Text(L("updates.lastCheck", last.formatted(.relative(presentation: .named).locale(appLocale))))
+                }
+            }
+        }
+        .onAppear { automatic = updater.automaticallyChecks }
     }
 }

@@ -374,3 +374,10 @@
 "popover.tile.refreshAll" = "Tout rafraîchir";
 "popover.tile.refreshAll.help" = "Rafraîchir toutes les apps qui peuvent l'être maintenant (%d)";
 "popover.tile.refreshAll.none" = "Rien à rafraîchir pour l'instant : aucune app joignable, ou elles sont toutes en pause ou déjà en cours";
+
+/* Mises à jour */
+"updates.title" = "Mises à jour";
+"updates.automatic" = "Rechercher les mises à jour automatiquement";
+"updates.checkNow" = "Rechercher maintenant";
+"updates.current" = "XSide %@ (bêta)";
+"updates.lastCheck" = "Dernière vérification %@";

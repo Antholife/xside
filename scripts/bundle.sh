@@ -31,12 +31,25 @@ plutil -replace XSideBuildDate -string "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$APP/Co
 cp -R App/Resources/*.lproj "$APP/Contents/Resources/"
 cp App/Resources/MenuBarIcon.pdf App/Resources/AppIcon.icns "$APP/Contents/Resources/"
 cp -R Resources/ProvisioningTemplate "$APP/Contents/Resources/ProvisioningTemplate"
+# Sparkle (self-updates): the framework next to the executable, found through its rpath.
+mkdir -p "$APP/Contents/Frameworks"
+cp -R "$(dirname "$BIN")/Sparkle.framework" "$APP/Contents/Frameworks/"
+install_name_tool -add_rpath @executable_path/../Frameworks "$APP/Contents/MacOS/XSide" 2>/dev/null || true
+# The debug app never updates itself (it would become the release app).
+[ "$CONFIG" = debug ] && plutil -remove SUFeedURL "$APP/Contents/Info.plist"
 
 # Ad-hoc signature. The release bundle gets the hardened runtime: the private CoreUI framework
 # the icon helper loads is a system library, which the runtime allows.
 SIGN_OPTIONS=()
 [ "$CONFIG" = release ] && SIGN_OPTIONS=(--options runtime)
-codesign -s - --force --deep "${SIGN_OPTIONS[@]+"${SIGN_OPTIONS[@]}"}" "$APP"
+# Sparkle comes signed by its own team: re-signed ad hoc, innermost first (helpers, then the
+# framework), or the hardened runtime refuses to load it into XSide ("different Team IDs").
+SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
+for helper in "$SPARKLE"/Versions/B/XPCServices/*.xpc "$SPARKLE"/Versions/B/Autoupdate "$SPARKLE"/Versions/B/Updater.app; do
+    [ -e "$helper" ] && codesign -s - --force "${SIGN_OPTIONS[@]+"${SIGN_OPTIONS[@]}"}" "$helper"
+done
+codesign -s - --force "${SIGN_OPTIONS[@]+"${SIGN_OPTIONS[@]}"}" "$SPARKLE"
+codesign -s - --force "${SIGN_OPTIONS[@]+"${SIGN_OPTIONS[@]}"}" --entitlements App/XSide.entitlements "$APP"
 plutil -lint "$APP/Contents/Info.plist"
 codesign --verify --deep --strict "$APP"
 echo "Built $APP"
