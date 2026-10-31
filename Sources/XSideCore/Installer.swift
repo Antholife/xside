@@ -2,30 +2,19 @@ import Foundation
 
 /// Installs a signed `.app` on a device, or removes one, with `devicectl`.
 public struct Installer: Sendable {
-    private static let log = Log("command")
     private let runner: CommandRunning
 
     public init(runner: CommandRunning) {
         self.runner = runner
     }
 
-    /// The transfer's progress comes from devicectl's own percentages, read as they're printed.
-    /// devicectl prints them only to a terminal: it runs under `script`, which gives it one and
-    /// passes its output (stdout and stderr together) and its exit status through.
+    /// No progress from here: devicectl prints none for an install, even on a terminal or with
+    /// --verbose (checked on 31/10/2026), only "App installed" at the end.
     public func install(app: URL, deviceID: String) async throws {
-        let report = StepProgress.report
-        let result = try await CommandOutput.$onChunk.withValue({ chunk in
-            if let fraction = StepProgress.lastPercent(in: chunk) {
-                report?(fraction)
-                Self.log.debug("devicectl progress \(Int(fraction * 100))%")
-            }
-        }) {
-            try await runner.run(
-                "/usr/bin/script",
-                ["-q", "-F", "/dev/null", "/usr/bin/xcrun", "devicectl", "device", "install", "app",
-                 "--device", deviceID, app.path],
-                cwd: nil, timeout: CommandTimeout.deviceInstall)
-        }
+        let result = try await runner.run(
+            "/usr/bin/xcrun",
+            ["devicectl", "device", "install", "app", "--device", deviceID, app.path],
+            cwd: nil, timeout: CommandTimeout.deviceInstall)
         guard result.status == 0 else {
             let combined = String(decoding: result.stdout, as: UTF8.self) + "\n" + result.stderr
             let mapped = Self.mapError(combined)

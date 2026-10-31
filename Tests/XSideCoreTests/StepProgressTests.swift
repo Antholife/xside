@@ -10,13 +10,6 @@ private final class Box: @unchecked Sendable {
 }
 
 struct StepProgressTests {
-    @Test func readsTheLastPercentage() {
-        #expect(StepProgress.lastPercent(in: "Installing app… 12%\rInstalling app… 42 %") == 0.42)
-        #expect(StepProgress.lastPercent(in: "Progress 99.5%") == 0.995)
-        #expect(StepProgress.lastPercent(in: "no number here") == nil)
-        #expect(StepProgress.lastPercent(in: "250%") == nil)
-    }
-
     @Test func mapsAPartIntoItsRange() async {
         let box = Box()
         await StepProgress.$report.withValue({ box.add($0) }) {

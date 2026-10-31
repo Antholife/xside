@@ -60,10 +60,13 @@ private struct ProgressHeader: View {
                 .font(.system(size: 17, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
                 .lineLimit(1)
-            Text(subtitle)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white.opacity(0.8))
-                .lineLimit(1)
+            // Ticks each second: the time spent shows on steps without a percentage.
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                Text(subtitle(now: context.date))
+            }
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.white.opacity(0.8))
+            .lineLimit(1)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 4)
@@ -82,11 +85,20 @@ private struct ProgressHeader: View {
 }
 
 extension ProgressHeader {
-    /// "on iPhone · step 3 of 4", or "on iPhone · Sending to the device · 62 %" when it's known.
-    fileprivate var subtitle: String {
+    /// "on iPhone · Signing · 62 %" when the step reports how far it is; for the transfer,
+    /// which can't, "on iPhone · Installing · 12 s · 138 MB"; else "on iPhone · step 3 of 4".
+    fileprivate func subtitle(now: Date) -> String {
         let device = flow.runs.first?.name ?? ""
         if let percent, let step = timeline.current {
             return L("install.progress.subtitlePercent", device, step.label, percent)
+        }
+        if timeline.current == .installing, let started = model.runStepStarted(flow) {
+            let elapsed = Duration.seconds(max(0, now.timeIntervalSince(started)))
+                .formatted(.units(allowed: [.minutes, .seconds], width: .narrow))
+            let size = (try? flow.ipa.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+                .map { Int64($0).formatted(.byteCount(style: .file)) }
+            return [L("install.progress.on", device), ProgressStep.installing.label, elapsed, size]
+                .compactMap { $0 }.joined(separator: " · ")
         }
         return L("install.progress.subtitle", device, min(timeline.completedCount + 1, timeline.total), timeline.total)
     }
@@ -201,7 +213,7 @@ struct InstallSheet: View {
             case .running(let stage) where !flow.isMultiDevice:
                 // One device: the header shows the ring, the steps follow, nothing else.
                 InstallProgressView(timeline: StepTimeline(steps: steps, stage: stage), showsBar: false,
-                                    activePercent: model.runPercent(flow))
+                                    activePercent: model.runPercent(flow), activeSince: model.runStepStarted(flow))
             case .editing, .running:
                 // The run's status comes first, right under the app header.
                 if case .running = flow.phase {

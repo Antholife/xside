@@ -1005,6 +1005,16 @@ final class AppModel {
 
     /// The running step's progress per row, in whole percents, when its tool reports one.
     private(set) var stepPercent: [JobKey: Int] = [:]
+    /// When the running step started, per row: the time spent shows where no percentage exists
+    /// (the transfer to the device).
+    private(set) var stepStarted: [JobKey: Date] = [:]
+
+    /// When the running step of the install in `flow` started.
+    func runStepStarted(_ flow: InstallFlow) -> Date? {
+        guard flow.isRunning, let recordID = flow.importedRecordID ?? flow.existing?.id,
+              let deviceID = flow.currentRun?.run.deviceID ?? flow.runs.first?.deviceID else { return nil }
+        return stepStarted[JobKey(recordID: recordID, deviceID: deviceID)]
+    }
 
     fileprivate func setStepPercent(_ percent: Int, for key: JobKey) {
         guard jobs[key] != nil, stepPercent[key] != percent else { return }
@@ -1062,6 +1072,7 @@ final class AppModel {
         if left <= 0 {
             jobs[key] = nil
             stepPercent[key] = nil
+            stepStarted[key] = nil
             updateDockBadge()
         }
         if claims.isEmpty, let activity = jobActivity {
@@ -1105,6 +1116,7 @@ final class AppModel {
                     await MainActor.run {
                         self.jobs[key] = .step(step)
                         self.stepPercent[key] = nil // a new step starts from nothing
+                        self.stepStarted[key] = Date()
                         progress(.step(step))
                     }
                 }

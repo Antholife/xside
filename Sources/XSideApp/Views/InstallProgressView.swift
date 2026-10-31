@@ -10,6 +10,8 @@ struct InstallProgressView: View {
     var showsBar = true
     /// The running step's percentage, when its tool reports one: shown on its row.
     var activePercent: Int?
+    /// When the running step started: without a percentage, the time spent shows instead.
+    var activeSince: Date?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -49,6 +51,15 @@ struct InstallProgressView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
+                if status == .active, activePercent == nil, let activeSince {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        Text(Duration.seconds(max(0, context.date.timeIntervalSince(activeSince)))
+                            .formatted(.units(allowed: [.minutes, .seconds], width: .narrow)))
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 if status == .active, let activePercent {
                     Text("\(activePercent) %")
                         .font(.system(size: 12, weight: .semibold, design: .rounded))

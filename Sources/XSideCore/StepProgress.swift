@@ -1,7 +1,7 @@
 import Foundation
 
 /// How far the running step is (0...1), for the tools that can tell: the unzip and the signing
-/// (`Resigner`), the transfer to the device (`Installer`, from `devicectl`'s own percentage).
+/// (`Resigner`). The transfer to the device can't: devicectl reports nothing until it's done.
 /// Set by whoever shows it, for the job's task; nil (the default) reports nothing.
 public enum StepProgress {
     @TaskLocal public static var report: (@Sendable (Double) -> Void)?
@@ -13,18 +13,4 @@ public enum StepProgress {
             try await body()
         }
     }
-
-    /// The last percentage in `text` ("Copying 42%" -> 0.42), nil when there is none.
-    public static func lastPercent(in text: String) -> Double? {
-        guard let regex = try? NSRegularExpression(pattern: #"(\d{1,3}(?:\.\d+)?)\s?%"#) else { return nil }
-        let range = NSRange(text.startIndex..., in: text)
-        guard let match = regex.matches(in: text, range: range).last,
-              let r = Range(match.range(at: 1), in: text), let value = Double(text[r]), value <= 100 else { return nil }
-        return value / 100
-    }
-}
-
-/// Lets a command's caller see its output as it comes (devicectl's progress), not only at the end.
-public enum CommandOutput {
-    @TaskLocal public static var onChunk: (@Sendable (String) -> Void)?
 }
