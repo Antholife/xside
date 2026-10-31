@@ -31,6 +31,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.install(label: MenuBarLabel(model: model, appDelegate: self), content: PopoverView(model: model),
                         onVisibilityChange: { model.popoverVisibilityChanged($0) })
         spinner.button = popover.button
+        Notifier.openPanelHandler = { [weak self] in self?.popover.show() }
+        Notifier.refreshHandler = { [weak self] job in
+            Self.logger.notice("refresh from a notification")
+            // Can't start now (device not seen yet, already running, setup to fix): the panel says why.
+            if !model.refreshNow(job) { self?.popover.show() }
+        }
         if let window = popover.button?.window { menuBarDrop.attach(to: window) }
         #if DEBUG
         // Debug-only: XSIDE_OPEN_POPOVER=1 opens the panel at launch, to look at it.

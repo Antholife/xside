@@ -963,6 +963,26 @@ final class AppModel {
         Set(jobs.keys.map { RefreshJob(recordID: $0.recordID, deviceID: $0.deviceID) })
     }
 
+    /// What the install in `flow` is likely to run into, on the devices it targets.
+    func preflightWarnings(for flow: InstallFlow) -> [InstallPreflight.Warning] {
+        guard let info = flow.info else { return [] }
+        let existing = flow.existing
+        let minOS = flow.draft.minOS.trimmingCharacters(in: .whitespaces)
+        let targets = flow.deviceIDs.compactMap { id -> InstallPreflight.Target? in
+            guard let device = devices.first(where: { $0.id == id }) else { return nil }
+            let others = records.filter { r in r.id != existing?.id && r.installations.contains { $0.deviceID == id } }
+            return InstallPreflight.Target(
+                deviceID: id, osVersion: device.osVersion,
+                otherApps: others.map { $0.options.displayName ?? $0.displayName },
+                hasThisApp: existing?.installations.contains { $0.deviceID == id } ?? false)
+        }
+        // A new App ID unless the record is known and keeps its bundle id.
+        let customID = flow.draft.bundleID.trimmingCharacters(in: .whitespaces)
+        let needsNewAppID = existing.map { !customID.isEmpty && customID != $0.signedBundleID } ?? true
+        return InstallPreflight.check(minimumOS: minOS.isEmpty ? info.minimumOSVersion : minOS, targets: targets,
+                                      needsNewAppID: needsNewAppID, appIDsRemaining: appIDsRemaining)
+    }
+
     /// Refreshes every app that can be now (reachable, not paused, not already running).
     func refreshAll() {
         let entries = deviceGroups.flatMap(\.apps).filter(canRefresh)

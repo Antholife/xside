@@ -11,15 +11,19 @@ public struct AppInfo: Equatable, Sendable {
     /// The vendor those groups are allowed for ("com.google"), from the same source as the
     /// allowlist (the embedded `application-identifier`, see `Resigner.keychainVendor`).
     public let sharedKeychainVendor: String?
+    /// Lowest iOS the app runs on (`MinimumOSVersion`), when it says.
+    public let minimumOSVersion: String?
 
     public init(bundleID: String, name: String, version: String?, executable: String,
-                sharedKeychainGroups: [String] = [], sharedKeychainVendor: String? = nil) {
+                sharedKeychainGroups: [String] = [], sharedKeychainVendor: String? = nil,
+                minimumOSVersion: String? = nil) {
         self.bundleID = bundleID
         self.name = name
         self.version = version
         self.executable = executable
         self.sharedKeychainGroups = sharedKeychainGroups
         self.sharedKeychainVendor = sharedKeychainVendor
+        self.minimumOSVersion = minimumOSVersion
     }
 }
 
@@ -103,7 +107,8 @@ public enum IPAInspector {
             ?? (plist["CFBundleName"] as? String).flatMap { $0.isEmpty ? nil : $0 }
             ?? app.deletingPathExtension().lastPathComponent
         return AppInfo(bundleID: bundleID, name: name,
-                       version: plist["CFBundleShortVersionString"] as? String, executable: executable)
+                       version: plist["CFBundleShortVersionString"] as? String, executable: executable,
+                       minimumOSVersion: (plist["MinimumOSVersion"] as? String).flatMap { $0.isEmpty ? nil : $0 })
     }
 
     /// True if any slice of the Mach-O carries an LC_ENCRYPTION_INFO(_64) with cryptid != 0.

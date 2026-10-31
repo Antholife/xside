@@ -401,7 +401,7 @@ final class BackgroundEngine {
             guard gate.shouldNotify(recordID: job.recordID, deviceID: job.deviceID, errorKey: errorKey) else { return }
             persistGate()
             let name = model.records.first { $0.id == job.recordID }.map(Self.appName) ?? "XSide"
-            let posted = await notifier.refreshFailed(appName: name, errorKey: errorKey, message: message,
+            let posted = await notifier.refreshFailed(appName: name, errorKey: errorKey, message: message, job: job,
                                                       id: "refresh.\(job.recordID.uuidString).\(job.deviceID)")
             if !posted {
                 gate.forget(recordID: job.recordID, deviceID: job.deviceID, errorKey: errorKey)

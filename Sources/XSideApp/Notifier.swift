@@ -14,6 +14,17 @@ final class Notifier: NSObject {
     /// opens Settings, which links to the download.
     private nonisolated static let settingsCategory = "refreshFailed.settings"
     private nonisolated static let openXcodeAction = "openXcode"
+    /// An app's refresh failed or is about to be due: "Refresh now" and "Open XSide" buttons.
+    private nonisolated static let appCategory = "app"
+    private nonisolated static let refreshAction = "refreshNow"
+    private nonisolated static let openPanelAction = "openPanel"
+    /// Keys of an app notification's `userInfo`.
+    private nonisolated static let recordKey = "recordID", deviceKey = "deviceID"
+
+    /// Installed by the app: refreshes one app (a notification's "Refresh now").
+    static var refreshHandler: (@MainActor (RefreshJob) -> Void)?
+    /// Installed by the app: opens the menu-bar panel.
+    static var openPanelHandler: (@MainActor () -> Void)?
     /// Causes the user fixes in Xcode itself (its account settings): their notification has
     /// "Open Xcode", and a tap opens Settings.
     static let xcodeErrorKeys: Set<String> = ["xcodeNotSignedIn", "noSigningIdentity", "provisioningFailed", "xcodeMissing"]
@@ -46,8 +57,13 @@ final class Notifier: NSObject {
         center.delegate = self
         let open = UNNotificationAction(identifier: Self.openXcodeAction, title: L("notification.openXcode"),
                                         options: [.foreground])
+        let refresh = UNNotificationAction(identifier: Self.refreshAction, title: L("notification.action.refresh"),
+                                           options: [])
+        let panel = UNNotificationAction(identifier: Self.openPanelAction, title: L("notification.action.open"),
+                                         options: [.foreground])
         center.setNotificationCategories([
             UNNotificationCategory(identifier: Self.xcodeCategory, actions: [open], intentIdentifiers: []),
+            UNNotificationCategory(identifier: Self.appCategory, actions: [refresh, panel], intentIdentifiers: []),
             UNNotificationCategory(identifier: Self.settingsCategory, actions: [], intentIdentifiers: []),
         ])
     }
@@ -69,7 +85,7 @@ final class Notifier: NSObject {
 
     /// One refresh failure: title names the app, body is the friendly error message.
     /// Returns false when the system refused the notification.
-    func refreshFailed(appName: String, errorKey: String, message: String, id: String) async -> Bool {
+    func refreshFailed(appName: String, errorKey: String, message: String, job: RefreshJob, id: String) async -> Bool {
         let content = UNMutableNotificationContent()
         content.title = L("notification.refreshFailed.title", appName)
         content.body = message
@@ -78,6 +94,9 @@ final class Notifier: NSObject {
             content.categoryIdentifier = Self.xcodeCategory
         } else if Self.newXcodeErrorKeys.contains(errorKey) {
             content.categoryIdentifier = Self.settingsCategory
+        } else {
+            // Nothing to fix in Xcode: trying again may just work (device back, unlocked).
+            Self.tag(content, with: job)
         }
         guard let center else {
             Self.logger.notice("would notify: \(content.title) — \(errorKey)")
@@ -191,6 +210,7 @@ final class Notifier: NSObject {
         content.title = L("notification.expiry.title", appName)
         content.body = L("notification.expiry.body", deviceName)
         content.sound = .default
+        Self.tag(content, with: RefreshJob(recordID: recordID, deviceID: deviceID))
         guard let center else {
             Self.logger.notice("would schedule: \(content.title) at \(date)")
             return
@@ -259,6 +279,19 @@ final class Notifier: NSObject {
         identifier == macBetaNotificationID || identifier.hasPrefix(environmentNotificationID + ".")
     }
     nonisolated static let macBetaNotificationID = "macBeta"
+
+    /// Gives an app notification its "Refresh now" / "Open XSide" buttons and the app it is about.
+    private static func tag(_ content: UNMutableNotificationContent, with job: RefreshJob) {
+        content.categoryIdentifier = appCategory
+        content.userInfo = [recordKey: job.recordID.uuidString, deviceKey: job.deviceID]
+    }
+
+    nonisolated private static func job(of notification: UNNotification) -> RefreshJob? {
+        let info = notification.request.content.userInfo
+        guard let record = (info[recordKey] as? String).flatMap(UUID.init(uuidString:)),
+              let device = info[deviceKey] as? String else { return nil }
+        return RefreshJob(recordID: record, deviceID: device)
+    }
 }
 
 extension Notifier: UNUserNotificationCenterDelegate {
@@ -274,6 +307,16 @@ extension Notifier: UNUserNotificationCenterDelegate {
         let request = response.notification.request
         if response.actionIdentifier == Self.openXcodeAction {
             await openXcode()
+        } else if response.actionIdentifier == Self.refreshAction, let job = Self.job(of: response.notification) {
+            await MainActor.run { Self.refreshHandler?(job) }
+        } else if response.actionIdentifier == Self.openPanelAction
+                    || (response.actionIdentifier == UNNotificationDefaultActionIdentifier
+                        && request.content.categoryIdentifier == Self.appCategory) {
+            // About one app: the panel shows it, with its menu.
+            await MainActor.run {
+                NSApp.activate()
+                Self.openPanelHandler?()
+            }
         } else if response.actionIdentifier == UNNotificationDefaultActionIdentifier,
                   Self.opensSettings(request.identifier)
                     || [Self.xcodeCategory, Self.settingsCategory].contains(request.content.categoryIdentifier) {

@@ -401,3 +401,11 @@
 "popover.reportBug" = "Report a bug on GitHub";
 "install.changeApp" = "Change app…";
 "install.changeApp.help" = "Pick another .ipa, or drop one on this window";
+
+/* Preflight */
+"preflight.iOSTooOld" = "%1$@ runs iOS %2$@, but this app needs iOS %3$@: it won't open there.";
+"preflight.deviceFull" = "%1$@ already has 3 apps from XSide (%2$@): a free account allows 3. Uninstall one first, from its … menu in the panel.";
+"preflight.noAppIDLeft" = "No App ID left this week (estimate): installing a new app will likely fail until one frees up.";
+"preflight.lastAppID" = "This install uses your last App ID of the week (estimate).";
+"notification.action.refresh" = "Refresh Now";
+"notification.action.open" = "Open XSide";

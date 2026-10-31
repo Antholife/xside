@@ -106,7 +106,10 @@ struct InstallSheet: View {
                     DevicePicker(model: model, flow: flow)
                 }
                 InstallOptionsSection(model: model, flow: flow)
-                if case .editing = flow.phase { BlockedNotice(model: model, flow: flow) }
+                if case .editing = flow.phase {
+                    BlockedNotice(model: model, flow: flow)
+                    PreflightNotes(warnings: model.preflightWarnings(for: flow), model: model)
+                }
             case .finished:
                 if flow.isMultiDevice {
                     DeviceRunList(model: model, flow: flow, steps: steps)
@@ -263,6 +266,39 @@ struct InstallSheet: View {
 
 /// Why "Install" (or "Retry failed") can't be pressed: the first check still running, the
 /// environment failing (with its fix), or the chosen devices gone.
+/// Before the install: what is likely to fail (old iOS, full device, no App ID left).
+private struct PreflightNotes: View {
+    let warnings: [InstallPreflight.Warning]
+    let model: AppModel
+
+    var body: some View {
+        if !warnings.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(Array(warnings.enumerated()), id: \.offset) { _, warning in
+                    Label(text(warning), systemImage: warning == .lastAppID ? "info.circle.fill" : "exclamationmark.triangle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(warning == .lastAppID ? Color.secondary : Color(nsColor: .systemOrange))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private func name(_ deviceID: String) -> String {
+        model.devices.first { $0.id == deviceID }?.name ?? L("popover.unknownDevice")
+    }
+
+    private func text(_ warning: InstallPreflight.Warning) -> String {
+        switch warning {
+        case .iOSTooOld(let id, let required, let actual): L("preflight.iOSTooOld", name(id), actual, required)
+        case .deviceFull(let id, let apps):
+            L("preflight.deviceFull", name(id), apps.formatted(.list(type: .and).locale(appLocale)))
+        case .noAppIDLeft: L("preflight.noAppIDLeft")
+        case .lastAppID: L("preflight.lastAppID")
+        }
+    }
+}
+
 private struct BlockedNotice: View {
     let model: AppModel
     let flow: InstallFlow

@@ -56,7 +56,8 @@ public enum IPAImporter {
         }
         return AppInfo(bundleID: info.bundleID, name: info.name, version: info.version,
                        executable: info.executable, sharedKeychainGroups: shared,
-                       sharedKeychainVendor: shared.isEmpty ? nil : Resigner.keychainVendor(entitlements))
+                       sharedKeychainVendor: shared.isEmpty ? nil : Resigner.keychainVendor(entitlements),
+                       minimumOSVersion: info.minimumOSVersion)
     }
 
     private static func require(_ type: FileAttributeType, _ url: URL) throws {
