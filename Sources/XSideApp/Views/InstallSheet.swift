@@ -108,7 +108,7 @@ struct InstallSheet: View {
                 InstallOptionsSection(model: model, flow: flow)
                 if case .editing = flow.phase {
                     BlockedNotice(model: model, flow: flow)
-                    PreflightNotes(warnings: model.preflightWarnings(for: flow), model: model)
+                    PreflightNotes(warnings: model.preflightWarnings(for: flow), model: model, flow: flow)
                 }
             case .finished:
                 if flow.isMultiDevice {
@@ -270,18 +270,29 @@ struct InstallSheet: View {
 private struct PreflightNotes: View {
     let warnings: [InstallPreflight.Warning]
     let model: AppModel
+    let flow: InstallFlow
 
     var body: some View {
         if !warnings.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 ForEach(Array(warnings.enumerated()), id: \.offset) { _, warning in
                     Label(text(warning), systemImage: warning == .lastAppID ? "info.circle.fill" : "exclamationmark.triangle.fill")
                         .font(.system(size: 12))
                         .foregroundStyle(warning == .lastAppID ? Color.secondary : Color(nsColor: .systemOrange))
                         .fixedSize(horizontal: false, vertical: true)
+                    if case .deviceFull(let deviceID, _) = warning {
+                        FreeASlot(model: model, entries: entries(on: deviceID), deviceName: name(deviceID))
+                    }
                 }
             }
         }
+    }
+
+    /// XSide's other apps on the device, soonest to expire first: the likeliest to let go.
+    private func entries(on deviceID: String) -> [AppEntry] {
+        model.records.filter { $0.id != flow.existing?.id }
+            .compactMap { r in r.installations.first { $0.deviceID == deviceID }.map { AppEntry(record: r, installation: $0) } }
+            .sorted { $0.installation.expiresAt < $1.installation.expiresAt }
     }
 
     private func name(_ deviceID: String) -> String {
@@ -291,10 +302,60 @@ private struct PreflightNotes: View {
     private func text(_ warning: InstallPreflight.Warning) -> String {
         switch warning {
         case .iOSTooOld(let id, let required, let actual): L("preflight.iOSTooOld", name(id), actual, required)
-        case .deviceFull(let id, let apps):
-            L("preflight.deviceFull", name(id), apps.formatted(.list(type: .and).locale(appLocale)))
+        case .deviceFull(let id, _): L("preflight.deviceFull", name(id))
         case .noAppIDLeft: L("preflight.noAppIDLeft")
         case .lastAppID: L("preflight.lastAppID")
+        }
+    }
+}
+
+/// The apps taking a full device's 3 slots, each with "Uninstall": a slot is freed without
+/// leaving the install window.
+private struct FreeASlot: View {
+    let model: AppModel
+    let entries: [AppEntry]
+    let deviceName: String
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(entries) { entry in
+                HStack(spacing: 10) {
+                    AppIconView(icon: model.icons.image(for: entry.record), isBusy: model.uninstalling.contains(entry.id),
+                                isPaused: entry.installation.refreshPaused, size: 28)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(appName(entry)).font(.system(size: 12.5, weight: .medium)).lineLimit(1)
+                        Text(Validity(expiresAt: entry.installation.expiresAt, now: Date()).spokenText)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                    Button(L("popover.app.uninstall")) { uninstall(entry) }
+                        .controlSize(.small)
+                        .disabled(!model.canManage(entry) || model.uninstalling.contains(entry.id))
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                if entry.id != entries.last?.id { Divider().padding(.leading, 48) }
+            }
+        }
+        .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(.leading, 22)
+    }
+
+    private func appName(_ entry: AppEntry) -> String { entry.record.options.displayName ?? entry.record.displayName }
+
+    private func uninstall(_ entry: AppEntry) {
+        let app = appName(entry)
+        guard AppRowAlerts.confirmUninstall(app: app, device: deviceName) else { return }
+        Task {
+            do {
+                try await model.uninstall(entry)
+            } catch {
+                if AppRowAlerts.uninstallFailed(app: app, device: deviceName, error: error,
+                                                offerPause: !entry.installation.refreshPaused) {
+                    await model.stopRefreshing(entry)
+                }
+            }
         }
     }
 }

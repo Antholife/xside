@@ -404,7 +404,7 @@
 
 /* Vérifications avant installation */
 "preflight.iOSTooOld" = "%1$@ est en iOS %2$@, mais cette app demande iOS %3$@ : elle ne s'ouvrira pas dessus.";
-"preflight.deviceFull" = "%1$@ a déjà 3 apps de XSide (%2$@) : un compte gratuit en permet 3. Désinstalles-en une d'abord, depuis son menu … dans le panneau.";
+"preflight.deviceFull" = "%@ a déjà 3 apps de XSide, le maximum avec un compte gratuit. Laquelle retirer ?";
 "preflight.noAppIDLeft" = "Plus d'App ID cette semaine (estimation) : installer une nouvelle app échouera sûrement jusqu'à ce qu'un se libère.";
 "preflight.lastAppID" = "Cette installation utilise ton dernier App ID de la semaine (estimation).";
 "notification.action.refresh" = "Rafraîchir maintenant";

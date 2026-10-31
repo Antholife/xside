@@ -404,7 +404,7 @@
 
 /* Preflight */
 "preflight.iOSTooOld" = "%1$@ runs iOS %2$@, but this app needs iOS %3$@: it won't open there.";
-"preflight.deviceFull" = "%1$@ already has 3 apps from XSide (%2$@): a free account allows 3. Uninstall one first, from its … menu in the panel.";
+"preflight.deviceFull" = "%@ already has 3 apps from XSide, the most a free account allows. Which one should go?";
 "preflight.noAppIDLeft" = "No App ID left this week (estimate): installing a new app will likely fail until one frees up.";
 "preflight.lastAppID" = "This install uses your last App ID of the week (estimate).";
 "notification.action.refresh" = "Refresh Now";
