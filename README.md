@@ -41,6 +41,10 @@ XSide installs `.ipa` files on your iPhone and iPad with a free Apple Account, t
   <img src="docs/assets/screenshots/installing-dark.png" width="370" alt="Installing: the app's icon in a progress ring and the steps">
 </p>
 
+<p align="center">
+  <img src="docs/assets/screenshots/settings-dark.png" width="560" alt="Settings: a sidebar of pages; Xcode and signing all set">
+</p>
+
 ## ✨ Features
 
 | | |
