@@ -102,6 +102,7 @@ import Foundation
 @Test func toolsGetTheirOwnTimeouts() async throws {
     let runner = FakeRunner()
     runner.stub("/usr/bin/xcrun", result: CommandResult(status: 0, stdout: Data(), stderr: ""))
+    runner.stub("/usr/bin/script", result: CommandResult(status: 0, stdout: Data(), stderr: ""))
     runner.stub("/usr/bin/codesign", result: CommandResult(status: 0, stdout: Data(), stderr: ""))
     try await Installer(runner: runner).install(app: URL(fileURLWithPath: "/tmp/Fake.app"), deviceID: "X")
     try await DeviceService(runner: runner).pair("X")

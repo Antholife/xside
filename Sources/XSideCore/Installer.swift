@@ -10,6 +10,8 @@ public struct Installer: Sendable {
     }
 
     /// The transfer's progress comes from devicectl's own percentages, read as they're printed.
+    /// devicectl prints them only to a terminal: it runs under `script`, which gives it one and
+    /// passes its output (stdout and stderr together) and its exit status through.
     public func install(app: URL, deviceID: String) async throws {
         let report = StepProgress.report
         let result = try await CommandOutput.$onChunk.withValue({ chunk in
@@ -19,8 +21,9 @@ public struct Installer: Sendable {
             }
         }) {
             try await runner.run(
-                "/usr/bin/xcrun",
-                ["devicectl", "device", "install", "app", "--device", deviceID, app.path],
+                "/usr/bin/script",
+                ["-q", "-F", "/dev/null", "/usr/bin/xcrun", "devicectl", "device", "install", "app",
+                 "--device", deviceID, app.path],
                 cwd: nil, timeout: CommandTimeout.deviceInstall)
         }
         guard result.status == 0 else {
