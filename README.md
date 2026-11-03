@@ -112,6 +112,19 @@ scripts/bundle.sh   # builds build/XSide.app
 
 Keep XSide running in the menu bar (turn on *Launch at login* in its settings): that's what refreshes your apps. XSide then updates itself (Sparkle), from *Settings > Updates*.
 
+## ⌨️ Command line
+
+Turn it on in *Settings > General > Command line tool*, then:
+
+```sh
+xside status                     # apps, devices and days left (--json too)
+xside refresh youtube            # refresh an app now (name or bundle id, partial is fine)
+xside refresh --all              # every app that can be now
+xside install ~/Downloads/a.ipa  # open it in the install window
+```
+
+If XSide isn't running, `xside` starts it in the background first. XSide always does the signing itself, so the two never sign at once.
+
 ## 🛠️ Development
 
 ```sh

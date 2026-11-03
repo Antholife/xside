@@ -7,6 +7,8 @@ let package = Package(
     products: [
         .library(name: "XSideCore", targets: ["XSideCore"]),
         .executable(name: "XSideApp", targets: ["XSideApp"]),
+        // The `xside` command line tool, shipped inside XSide.app (Contents/Helpers/xside).
+        .executable(name: "xside", targets: ["XSideCLI"]),
     ],
     dependencies: [
         // Self-updates (see scripts/release.sh). Pinned: an update changes how updates install.
@@ -18,6 +20,7 @@ let package = Package(
             "XSideCore",
             .product(name: "Sparkle", package: "Sparkle"),
         ]),
+        .executableTarget(name: "XSideCLI", dependencies: ["XSideCore"]),
         .testTarget(name: "XSideCoreTests", dependencies: ["XSideCore"], exclude: ["Fixtures"]),
     ]
 )

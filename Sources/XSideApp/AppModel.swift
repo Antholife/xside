@@ -781,8 +781,12 @@ final class AppModel {
 
     // MARK: - Library
 
+    /// The library was read once: until then, "no app" isn't known to be true (just launched).
+    private(set) var hasLoadedRecords = false
+
     func reloadRecords() async {
         records = await library.records()
+        hasLoadedRecords = true
         updateAttention()
         icons.backfill(records) // once per launch
     }
@@ -1120,23 +1124,80 @@ final class AppModel {
     /// Set by the app delegate: shows a label on the Dock icon (nil removes it).
     var onDockBadge: ((String?) -> Void)?
 
-    /// A refresh asked before XSide could run it (a notification's "Refresh now" that launched it):
-    /// tried again once the devices are listed and the environment checked.
-    private var queuedRefresh: RefreshJob?
+    /// Refreshes asked before XSide could run them (a notification's "Refresh now", or the
+    /// command line tool, that launched it): tried again once the devices are listed and the
+    /// environment checked.
+    private var queuedRefreshes: [RefreshJob] = []
 
     /// Starts the refresh now, or as soon as it can start (XSide just launched). False when it
     /// was queued.
     @discardableResult
     func refreshWhenReady(_ job: RefreshJob) -> Bool {
         if refreshNow(job) { return true }
-        queuedRefresh = job
+        if !queuedRefreshes.contains(job) { queuedRefreshes.append(job) }
         return false
     }
 
     private func retryQueuedRefresh() {
-        guard let job = queuedRefresh, signingEnvironment != nil else { return }
-        queuedRefresh = nil
-        if !refreshNow(job) { Self.logger.notice("queued refresh couldn't start") }
+        guard !queuedRefreshes.isEmpty, signingEnvironment != nil, !devices.isEmpty else { return }
+        let jobs = queuedRefreshes
+        queuedRefreshes = []
+        for job in jobs where !refreshNow(job) { Self.logger.notice("queued refresh couldn't start") }
+    }
+
+    /// A command line request (`xside refresh`): the answer it prints.
+    func handle(_ command: CLIBridge.Command) -> (ok: Bool, message: String) {
+        let names = cachedNames
+        let entries = records.flatMap { r in r.installations.map { AppEntry(record: r, installation: $0) } }
+        func appName(_ e: AppEntry) -> String { e.record.options.displayName ?? e.record.displayName }
+        func deviceName(_ e: AppEntry) -> String {
+            devices.first { $0.id == e.installation.deviceID }?.name ?? names[e.installation.deviceID] ?? e.installation.deviceID
+        }
+        func describe(_ e: AppEntry) -> String { "\(appName(e)) on \(deviceName(e))" }
+        let targets: [AppEntry]
+        switch command {
+        case .refreshAll:
+            targets = entries.filter { !$0.installation.refreshPaused }
+            guard !targets.isEmpty else { return (false, "No app to refresh (none installed, or all paused).") }
+        case .refresh(let app, let device):
+            var matches = entries.filter {
+                appName($0).localizedCaseInsensitiveContains(app) || $0.record.originalBundleID.localizedCaseInsensitiveContains(app)
+            }
+            if let device {
+                matches = matches.filter { deviceName($0).localizedCaseInsensitiveContains(device) || $0.installation.deviceID == device }
+            }
+            guard !matches.isEmpty else {
+                return (false, "No app matches \"\(app)\"\(device.map { " on \"\($0)\"" } ?? ""). Installed: "
+                        + (entries.isEmpty ? "none" : entries.map(describe).joined(separator: ", ")))
+            }
+            // Several different apps: say which, rather than guess.
+            let distinct = Set(matches.map(\.record.id))
+            if distinct.count > 1, !matches.contains(where: { appName($0).caseInsensitiveCompare(app) == .orderedSame }) {
+                return (false, "\"\(app)\" matches several apps: " + matches.map(describe).joined(separator: ", ") + ". Be more precise.")
+            }
+            let exact = matches.filter { appName($0).caseInsensitiveCompare(app) == .orderedSame }
+            targets = exact.isEmpty ? matches : exact
+            if let paused = targets.first(where: \.installation.refreshPaused), targets.count == 1 {
+                return (false, "\(describe(paused)) is paused: resume it from its … menu in XSide.")
+            }
+        }
+        var started: [String] = [], queued: [String] = []
+        for entry in targets where !entry.installation.refreshPaused {
+            if jobs[entry.id] != nil {
+                started.append(describe(entry) + " (already running)")
+            } else if refreshWhenReady(entry.job) {
+                started.append(describe(entry))
+            } else {
+                queued.append(describe(entry))
+            }
+        }
+        Self.logger.notice("command line refresh: \(started.count) started, \(queued.count) queued")
+        var lines: [String] = []
+        if !started.isEmpty { lines.append("Refreshing: " + started.joined(separator: ", ")) }
+        if !queued.isEmpty {
+            lines.append("Queued, starts as soon as the device is reachable and XSide is ready: " + queued.joined(separator: ", "))
+        }
+        return (true, lines.joined(separator: "\n"))
     }
 
     private func unhide(_ deviceID: String) {

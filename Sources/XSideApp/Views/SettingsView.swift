@@ -180,6 +180,9 @@ private struct SettingsPage: View {
             Section { LibraryIssueBanner(issue: issue) }
         }
         Section {
+            CommandLineRow()
+        }
+        Section {
             LabeledContent(L("settings.journey")) {
                 Button(L("settings.replayJourney")) { openWindow.presentJourney(model, at: .language) }
             }
@@ -302,6 +305,48 @@ private struct UpdatesSection: View {
             installsAutomatically = updater.automaticallyInstalls
             frequency = updater.frequency
             channel = Updater.channel
+        }
+    }
+}
+
+/// Settings > General: put `xside` in the Terminal, or say how.
+private struct CommandLineRow: View {
+    @State private var link = CommandLineTool.installedLink
+    @State private var manual = false
+
+    var body: some View {
+        LabeledContent {
+            if link != nil {
+                Button(L("cli.uninstall")) {
+                    CommandLineTool.uninstall()
+                    link = CommandLineTool.installedLink
+                }
+            } else {
+                Button(L("cli.install")) {
+                    manual = !CommandLineTool.install()
+                    link = CommandLineTool.installedLink
+                }
+            }
+        } label: {
+            Text(L("cli.title"))
+            if let link {
+                Text(L("cli.installed", link.deletingLastPathComponent().path))
+            } else if manual {
+                Text(L("cli.manual"))
+                HStack(spacing: 6) {
+                    Text(CommandLineTool.manualCommand)
+                        .font(.system(size: 10.5, design: .monospaced))
+                        .textSelection(.enabled)
+                        .lineLimit(2)
+                    Button(L("cli.copy")) {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(CommandLineTool.manualCommand, forType: .string)
+                    }
+                    .controlSize(.small)
+                }
+            } else {
+                Text(L("cli.detail"))
+            }
         }
     }
 }

@@ -112,6 +112,19 @@ scripts/bundle.sh   # crée build/XSide.app
 
 Laisse XSide tourner dans la barre des menus (active *Lancer à l'ouverture de session* dans ses réglages) : c'est lui qui rafraîchit tes apps. XSide se met ensuite à jour tout seul (Sparkle), depuis *Réglages > Mises à jour*.
 
+## ⌨️ En ligne de commande
+
+Active-le dans *Réglages > Général > Outil en ligne de commande*, puis :
+
+```sh
+xside status                     # apps, appareils et jours restants (--json aussi)
+xside refresh youtube            # rafraîchir une app maintenant (nom ou identifiant, partiel accepté)
+xside refresh --all              # toutes celles qui peuvent l'être
+xside install ~/Downloads/a.ipa  # l'ouvrir dans la fenêtre d'installation
+```
+
+Si XSide n'est pas lancé, `xside` le démarre d'abord en arrière-plan. C'est toujours XSide qui signe, donc les deux ne signent jamais en même temps.
+
 ## 🛠️ Développement
 
 ```sh

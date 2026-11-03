@@ -452,3 +452,10 @@
 "updates.autoInstall.detail" = "Downloaded in the background, then installed as soon as no install or refresh is running: XSide relaunches by itself and tells you once it's done.";
 "notification.updated.title" = "XSide %@ was installed";
 "notification.updated.body" = "The update went through. Click to see what's new.";
+"cli.title" = "Command line tool";
+"cli.detail" = "xside status, xside refresh, xside install… in the Terminal.";
+"cli.install" = "Install";
+"cli.uninstall" = "Remove";
+"cli.installed" = "Installed in %@: type xside in the Terminal.";
+"cli.manual" = "No writable folder in your PATH: run this in the Terminal (asks for your password):";
+"cli.copy" = "Copy";

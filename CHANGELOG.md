@@ -2,6 +2,20 @@
 
 All notable changes to XSide. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Command line tool** `xside`: `status`, `refresh <app>`, `refresh --all`, `install <file.ipa>`, `open`. Installed from *Settings > General*; starts XSide in the background when it isn't running.
+- **Update notifications**: a new version found in the background shows a notification and a banner in the panel, instead of a window that could open behind others.
+- **Install updates automatically** (*Settings > Updates*): downloaded in the background and installed as soon as nothing runs; XSide relaunches itself, then says "XSide x.y was installed".
+- Sparkle's update window shows the version's changelog.
+
+### Fixed
+- When Xcode drops its Apple Account (a known Xcode bug), one notification instead of one each time it flickers back; the message says what happened.
+- "Open Xcode" says to press ⌘, (its Settings open on Apple Accounts), since Xcode can't be opened straight on them.
+- A beta Xcode counts as ready only once its license is accepted, and isn't checked again at every probe.
+- The panel's footer buttons show their hover color and label again.
+
 ## [1.0.3-beta] - 2026-10-31
 
 ### Added

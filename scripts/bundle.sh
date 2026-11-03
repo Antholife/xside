@@ -9,13 +9,19 @@ CONFIG="${CONFIG:-release}"
 ARCHS=()
 [ "$CONFIG" = release ] && ARCHS=(--arch arm64 --arch x86_64)
 swift build -c "$CONFIG" --product XSideApp "${ARCHS[@]+"${ARCHS[@]}"}"
-BIN="$(swift build -c "$CONFIG" --product XSideApp "${ARCHS[@]+"${ARCHS[@]}"}" --show-bin-path)/XSideApp"
+swift build -c "$CONFIG" --product xside "${ARCHS[@]+"${ARCHS[@]}"}"
+BIN_DIR="$(swift build -c "$CONFIG" --product XSideApp "${ARCHS[@]+"${ARCHS[@]}"}" --show-bin-path)"
+BIN="$BIN_DIR/XSideApp"
 
 APP=build/XSide.app
 [ "$CONFIG" = debug ] && APP=build/XSide-debug.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/XSide"
+# The command line tool (Settings > General links it into the PATH). Not in MacOS/: "xside" and
+# "XSide" are the same name on a case-insensitive disk.
+mkdir -p "$APP/Contents/Helpers"
+cp "$BIN_DIR/xside" "$APP/Contents/Helpers/xside"
 cp App/Info.plist "$APP/Contents/Info.plist"
 # The debug bundle gets its own identity: its defaults, notifications and permissions stay apart
 # from the release app's.
@@ -60,6 +66,7 @@ for helper in "$SPARKLE"/Versions/B/XPCServices/*.xpc "$SPARKLE"/Versions/B/Auto
     [ -e "$helper" ] && codesign -s - --force "${SIGN_OPTIONS[@]+"${SIGN_OPTIONS[@]}"}" "$helper"
 done
 codesign -s - --force "${SIGN_OPTIONS[@]+"${SIGN_OPTIONS[@]}"}" "$SPARKLE"
+codesign -s - --force "${SIGN_OPTIONS[@]+"${SIGN_OPTIONS[@]}"}" "$APP/Contents/Helpers/xside"
 codesign -s - --force "${SIGN_OPTIONS[@]+"${SIGN_OPTIONS[@]}"}" --entitlements App/XSide.entitlements "$APP"
 plutil -lint "$APP/Contents/Info.plist"
 codesign --verify --deep --strict "$APP"

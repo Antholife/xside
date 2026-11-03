@@ -144,6 +144,13 @@ public actor AppLibrary {
         return (records, lossy.count - records.count)
     }
 
+    /// The records in `root`'s `state.json`, read only: never moves nor copies anything (the app
+    /// may be writing it; `init` handles a damaged file). Nil when there's none or it can't be read.
+    public static func readRecords(root: URL) -> [AppRecord]? {
+        guard let data = try? Data(contentsOf: root.appendingPathComponent("state.json")) else { return nil }
+        return decode(data)?.records
+    }
+
     private static func load(root: URL) -> ([AppRecord], LibraryLoadIssue?) {
         let fm = FileManager.default
         let url = root.appendingPathComponent("state.json")

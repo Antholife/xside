@@ -33,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         spinner.button = popover.button
         model.onDockBadge = { NSApp.dockTile.badgeLabel = $0 }
         Notifier.installUpdateHandler = { model.updater.checkNow() }
+        listenToCommandLine(model)
         Notifier.openPanelHandler = { [weak self] job in
             if let job { model.highlight(JobKey(recordID: job.recordID, deviceID: job.deviceID)) }
             self?.popover.show()
@@ -78,6 +79,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         return false
     }
+
+    /// `xside refresh` from the Terminal: done here, answered to the tool (see `CLIBridge`).
+    private func listenToCommandLine(_ model: AppModel) {
+        guard let bundleID = Bundle.main.bundleIdentifier else { return }
+        let center = DistributedNotificationCenter.default()
+        center.addObserver(forName: CLIBridge.requestName(bundleID: bundleID), object: nil, queue: .main) { note in
+            guard let request = CLIBridge.Request(userInfo: note.userInfo) else { return }
+            MainActor.assumeIsolated {
+                // Just launched by the tool: answered once the library is read (it asks again).
+                guard model.hasLoadedRecords else { return }
+                // The tool sends again until answered: a request is handled once.
+                guard !Self.handledRequests.contains(request.id) else {
+                    center.postNotificationName(CLIBridge.replyName(bundleID: bundleID), object: nil,
+                                                userInfo: Self.lastReplies[request.id] ?? [:], deliverImmediately: true)
+                    return
+                }
+                Self.handledRequests.insert(request.id)
+                let answer = model.handle(request.command)
+                let reply = CLIBridge.Reply(id: request.id, ok: answer.ok, message: answer.message).userInfo
+                Self.lastReplies[request.id] = reply
+                center.postNotificationName(CLIBridge.replyName(bundleID: bundleID), object: nil,
+                                            userInfo: reply, deliverImmediately: true)
+            }
+        }
+    }
+    private static var handledRequests: Set<String> = []
+    private static var lastReplies: [String: [String: String]] = [:]
 
     func applicationDidBecomeActive(_ notification: Notification) {
         Self.model?.forgetUnreadyXcodes()
