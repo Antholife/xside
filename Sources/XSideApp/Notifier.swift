@@ -29,6 +29,9 @@ final class Notifier: NSObject {
     private nonisolated static let updateCategory = "update"
     private nonisolated static let installUpdateAction = "installUpdate"
     nonisolated static let updateNotificationID = "xsideUpdate"
+    private nonisolated static let updatedCategory = "updated"
+    /// Installed by the app: opens What's New.
+    static var whatsNewHandler: (@MainActor () -> Void)?
     /// Installed by the app: shows the update (Sparkle's window, in front).
     static var installUpdateHandler: (@MainActor () -> Void)?
 
@@ -126,6 +129,18 @@ final class Notifier: NSObject {
             Self.logger.error("notification failed: \(String(describing: error))")
             return false
         }
+    }
+
+    /// XSide was just updated: a click opens What's New.
+    func updateInstalled(version: String) async {
+        let content = UNMutableNotificationContent()
+        content.title = L("notification.updated.title", version)
+        content.body = L("notification.updated.body")
+        content.sound = .default
+        content.categoryIdentifier = Self.updatedCategory
+        guard let center, await canDeliver() else { return }
+        center.removeDeliveredNotifications(withIdentifiers: [Self.updateNotificationID]) // the "available" one
+        try? await center.add(UNNotificationRequest(identifier: Self.updateNotificationID, content: content, trigger: nil))
     }
 
     /// A new XSide version, found by a background check (gentle reminder). Replaces an earlier one.
@@ -342,6 +357,11 @@ extension Notifier: UNUserNotificationCenterDelegate {
         await MainActor.run { Self.lastResponse = Date() }
         if response.actionIdentifier == Self.openXcodeAction {
             await openXcode()
+        } else if request.content.categoryIdentifier == Self.updatedCategory {
+            await MainActor.run {
+                NSApp.activate()
+                Self.whatsNewHandler?()
+            }
         } else if response.actionIdentifier == Self.installUpdateAction
                     || (response.actionIdentifier == UNNotificationDefaultActionIdentifier
                         && request.content.categoryIdentifier == Self.updateCategory) {

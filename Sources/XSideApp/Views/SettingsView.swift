@@ -251,6 +251,7 @@ private struct SigningHero: View {
 private struct UpdatesSection: View {
     let updater: Updater
     @State private var automatic = false
+    @State private var installsAutomatically = false
     @State private var frequency = Updater.Frequency.daily
     @State private var channel = Updater.Channel.beta
 
@@ -258,6 +259,12 @@ private struct UpdatesSection: View {
         Section(L("updates.title")) {
             Toggle(L("updates.automatic"), isOn: $automatic)
                 .onChange(of: automatic) { _, on in updater.automaticallyChecks = on }
+            Toggle(isOn: $installsAutomatically) {
+                Text(L("updates.autoInstall"))
+                Text(L("updates.autoInstall.detail"))
+            }
+            .disabled(!automatic)
+            .onChange(of: installsAutomatically) { _, on in updater.automaticallyInstalls = on }
             Picker(L("updates.frequency"), selection: $frequency) {
                 Text(L("updates.frequency.daily")).tag(Updater.Frequency.daily)
                 Text(L("updates.frequency.weekly")).tag(Updater.Frequency.weekly)
@@ -292,6 +299,7 @@ private struct UpdatesSection: View {
         }
         .onAppear {
             automatic = updater.automaticallyChecks
+            installsAutomatically = updater.automaticallyInstalls
             frequency = updater.frequency
             channel = Updater.channel
         }

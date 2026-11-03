@@ -40,8 +40,18 @@ final class Updater {
     @ObservationIgnored var onAvailable: ((String) -> Void)?
     @ObservationIgnored private var observation: NSKeyValueObservation?
 
+    #if DEBUG
+    /// Debug-only: XSIDE_TEST_FEED=<url> starts Sparkle on that feed (the debug app has none) and
+    /// runs a background check a few seconds after launch, to try the gentle reminders.
+    static let testFeed = ProcessInfo.processInfo.environment["XSIDE_TEST_FEED"]
+    #endif
+
     init() {
-        guard Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil else {
+        var hasFeed = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil
+        #if DEBUG
+        if Self.testFeed != nil { hasFeed = true }
+        #endif
+        guard hasFeed else {
             controller = nil
             #if DEBUG
             canCheck = AppModel.isDemo // the demo's button looks live (it does nothing)
@@ -63,6 +73,11 @@ final class Updater {
             self.onAvailable?(version)
         }
         reminders.onDone = { [weak self] in self?.availableVersion = nil }
+        #if DEBUG
+        if Self.testFeed != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { controller.updater.checkForUpdatesInBackground() }
+        }
+        #endif
         Self.log.notice("updater started, automatic checks \(controller.updater.automaticallyChecksForUpdates), every \(Int(controller.updater.updateCheckInterval)) s, channel \(Self.channel.rawValue)")
     }
 
@@ -82,6 +97,21 @@ final class Updater {
             return controller?.updater.automaticallyChecksForUpdates ?? false
         }
         set { controller?.updater.automaticallyChecksForUpdates = newValue }
+    }
+
+    /// Downloads and installs updates by itself (Sparkle's "Automatically download and install
+    /// updates" box): the update is applied when XSide quits or relaunches.
+    var automaticallyInstalls: Bool {
+        get {
+            #if DEBUG
+            if AppModel.isDemo { return false }
+            #endif
+            return controller?.updater.automaticallyDownloadsUpdates ?? false
+        }
+        set {
+            controller?.updater.automaticallyDownloadsUpdates = newValue
+            Self.log.notice("automatic install \(newValue)")
+        }
     }
 
     var frequency: Frequency {
@@ -121,6 +151,12 @@ private final class ChannelDelegate: NSObject, SPUUpdaterDelegate {
     func allowedChannels(for updater: SPUUpdater) -> Set<String> {
         MainActor.assumeIsolated { Updater.channel == .beta ? ["beta"] : [] }
     }
+
+    #if DEBUG
+    func feedURLString(for updater: SPUUpdater) -> String? {
+        MainActor.assumeIsolated { Updater.testFeed }
+    }
+    #endif
 }
 
 /// Gentle reminders: a scheduled check that finds an update while XSide isn't in front leaves it

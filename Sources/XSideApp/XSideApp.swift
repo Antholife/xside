@@ -207,6 +207,7 @@ struct MenuBarLabel: View {
                     openSettings()
                 }
                 appDelegate.quitStopsRefreshes = { [model] in model.quitStopsRefreshes }
+                Notifier.whatsNewHandler = { openWindow.presentWhatsNew() }
                 appDelegate.openIPA = { url in
                     if journeyCompleted {
                         openWindow.presentInstall(url, model: model)

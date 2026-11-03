@@ -28,7 +28,8 @@ BIN=.build/artifacts/sparkle/Sparkle/bin
 SIGNATURE="$("$BIN/sign_update" "$ZIP")" # sparkle:edSignature="…" length="…"
 BUILD="$(plutil -extract CFBundleVersion raw "$APP/Contents/Info.plist")"
 URL="https://github.com/Antholife/xside/releases/download/v$TAG/XSide-$TAG.zip"
-NOTES="https://github.com/Antholife/xside/releases/tag/v$TAG"
+# The version's CHANGELOG.md section, shown in Sparkle's update window.
+NOTES_HTML="$(python3 -I scripts/changelog-html.py "$TAG")"
 DATE="$(LC_ALL=C date -R)"
 # Pre-releases ("1.0.3-beta") go to the beta channel; a stable release has none.
 CHANNEL=""
@@ -41,7 +42,7 @@ ITEM="    <item>
       <sparkle:version>$BUILD</sparkle:version>
       <sparkle:shortVersionString>$TAG</sparkle:shortVersionString>$CHANNEL
       <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-      <sparkle:releaseNotesLink>$NOTES</sparkle:releaseNotesLink>
+      <description><![CDATA[$NOTES_HTML]]></description>
       <sparkle:fullReleaseNotesLink>https://github.com/Antholife/xside/releases</sparkle:fullReleaseNotesLink>
       <enclosure url=\"$URL\" $SIGNATURE type=\"application/octet-stream\"/>
     </item>"

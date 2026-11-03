@@ -45,6 +45,7 @@ final class BackgroundEngine {
         started = true
         Self.logger.notice("engine started (threshold \(Self.threshold / 86_400) d)")
         notifier.start()
+        announceInstalledUpdate()
         model.updater.onAvailable = { [weak self] version in
             guard let self else { return }
             Task { await self.notifier.updateAvailable(version: version) }
@@ -210,6 +211,22 @@ final class BackgroundEngine {
     }
 
     static let needsUSBKey = "needsUSB"
+
+    /// The version XSide last ran as: a different one at launch is an update just installed.
+    static let lastLaunchedVersionKey = "lastLaunchedVersion"
+
+    /// XSide was just updated (by Sparkle, or by hand): "XSide x.y was installed". Not on a first
+    /// install (nothing ran before).
+    private func announceInstalledUpdate() {
+        let defaults = UserDefaults.standard
+        let current = Bundle.main.shortVersion ?? ""
+        let previous = defaults.string(forKey: Self.lastLaunchedVersionKey)
+        defaults.set(current, forKey: Self.lastLaunchedVersionKey)
+        guard let previous, previous != current, !current.isEmpty,
+              defaults.bool(forKey: JourneyStep.completedKey) else { return }
+        Self.logger.notice("updated from \(previous) to \(current)")
+        Task { await notifier.updateInstalled(version: current) }
+    }
 
     /// Environment problems already notified (their keys), each cleared once it's fixed.
     static let environmentWarnedKey = "environmentWarnedErrors"

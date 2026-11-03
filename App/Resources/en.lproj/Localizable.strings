@@ -448,3 +448,7 @@
 "notification.update.install" = "Install";
 "update.banner.title" = "XSide %@ is available";
 "update.banner.text" = "Installs and relaunches in a few seconds.";
+"updates.autoInstall" = "Install updates automatically";
+"updates.autoInstall.detail" = "Downloaded in the background and installed the next time XSide quits or relaunches; you get a notification once it's done.";
+"notification.updated.title" = "XSide %@ was installed";
+"notification.updated.body" = "The update went through. Click to see what's new.";
