@@ -249,7 +249,7 @@
 "error.timedOut" = "%@ stopped responding, so the operation was interrupted. Try again in a moment.";
 "error.invalidBundleID" = "The identifier “%@” isn't valid: it can only hold letters, digits, hyphens and dots (for example com.example.app), 155 characters at most.";
 "error.invalidBundleID.short" = "The app's identifier isn't valid: pick another one in the install options.";
-"journey.account.opened" = "Xcode is open: press ⌘ , then go to the Apple Accounts tab.";
+"journey.account.opened" = "Xcode is opening: press ⌘ , and its Settings open straight on Apple Accounts.";
 "journey.account.cert.step2" = "Select your account, click “Personal Team”, then “Manage Certificates…”.";
 "journey.account.cert.step3" = "Click ＋, then choose “Apple Development”.";
 "journey.account.cert.step4" = "Come back here: XSide detects the certificate by itself.";
@@ -270,7 +270,7 @@
 "settings.signing.needsXcode" = "Install Xcode first, just above.";
 "settings.signing.needsAccount" = "Sign in to your Apple Account first, just above: the certificate is then created from that account.";
 "environment.reason.checkFailed" = "XSide couldn't check Xcode and your signing certificate: a system tool failed. It tries again by itself in a few minutes; you can also check again now.";
-"environment.reason.account" = "Without an Apple Account signed in to Xcode, XSide can't ask Apple for new profiles: your apps can't be refreshed anymore and will expire.";
+"environment.reason.account" = "Without an Apple Account signed in to Xcode, XSide can't ask Apple for new profiles: your apps can't be refreshed anymore and will expire. Xcode sometimes removes the account on its own (a known Xcode bug): just sign in again, and XSide picks the refreshes back up.";
 "environment.reason.certificate" = "Without a signing certificate, XSide can't sign your apps anymore: it can neither install nor refresh them, and they will expire.";
 "environment.reason.xcode" = "Without Xcode, XSide no longer has the tools to sign and install your apps: they can't be refreshed anymore and will expire.";
 "certificate.create" = "Create the certificate";
@@ -442,3 +442,4 @@
 "whatsNew.103.more.title" = "And more";
 "whatsNew.103.more.text" = "Change the app right from the install window, GitHub and Report a bug buttons in the panel, and a removed device stays out of the list.";
 "whatsNew.changelog" = "Full changelog";
+"journey.account.openedRunning" = "Xcode was already open: press ⌘ , then go to the Apple Accounts tab.";

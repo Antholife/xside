@@ -209,16 +209,37 @@ final class BackgroundEngine {
 
     /// Environment problems already notified (their keys), each cleared once it's fixed.
     static let environmentWarnedKey = "environmentWarnedErrors"
+    /// When each warned problem was last seen fixed: it's forgotten (and can be notified again)
+    /// only once it stayed fixed this long. Xcode can drop its account, list it again for a
+    /// moment, then drop it again: one notification, not one per flicker.
+    static let environmentFixedSinceKey = "environmentFixedSince"
+    static let environmentSettleTime: TimeInterval = 30 * 60
 
-    /// After setup, the signing environment broke: one notification per problem until it's fixed,
-    /// since no refresh can run meanwhile.
+    /// After setup, the signing environment broke: one notification per problem until it's fixed
+    /// for good, since no refresh can run meanwhile.
     private func reportEnvironment() {
         let defaults = UserDefaults.standard
         guard model.environment != nil else { return }
         let problems = model.environmentProblems
+        let keys = Set(problems.map(\.key))
         let warned = Set(defaults.stringArray(forKey: Self.environmentWarnedKey) ?? [])
-        // Fixed problems can be notified again if they come back.
-        let current = warned.intersection(problems.map(\.key))
+        var fixedSince = defaults.dictionary(forKey: Self.environmentFixedSinceKey) as? [String: Date] ?? [:]
+        let now = Date()
+        // Fixed problems are forgotten once they stayed fixed, and can then be notified again.
+        var current = warned
+        for key in warned {
+            if keys.contains(key) {
+                fixedSince[key] = nil // back (or still there): the clock restarts when it's fixed
+            } else if let since = fixedSince[key] {
+                if now.timeIntervalSince(since) >= Self.environmentSettleTime {
+                    current.remove(key)
+                    fixedSince[key] = nil
+                }
+            } else {
+                fixedSince[key] = now
+            }
+        }
+        defaults.set(fixedSince.filter { current.contains($0.key) }, forKey: Self.environmentFixedSinceKey)
         if current != warned { defaults.set(Array(current), forKey: Self.environmentWarnedKey) }
         guard defaults.bool(forKey: JourneyStep.completedKey) else { return }
         for error in problems where !current.contains(error.key) {

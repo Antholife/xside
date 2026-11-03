@@ -249,7 +249,7 @@
 "error.timedOut" = "%@ ne répond plus : l'opération a été interrompue. Réessaie dans un instant.";
 "error.invalidBundleID" = "L'identifiant « %@ » n'est pas valide : il ne peut contenir que des lettres, des chiffres, des tirets et des points (par exemple com.exemple.app), 155 caractères au plus.";
 "error.invalidBundleID.short" = "L'identifiant de l'app n'est pas valide : choisis-en un autre dans les options d'installation.";
-"journey.account.opened" = "Xcode est ouvert : appuie sur ⌘ , puis va dans l'onglet « Apple Accounts » (comptes Apple).";
+"journey.account.opened" = "Xcode s'ouvre : appuie sur ⌘ , et ses Réglages s'ouvrent directement sur « Apple Accounts » (comptes Apple).";
 "journey.account.cert.step2" = "Sélectionne ton compte, clique sur « Personal Team » (ton équipe personnelle), puis sur « Manage Certificates… » (gérer les certificats).";
 "journey.account.cert.step3" = "Clique sur ＋, puis choisis « Apple Development » (certificat de développement).";
 "journey.account.cert.step4" = "Reviens ici : XSide détecte le certificat tout seul.";
@@ -270,7 +270,7 @@
 "settings.signing.needsXcode" = "Installe d'abord Xcode, juste au-dessus.";
 "settings.signing.needsAccount" = "Connecte d'abord ton compte Apple, juste au-dessus : le certificat se crée ensuite depuis ce compte.";
 "environment.reason.checkFailed" = "XSide n'a pas pu vérifier Xcode et ton certificat de signature : un outil du système a échoué. Il réessaie tout seul dans quelques minutes ; tu peux aussi relancer la vérification maintenant.";
-"environment.reason.account" = "Sans compte Apple connecté dans Xcode, XSide ne peut pas demander à Apple de nouveaux profils : tes apps ne peuvent plus être rafraîchies et expireront.";
+"environment.reason.account" = "Sans compte Apple connecté dans Xcode, XSide ne peut pas demander à Apple de nouveaux profils : tes apps ne peuvent plus être rafraîchies et expireront. Xcode retire parfois le compte tout seul (un bug connu d'Xcode) : il suffit de le reconnecter, XSide reprend ensuite les rafraîchissements.";
 "environment.reason.certificate" = "Sans certificat de signature, XSide ne peut plus signer tes apps : il ne peut ni les installer ni les rafraîchir, et elles expireront.";
 "environment.reason.xcode" = "Sans Xcode, XSide n'a plus les outils pour signer et installer tes apps : elles ne peuvent plus être rafraîchies et expireront.";
 "certificate.create" = "Créer le certificat";
@@ -442,3 +442,4 @@
 "whatsNew.103.more.title" = "Et aussi";
 "whatsNew.103.more.text" = "Changer d'app directement depuis la fenêtre d'installation, des boutons GitHub et Signaler un bug dans le panneau, et un appareil retiré ne revient plus dans la liste.";
 "whatsNew.changelog" = "Historique complet";
+"journey.account.openedRunning" = "Xcode était déjà ouvert : appuie sur ⌘ , puis va dans l'onglet « Apple Accounts » (comptes Apple).";

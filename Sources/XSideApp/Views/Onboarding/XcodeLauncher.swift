@@ -44,11 +44,17 @@ enum XcodeLauncher {
         NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
     }
 
-    /// Opens Xcode so that its Settings (⌘,) show the Accounts pane: Xcode reopens its last
-    /// viewed pane, read at launch, so it's only set while Xcode isn't running.
+    /// The last `openAccounts` preset the Settings pane (Xcode wasn't running): its ⌘, then
+    /// lands on Apple Accounts. Otherwise the user picks the tab.
+    @MainActor static var accountsPreset = false
+
+    /// Opens Xcode (on its usual window: it has no way to be opened on its Settings) and, while
+    /// it isn't running, presets the pane its Settings (⌘,) open on to Apple Accounts: Xcode
+    /// reads its last viewed pane at launch only.
     @MainActor static func openAccounts(developerDir: URL?) {
         let xcodeID = "com.apple.dt.Xcode"
-        if NSRunningApplication.runningApplications(withBundleIdentifier: xcodeID).isEmpty {
+        accountsPreset = NSRunningApplication.runningApplications(withBundleIdentifier: xcodeID).isEmpty
+        if accountsPreset {
             CFPreferencesSetAppValue("IDELastViewedSettingsPane" as CFString,
                                      "IDEKit.IDESettingsPane.Accounts" as CFString, xcodeID as CFString)
             CFPreferencesAppSynchronize(xcodeID as CFString)

@@ -37,7 +37,8 @@ struct SigningSteps: View {
     var body: some View {
         VStack(spacing: 8) {
             if xcodeOpened {
-                Label(L("journey.account.opened"), systemImage: "keyboard")
+                Label(L(XcodeLauncher.accountsPreset ? "journey.account.opened" : "journey.account.openedRunning"),
+                      systemImage: "keyboard")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Theme.violet)
                     .frame(maxWidth: .infinity, alignment: .leading)
