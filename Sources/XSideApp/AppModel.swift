@@ -1167,8 +1167,9 @@ final class AppModel {
                 matches = matches.filter { deviceName($0).localizedCaseInsensitiveContains(device) || $0.installation.deviceID == device }
             }
             guard !matches.isEmpty else {
-                return (false, "No app matches \"\(app)\"\(device.map { " on \"\($0)\"" } ?? ""). Installed: "
-                        + (entries.isEmpty ? "none" : entries.map(describe).joined(separator: ", ")))
+                // Not the list of installed apps: the answer is a distributed notification, which
+                // any program of the session can hear (`xside status` reads the list locally).
+                return (false, "No app matches \"\(app)\"\(device.map { " on \"\($0)\"" } ?? ""). See xside status.")
             }
             // Several different apps: say which, rather than guess.
             let distinct = Set(matches.map(\.record.id))
