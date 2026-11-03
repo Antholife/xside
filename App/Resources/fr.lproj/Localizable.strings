@@ -469,4 +469,4 @@
 "whatsNew.104.account.text" = "Xcode se déconnecte parfois tout seul : une seule notification, une explication claire, et les rafraîchissements reprennent dès que tu te reconnectes.";
 "whatsNew.104.changelog.title" = "De vraies notes de version";
 "whatsNew.104.changelog.text" = "La fenêtre de mise à jour montre ce qui change dans la nouvelle version, bien présenté.";
-"whatsNew.104.more.text" = "Les boutons du panneau affichent de nouveau leur nom au survol, Ouvrir Xcode explique l'étape ⌘,, et un Xcode bêta doit avoir sa licence acceptée.";
+"whatsNew.104.more.text" = "Les boutons du panneau affichent de nouveau leur nom au survol, « Ouvrir Xcode » te dit sur quelles touches appuyer (⌘ et virgule) pour arriver aux comptes, et un Xcode bêta doit avoir sa licence acceptée.";
