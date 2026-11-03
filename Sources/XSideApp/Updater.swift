@@ -38,6 +38,22 @@ final class Updater {
     private(set) var availableVersion: String?
     /// Set by the app: tells about `availableVersion` (a notification).
     @ObservationIgnored var onAvailable: ((String) -> Void)?
+    /// Set by the app: true while an install or a refresh runs (an update then waits).
+    @ObservationIgnored var isBusy: () -> Bool = { false }
+    /// Sparkle is replacing XSide: the quit confirmation must not hold it up.
+    static var isInstallingUpdate = false
+    /// A downloaded automatic update waiting for XSide to be idle.
+    @ObservationIgnored private var pendingInstall: (() -> Void)?
+
+    /// Installs the downloaded automatic update now (Sparkle replaces XSide and relaunches it),
+    /// unless a job runs: called again when jobs end.
+    func installIfIdle() {
+        guard let install = pendingInstall, !isBusy() else { return }
+        pendingInstall = nil
+        Self.log.notice("installing the downloaded update and relaunching")
+        Self.isInstallingUpdate = true // the quit it causes isn't questioned
+        install()
+    }
     @ObservationIgnored private var observation: NSKeyValueObservation?
 
     #if DEBUG
@@ -73,6 +89,11 @@ final class Updater {
             self.onAvailable?(version)
         }
         reminders.onDone = { [weak self] in self?.availableVersion = nil }
+        channels.onReadyToInstall = { [weak self] version, install in
+            Self.log.notice("update \(version) downloaded: installing once idle")
+            self?.pendingInstall = install
+            self?.installIfIdle()
+        }
         #if DEBUG
         if Self.testFeed != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 4) { controller.updater.checkForUpdatesInBackground() }
@@ -150,6 +171,27 @@ final class Updater {
 private final class ChannelDelegate: NSObject, SPUUpdaterDelegate {
     func allowedChannels(for updater: SPUUpdater) -> Set<String> {
         MainActor.assumeIsolated { Updater.channel == .beta ? ["beta"] : [] }
+    }
+
+    /// Set by the updater: an automatic update is downloaded and waits for XSide to quit. XSide
+    /// rarely quits (menu-bar app): the handler installs it right away (and relaunches) once
+    /// nothing runs.
+    var onReadyToInstall: (@MainActor (String, @escaping () -> Void) -> Void)?
+
+    func updater(_ updater: SPUUpdater, willInstallUpdateOnQuit item: SUAppcastItem,
+                 immediateInstallationBlock immediateInstallHandler: @escaping () -> Void) -> Bool {
+        let version = item.displayVersionString
+        return MainActor.assumeIsolated {
+            guard let onReadyToInstall else { return false }
+            onReadyToInstall(version, immediateInstallHandler)
+            return true
+        }
+    }
+
+    /// Any update about to relaunch XSide (installed by hand from Sparkle's window too): the quit
+    /// it causes isn't questioned.
+    func updaterWillRelaunchApplication(_ updater: SPUUpdater) {
+        MainActor.assumeIsolated { Updater.isInstallingUpdate = true }
     }
 
     #if DEBUG

@@ -108,7 +108,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Every quit (popover button, ⌘Q, Dock, `osascript`) is confirmed while an app would expire
     /// without its refresh, except a logout, restart or shutdown, which is never held up.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard quitStopsRefreshes?() == true, !Self.isSystemQuit() else { return .terminateNow }
+        // An update being installed relaunches XSide at once: nothing to confirm.
+        guard quitStopsRefreshes?() == true, !Self.isSystemQuit(), !Updater.isInstallingUpdate else { return .terminateNow }
         NSApp.activate()
         let alert = NSAlert()
         alert.messageText = L("quit.confirm.message")

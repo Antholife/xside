@@ -449,6 +449,6 @@
 "update.banner.title" = "XSide %@ est disponible";
 "update.banner.text" = "S'installe et se relance en quelques secondes.";
 "updates.autoInstall" = "Installer les mises à jour automatiquement";
-"updates.autoInstall.detail" = "Téléchargées en arrière-plan et installées la prochaine fois que XSide quitte ou se relance ; une notification te prévient une fois que c'est fait.";
+"updates.autoInstall.detail" = "Téléchargées en arrière-plan, puis installées dès qu'aucune installation ni aucun rafraîchissement n'est en cours : XSide se relance tout seul et te prévient une fois que c'est fait.";
 "notification.updated.title" = "XSide %@ a été installée";
 "notification.updated.body" = "La mise à jour s'est bien passée. Clique pour voir les nouveautés.";

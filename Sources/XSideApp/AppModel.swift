@@ -213,6 +213,8 @@ final class AppModel {
                                      cacheDirs: paths.xcodeProfileDirs),
             resigner: Resigner(runner: runner), installer: Installer(runner: runner),
             workRoot: paths.jobsWork, now: { Date() }, macIsBeta: XcodeLauncher.macIsBeta)
+        // An update waits while an install or a refresh runs (`release` retries it after).
+        updater.isBusy = { [unowned self] in !self.claims.isEmpty || self.install?.isRunning == true }
         Task { await start() }
     }
 
@@ -1185,6 +1187,7 @@ final class AppModel {
             jobActivity = nil
         }
         if left <= 0 { dropKeptEmptyRecords() }
+        if claims.isEmpty { updater.installIfIdle() } // a downloaded update waited for this
         if claims.isEmpty, xcodeSwitchPending {
             xcodeSwitchPending = false
             recheckEnvironment()
