@@ -167,8 +167,8 @@ struct XcodeReadinessTests {
         #expect(XcodeLocator.betasToCheck(selected: selected("Xcode"), installs: [beta], macIsBeta: false).isEmpty)
         #expect(XcodeLocator.betasToCheck(selected: selected("Xcode-beta", beta: true), installs: [beta],
                                           macIsBeta: true).isEmpty)
-        let check = XcodeLocator.firstLaunchCheck(beta.developerDir)
-        #expect(check.executable == "/Applications/Xcode-beta.app/Contents/Developer/usr/bin/xcodebuild")
-        #expect(check.arguments == ["-checkFirstLaunchStatus"])
+        let checks = XcodeLocator.readinessChecks(beta.developerDir)
+        #expect(checks.map(\.executable) == Array(repeating: "/Applications/Xcode-beta.app/Contents/Developer/usr/bin/xcodebuild", count: 2))
+        #expect(checks.map(\.arguments) == [["-license", "check"], ["-checkFirstLaunchStatus"]])
     }
 }

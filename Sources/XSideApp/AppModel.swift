@@ -534,22 +534,36 @@ final class AppModel {
     private(set) var unreadyBetaXcode: XcodeInstall?
     /// A new developer dir was resolved while jobs were running: applied once they're done.
     @ObservationIgnored private var xcodeSwitchPending = false
-    /// Xcode apps (path and build) whose first launch is done: checked once.
+    /// Xcode apps (path and build) found usable: checked once.
     @ObservationIgnored private var readyXcodes: Set<String> = []
+    /// Xcode apps found not usable yet, and until when that answer holds: not checked again at
+    /// every probe (each check is an xcodebuild run).
+    @ObservationIgnored private var unreadyUntil: [String: Date] = [:]
+    private static let unreadyRecheck: TimeInterval = 10 * 60
 
-    /// `xcodebuild -checkFirstLaunchStatus` with that Xcode: exit 0 once its license is accepted
-    /// and its first launch done.
+    /// That Xcode's license is accepted and its first launch done (`XcodeLocator.readinessChecks`).
+    /// A "not yet" is kept 10 minutes, or until XSide comes forward (the user may have just
+    /// opened Xcode to accept it).
     private func isReady(_ xcode: XcodeInstall) async -> Bool {
         let key = "\(xcode.developerDir.path)#\(xcode.build)"
         if readyXcodes.contains(key) { return true }
-        let check = XcodeLocator.firstLaunchCheck(xcode.developerDir)
-        let result = try? await CommandEnvironment.withDeveloperDir(xcode.developerDir) {
-            try await plainRunner.run(check.executable, check.arguments, cwd: nil, timeout: .seconds(30))
+        if let until = unreadyUntil[key], until > Date() { return false }
+        for check in XcodeLocator.readinessChecks(xcode.developerDir) {
+            let result = try? await CommandEnvironment.withDeveloperDir(xcode.developerDir) {
+                try await plainRunner.run(check.executable, check.arguments, cwd: nil, timeout: .seconds(30))
+            }
+            guard result?.status == 0 else {
+                unreadyUntil[key] = Date().addingTimeInterval(Self.unreadyRecheck)
+                return false
+            }
         }
-        guard result?.status == 0 else { return false }
+        unreadyUntil[key] = nil
         readyXcodes.insert(key)
         return true
     }
+
+    /// XSide came forward: a "not ready" Xcode is checked again at the next probe.
+    func forgetUnreadyXcodes() { unreadyUntil.removeAll() }
 
     /// macOS beta with a release Xcode, which may stop working on it: warned, never blocking.
     /// Computed once per probe.

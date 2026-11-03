@@ -146,10 +146,12 @@ public enum XcodeLocator {
         return installs.filter(\.isBeta).sorted(by: isNewer)
     }
 
-    /// `xcodebuild -checkFirstLaunchStatus` (exit 0: license accepted and first launch done), run
-    /// with the developer directory's own xcodebuild. A read-only status check.
-    public static func firstLaunchCheck(_ developerDir: URL) -> (executable: String, arguments: [String]) {
-        (developerDir.appendingPathComponent("usr/bin/xcodebuild").path, ["-checkFirstLaunchStatus"])
+    /// What makes an Xcode usable, each exiting 0 when done: its license accepted
+    /// (`-license check`), then its first launch (`-checkFirstLaunchStatus`, extra components).
+    /// Run with the developer directory's own xcodebuild; read-only status checks.
+    public static func readinessChecks(_ developerDir: URL) -> [(executable: String, arguments: [String])] {
+        let xcodebuild = developerDir.appendingPathComponent("usr/bin/xcodebuild").path
+        return [(xcodebuild, ["-license", "check"]), (xcodebuild, ["-checkFirstLaunchStatus"])]
     }
 
     /// True when `developerDir` holds `usr/bin/xcodebuild`.

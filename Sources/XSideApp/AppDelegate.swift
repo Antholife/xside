@@ -79,6 +79,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
+    func applicationDidBecomeActive(_ notification: Notification) {
+        Self.model?.forgetUnreadyXcodes()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.servicesProvider = self
         NSUpdateDynamicServices()
