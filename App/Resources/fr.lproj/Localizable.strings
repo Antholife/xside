@@ -459,3 +459,14 @@
 "cli.installed" = "Installé dans %@ : tape xside dans le Terminal.";
 "cli.manual" = "Aucun dossier modifiable dans ton PATH : lance ceci dans le Terminal (ton mot de passe sera demandé) :";
 "cli.copy" = "Copier";
+"whatsNew.104.updates.title" = "Les mises à jour s'installent toutes seules";
+"whatsNew.104.updates.text" = "Active Installer les mises à jour automatiquement dans Réglages > Mises à jour : XSide télécharge la nouvelle version en arrière-plan, l'installe dès que rien n'est en cours, puis se relance.";
+"whatsNew.104.cli.title" = "xside dans le Terminal";
+"whatsNew.104.cli.text" = "xside status, xside refresh youtube, xside install app.ipa… À activer dans Réglages > Général. Il démarre même XSide s'il est éteint.";
+"whatsNew.104.notify.title" = "Des mises à jour qu'on ne rate pas";
+"whatsNew.104.notify.text" = "Une nouvelle version affiche une notification et un bandeau dans le panneau, et tu es prévenu une fois qu'elle est installée.";
+"whatsNew.104.account.title" = "Quand Xcode retire ton compte";
+"whatsNew.104.account.text" = "Xcode se déconnecte parfois tout seul : une seule notification, une explication claire, et les rafraîchissements reprennent dès que tu te reconnectes.";
+"whatsNew.104.changelog.title" = "De vraies notes de version";
+"whatsNew.104.changelog.text" = "La fenêtre de mise à jour montre ce qui change dans la nouvelle version, bien présenté.";
+"whatsNew.104.more.text" = "Les boutons du panneau affichent de nouveau leur nom au survol, Ouvrir Xcode explique l'étape ⌘,, et un Xcode bêta doit avoir sa licence acceptée.";
