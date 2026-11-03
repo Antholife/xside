@@ -5,6 +5,32 @@
     <link>https://github.com/Antholife/xside</link>
     <!-- items -->
     <item>
+      <title>XSide 1.0.4-beta</title>
+      <pubDate>Tue, 03 Nov 2026 17:09:42 +0100</pubDate>
+      <sparkle:version>121</sparkle:version>
+      <sparkle:shortVersionString>1.0.4-beta</sparkle:shortVersionString>
+      <sparkle:channel>beta</sparkle:channel>
+      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<h3>Added</h3>
+<ul>
+<li><b>Command line tool</b> <code>xside</code>: <code>status</code>, <code>refresh &lt;app&gt;</code>, <code>refresh --all</code>, <code>install &lt;file.ipa&gt;</code>, <code>open</code>. Installed from <i>Settings &gt; General</i>; starts XSide in the background when it isn't running.</li>
+<li><b>Update notifications</b>: a new version found in the background shows a notification and a banner in the panel, instead of a window that could open behind others.</li>
+<li><b>Install updates automatically</b> (<i>Settings &gt; Updates</i>): downloaded in the background and installed as soon as nothing runs; XSide relaunches itself, then says "XSide x.y was installed".</li>
+<li>Sparkle's update window shows the version's changelog.</li>
+</ul>
+<h3>Fixed</h3>
+<ul>
+<li>When Xcode drops its Apple Account (a known Xcode bug), one notification instead of one each time it flickers back; the message says what happened.</li>
+<li>"Open Xcode" says to press ⌘ + comma or use the Xcode &gt; Settings… menu (its Settings then open on Apple Accounts), since Xcode can't be opened straight on them.</li>
+<li>A beta Xcode counts as ready only once its license is accepted, and isn't checked again at every probe.</li>
+<li>The panel's footer buttons show their hover color and label again.</li>
+<li>The quit confirmation no longer holds up an update relaunching XSide.</li>
+<li>Sparkle's "Version History" opens the page of all releases.</li>
+</ul>]]></description>
+      <sparkle:fullReleaseNotesLink>https://github.com/Antholife/xside/releases</sparkle:fullReleaseNotesLink>
+      <enclosure url="https://github.com/Antholife/xside/releases/download/v1.0.4-beta/XSide-1.0.4-beta.zip" sparkle:edSignature="whTEJyWZ6qW0u86NkURUwMTbjEP8P8VSMsgjoXLPeI0ngoNi+/TJ6ingTcZHfXEffg7SZv6nxqsZZKgCZ0j+Aw==" length="6655610" type="application/octet-stream"/>
+    </item>
+    <item>
       <title>XSide 1.0.3-beta</title>
       <pubDate>Sat, 31 Oct 2026 16:02:46 +0100</pubDate>
       <sparkle:version>99</sparkle:version>
