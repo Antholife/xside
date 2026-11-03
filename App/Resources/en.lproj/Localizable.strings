@@ -443,3 +443,8 @@
 "whatsNew.103.more.text" = "Change the app right from the install window, GitHub and Report a bug buttons in the panel, and a removed device stays out of the list.";
 "whatsNew.changelog" = "Full changelog";
 "journey.account.openedRunning" = "Xcode was already open: press ⌘ , then go to the Apple Accounts tab.";
+"notification.update.title" = "XSide %@ is available";
+"notification.update.body" = "Install it now: XSide relaunches by itself, your apps keep refreshing.";
+"notification.update.install" = "Install";
+"update.banner.title" = "XSide %@ is available";
+"update.banner.text" = "Installs and relaunches in a few seconds.";

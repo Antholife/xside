@@ -30,7 +30,14 @@ final class Updater {
 
     @ObservationIgnored private let controller: SPUStandardUpdaterController?
     @ObservationIgnored private let channels = ChannelDelegate()
+    @ObservationIgnored private let reminders = ReminderDelegate()
     private(set) var canCheck = false
+    /// A version found by a background check and not dealt with yet: the panel and a
+    /// notification offer it (gentle reminders), instead of an update window that a menu-bar app
+    /// may open behind everything.
+    private(set) var availableVersion: String?
+    /// Set by the app: tells about `availableVersion` (a notification).
+    @ObservationIgnored var onAvailable: ((String) -> Void)?
     @ObservationIgnored private var observation: NSKeyValueObservation?
 
     init() {
@@ -42,13 +49,20 @@ final class Updater {
             return
         }
         let controller = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: channels,
-                                                      userDriverDelegate: nil)
+                                                      userDriverDelegate: reminders)
         self.controller = controller
         // KVO calls back on the main thread (Sparkle's updater lives there).
         observation = controller.updater.observe(\.canCheckForUpdates, options: [.initial, .new]) { [weak self] _, change in
             let can = change.newValue ?? false
             Task { @MainActor in self?.canCheck = can }
         }
+        reminders.onFound = { [weak self] version in
+            guard let self, self.availableVersion != version else { return }
+            self.availableVersion = version
+            Self.log.notice("update \(version) available")
+            self.onAvailable?(version)
+        }
+        reminders.onDone = { [weak self] in self?.availableVersion = nil }
         Self.log.notice("updater started, automatic checks \(controller.updater.automaticallyChecksForUpdates), every \(Int(controller.updater.updateCheckInterval)) s, channel \(Self.channel.rawValue)")
     }
 
@@ -106,5 +120,36 @@ final class Updater {
 private final class ChannelDelegate: NSObject, SPUUpdaterDelegate {
     func allowedChannels(for updater: SPUUpdater) -> Set<String> {
         MainActor.assumeIsolated { Updater.channel == .beta ? ["beta"] : [] }
+    }
+}
+
+/// Gentle reminders: a scheduled check that finds an update while XSide isn't in front leaves it
+/// to us (panel line and notification) instead of opening Sparkle's window behind other apps.
+/// Sparkle calls it on the main thread.
+@MainActor
+private final class ReminderDelegate: NSObject, @preconcurrency SPUStandardUserDriverDelegate {
+    var onFound: (@MainActor (String) -> Void)?
+    var onDone: (@MainActor () -> Void)?
+
+    var supportsGentleScheduledUpdateReminders: Bool { true }
+
+    func standardUserDriverShouldHandleShowingScheduledUpdate(_ update: SUAppcastItem,
+                                                              andInImmediateFocus immediateFocus: Bool) -> Bool {
+        immediateFocus // in front (just launched, or active): Sparkle's window shows as usual
+    }
+
+    func standardUserDriverWillHandleShowingUpdate(_ handleShowingUpdate: Bool, forUpdate update: SUAppcastItem,
+                                                   state: SPUUserUpdateState) {
+        guard !state.userInitiated else { return }
+        let version = update.displayVersionString
+        onFound?(version)
+    }
+
+    func standardUserDriverDidReceiveUserAttention(forUpdate update: SUAppcastItem) {
+        onDone?()
+    }
+
+    func standardUserDriverWillFinishUpdateSession() {
+        onDone?()
     }
 }

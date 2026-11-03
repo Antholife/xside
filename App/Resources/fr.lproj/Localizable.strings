@@ -443,3 +443,8 @@
 "whatsNew.103.more.text" = "Changer d'app directement depuis la fenêtre d'installation, des boutons GitHub et Signaler un bug dans le panneau, et un appareil retiré ne revient plus dans la liste.";
 "whatsNew.changelog" = "Historique complet";
 "journey.account.openedRunning" = "Xcode était déjà ouvert : appuie sur ⌘ , puis va dans l'onglet « Apple Accounts » (comptes Apple).";
+"notification.update.title" = "XSide %@ est disponible";
+"notification.update.body" = "Installe-la maintenant : XSide se relance tout seul, tes apps continuent d'être rafraîchies.";
+"notification.update.install" = "Installer";
+"update.banner.title" = "XSide %@ est disponible";
+"update.banner.text" = "S'installe et se relance en quelques secondes.";

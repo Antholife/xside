@@ -53,6 +53,12 @@ private struct PopoverContent: View {
                                   isChecking: model.isProbing)
             }
             if model.macBetaWithReleaseXcode { MacBetaBanner { dismiss() } }
+            if let version = model.updater.availableVersion {
+                UpdateBanner(version: version) {
+                    dismiss()
+                    model.updater.checkNow() // Sparkle's window, in front: install and relaunch
+                }
+            }
             if let issue = model.library.loadIssue, !model.libraryIssueDismissed {
                 LibraryIssueBanner(issue: issue, onDismiss: model.dismissLibraryIssue)
             }
@@ -253,6 +259,32 @@ struct EnvironmentBanner: View {
         }
         .padding(10)
         .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
+/// A new XSide version is out (found in the background): install it from here.
+struct UpdateBanner: View {
+    let version: String
+    let install: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.down.circle.fill")
+                .font(.system(size: 18))
+                .foregroundStyle(Theme.brand)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(L("update.banner.title", version)).font(.system(size: 12.5, weight: .semibold))
+                Text(L("update.banner.text")).font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 4)
+            Button(L("notification.update.install"), action: install)
+                .buttonStyle(.borderedProminent)
+                .tint(Theme.violet)
+                .controlSize(.small)
+        }
+        .padding(10)
+        .background(Theme.violet.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
 

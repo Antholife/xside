@@ -25,6 +25,13 @@ final class Notifier: NSObject {
     /// a click on the Dock icon (see `AppDelegate.applicationShouldHandleReopen`).
     static var lastResponse = Date.distantPast
 
+    /// An XSide update found in the background: "Install" (or a click) opens Sparkle's window.
+    private nonisolated static let updateCategory = "update"
+    private nonisolated static let installUpdateAction = "installUpdate"
+    nonisolated static let updateNotificationID = "xsideUpdate"
+    /// Installed by the app: shows the update (Sparkle's window, in front).
+    static var installUpdateHandler: (@MainActor () -> Void)?
+
     /// Installed by the app: refreshes one app (a notification's "Refresh now").
     static var refreshHandler: (@MainActor (RefreshJob) -> Void)?
     /// Installed by the app: opens the menu-bar panel, on the notification's app if it has one.
@@ -69,6 +76,10 @@ final class Notifier: NSObject {
         center.setNotificationCategories([
             UNNotificationCategory(identifier: Self.xcodeCategory, actions: [open], intentIdentifiers: []),
             UNNotificationCategory(identifier: Self.appCategory, actions: [refresh, panel], intentIdentifiers: []),
+            UNNotificationCategory(identifier: Self.updateCategory,
+                                   actions: [UNNotificationAction(identifier: Self.installUpdateAction,
+                                                                  title: L("notification.update.install"), options: [.foreground])],
+                                   intentIdentifiers: []),
             UNNotificationCategory(identifier: Self.settingsCategory, actions: [], intentIdentifiers: []),
         ])
     }
@@ -114,6 +125,24 @@ final class Notifier: NSObject {
         } catch {
             Self.logger.error("notification failed: \(String(describing: error))")
             return false
+        }
+    }
+
+    /// A new XSide version, found by a background check (gentle reminder). Replaces an earlier one.
+    func updateAvailable(version: String) async {
+        let content = UNMutableNotificationContent()
+        content.title = L("notification.update.title", version)
+        content.body = L("notification.update.body")
+        content.sound = .default
+        content.categoryIdentifier = Self.updateCategory
+        guard let center else {
+            Self.logger.notice("would notify: \(content.title)")
+            return
+        }
+        do {
+            try await center.add(UNNotificationRequest(identifier: Self.updateNotificationID, content: content, trigger: nil))
+        } catch {
+            Self.logger.error("notification failed: \(String(describing: error))")
         }
     }
 
@@ -313,6 +342,13 @@ extension Notifier: UNUserNotificationCenterDelegate {
         await MainActor.run { Self.lastResponse = Date() }
         if response.actionIdentifier == Self.openXcodeAction {
             await openXcode()
+        } else if response.actionIdentifier == Self.installUpdateAction
+                    || (response.actionIdentifier == UNNotificationDefaultActionIdentifier
+                        && request.content.categoryIdentifier == Self.updateCategory) {
+            await MainActor.run {
+                NSApp.activate()
+                Self.installUpdateHandler?()
+            }
         } else if response.actionIdentifier == Self.refreshAction, let job = Self.job(of: response.notification) {
             await MainActor.run { Self.refreshHandler?(job) }
         } else if response.actionIdentifier == Self.openPanelAction

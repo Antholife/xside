@@ -45,6 +45,10 @@ final class BackgroundEngine {
         started = true
         Self.logger.notice("engine started (threshold \(Self.threshold / 86_400) d)")
         notifier.start()
+        model.updater.onAvailable = { [weak self] version in
+            guard let self else { return }
+            Task { await self.notifier.updateAvailable(version: version) }
+        }
         #if DEBUG
         // Debug-only: XSIDE_TEST_NOTIFICATIONS=1 posts a refresh failure about the first app, then
         // its expiry reminder a minute later, to try their buttons.
