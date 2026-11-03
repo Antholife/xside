@@ -2,7 +2,7 @@
 
 All notable changes to XSide. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.0.4-beta] - 2026-11-03
 
 ### Added
 - **Command line tool** `xside`: `status`, `refresh <app>`, `refresh --all`, `install <file.ipa>`, `open`. Installed from *Settings > General*; starts XSide in the background when it isn't running.
@@ -12,9 +12,11 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 - When Xcode drops its Apple Account (a known Xcode bug), one notification instead of one each time it flickers back; the message says what happened.
-- "Open Xcode" says to press ⌘, (its Settings open on Apple Accounts), since Xcode can't be opened straight on them.
+- "Open Xcode" says to press ⌘ + comma or use the Xcode > Settings… menu (its Settings then open on Apple Accounts), since Xcode can't be opened straight on them.
 - A beta Xcode counts as ready only once its license is accepted, and isn't checked again at every probe.
 - The panel's footer buttons show their hover color and label again.
+- The quit confirmation no longer holds up an update relaunching XSide.
+- Sparkle's "Version History" opens the page of all releases.
 
 ## [1.0.3-beta] - 2026-10-31
 
@@ -76,6 +78,7 @@ First public beta.
 - English and French.
 - Universal app: Apple silicon and Intel.
 
+[1.0.4-beta]: https://github.com/Antholife/xside/compare/v1.0.3-beta...v1.0.4-beta
 [1.0.3-beta]: https://github.com/Antholife/xside/compare/v1.0.2-beta...v1.0.3-beta
 [1.0.2-beta]: https://github.com/Antholife/xside/compare/v1.0.1-beta...v1.0.2-beta
 [1.0.1-beta]: https://github.com/Antholife/xside/compare/v1.0.0-beta...v1.0.1-beta
