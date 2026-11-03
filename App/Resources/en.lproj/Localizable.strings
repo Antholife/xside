@@ -161,7 +161,7 @@
 "journey.account.checking" = "Checking your account…";
 "journey.account.done" = "Account signed in";
 "journey.account.needsXcode" = "Install Xcode first (previous step).";
-"journey.account.step1" = "In Xcode, open Settings (⌘ ,), Apple Accounts tab.";
+"journey.account.step1" = "In Xcode, open Settings: the Xcode > Settings… menu, or ⌘ + comma. Then the Apple Accounts tab.";
 "journey.account.step2" = "Click ＋, choose Apple Account, then sign in.";
 "journey.account.step3" = "Come back here: XSide detects your account by itself.";
 "journey.notifications.title" = "Notifications";
@@ -249,7 +249,7 @@
 "error.timedOut" = "%@ stopped responding, so the operation was interrupted. Try again in a moment.";
 "error.invalidBundleID" = "The identifier “%@” isn't valid: it can only hold letters, digits, hyphens and dots (for example com.example.app), 155 characters at most.";
 "error.invalidBundleID.short" = "The app's identifier isn't valid: pick another one in the install options.";
-"journey.account.opened" = "Xcode is opening: press ⌘ , and its Settings open straight on Apple Accounts.";
+"journey.account.opened" = "Xcode is opening: press ⌘ + comma (or the Xcode > Settings… menu), its Settings open straight on Apple Accounts.";
 "journey.account.cert.step2" = "Select your account, click “Personal Team”, then “Manage Certificates…”.";
 "journey.account.cert.step3" = "Click ＋, then choose “Apple Development”.";
 "journey.account.cert.step4" = "Come back here: XSide detects the certificate by itself.";
@@ -442,7 +442,7 @@
 "whatsNew.103.more.title" = "And more";
 "whatsNew.103.more.text" = "Change the app right from the install window, GitHub and Report a bug buttons in the panel, and a removed device stays out of the list.";
 "whatsNew.changelog" = "Full changelog";
-"journey.account.openedRunning" = "Xcode was already open: press ⌘ , then go to the Apple Accounts tab.";
+"journey.account.openedRunning" = "Xcode was already open: press ⌘ + comma (or the Xcode > Settings… menu), then go to the Apple Accounts tab.";
 "notification.update.title" = "XSide %@ is available";
 "notification.update.body" = "Install it now: XSide relaunches by itself, your apps keep refreshing.";
 "notification.update.install" = "Install";
@@ -469,4 +469,4 @@
 "whatsNew.104.account.text" = "Xcode sometimes signs out on its own: one notification, a clear explanation, and refreshes resume once you're back.";
 "whatsNew.104.changelog.title" = "Real release notes";
 "whatsNew.104.changelog.text" = "The update window shows what changed in the new version, neatly laid out.";
-"whatsNew.104.more.text" = "The panel's buttons show their labels on hover again, \"Open Xcode\" tells you which keys to press (⌘ and comma) to reach the accounts, and a beta Xcode needs its license accepted.";
+"whatsNew.104.more.text" = "The panel's buttons show their labels on hover again, \"Open Xcode\" tells you how to reach the accounts (⌘ + comma), and a beta Xcode needs its license accepted.";

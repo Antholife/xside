@@ -161,7 +161,7 @@
 "journey.account.checking" = "Vérification de ton compte…";
 "journey.account.done" = "Compte connecté";
 "journey.account.needsXcode" = "Installe d'abord Xcode (étape précédente).";
-"journey.account.step1" = "Dans Xcode, ouvre Settings (réglages, ⌘ ,), onglet « Apple Accounts » (comptes Apple).";
+"journey.account.step1" = "Dans Xcode, ouvre Settings (réglages) : menu Xcode > Settings…, ou ⌘ + virgule. Puis l'onglet « Apple Accounts » (comptes Apple).";
 "journey.account.step2" = "Clique sur ＋, choisis « Apple Account » (compte Apple), puis connecte-toi.";
 "journey.account.step3" = "Reviens ici : XSide détecte ton compte tout seul.";
 "journey.notifications.title" = "Notifications";
@@ -249,7 +249,7 @@
 "error.timedOut" = "%@ ne répond plus : l'opération a été interrompue. Réessaie dans un instant.";
 "error.invalidBundleID" = "L'identifiant « %@ » n'est pas valide : il ne peut contenir que des lettres, des chiffres, des tirets et des points (par exemple com.exemple.app), 155 caractères au plus.";
 "error.invalidBundleID.short" = "L'identifiant de l'app n'est pas valide : choisis-en un autre dans les options d'installation.";
-"journey.account.opened" = "Xcode s'ouvre : appuie sur ⌘ , et ses Réglages s'ouvrent directement sur « Apple Accounts » (comptes Apple).";
+"journey.account.opened" = "Xcode s'ouvre : appuie sur ⌘ + virgule (ou menu Xcode > Settings…), ses réglages s'ouvrent directement sur « Apple Accounts » (comptes Apple).";
 "journey.account.cert.step2" = "Sélectionne ton compte, clique sur « Personal Team » (ton équipe personnelle), puis sur « Manage Certificates… » (gérer les certificats).";
 "journey.account.cert.step3" = "Clique sur ＋, puis choisis « Apple Development » (certificat de développement).";
 "journey.account.cert.step4" = "Reviens ici : XSide détecte le certificat tout seul.";
@@ -442,7 +442,7 @@
 "whatsNew.103.more.title" = "Et aussi";
 "whatsNew.103.more.text" = "Changer d'app directement depuis la fenêtre d'installation, des boutons GitHub et Signaler un bug dans le panneau, et un appareil retiré ne revient plus dans la liste.";
 "whatsNew.changelog" = "Historique complet";
-"journey.account.openedRunning" = "Xcode était déjà ouvert : appuie sur ⌘ , puis va dans l'onglet « Apple Accounts » (comptes Apple).";
+"journey.account.openedRunning" = "Xcode était déjà ouvert : appuie sur ⌘ + virgule (ou menu Xcode > Settings…), puis va dans l'onglet « Apple Accounts » (comptes Apple).";
 "notification.update.title" = "XSide %@ est disponible";
 "notification.update.body" = "Installe-la maintenant : XSide se relance tout seul, tes apps continuent d'être rafraîchies.";
 "notification.update.install" = "Installer";
@@ -469,4 +469,4 @@
 "whatsNew.104.account.text" = "Xcode se déconnecte parfois tout seul : une seule notification, une explication claire, et les rafraîchissements reprennent dès que tu te reconnectes.";
 "whatsNew.104.changelog.title" = "De vraies notes de version";
 "whatsNew.104.changelog.text" = "La fenêtre de mise à jour montre ce qui change dans la nouvelle version, bien présenté.";
-"whatsNew.104.more.text" = "Les boutons du panneau affichent de nouveau leur nom au survol, « Ouvrir Xcode » te dit sur quelles touches appuyer (⌘ et virgule) pour arriver aux comptes, et un Xcode bêta doit avoir sa licence acceptée.";
+"whatsNew.104.more.text" = "Les boutons du panneau affichent de nouveau leur nom au survol, « Ouvrir Xcode » te dit comment arriver aux comptes (⌘ + virgule), et un Xcode bêta doit avoir sa licence acceptée.";
