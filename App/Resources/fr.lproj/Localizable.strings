@@ -109,6 +109,7 @@
 "error.appIDLimitReached" = "La limite de 10 App ID par semaine est atteinte. Réessaie dans quelques jours.";
 "error.deviceUnavailable" = "L'appareil est introuvable. Déverrouille-le, branche-le en USB ou connecte-le au même Wi-Fi.";
 "error.deviceLocked" = "L'appareil est verrouillé. Déverrouille-le puis réessaie.";
+"error.developerModeDisabled" = "Le mode développeur est désactivé sur cet appareil. Active-le dans Réglages > Confidentialité et sécurité > Mode développeur (l'appareil redémarre), puis réessaie.";
 "error.maxAppsReached" = "Cet appareil a déjà 3 apps installées avec un compte gratuit. Supprimes-en une pour continuer.";
 "error.encryptedIPA" = "Les IPA de l'App Store sont chiffrés et ne peuvent pas être installés.";
 "error.invalidIPA" = "Ce fichier n'est pas une app valide. Choisis un fichier .ipa.\nRaison : %@";
@@ -400,6 +401,7 @@
 "install.changeApp.help" = "Choisis un autre .ipa, ou glisses-en un sur cette fenêtre";
 
 /* Vérifications avant installation */
+"preflight.developerModeOff" = "Le mode développeur est désactivé sur %@ : Xcode ne peut rien y installer. Active-le dans Réglages > Confidentialité et sécurité > Mode développeur (l'appareil redémarre).";
 "preflight.iOSTooOld" = "%1$@ est sous iOS %2$@, mais cette app demande iOS %3$@ : elle ne s'y ouvrira pas.";
 "preflight.deviceFull" = "%@ a déjà 3 apps de XSide, le maximum avec un compte gratuit. Laquelle désinstaller ?";
 "preflight.noAppIDLeft" = "Plus d'App ID cette semaine (estimation) : installer une nouvelle app échouera sûrement jusqu'à ce qu'il s'en libère un.";

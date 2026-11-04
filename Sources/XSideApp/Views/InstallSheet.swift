@@ -411,13 +411,16 @@ struct InstallSheet: View {
 
     private var canInstall: Bool {
         guard !flow.isRunning, case .success? = model.environment else { return false }
-        return model.devices.contains { flow.deviceIDs.contains($0.id) && $0.isAvailable }
+        // Xcode refuses a device with Developer Mode off: every chosen one needs it (or unknown).
+        let chosen = model.devices.filter { flow.deviceIDs.contains($0.id) }
+        guard !chosen.contains(where: { $0.developerModeEnabled == false }) else { return false }
+        return chosen.contains { $0.isAvailable }
     }
 }
 
 /// Why "Install" (or "Retry failed") can't be pressed: the first check still running, the
 /// environment failing (with its fix), or the chosen devices gone.
-/// Before the install: what is likely to fail (old iOS, full device, no App ID left).
+/// Before the install: what is likely to fail (Developer Mode off, old iOS, full device, no App ID left).
 private struct PreflightNotes: View {
     let warnings: [InstallPreflight.Warning]
     let model: AppModel
@@ -467,6 +470,7 @@ private struct PreflightNotes: View {
 
     private func symbol(_ warning: InstallPreflight.Warning) -> String {
         switch warning {
+        case .developerModeOff: "hammer"
         case .iOSTooOld: "iphone.gen3.slash"
         case .deviceFull: "square.stack.3d.up.fill"
         case .noAppIDLeft, .lastAppID: "number"
@@ -486,6 +490,7 @@ private struct PreflightNotes: View {
 
     private func text(_ warning: InstallPreflight.Warning) -> String {
         switch warning {
+        case .developerModeOff(let id): L("preflight.developerModeOff", name(id))
         case .iOSTooOld(let id, let required, let actual): L("preflight.iOSTooOld", name(id), actual, required)
         case .deviceFull(let id, _): L("preflight.deviceFull", name(id))
         case .noAppIDLeft: L("preflight.noAppIDLeft")

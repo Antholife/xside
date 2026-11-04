@@ -141,6 +141,8 @@ public struct Provisioner: Sendable {
         if lower.contains("no accounts:") || lower.contains("no account for team") {
             return .xcodeNotSignedIn
         }
+        // xcodebuild waits for the device, times out, then lists it with this reason.
+        if lower.contains("developer mode disabled") { return .developerModeDisabled }
         let errors = errorLines(output)
         for line in errors {
             let l = line.lowercased()

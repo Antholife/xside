@@ -59,6 +59,7 @@ extension XSideError {
         case .appIDLimitReached: return L("error.appIDLimitReached")
         case .deviceUnavailable: return L("error.deviceUnavailable")
         case .deviceLocked: return L("error.deviceLocked")
+        case .developerModeDisabled: return L("error.developerModeDisabled")
         case .maxAppsReached: return L("error.maxAppsReached")
         case .encryptedIPA: return L("error.encryptedIPA")
         case .invalidIPA(let reason): return L("error.invalidIPA", reason)

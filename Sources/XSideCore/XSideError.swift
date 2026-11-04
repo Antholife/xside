@@ -7,6 +7,8 @@ public enum XSideError: Error, Equatable, Sendable {
     case appIDLimitReached
     case deviceUnavailable
     case deviceLocked
+    /// Developer Mode is off on the device: Xcode won't build for it, devicectl won't install.
+    case developerModeDisabled
     case maxAppsReached
     case encryptedIPA
     case invalidIPA(String)
@@ -36,6 +38,7 @@ public enum XSideError: Error, Equatable, Sendable {
         case .appIDLimitReached: "appIDLimitReached"
         case .deviceUnavailable: "deviceUnavailable"
         case .deviceLocked: "deviceLocked"
+        case .developerModeDisabled: "developerModeDisabled"
         case .maxAppsReached: "maxAppsReached"
         case .encryptedIPA: "encryptedIPA"
         case .invalidIPA: "invalidIPA"

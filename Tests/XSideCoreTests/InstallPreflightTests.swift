@@ -12,6 +12,14 @@ struct InstallPreflightTests {
         #expect(InstallPreflight.compare("26.1", "18.6.2") == .orderedDescending)
     }
 
+    @Test func developerModeOffComesAloneForThatDevice() {
+        let off = InstallPreflight.Target(deviceID: "a", osVersion: "17.0", otherApps: ["x", "y", "z"], hasThisApp: false,
+                                          developerModeEnabled: false)
+        let unknown = InstallPreflight.Target(deviceID: "b", osVersion: "18.2", otherApps: [], hasThisApp: false)
+        let warnings = InstallPreflight.check(minimumOS: "18.0", targets: [off, unknown], needsNewAppID: false, appIDsRemaining: 10)
+        #expect(warnings == [.developerModeOff(deviceID: "a")])
+    }
+
     @Test func flagsAnIOSTooOld() {
         let warnings = InstallPreflight.check(minimumOS: "18.0", targets: [target("a", os: "17.5"), target("b", os: "18.2")],
                                               needsNewAppID: false, appIDsRemaining: 10)

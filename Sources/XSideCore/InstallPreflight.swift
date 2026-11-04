@@ -1,8 +1,8 @@
 import Foundation
 
-/// What can be told before an install starts, instead of after it fails: an iOS too old for the
-/// app, no App ID left this week, a device already holding its 3 apps. Warnings only: Apple
-/// decides in the end (the App ID count is an estimate, apps installed outside XSide aren't known).
+/// What can be told before an install starts, instead of after it fails: Developer Mode off,
+/// an iOS too old for the app, no App ID left this week, a device already holding its 3 apps.
+/// Warnings only, except Developer Mode (Xcode refuses the device outright): Apple decides in the end (the App ID count is an estimate, apps installed outside XSide aren't known).
 public enum InstallPreflight {
     /// Free accounts run at most 3 sideloaded apps per device.
     public static let appsPerDevice = 3
@@ -14,9 +14,13 @@ public enum InstallPreflight {
         public let otherApps: [String]
         /// This app is already there: reinstalling doesn't take a new slot.
         public let hasThisApp: Bool
+        /// From devicectl; nil when it doesn't say (then nothing is assumed).
+        public let developerModeEnabled: Bool?
 
-        public init(deviceID: String, osVersion: String?, otherApps: [String], hasThisApp: Bool) {
+        public init(deviceID: String, osVersion: String?, otherApps: [String], hasThisApp: Bool,
+                    developerModeEnabled: Bool? = nil) {
             self.deviceID = deviceID
+            self.developerModeEnabled = developerModeEnabled
             self.osVersion = osVersion
             self.otherApps = otherApps
             self.hasThisApp = hasThisApp
@@ -24,6 +28,8 @@ public enum InstallPreflight {
     }
 
     public enum Warning: Equatable, Sendable {
+        /// Developer Mode is off on the device: nothing can be installed there until it's on.
+        case developerModeOff(deviceID: String)
         /// The device runs an iOS older than the app needs.
         case iOSTooOld(deviceID: String, required: String, actual: String)
         /// Already 3 XSide apps on the device: one has to go first.
@@ -39,6 +45,10 @@ public enum InstallPreflight {
                              appIDsRemaining: Int?) -> [Warning] {
         var warnings: [Warning] = []
         for target in targets {
+            if target.developerModeEnabled == false {
+                warnings.append(.developerModeOff(deviceID: target.deviceID))
+                continue // the other checks wait until the device can take an app at all
+            }
             if let minimumOS, let os = target.osVersion, compare(os, minimumOS) == .orderedAscending {
                 warnings.append(.iOSTooOld(deviceID: target.deviceID, required: minimumOS, actual: os))
             }

@@ -21,6 +21,8 @@ ERROR: The device is not able to fulfill the requested usage assertion requireme
         #expect(Installer.mapError(unreachable) == .deviceUnavailable)
         #expect(Installer.mapError("ERROR: Unable to install: the device is locked.") == .deviceLocked)
         #expect(Installer.mapError("ERROR: Please enter the passcode on the device") == .deviceLocked)
+        #expect(Installer.mapError("ERROR: The device rejected the install.\n  Developer Mode is disabled on this device.")
+                == .developerModeDisabled)
         #expect(Installer.mapError("ERROR: Maximum number of apps for free development profiles has been reached") == .maxAppsReached)
         #expect(Installer.mapError("ERROR: You cannot install more than 3 apps") == .maxAppsReached)
         #expect(Installer.mapError("ERROR: Boom happened\n  detail") == .installFailed("Boom happened"))

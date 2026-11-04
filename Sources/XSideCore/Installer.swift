@@ -71,6 +71,7 @@ public struct Installer: Sendable {
         if texts.contains(where: { t in ["maximum number of apps", "maximum number of installed apps", "3 apps", "three apps"].contains { t.contains($0) } }) {
             return .maxAppsReached
         }
+        if texts.contains(where: { $0.contains("developer mode") }) { return .developerModeDisabled }
         if texts.contains(where: { $0.contains("passcode") }) { return .deviceLocked }
         if texts.contains(where: { t in ["is locked", "device locked", "locked device", "while locked"].contains { t.contains($0) } }) {
             return .deviceLocked

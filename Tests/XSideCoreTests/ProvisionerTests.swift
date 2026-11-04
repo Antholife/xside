@@ -183,6 +183,17 @@ private final class Box: @unchecked Sendable {
         #expect(try FileManager.default.contentsOfDirectory(atPath: work.path).isEmpty)
     }
 
+    @Test func mapsDeveloperModeDisabled() {
+        // What xcodebuild printed for an iPhone with Developer Mode off (2026-11-04).
+        let output = """
+            xcodebuild: error: Timed out waiting for all destinations matching the provided destination specifier to become available
+
+            \tDestinations compatible with the "XSideTemplate" scheme:
+            \t\t{ platform:iOS, arch:arm64, id:0000, name:iPhone, error:Developer Mode disabled To use iPhone for development, enable Developer Mode in Settings → Privacy & Security. }
+            """
+        #expect(Provisioner.mapError(output) == .developerModeDisabled)
+    }
+
     @Test func mapsKnownErrors() {
         #expect(Provisioner.mapError("error: No Accounts: Add a new account in Accounts settings.") == .xcodeNotSignedIn)
         #expect(Provisioner.mapError("""

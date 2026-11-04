@@ -1070,7 +1070,8 @@ final class AppModel {
                 // Under another bundle id, it's installed beside the old one: a slot of its own.
                 hasThisApp: existing?.installations.contains {
                     $0.deviceID == id && ($0.signedBundleID ?? existing?.signedBundleID) == signedID
-                } ?? false)
+                } ?? false,
+                developerModeEnabled: device.developerModeEnabled)
         }
         #if DEBUG
         // Debug-only: XSIDE_FAKE_PREFLIGHT=1 shows every warning, on the first selected device.
