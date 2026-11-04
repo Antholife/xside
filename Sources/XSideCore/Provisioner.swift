@@ -143,6 +143,8 @@ public struct Provisioner: Sendable {
         }
         // xcodebuild waits for the device, times out, then lists it with this reason.
         if lower.contains("developer mode disabled") { return .developerModeDisabled }
+        // Preparing a device for development (first time, or after an update) needs it unlocked.
+        if lower.contains("needs to be unlocked") || lower.contains("please unlock the device") { return .deviceLocked }
         let errors = errorLines(output)
         for line in errors {
             let l = line.lowercased()

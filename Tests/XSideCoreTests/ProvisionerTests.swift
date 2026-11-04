@@ -192,6 +192,12 @@ private final class Box: @unchecked Sendable {
             \t\t{ platform:iOS, arch:arm64, id:0000, name:iPhone, error:Developer Mode disabled To use iPhone for development, enable Developer Mode in Settings → Privacy & Security. }
             """
         #expect(Provisioner.mapError(output) == .developerModeDisabled)
+        // Same wait, with a locked device (2026-11-04).
+        let locked = """
+            xcodebuild: error: Timed out waiting for all destinations matching the provided destination specifier to become available
+            \t\t{ platform:iOS, arch:arm64, id:0000, name:iPhone, error:iPhone needs to be unlocked to enable development services Please unlock the device. }
+            """
+        #expect(Provisioner.mapError(locked) == .deviceLocked)
     }
 
     @Test func mapsKnownErrors() {
