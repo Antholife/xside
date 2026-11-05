@@ -39,10 +39,16 @@ cp App/Resources/MenuBarIcon.pdf App/Resources/AppIcon.icns App/Resources/GitHub
 cp -R Resources/ProvisioningTemplate "$APP/Contents/Resources/ProvisioningTemplate"
 # The welcome popup's iOS library (see App/Welcome): signed again by XSide at each install.
 if xcrun -sdk iphoneos --show-sdk-path >/dev/null 2>&1; then
+    # Its logo, compiled in (no file to add to the app): the app icon at 180 px.
+    WELCOME_GEN="$(mktemp -d)"
+    sips -Z 180 docs/assets/icon.png --out "$WELCOME_GEN/icon.png" >/dev/null
+    (cd "$WELCOME_GEN" && xxd -i -n XSWelcomeIcon icon.png > XSideWelcomeIcon.h)
     xcrun -sdk iphoneos clang -dynamiclib -arch arm64 -mios-version-min=15.0 -fobjc-arc -O2 \
-        -framework UIKit -framework Foundation \
+        -I "$WELCOME_GEN" \
+        -framework UIKit -framework Foundation -framework QuartzCore -framework CoreGraphics \
         -install_name @executable_path/Frameworks/XSideWelcome.dylib \
         -o "$APP/Contents/Resources/XSideWelcome.dylib" App/Welcome/XSideWelcome.m
+    rm -rf "$WELCOME_GEN"
 else
     echo "warning: no iOS SDK, building without the welcome popup library" >&2
 fi
