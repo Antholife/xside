@@ -140,6 +140,10 @@
 "settings.notifications" = "Notifications";
 "settings.afterInstall" = "Installs and devices";
 "settings.afterInstall.footer" = "The first two are defaults: each install can change them in its Options.";
+"settings.refreshDaysBefore" = "Refresh apps";
+"settings.refreshDaysBefore.note" = "Earlier gives more room when your Mac is often off. Apps always get 7 more days.";
+"settings.refreshDaysBefore.one" = "%d day before they expire";
+"settings.refreshDaysBefore.many" = "%d days before they expire";
 "settings.openAppAfterInstall" = "Open the app on the device after an install";
 "settings.openAppAfterInstall.note" = "Also lets XSide know whether the device trusts the developer.";
 "settings.openTrustSettings" = "Open the Trust page on the device";

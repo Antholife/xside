@@ -82,6 +82,16 @@ struct PlannerTests {
                                        threshold: RefreshPlanner.threshold(debugDays: 7)).count == 1)
     }
 
+    /// Settings > General: 1, 2 (default) or 3 days before expiry; the debug override still wins.
+    @Test func chosenDaysBeforeExpiry() {
+        #expect(RefreshPlanner.threshold(daysBefore: 1, debugDays: 0) == 86_400)
+        #expect(RefreshPlanner.threshold(daysBefore: 3, debugDays: 0) == 3 * 86_400)
+        #expect(RefreshPlanner.threshold(daysBefore: 0, debugDays: 0) == RefreshPlanner.threshold) // unset
+        #expect(RefreshPlanner.threshold(daysBefore: 9, debugDays: 0) == RefreshPlanner.threshold) // not offered
+        #expect(RefreshPlanner.threshold(daysBefore: 3, debugDays: 7) == 7 * 86_400)
+        #expect(RefreshPlanner.daysBeforeChoices == [1, 2, 3])
+    }
+
     @Test func startableSkipsBusyRows() {
         let a = RefreshJob(recordID: UUID(), deviceID: "D1")
         let b = RefreshJob(recordID: UUID(), deviceID: "D1")

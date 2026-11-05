@@ -140,6 +140,10 @@
 "settings.notifications" = "Notifications";
 "settings.afterInstall" = "Installation et appareils";
 "settings.afterInstall.footer" = "Les deux premiers sont les valeurs par défaut : chaque installation peut les changer dans ses Options.";
+"settings.refreshDaysBefore" = "Rafraîchir les apps";
+"settings.refreshDaysBefore.note" = "Plus tôt, c'est plus de marge si ton Mac reste souvent éteint. La validité repart toujours sur 7 jours.";
+"settings.refreshDaysBefore.one" = "%d jour avant l'expiration";
+"settings.refreshDaysBefore.many" = "%d jours avant l'expiration";
 "settings.openAppAfterInstall" = "Ouvrir l'app sur l'appareil après l'installation";
 "settings.openAppAfterInstall.note" = "Permet aussi à XSide de savoir si l'appareil fait confiance au développeur.";
 "settings.openTrustSettings" = "Ouvrir la page « Faire confiance » sur l'appareil";

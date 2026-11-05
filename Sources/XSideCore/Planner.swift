@@ -89,6 +89,16 @@ public enum RefreshPlanner {
         return due.map(\.job)
     }
 
+    /// The days before expiry Settings offers for a refresh.
+    public static let daysBeforeChoices = [1, 2, 3]
+
+    /// Threshold for the chosen days before expiry (Settings > General, one of
+    /// `daysBeforeChoices`; anything else keeps the default). The hidden debug setting wins.
+    public static func threshold(daysBefore: Int, debugDays: Double) -> TimeInterval {
+        if debugDays > 0 && debugDays.isFinite { return debugDays * 86_400 }
+        return daysBeforeChoices.contains(daysBefore) ? TimeInterval(daysBefore) * 86_400 : threshold
+    }
+
     /// Threshold to use given the hidden debug setting (`debugThresholdDays`, in days):
     /// a positive value replaces the default, anything else keeps it.
     public static func threshold(debugDays: Double) -> TimeInterval {

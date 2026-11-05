@@ -143,6 +143,7 @@ private struct SettingsPage: View {
     @AppStorage(AppModel.openTrustSettingsKey) private var openTrustSettings = true
     @AppStorage(AppModel.forgetDeletedAppsKey) private var forgetDeletedApps = true
     @AppStorage(AppModel.deviceReminderKey) private var deviceReminder = true
+    @AppStorage(BackgroundEngine.refreshDaysBeforeKey) private var refreshDaysBefore = 2
     @AppStorage(AppModel.notifyAppRemovedKey) private var notifyAppRemoved = true
     @Environment(\.openWindow) private var openWindow
     @State private var login = LaunchAtLogin()
@@ -182,6 +183,15 @@ private struct SettingsPage: View {
             KeepInDockToggle()
         }
         Section {
+            Picker(selection: $refreshDaysBefore) {
+                ForEach(RefreshPlanner.daysBeforeChoices, id: \.self) { days in
+                    Text(L(days == 1 ? "settings.refreshDaysBefore.one" : "settings.refreshDaysBefore.many", days)).tag(days)
+                }
+            } label: {
+                Text(L("settings.refreshDaysBefore"))
+                Text(L("settings.refreshDaysBefore.note"))
+            }
+            .onChange(of: refreshDaysBefore) { model.onNeedsEvaluation?() }
             Toggle(isOn: $openAppAfterInstall) {
                 Text(L("settings.openAppAfterInstall"))
                 Text(L("settings.openAppAfterInstall.note"))

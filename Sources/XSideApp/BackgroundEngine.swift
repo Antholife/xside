@@ -101,10 +101,12 @@ final class BackgroundEngine {
         })
     }
 
-    /// Default 2 days, or the hidden debug override. Never shown in the UI.
+    /// Settings > General "Refresh … before it expires" (default 2 days), or the hidden debug override.
     static var threshold: TimeInterval {
-        RefreshPlanner.threshold(debugDays: UserDefaults.standard.double(forKey: debugThresholdKey))
+        RefreshPlanner.threshold(daysBefore: UserDefaults.standard.integer(forKey: refreshDaysBeforeKey),
+                                 debugDays: UserDefaults.standard.double(forKey: debugThresholdKey))
     }
+    static let refreshDaysBeforeKey = "refreshDaysBefore"
 
     // MARK: - Triggers
 
