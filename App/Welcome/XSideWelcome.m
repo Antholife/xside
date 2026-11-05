@@ -17,6 +17,10 @@
 static NSString *const XSAnnouncedKey = @"io.github.xside.welcome.announcedExpiry";
 static NSString *const XSRepoURL = @"https://github.com/Antholife/xside";
 static NSString *const XSReminderID = @"io.github.xside.welcome.expiryReminder";
+#ifdef XS_TEST_REMINDER
+// Found by scripts/release.sh, which refuses to ship a test build.
+__attribute__((used)) static const char XSTestBuildMarker[] = "XSIDE_TEST_REMINDER_BUILD";
+#endif
 static const int XSMaxAttempts = 10;
 
 /// ExpirationDate of the app's own embedded.mobileprovision (a CMS blob around an XML plist).

@@ -15,10 +15,20 @@ PLIST_VERSION="$(plutil -extract CFBundleShortVersionString raw App/Info.plist)"
 [ "$VERSION" = "$PLIST_VERSION" ] || { echo "App/Info.plist says $PLIST_VERSION, not $VERSION" >&2; exit 1; }
 # Untracked files count too: SwiftPM builds every file under Sources/.
 [ -z "$(git status --porcelain)" ] || { echo "Commit first (untracked files too): the build is stamped with the commit" >&2; exit 1; }
-grep -q "<sparkle:shortVersionString>$TAG<" appcast.xml 2>/dev/null && { echo "$TAG is already in appcast.xml" >&2; exit 1; }
+# Sparkle shows the plain version ("1.0.5"), the beta channel marks it: "XSide 1.0.5-beta is
+# available, you have 1.0.4" read oddly. The title keeps the tag.
+grep -q "<title>XSide $TAG<" appcast.xml 2>/dev/null && { echo "$TAG is already in appcast.xml" >&2; exit 1; }
 
+# Never the test reminder (a minute after launch) in a release, whatever the shell exports.
+unset XSIDE_TEST_REMINDER
 CONFIG=release scripts/bundle.sh
 APP=build/XSide.app
+# Every app gets XSide's features through this library: no release without it, nor a test build of it.
+WELCOME="$APP/Contents/Resources/XSideWelcome.dylib"
+[ -f "$WELCOME" ] || { echo "No $WELCOME (iOS SDK missing?): not releasing without it" >&2; exit 1; }
+if strings -a "$WELCOME" | grep -q XSIDE_TEST_REMINDER_BUILD; then
+    echo "$WELCOME is a test build (XSIDE_TEST_REMINDER): not releasing it" >&2; exit 1
+fi
 ZIP="build/release/XSide-$TAG.zip"
 mkdir -p build/release
 rm -f "$ZIP"
@@ -40,7 +50,7 @@ ITEM="    <item>
       <title>XSide $TAG</title>
       <pubDate>$DATE</pubDate>
       <sparkle:version>$BUILD</sparkle:version>
-      <sparkle:shortVersionString>$TAG</sparkle:shortVersionString>$CHANNEL
+      <sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>$CHANNEL
       <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
       <description><![CDATA[$NOTES_HTML]]></description>
       <sparkle:fullReleaseNotesLink>https://github.com/Antholife/xside/releases</sparkle:fullReleaseNotesLink>
