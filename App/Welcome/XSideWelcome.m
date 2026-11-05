@@ -102,6 +102,20 @@ static NSString *XSAppName(void) {
     return XSFrench() ? @"L'app" : @"The app";
 }
 
+/// XSide added its section to the app's page in the iOS Settings app (keys "io.github.xside.settings.*").
+static BOOL XSHasSettingsSection(void) {
+    NSString *path = [NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"Settings.bundle/Root.plist"];
+    NSDictionary *root = [NSDictionary dictionaryWithContentsOfFile:path];
+    id items = root[@"PreferenceSpecifiers"];
+    if (![items isKindOfClass:NSArray.class]) return NO;
+    for (id item in items) {
+        if (![item isKindOfClass:NSDictionary.class]) continue;
+        id key = item[@"Key"];
+        if ([key isKindOfClass:NSString.class] && [key hasPrefix:@"io.github.xside.settings."]) return YES;
+    }
+    return NO;
+}
+
 static UIImage *XSIcon(void) {
 #ifdef XS_HAS_ICON
     return [UIImage imageWithData:[NSData dataWithBytesNoCopy:(void *)XSWelcomeIcon
@@ -182,6 +196,29 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
     NSInteger days = (NSInteger)ceil(left / 86400);
     if (days == 1) return [self t:@"1 jour" en:@"1 day"];
     return [NSString stringWithFormat:[self t:@"%ld jours" en:@"%ld days"], (long)days];
+}
+
+/// "⚙️ These details stay in Settings > <App>".
+- (UIView *)settingsHint {
+    UIImageView *gear = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"gearshape.fill"]];
+    gear.tintColor = XSViolet();
+    gear.contentMode = UIViewContentModeScaleAspectFit;
+    NSString *path = [NSString stringWithFormat:[self t:@"Réglages > %@" en:@"Settings > %@"], XSAppName()];
+    NSString *text = [NSString stringWithFormat:[self t:@"Ces infos restent dans %@" en:@"These details stay in %@"], path];
+    NSMutableAttributedString *styled = [[NSMutableAttributedString alloc] initWithString:text attributes:@{
+        NSFontAttributeName: [UIFont systemFontOfSize:13], NSForegroundColorAttributeName: UIColor.secondaryLabelColor}];
+    [styled addAttributes:@{NSFontAttributeName: [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold],
+                            NSForegroundColorAttributeName: UIColor.labelColor}
+                    range:[text rangeOfString:path]];
+    UILabel *label = [UILabel new];
+    label.attributedText = styled;
+    label.numberOfLines = 0;
+    UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[gear, label]];
+    row.spacing = 8;
+    row.alignment = UIStackViewAlignmentCenter;
+    [gear.widthAnchor constraintEqualToConstant:16].active = YES;
+    [gear.heightAnchor constraintEqualToConstant:16].active = YES;
+    return row;
 }
 
 /// "Get a reminder before it expires": a tinted card with a bell in the brand gradient.
@@ -266,6 +303,9 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
 
     UIView *until = [self line:[self t:@"Valable jusqu'au" en:@"Valid until"] value:XSDate(_expiry)];
     UIView *left = [self line:[self t:@"Encore" en:@"Time left"] value:[self daysLeft]];
+    // Where to find this again later.
+    UIView *where = [self settingsHint];
+    where.hidden = !XSHasSettingsSection();
 
     XSGradientButton *ok = [XSGradientButton buttonWithType:UIButtonTypeCustom];
     [ok setTitle:@"OK" forState:UIControlStateNormal];
@@ -290,10 +330,11 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
         });
     }];
 
-    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[head, until, left, notice, ok, github]];
+    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[head, until, left, where, notice, ok, github]];
     stack.axis = UILayoutConstraintAxisVertical;
     [stack setCustomSpacing:16 afterView:head];
     [stack setCustomSpacing:10 afterView:left];
+    [stack setCustomSpacing:12 afterView:where];
     [stack setCustomSpacing:14 afterView:notice];
     [stack setCustomSpacing:4 afterView:ok];
 
