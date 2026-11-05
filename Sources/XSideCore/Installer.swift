@@ -40,6 +40,32 @@ public struct Installer: Sendable {
         }
     }
 
+    /// Whether the app signed as `bundleID` is on the device. Nil when devicectl fails or its
+    /// output can't be read: never a guess, a "false" makes XSide forget the app there.
+    public func isInstalled(bundleID: String, deviceID: String) async -> Bool? {
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("xside-apps-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        guard let result = try? await runner.run(
+            "/usr/bin/xcrun",
+            ["devicectl", "device", "info", "apps", "--device", deviceID, "--bundle-id", bundleID,
+             "--json-output", file.path],
+            cwd: nil, timeout: CommandTimeout.deviceQuery),
+              result.status == 0,
+              let data = try? Data(contentsOf: file),
+              let ids = Self.installedBundleIDs(data) else { return nil }
+        return ids.contains(bundleID)
+    }
+
+    /// The bundle ids in `devicectl device info apps --json-output` (`result.apps[].bundleIdentifier`),
+    /// nil when it isn't that shape.
+    static func installedBundleIDs(_ json: Data) -> [String]? {
+        guard let root = try? JSONSerialization.jsonObject(with: json) as? [String: Any],
+              let result = root["result"] as? [String: Any],
+              let apps = result["apps"] as? [[String: Any]] else { return nil }
+        return apps.compactMap { $0["bundleIdentifier"] as? String }
+    }
+
     /// Maps the output of a failed uninstall: nil when it says the app isn't on the device (the
     /// goal is reached), else the same errors as an install, `uninstallFailed` for a message.
     /// Like `mapError`, only error blocks are read, so an app named "Not Installed" is no cause.

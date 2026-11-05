@@ -111,6 +111,7 @@
 "error.deviceUnavailable" = "The device can't be found. Unlock it, plug it in with USB or join the same Wi-Fi network.";
 "error.deviceLocked" = "The device is locked. Unlock it and try again.";
 "error.developerModeDisabled" = "Developer Mode is off on this device. Turn it on in Settings > Privacy & Security > Developer Mode (the device restarts), then try again.";
+"error.appRemovedFromDevice" = "The app was deleted from this device: XSide stopped refreshing it there.";
 "error.maxAppsReached" = "This device already has 3 apps installed with a free account. Delete one to continue.";
 "error.encryptedIPA" = "App Store IPAs are encrypted and can't be installed.";
 "error.invalidIPA" = "This file isn't a valid app. Choose an .ipa file.\nReason: %@";
@@ -126,6 +127,8 @@
 
 "notification.refreshed.title" = "%@ refreshed";
 "notification.refreshed.body" = "On %@ · valid until %@";
+"notification.appRemoved.title" = "%@ is no longer refreshed";
+"notification.appRemoved.body" = "It was deleted from %@, so XSide removed it from its list. Install it again to bring it back.";
 "notification.refreshed.genericDevice" = "your device";
 "settings.notifications" = "Notifications";
 "settings.notifyRefreshSuccess" = "Notify me when a refresh succeeds";

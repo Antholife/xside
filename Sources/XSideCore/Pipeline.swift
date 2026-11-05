@@ -20,6 +20,12 @@ public protocol Resigning: Sendable {
 public protocol Installing: Sendable {
     func install(app: URL, deviceID: String) async throws
     func uninstall(bundleID: String, deviceID: String) async throws
+    /// Whether the app signed as `bundleID` is on the device; nil when that can't be told.
+    func isInstalled(bundleID: String, deviceID: String) async -> Bool?
+}
+
+extension Installing {
+    public func isInstalled(bundleID: String, deviceID: String) async -> Bool? { nil }
 }
 
 extension Provisioner: Provisioning {}
@@ -314,6 +320,15 @@ public actor SideloadPipeline {
             let icon = try record.options.iconPath.flatMap { $0.isEmpty ? nil : try resolve($0) }
             try fm.createDirectory(at: workDir, withIntermediateDirectories: true)
 
+            // Deleted from the device (home screen): a refresh would put it back. Checked before
+            // any profile, so no App ID is spent. Only a sure "not there" counts.
+            if refresh, previous != nil,
+               await installer.isInstalled(bundleID: bundleID, deviceID: device.id) == false {
+                Self.logger.notice("\(what): no longer on the device, forgotten there")
+                _ = try? await library.removeInstallation(recordID: recordID, deviceID: device.id)
+                throw XSideError.appRemovedFromDevice
+            }
+
             // Reported once the lock is held: a job queued behind another provisioning is still waiting.
             let (current, provisioned) = try await provisioningLock.run { [provisioner] in
                 try Task.checkCancellation()
@@ -377,6 +392,8 @@ public actor SideloadPipeline {
             // Not this row's failure: no attempt recorded, so the refresh runs once it's fixed.
             Self.logger.error("\(what): environment unavailable: \(unavailable.underlying)")
             throw unavailable.underlying
+        } catch XSideError.appRemovedFromDevice {
+            throw XSideError.appRemovedFromDevice // nothing to record: the installation is gone
         } catch where error is CancellationError || Task.isCancelled {
             // Stopped by the user (or the app): not a failure of the row. Nothing is recorded, so
             // no error is shown and no retry delay applies; the installation stays as it was.

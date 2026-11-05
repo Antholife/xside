@@ -28,6 +28,8 @@ public enum XSideError: Error, Equatable, Sendable {
     case timedOut(tool: String)
     /// A bundle identifier XSide can't sign with (custom one, or an import's default too long).
     case invalidBundleID(String)
+    /// A refresh found the app gone from the device (deleted there): XSide stopped managing it.
+    case appRemovedFromDevice
 
     /// Case name without payload, used to deduplicate notifications.
     public var key: String {
@@ -52,6 +54,7 @@ public enum XSideError: Error, Equatable, Sendable {
         case .xcodeNeedsBetaForMac: "xcodeNeedsBetaForMac"
         case .timedOut: "timedOut"
         case .invalidBundleID: "invalidBundleID"
+        case .appRemovedFromDevice: "appRemovedFromDevice"
         }
     }
 }

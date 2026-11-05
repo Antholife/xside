@@ -243,6 +243,22 @@ final class Notifier: NSObject {
         }
     }
 
+    /// The app was deleted from the device, so XSide stopped managing it there.
+    func appRemoved(appName: String, deviceName: String, id: String) async {
+        let content = UNMutableNotificationContent()
+        content.title = L("notification.appRemoved.title", appName)
+        content.body = L("notification.appRemoved.body", deviceName)
+        guard let center else {
+            Self.logger.notice("would notify: \(content.title)")
+            return
+        }
+        do {
+            try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+        } catch {
+            Self.logger.error("notification failed: \(String(describing: error))")
+        }
+    }
+
     // MARK: Expiry reminders
 
     /// Schedules (or replaces) the reminder of one installation: delivered by macOS 24 h before

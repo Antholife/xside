@@ -111,6 +111,7 @@
 "error.deviceUnavailable" = "L'appareil est introuvable. Déverrouille-le, branche-le en USB ou connecte-le au même Wi-Fi.";
 "error.deviceLocked" = "L'appareil est verrouillé. Déverrouille-le puis réessaie.";
 "error.developerModeDisabled" = "Le mode développeur est désactivé sur cet appareil. Active-le dans Réglages > Confidentialité et sécurité > Mode développeur (l'appareil redémarre), puis réessaie.";
+"error.appRemovedFromDevice" = "L'app a été supprimée de cet appareil : XSide ne la rafraîchit plus dessus.";
 "error.maxAppsReached" = "Cet appareil a déjà 3 apps installées avec un compte gratuit. Supprimes-en une pour continuer.";
 "error.encryptedIPA" = "Les IPA de l'App Store sont chiffrés et ne peuvent pas être installés.";
 "error.invalidIPA" = "Ce fichier n'est pas une app valide. Choisis un fichier .ipa.\nRaison : %@";
@@ -126,6 +127,8 @@
 
 "notification.refreshed.title" = "%@ rafraîchie";
 "notification.refreshed.body" = "Sur %@ · valable jusqu'au %@";
+"notification.appRemoved.title" = "%@ n'est plus rafraîchie";
+"notification.appRemoved.body" = "Elle a été supprimée de %@ : XSide l'a retirée de sa liste. Réinstalle-la pour la retrouver.";
 "notification.refreshed.genericDevice" = "ton appareil";
 "settings.notifications" = "Notifications";
 "settings.notifyRefreshSuccess" = "Me prévenir quand un rafraîchissement réussit";

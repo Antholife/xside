@@ -7,6 +7,8 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 ### Added
 - The install window's device tiles say what stops an install there: "Developer Mode off", or "Unlock it" after an attempt failed on a locked device.
 
+- An app deleted from the device (home screen) is no longer put back by the next refresh: XSide sees it's gone, removes it from its list for that device, drops its expiry reminder and says so in a notification.
+
 ### Fixed
 - A device with Developer Mode off: the install window says so and how to turn it on, and doesn't start an install that can only fail. If it fails anyway, the message says Developer Mode is off instead of "Couldn't create the provisioning profile".
 - A device out of reach during an uninstall (CoreDevice error 1011) is reported as unreachable, not as a failed uninstall.

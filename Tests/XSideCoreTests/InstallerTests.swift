@@ -151,3 +151,57 @@ ERROR: The device is not able to fulfill the requested usage assertion requireme
         }
     }
 }
+
+/// devicectl's `device info apps --json-output` shape (trimmed): `result.apps[].bundleIdentifier`.
+private func appsJSON(_ ids: [String]) -> String {
+    let apps = ids.map { #"{"bundleIdentifier":"\#($0)","name":"App","removable":true}"# }.joined(separator: ",")
+    return #"{"info":{"outcome":"success"},"result":{"apps":[\#(apps)],"defaultAppsIncluded":false}}"#
+}
+
+/// Stubs `devicectl device info apps`: writes `json` to the --json-output path, exits `status`.
+private func stubApps(_ runner: FakeRunner, json: String?, status: Int32 = 0) {
+    runner.stub("/usr/bin/xcrun", result: CommandResult(status: status, stdout: Data(), stderr: "")) { args in
+        guard let json, let i = args.firstIndex(of: "--json-output"), i + 1 < args.count else { return }
+        try? Data(json.utf8).write(to: URL(fileURLWithPath: args[i + 1]))
+    }
+}
+
+@Suite struct InstalledCheckTests {
+    @Test func parsesTheBundleIDs() {
+        #expect(Installer.installedBundleIDs(Data(appsJSON(["a.b.TEAM", "c.d"]).utf8)) == ["a.b.TEAM", "c.d"])
+        #expect(Installer.installedBundleIDs(Data(appsJSON([]).utf8)) == [])
+    }
+
+    @Test func unreadableOutputIsUnknown() {
+        #expect(Installer.installedBundleIDs(Data("nope".utf8)) == nil)
+        #expect(Installer.installedBundleIDs(Data(#"{"result":{}}"#.utf8)) == nil)
+    }
+
+    @Test func asksDevicectlForThatApp() async throws {
+        let runner = FakeRunner()
+        stubApps(runner, json: appsJSON(["com.x.TEAM"]))
+        #expect(await Installer(runner: runner).isInstalled(bundleID: "com.x.TEAM", deviceID: "DEV") == true)
+        let call = try #require(runner.calls.first)
+        #expect(Array(call.prefix(9)) == ["/usr/bin/xcrun", "devicectl", "device", "info", "apps",
+                                         "--device", "DEV", "--bundle-id", "com.x.TEAM"])
+        #expect(call.contains("--json-output"))
+    }
+
+    @Test func missingFromTheListIsNotInstalled() async {
+        let runner = FakeRunner()
+        stubApps(runner, json: appsJSON([]))
+        #expect(await Installer(runner: runner).isInstalled(bundleID: "com.x.TEAM", deviceID: "DEV") == false)
+    }
+
+    /// Never a guess: a failed or unreadable query must not make XSide forget an app.
+    @Test func failedQueryIsUnknown() async {
+        let failing = FakeRunner()
+        stubApps(failing, json: appsJSON([]), status: 1)
+        #expect(await Installer(runner: failing).isInstalled(bundleID: "com.x.TEAM", deviceID: "DEV") == nil)
+        let garbled = FakeRunner()
+        stubApps(garbled, json: "{}")
+        #expect(await Installer(runner: garbled).isInstalled(bundleID: "com.x.TEAM", deviceID: "DEV") == nil)
+        let thrown = FakeRunner() // no stub: the runner throws
+        #expect(await Installer(runner: thrown).isInstalled(bundleID: "com.x.TEAM", deviceID: "DEV") == nil)
+    }
+}

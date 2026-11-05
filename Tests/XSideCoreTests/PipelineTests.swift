@@ -93,6 +93,9 @@ private struct FakeInstaller: Installing {
     var delay: Duration = .zero
     /// When set, each call waits (bounded) until this many calls are in flight together.
     var rendezvous: Int?
+    /// What `isInstalled` answers (nil: unknown, like a failed query).
+    var installed: Bool?
+    func isInstalled(bundleID: String, deviceID: String) async -> Bool? { installed }
     func install(app: URL, deviceID: String) async throws {
         await gauge?.enter()
         if let rendezvous { await gauge?.rendezvous(rendezvous) }
@@ -514,6 +517,37 @@ struct PipelineTests {
         let result = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
         #expect(result.expiresAt == expiry)
         #expect(result.lastErrorKey == nil)
+    }
+
+    @Test func refreshOfAnAppDeletedFromTheDeviceForgetsItThere() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        try await f.library.upsert(Installation(deviceID: "dev-1", installedAt: fixedNow,
+                                                expiresAt: expiry.addingTimeInterval(-1)), for: f.record.id)
+        let pipeline = f.pipeline(installer: FakeInstaller(log: f.log, installed: false))
+        await #expect(throws: XSideError.appRemovedFromDevice) {
+            _ = try await pipeline.install(recordID: f.record.id, device: device(), env: env, refresh: true)
+        }
+        #expect(try #require(await f.library.records().first).installations.isEmpty)
+        #expect(await f.log.total == 0) // no profile (no App ID spent), nothing reinstalled
+    }
+
+    @Test func refreshWhenPresenceIsUnknownGoesOn() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        try await f.library.upsert(Installation(deviceID: "dev-1", installedAt: fixedNow,
+                                                expiresAt: expiry.addingTimeInterval(-1)), for: f.record.id)
+        let pipeline = f.pipeline(installer: FakeInstaller(log: f.log, installed: nil))
+        let result = try await pipeline.install(recordID: f.record.id, device: device(), env: env, refresh: true)
+        #expect(result.expiresAt == expiry)
+    }
+
+    /// Installing again (install window) puts it back on the device: nothing is checked.
+    @Test func reinstallDoesNotCheckPresence() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        try await f.library.upsert(Installation(deviceID: "dev-1", installedAt: fixedNow,
+                                                expiresAt: expiry.addingTimeInterval(-1)), for: f.record.id)
+        let pipeline = f.pipeline(installer: FakeInstaller(log: f.log, installed: false))
+        let result = try await pipeline.install(recordID: f.record.id, device: device(), env: env)
+        #expect(result.expiresAt == expiry)
     }
 
     @Test func reinstallingAPausedAppManagesItAgain() async throws {

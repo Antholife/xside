@@ -1297,6 +1297,9 @@ final class AppModel {
         } catch {
             await reloadRecords()
             onJobFinished?(job, error, automatic, wasRefresh)
+            // Deleted from the device: the pipeline dropped the installation; its reminder and
+            // notification state go too (after the notification above, which reads the record).
+            if error as? XSideError == .appRemovedFromDevice { await installationRemoved(key) }
             throw error
         }
         await reloadRecords()

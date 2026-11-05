@@ -400,6 +400,16 @@ final class BackgroundEngine {
         }
         // Cancelled by the user: nothing failed, nothing to report.
         if error is CancellationError { return }
+        // Deleted from the device: XSide forgot it there (see `AppModel.run`); say so, once.
+        if error as? XSideError == .appRemovedFromDevice {
+            let name = model.records.first { $0.id == job.recordID }.map(Self.appName) ?? "XSide"
+            let device = deviceName(job.deviceID)
+            Task { [notifier] in
+                await notifier.appRemoved(appName: name, deviceName: device,
+                                          id: "removed.\(job.recordID.uuidString).\(job.deviceID)")
+            }
+            return
+        }
         // Manual actions show their error in the UI; only background failures notify.
         guard automatic else { return }
         // The environment broke while the job waited: `reportEnvironment` notifies it, once.
