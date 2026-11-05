@@ -420,7 +420,7 @@
 "install.empty.choose" = "Choose an .ipa…";
 "preflight.title" = "Before you install";
 "preflight.title.note" = "Good to know";
-"install.keychain.what" = "Lets this app share sign-ins with the same publisher's other apps installed by XSide (e.g. stay signed in across Google apps). When off, it keeps its own.";
+"install.keychain.what" = "Lets this app share sign-ins with the same publisher's other apps installed by XSide (e.g. stay signed in across Google apps). If signing in fails or the app misbehaves (\"can't sign in\", \"app not verified\"), turn it on. When off, it keeps its own.";
 "install.keychain.risk" = "Only for an IPA you trust: a modified app could read the other apps' sign-ins.";
 "install.installOn" = "Install on";
 "install.device.developerModeOff" = "Developer Mode off";
