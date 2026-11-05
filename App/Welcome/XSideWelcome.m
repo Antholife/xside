@@ -96,8 +96,10 @@ static NSString *XSDate(NSDate *date) {
 }
 
 static NSString *XSAppName(void) {
+    // The name shown on the home screen and in Settings: the localized one first.
+    NSDictionary *localized = NSBundle.mainBundle.localizedInfoDictionary;
     NSDictionary *info = NSBundle.mainBundle.infoDictionary;
-    NSString *name = info[@"CFBundleDisplayName"] ?: info[@"CFBundleName"];
+    NSString *name = localized[@"CFBundleDisplayName"] ?: info[@"CFBundleDisplayName"] ?: localized[@"CFBundleName"] ?: info[@"CFBundleName"];
     if ([name isKindOfClass:NSString.class] && name.length) return name;
     return XSFrench() ? @"L'app" : @"The app";
 }
@@ -203,7 +205,10 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
     UIImageView *gear = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"gearshape.fill"]];
     gear.tintColor = XSViolet();
     gear.contentMode = UIViewContentModeScaleAspectFit;
-    NSString *path = [NSString stringWithFormat:[self t:@"Réglages > %@" en:@"Settings > %@"], XSAppName()];
+    // iOS 18 moved apps' pages under Settings > Apps.
+    BOOL apps = [NSProcessInfo.processInfo isOperatingSystemAtLeastVersion:(NSOperatingSystemVersion){18, 0, 0}];
+    NSString *path = apps ? [NSString stringWithFormat:[self t:@"Réglages > Apps > %@" en:@"Settings > Apps > %@"], XSAppName()]
+                          : [NSString stringWithFormat:[self t:@"Réglages > %@" en:@"Settings > %@"], XSAppName()];
     NSString *text = [NSString stringWithFormat:[self t:@"Ces infos restent dans %@" en:@"These details stay in %@"], path];
     NSMutableAttributedString *styled = [[NSMutableAttributedString alloc] initWithString:text attributes:@{
         NSFontAttributeName: [UIFont systemFontOfSize:13], NSForegroundColorAttributeName: UIColor.secondaryLabelColor}];
@@ -563,9 +568,11 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded) {
     }
     [center getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings *settings) {
         UNAuthorizationStatus status = settings.authorizationStatus;
+        NSLog(@"[XSide] notifications: status %ld, ask %d, reminder in %.0f s", (long)status, askIfNeeded, wait);
         if (status == UNAuthorizationStatusNotDetermined && askIfNeeded) {
             [center requestAuthorizationWithOptions:UNAuthorizationOptionAlert | UNAuthorizationOptionSound
                                   completionHandler:^(BOOL granted, NSError *error) {
+                NSLog(@"[XSide] notifications: asked, granted %d, error %@", granted, error);
                 if (granted) dispatch_async(dispatch_get_main_queue(), ^{ XSScheduleReminder(expiry, NO); });
             }];
             return;
@@ -580,7 +587,7 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded) {
         content.sound = UNNotificationSound.defaultSound;
         UNTimeIntervalNotificationTrigger *trigger = [UNTimeIntervalNotificationTrigger triggerWithTimeInterval:wait repeats:NO];
         [center addNotificationRequest:[UNNotificationRequest requestWithIdentifier:XSReminderID content:content trigger:trigger]
-                 withCompletionHandler:nil];
+                 withCompletionHandler:^(NSError *error) { NSLog(@"[XSide] reminder scheduled, error %@", error); }];
     }];
 }
 
@@ -593,7 +600,11 @@ __attribute__((constructor)) static void XSideWelcomeInit(void) {
         observer = nil;
         NSDate *expiry = XSExpirationDate();
         if (!expiry) return;
+#ifdef XS_TEST_REMINDER
+        XSScheduleReminder(expiry, YES); // test build: asks at launch too, to try it without a reinstall
+#else
         XSScheduleReminder(expiry, NO);
+#endif
         id announced = [NSUserDefaults.standardUserDefaults objectForKey:XSAnnouncedKey];
         if ([announced isKindOfClass:NSDate.class] && [announced isEqualToDate:expiry]) return;
         XSShow(expiry, [announced isKindOfClass:NSDate.class], 0);
