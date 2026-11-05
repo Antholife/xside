@@ -57,7 +57,7 @@ struct XSideApp: App {
             WhatsNewWindowRoot()
         }
         .windowStyle(.hiddenTitleBar)
-        .windowResizability(.contentSize)
+        .windowResizability(.contentMinSize) // can be made wider (more columns)
         .windowBackgroundDragBehavior(.enabled)
         .defaultPosition(.center)
         .defaultLaunchBehavior(.suppressed)

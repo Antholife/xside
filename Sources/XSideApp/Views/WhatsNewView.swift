@@ -144,7 +144,8 @@ struct WhatsNewWindowRoot: View {
             }
         }
         .id(language)
-        .frame(width: 580)
+        // Resizable: wider gives more columns.
+        .frame(minWidth: 620, idealWidth: 720, maxWidth: 1_200)
         .navigationTitle(L("whatsNew.window"))
     }
 }
@@ -158,14 +159,13 @@ private struct WhatsNewView: View {
     /// Natural height of the content, to size the window to it.
     @State private var contentHeight: CGFloat = 400
 
+    /// Taller notes scroll rather than making a window the height of the screen.
     private static var maxContentHeight: CGFloat {
-        max(300, (NSScreen.main?.visibleFrame.height ?? 800) - 220)
+        min(620, max(300, (NSScreen.main?.visibleFrame.height ?? 800) - 220))
     }
 
     private var featured: ReleaseNotes.Item? { notes.items.first }
     private var others: [ReleaseNotes.Item] { Array(notes.items.dropFirst()) }
-    private var paired: [ReleaseNotes.Item] { others.count.isMultiple(of: 2) ? others : Array(others.dropLast()) }
-    private var lastAlone: ReleaseNotes.Item? { others.count.isMultiple(of: 2) ? nil : others.last }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -175,15 +175,11 @@ private struct WhatsNewView: View {
                     if let featured {
                         FeaturedCard(item: featured).appearing(appeared, index: 0)
                     }
-                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 12, alignment: .top)],
                               alignment: .leading, spacing: 12) {
-                        ForEach(Array(paired.enumerated()), id: \.element.id) { index, item in
+                        ForEach(Array(others.enumerated()), id: \.element.id) { index, item in
                             ItemTile(item: item).appearing(appeared, index: index + 1)
                         }
-                    }
-                    // An odd one out takes the whole width rather than half a row.
-                    if let last = lastAlone {
-                        ItemTile(item: last).appearing(appeared, index: others.count)
                     }
                     ForEach(notes.thanks, id: \.handle) { thanks in
                         ThanksCard(thanks: thanks).appearing(appeared, index: notes.items.count)
