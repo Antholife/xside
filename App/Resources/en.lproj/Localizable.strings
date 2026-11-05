@@ -402,7 +402,7 @@
 /* Logs */
 "settings.pane.reports" = "Reports & Logs";
 "report.title" = "Report a problem";
-"report.subtitle" = "1. The bug form opens on GitHub, already filled in (versions, devices, XSide's state, the last log lines).\n2. The full log (XSide-logs-….zip) is saved on your Desktop: drag it into the form's \"Logs\" field. GitHub can't attach it by itself.\nEverything is masked, and nothing is sent until you submit it on GitHub.";
+"report.subtitle" = "1. The bug form opens on GitHub, already filled in (versions, devices, XSide's state, the last log lines). Your apps aren't named in it.\n2. The full log (XSide-logs-….zip) is saved on your Desktop: drag it into the form's \"Logs\" field if you want. GitHub can't attach it by itself.\nDevice names, serial numbers, account and team are masked everywhere, and nothing is sent until you submit it on GitHub.";
 "logs.title" = "Logs";
 "logs.subtitle" = "What XSide did, step by step. Personal details (e-mail, team, devices) are masked: you can attach the export to a GitHub issue.";
 "logs.show" = "Show";
@@ -532,7 +532,7 @@
 "whatsNew.105.keychain.title" = "Google sign-in fails?";
 "whatsNew.105.keychain.text" = "The \"Shared keychain\" option now says when to turn it on: when the app won't sign you in (\"can't sign in\", \"app not verified\").";
 "whatsNew.105.report.title" = "Report a problem in one click";
-"whatsNew.105.report.text" = "The GitHub form opens already filled in, and the full log waits on your Desktop. Everything is masked. In Settings > Reports & Logs, or with the bug button in the panel.";
+"whatsNew.105.report.text" = "The GitHub form opens already filled in, without naming your apps, and the full log waits on your Desktop. Your personal details are masked. In Settings > Reports & Logs, or with the bug button in the panel.";
 "whatsNew.104.updates.title" = "Updates install by themselves";
 "whatsNew.104.updates.text" = "Turn on Install updates automatically in Settings > Updates: XSide downloads the new version in the background and installs it as soon as nothing runs, then relaunches.";
 "whatsNew.104.cli.title" = "xside in the Terminal";
@@ -553,6 +553,6 @@
 
 /* Report a problem (GitHub issue) */
 "report.button" = "Report a Problem…";
-"report.attach" = "📎 Drag here the XSide-logs-….zip file XSide just saved on your Desktop (the full log). Device names, identifiers and accounts are masked in it.";
+"report.attach" = "📎 Drag here the XSide-logs-….zip file XSide just saved on your Desktop (the full log, with your apps' names). Device names, serial numbers, account and team are masked in it.";
 "report.summary" = "XSide state";
 "report.lastLines" = "Last log lines";

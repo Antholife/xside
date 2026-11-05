@@ -93,9 +93,11 @@ enum Diagnostics {
                 ?? FileManager.default.temporaryDirectory
             let archive = desktop.appendingPathComponent(archiveName)
             let archived = await writeArchive(model: model, to: archive)
+            // Public: apps as <app-N>, as in the summary's "app N".
+            let apps = model.records.map { r in [r.originalBundleID, r.signedBundleID] + r.installations.compactMap(\.signedBundleID) }
             let lastLines = LogStore.shared.files().first
                 .flatMap { try? String(contentsOf: $0, encoding: .utf8) }
-                .map { LogStore.shared.redact(IssueReport.tail($0, lines: 40)) } ?? ""
+                .map { IssueReport.maskApps(LogStore.shared.redact(IssueReport.tail($0, lines: 40)), apps: apps) } ?? ""
             let info = Bundle.main.infoDictionary ?? [:]
             let version = "\(info["CFBundleShortVersionString"] as? String ?? "?") (\(info["CFBundleVersion"] as? String ?? "?"))"
             let os = ProcessInfo.processInfo.operatingSystemVersion
@@ -110,7 +112,7 @@ enum Diagnostics {
 
                 ### \(L("report.summary"))
                 ```
-                \(LogStore.shared.redact(model.diagnosticSummary(header: summary)))
+                \(LogStore.shared.redact(model.diagnosticSummary(header: summary, publicApps: true)))
                 ```
 
                 ### \(L("report.lastLines"))
@@ -138,11 +140,14 @@ extension Device {
 
 extension AppModel {
     /// The state worth knowing for a bug report, redacted by the caller.
-    func diagnosticSummary(header: String) -> String {
+    /// `publicApps`: for the GitHub issue, apps as "app N" (no bundle id, no Xcode path): the
+    /// full detail stays in the archive the person chooses to attach.
+    func diagnosticSummary(header: String, publicApps: Bool = false) -> String {
         var lines = [header, "Exported \(Date().formatted(.iso8601))", ""]
         switch environment {
         case .success(let env)?:
-            lines.append("Environment: OK, Xcode \(env.developerDir.path), team \(env.teamID)")
+            lines.append(publicApps ? "Environment: OK, \(env.developerDir.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent)"
+                                    : "Environment: OK, Xcode \(env.developerDir.path), team \(env.teamID)")
         case .failure(let error)?:
             lines.append("Environment: \(error.key)")
         case nil:
@@ -154,8 +159,9 @@ extension AppModel {
         lines += devices.map { "  \($0.logLine)" }
         lines.append("")
         lines.append("Apps (\(records.count)):")
-        for record in records {
-            lines.append("  \(record.originalBundleID) as \(record.signedBundleID), team \(record.teamID)")
+        for (index, record) in records.enumerated() {
+            lines.append(publicApps ? "  <app-\(index + 1)>"
+                                    : "  \(record.originalBundleID) as \(record.signedBundleID), team \(record.teamID)")
             for i in record.installations {
                 var text = "    on \(i.deviceID): installed \(i.installedAt.formatted(.iso8601)), expires \(i.expiresAt.formatted(.iso8601))"
                 if i.refreshPaused { text += ", paused" }

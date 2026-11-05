@@ -402,7 +402,7 @@
 /* Logs */
 "settings.pane.reports" = "Signalement et journaux";
 "report.title" = "Signaler un problème";
-"report.subtitle" = "1. Le formulaire de bug s'ouvre sur GitHub, déjà rempli (versions, appareils, état d'XSide, dernières lignes du journal).\n2. Le journal complet (XSide-logs-….zip) est enregistré sur ton Bureau : glisse-le dans le champ « Logs » du formulaire. GitHub ne permet pas de le joindre tout seul.\nTout est masqué, et rien n'est envoyé tant que tu ne valides pas sur GitHub.";
+"report.subtitle" = "1. Le formulaire de bug s'ouvre sur GitHub, déjà rempli (versions, appareils, état d'XSide, dernières lignes du journal). Tes apps n'y sont pas nommées.\n2. Le journal complet (XSide-logs-….zip) est enregistré sur ton Bureau : glisse-le dans le champ « Logs » du formulaire si tu veux. GitHub ne permet pas de le joindre tout seul.\nNoms d'appareils, numéros de série, compte et équipe sont masqués partout, et rien n'est envoyé tant que tu ne valides pas sur GitHub.";
 "logs.title" = "Journaux";
 "logs.subtitle" = "Ce que XSide a fait, étape par étape. Tes infos personnelles (e-mail, équipe, appareils) sont masquées : tu peux joindre l'export à une issue GitHub.";
 "logs.show" = "Afficher";
@@ -532,7 +532,7 @@
 "whatsNew.105.keychain.title" = "La connexion Google échoue ?";
 "whatsNew.105.keychain.text" = "L'option « Trousseau partagé » dit maintenant quand l'activer : si l'app refuse de te connecter (« impossible de se connecter », « app non vérifiée »).";
 "whatsNew.105.report.title" = "Signaler un problème en un clic";
-"whatsNew.105.report.text" = "Le formulaire GitHub s'ouvre déjà rempli, et le journal complet t'attend sur le Bureau. Tout est masqué. Dans Réglages > Signalement et journaux, ou avec la coccinelle du panneau.";
+"whatsNew.105.report.text" = "Le formulaire GitHub s'ouvre déjà rempli, sans nommer tes apps, et le journal complet t'attend sur le Bureau. Tes infos personnelles sont masquées. Dans Réglages > Signalement et journaux, ou avec la coccinelle du panneau.";
 "whatsNew.104.updates.title" = "Les mises à jour s'installent toutes seules";
 "whatsNew.104.updates.text" = "Active Installer les mises à jour automatiquement dans Réglages > Mises à jour : XSide télécharge la nouvelle version en arrière-plan, l'installe dès que rien n'est en cours, puis se relance.";
 "whatsNew.104.cli.title" = "xside dans le Terminal";
@@ -553,6 +553,6 @@
 
 /* Report a problem (GitHub issue) */
 "report.button" = "Signaler un problème…";
-"report.attach" = "📎 Glisse ici le fichier XSide-logs-….zip qu'XSide vient d'enregistrer sur ton Bureau (le journal complet). Les noms d'appareils, identifiants et comptes y sont masqués.";
+"report.attach" = "📎 Glisse ici le fichier XSide-logs-….zip qu'XSide vient d'enregistrer sur ton Bureau (le journal complet, avec le nom de tes apps). Noms d'appareils, numéros de série, compte et équipe y sont masqués.";
 "report.summary" = "État d'XSide";
 "report.lastLines" = "Dernières lignes du journal";

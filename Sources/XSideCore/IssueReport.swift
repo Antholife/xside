@@ -29,6 +29,15 @@ public enum IssueReport {
         }
     }
 
+    /// `text` with each app's identifiers (`apps[n]`, any order) replaced by `<app-n+1>`, longest
+    /// first so a signed id ("com.x.TEAM") isn't half-replaced by its original ("com.x").
+    public static func maskApps(_ text: String, apps: [[String]]) -> String {
+        let pairs = apps.enumerated().flatMap { index, ids in ids.map { ($0, "<app-\(index + 1)>") } }
+            .filter { !$0.0.isEmpty }
+            .sorted { $0.0.count > $1.0.count }
+        return pairs.reduce(text) { $0.replacingOccurrences(of: $1.0, with: $1.1) }
+    }
+
     /// The last `lines` lines of `text`.
     public static func tail(_ text: String, lines: Int) -> String {
         text.split(separator: "\n", omittingEmptySubsequences: false).suffix(lines).joined(separator: "\n")

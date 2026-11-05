@@ -29,6 +29,13 @@ struct IssueReportTests {
         #expect(sent.hasSuffix(IssueReport.cutMarker))
     }
 
+    /// Review I3: the public issue doesn't list which apps the person sideloads.
+    @Test func masksTheAppsInPublicText() {
+        let text = "install com.google.ios.youtube as com.google.ios.youtube.TEAM on <device-1>; com.x.app done"
+        let masked = IssueReport.maskApps(text, apps: [["com.google.ios.youtube", "com.google.ios.youtube.TEAM"], ["com.x.app"]])
+        #expect(masked == "install <app-1> as <app-1> on <device-1>; <app-2> done")
+    }
+
     /// The last lines matter most in a log.
     @Test func keepsTheLastLines() {
         let log = (1...100).map { "line \($0)" }.joined(separator: "\n")
