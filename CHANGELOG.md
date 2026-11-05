@@ -16,7 +16,7 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 
 - Each app's page in the iOS Settings app (Settings > the app) gets an "Installed with XSide" section: valid until, last refreshed, and a link to XSide. Rewritten at each refresh; the app's own settings stay as they were.
 
-- *Settings > General > Installs and devices*: open the app after an install, open the Trust page when the device needs it (both defaults, changeable in each install's Options), and notice apps deleted from the device.
+- *Settings > General > Installs and devices*: open the app after an install, open the Trust page when the device needs it (both defaults, changeable in each install's Options), notice apps deleted from the device, and refresh new devices over Wi-Fi or not. *Settings > Notifications* can turn off the reminder on the device and the notification when a deleted app leaves the list.
 
 ### Fixed
 - On-device reminders in tweaked apps that pretend to be another app (e.g. a modded YouTube reporting "com.google.ios.youtube" for Google sign-in): iOS refused them notifications without asking. XSide now asks with the app's real identity, and an app name with special characters ("YouTube +") gets a plain internal name.

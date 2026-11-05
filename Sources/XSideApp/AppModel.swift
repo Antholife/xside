@@ -215,7 +215,8 @@ final class AppModel {
                                      cacheDirs: paths.xcodeProfileDirs),
             resigner: Resigner(runner: runner,
                                welcomeDylib: Self.featuresOff ? nil : Bundle.main.url(forResource: "XSideWelcome", withExtension: "dylib"),
-                               settingsSection: Self.featuresOff ? nil : Self.settingsSection),
+                               settingsSection: Self.featuresOff ? nil : Self.settingsSection,
+                               welcomeOptions: { ["reminder": AppModel.setting(AppModel.deviceReminderKey)] }),
             installer: Installer(runner: runner),
             workRoot: paths.jobsWork, now: { Date() }, macIsBeta: XcodeLauncher.macIsBeta)
         // An update waits while an install or a refresh runs (`release` retries it after).
@@ -727,6 +728,16 @@ final class AppModel {
     func setWifiRefresh(_ on: Bool, for deviceID: String) {
         var updated = devicePrefs
         updated.setWifiRefresh(on, for: deviceID)
+        savePrefs(updated)
+        onNeedsEvaluation?()
+    }
+
+    /// Wi-Fi refresh for devices XSide doesn't know yet. Known ones (listed now, or holding an
+    /// app) keep what they have.
+    func setNewDevicesWifi(_ on: Bool) {
+        let known = Set(devices.map(\.id) + records.flatMap { $0.installations.map(\.deviceID) })
+        var updated = devicePrefs
+        updated.setNewDevicesWifi(on, keeping: Array(known))
         savePrefs(updated)
         onNeedsEvaluation?()
     }
@@ -1709,6 +1720,11 @@ final class AppModel {
     static let openAppAfterInstallKey = "openAppAfterInstall"
     static let openTrustSettingsKey = "openTrustSettingsAutomatically"
     static let forgetDeletedAppsKey = "forgetDeletedApps"
+    /// The reminder the installed app shows itself, the day before it expires (written into the
+    /// app at each install and refresh).
+    nonisolated static let deviceReminderKey = "deviceReminder"
+    /// The notification when XSide forgets an app deleted from its device.
+    static let notifyAppRemovedKey = "notifyAppRemoved"
 
     nonisolated static func setting(_ key: String) -> Bool {
         UserDefaults.standard.object(forKey: key) as? Bool ?? true

@@ -28,7 +28,12 @@ private struct Fixture {
     let fake: FakeRunner
     var welcomeDylib: URL?
     var settings: (@Sendable (ProvisioningProfile) -> SettingsSection)?
-    var resigner: Resigner { Resigner(runner: RoutingRunner(fake: fake), welcomeDylib: welcomeDylib, settingsSection: settings) }
+    var welcomeOptions: [String: Bool] = [:]
+    var resigner: Resigner {
+        let options = welcomeOptions
+        return Resigner(runner: RoutingRunner(fake: fake), welcomeDylib: welcomeDylib, settingsSection: settings,
+                        welcomeOptions: { options })
+    }
 }
 
 /// A stand-in for XSideWelcome.dylib (its content isn't read, only copied).
@@ -137,6 +142,17 @@ private func plist(_ app: URL) throws -> [String: Any] {
         #expect(strings["CFBundleName"] == "Demo")
         #expect(strings["CFBundleDisplayName"] == "Démo +")
         #expect(strings["NSCameraUsageDescription"] == "Caméra")
+    }
+
+    /// What the library reads at launch (e.g. the on-device reminder turned off in XSide's Settings).
+    @Test func writesTheWelcomeOptionsForTheLibrary() async throws {
+        var f = try await fixture(executable: FakeIPA.paddedMachO(padding: 256))
+        f.welcomeDylib = try welcomeDylib()
+        f.welcomeOptions = ["reminder": false]
+        let app = try await run(f)
+        let info = try #require(try PropertyListSerialization.propertyList(
+            from: Data(contentsOf: app.appendingPathComponent("Info.plist")), format: nil) as? [String: Any])
+        #expect((info["XSideWelcome"] as? [String: Bool]) == ["reminder": false])
     }
 
     @Test func settingsPageProblemsDontFailTheInstall() async throws {

@@ -146,6 +146,12 @@
 "settings.openTrustSettings.note" = "When the device doesn't trust the developer yet: Settings > General > VPN & Device Management.";
 "settings.forgetDeletedApps" = "Notice apps deleted from the device";
 "settings.forgetDeletedApps.note" = "Every 10 minutes and when the panel opens: XSide removes them from its list. When off, it still notices when refreshing them, and never reinstalls them.";
+"settings.newDevicesWifi" = "Refresh new devices over Wi-Fi";
+"settings.newDevicesWifi.note" = "For devices XSide doesn't know yet. Each device keeps its own setting in the panel.";
+"settings.notifyAppRemoved" = "Tell me when an app deleted from its device leaves the list";
+"settings.notifyAppRemoved.note" = "XSide removes it anyway; only the notification changes.";
+"settings.deviceReminder" = "Reminder on the device the day before it expires";
+"settings.deviceReminder.note" = "Sent by the app itself, if it may notify. Applies from the next install or refresh.";
 "settings.notifyRefreshSuccess" = "Notify me when a refresh succeeds";
 
 /* Welcome journey */

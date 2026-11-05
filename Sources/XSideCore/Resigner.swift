@@ -49,16 +49,21 @@ public struct Resigner: Sendable {
     private let welcomeDylib: URL?
     /// The section added to the app's iOS Settings page, built from the profile it's signed with.
     private let settingsSection: (@Sendable (ProvisioningProfile) -> SettingsSection)?
+    /// Read by the welcome library at launch, from the Info.plist key `XSideWelcome` (e.g.
+    /// "reminder": false when the on-device reminder is off in XSide's Settings).
+    private let welcomeOptions: @Sendable () -> [String: Bool]
     private static let codesign = "/usr/bin/codesign"
     private static let logger = Log("resign")
     static let welcomeName = "XSideWelcome.dylib"
     static let welcomeLoadPath = "@executable_path/Frameworks/\(welcomeName)"
 
     public init(runner: CommandRunning, welcomeDylib: URL? = nil,
-                settingsSection: (@Sendable (ProvisioningProfile) -> SettingsSection)? = nil) {
+                settingsSection: (@Sendable (ProvisioningProfile) -> SettingsSection)? = nil,
+                welcomeOptions: @escaping @Sendable () -> [String: Bool] = { [:] }) {
         self.runner = runner
         self.welcomeDylib = welcomeDylib
         self.settingsSection = settingsSection
+        self.welcomeOptions = welcomeOptions
     }
 
     /// Unpacks `ipa` into `workDir`, rewrites it and signs it inside-out. Returns the signed `.app`.
@@ -341,6 +346,8 @@ public struct Resigner: Sendable {
         if let min = options.minimumOSVersion { plist["MinimumOSVersion"] = min }
         let executable = plist["CFBundleExecutable"] as? String ?? "App"
         Self.plainBundleName(&plist, executable: executable)
+        let welcome = welcomeOptions()
+        if !welcome.isEmpty { plist["XSideWelcome"] = welcome }
         try write(plist, format: format, to: url)
         plainLocalizedBundleNames(app: app, executable: executable)
     }

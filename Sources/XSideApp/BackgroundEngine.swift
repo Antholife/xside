@@ -459,6 +459,7 @@ final class BackgroundEngine {
     }
 
     private func notifyRemoved(_ job: RefreshJob, appName: String) {
+        guard AppModel.setting(AppModel.notifyAppRemovedKey) else { return }
         let device = deviceName(job.deviceID)
         Task { [notifier] in
             await notifier.appRemoved(appName: appName, deviceName: device,

@@ -2,20 +2,25 @@ import Foundation
 
 /// Per-device settings, stored next to the library (`devices.json`).
 public struct DevicePrefs: Codable, Equatable, Sendable {
-    /// Only devices whose Wi-Fi refresh was turned off are stored: the default is on.
+    /// Devices whose Wi-Fi refresh was set on or off; the others follow `newDevicesWifi`.
     private var wifiOff: Set<String> = []
+    private var wifiOn: Set<String> = []
+    /// Wi-Fi refresh for devices without a setting of their own (Settings > General). On by default.
+    public private(set) var newDevicesWifi = true
     /// Devices removed from XSide while still paired: kept out of the popover until an app is
     /// installed on them again.
     private var hidden: Set<String> = []
 
     public init() {}
 
-    private enum CodingKeys: String, CodingKey { case wifiOff, hidden }
+    private enum CodingKeys: String, CodingKey { case wifiOff, wifiOn, newDevicesWifi, hidden }
 
     /// Tolerant: a file written before a key existed still loads.
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         wifiOff = try c.decodeIfPresent(Set<String>.self, forKey: .wifiOff) ?? []
+        wifiOn = try c.decodeIfPresent(Set<String>.self, forKey: .wifiOn) ?? []
+        newDevicesWifi = try c.decodeIfPresent(Bool.self, forKey: .newDevicesWifi) ?? true
         hidden = try c.decodeIfPresent(Set<String>.self, forKey: .hidden) ?? []
     }
 
@@ -25,14 +30,28 @@ public struct DevicePrefs: Codable, Equatable, Sendable {
         if isHidden { hidden.insert(deviceID) } else { hidden.remove(deviceID) }
     }
 
-    public func wifiRefresh(for deviceID: String) -> Bool { !wifiOff.contains(deviceID) }
+    public func wifiRefresh(for deviceID: String) -> Bool {
+        if wifiOn.contains(deviceID) { return true }
+        if wifiOff.contains(deviceID) { return false }
+        return newDevicesWifi
+    }
 
     public mutating func setWifiRefresh(_ on: Bool, for deviceID: String) {
-        if on { wifiOff.remove(deviceID) } else { wifiOff.insert(deviceID) }
+        if on { wifiOff.remove(deviceID); wifiOn.insert(deviceID) } else { wifiOn.remove(deviceID); wifiOff.insert(deviceID) }
+    }
+
+    /// Changes the default for new devices. `keeping`: devices already known, which keep what
+    /// they had (it becomes their own setting).
+    public mutating func setNewDevicesWifi(_ on: Bool, keeping known: [String]) {
+        for id in known { setWifiRefresh(wifiRefresh(for: id), for: id) }
+        newDevicesWifi = on
     }
 
     /// Drops the device's settings (not whether it is hidden).
-    public mutating func forget(_ deviceID: String) { wifiOff.remove(deviceID) }
+    public mutating func forget(_ deviceID: String) {
+        wifiOff.remove(deviceID)
+        wifiOn.remove(deviceID)
+    }
 
     /// Reachable now but only over Wi-Fi while Wi-Fi refresh is off: it can't be refreshed until
     /// plugged in over USB.

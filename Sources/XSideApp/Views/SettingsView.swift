@@ -142,6 +142,8 @@ private struct SettingsPage: View {
     @AppStorage(AppModel.openAppAfterInstallKey) private var openAppAfterInstall = true
     @AppStorage(AppModel.openTrustSettingsKey) private var openTrustSettings = true
     @AppStorage(AppModel.forgetDeletedAppsKey) private var forgetDeletedApps = true
+    @AppStorage(AppModel.deviceReminderKey) private var deviceReminder = true
+    @AppStorage(AppModel.notifyAppRemovedKey) private var notifyAppRemoved = true
     @Environment(\.openWindow) private var openWindow
     @State private var login = LaunchAtLogin()
     @State private var notifications = NotificationPermission()
@@ -193,6 +195,10 @@ private struct SettingsPage: View {
                 Text(L("settings.forgetDeletedApps"))
                 Text(L("settings.forgetDeletedApps.note"))
             }
+            Toggle(isOn: Binding(get: { model.devicePrefs.newDevicesWifi }, set: { model.setNewDevicesWifi($0) })) {
+                Text(L("settings.newDevicesWifi"))
+                Text(L("settings.newDevicesWifi.note"))
+            }
         } header: {
             Text(L("settings.afterInstall"))
         } footer: {
@@ -216,6 +222,14 @@ private struct SettingsPage: View {
     @ViewBuilder private var notificationsPage: some View {
         Section {
             Toggle(L("settings.notifyRefreshSuccess"), isOn: $notifyRefreshSuccess)
+            Toggle(isOn: $notifyAppRemoved) {
+                Text(L("settings.notifyAppRemoved"))
+                Text(L("settings.notifyAppRemoved.note"))
+            }
+            Toggle(isOn: $deviceReminder) {
+                Text(L("settings.deviceReminder"))
+                Text(L("settings.deviceReminder.note"))
+            }
             if notifications.state == .notDetermined || notifications.state == .denied {
                 NotificationPermissionCard(permission: notifications)
             }

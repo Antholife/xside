@@ -25,6 +25,46 @@ private func tempDir() throws -> URL {
 }
 
 struct DevicePrefsTests {
+    /// The default only decides for devices that have no setting of their own yet.
+    @Test func newDevicesFollowTheDefault() {
+        var prefs = DevicePrefs()
+        prefs.setNewDevicesWifi(false, keeping: [])
+        #expect(!prefs.newDevicesWifi)
+        #expect(!prefs.wifiRefresh(for: "NEW"))
+        prefs.setWifiRefresh(true, for: "NEW")
+        #expect(prefs.wifiRefresh(for: "NEW"))
+    }
+
+    @Test func changingTheDefaultKeepsKnownDevicesAsTheyAre() {
+        var prefs = DevicePrefs()
+        prefs.setWifiRefresh(false, for: "OFF")
+        prefs.setNewDevicesWifi(false, keeping: ["KNOWN", "OFF"])
+        #expect(prefs.wifiRefresh(for: "KNOWN")) // was on (the old default): stays on
+        #expect(!prefs.wifiRefresh(for: "OFF"))
+        #expect(!prefs.wifiRefresh(for: "NEW"))
+        prefs.setNewDevicesWifi(true, keeping: ["KNOWN", "OFF", "NEW"])
+        #expect(!prefs.wifiRefresh(for: "NEW")) // was off (the default then): stays off
+        #expect(prefs.wifiRefresh(for: "OTHER"))
+    }
+
+    @Test func forgettingADeviceDropsItsOwnSetting() {
+        var prefs = DevicePrefs()
+        prefs.setNewDevicesWifi(false, keeping: [])
+        prefs.setWifiRefresh(true, for: "D1")
+        prefs.forget("D1")
+        #expect(!prefs.wifiRefresh(for: "D1"))
+    }
+
+    @Test func theDefaultIsSavedAndOlderFilesMeanOn() throws {
+        var prefs = DevicePrefs()
+        prefs.setNewDevicesWifi(false, keeping: ["A"])
+        let decoded = try JSONDecoder().decode(DevicePrefs.self, from: JSONEncoder().encode(prefs))
+        #expect(decoded == prefs)
+        let old = try JSONDecoder().decode(DevicePrefs.self, from: Data(#"{"wifiOff":["X"],"hidden":[]}"#.utf8))
+        #expect(old.newDevicesWifi)
+        #expect(!old.wifiRefresh(for: "X"))
+    }
+
     @Test func wifiRefreshDefaultsToTrue() {
         let prefs = DevicePrefs()
         #expect(prefs.wifiRefresh(for: "D1"))

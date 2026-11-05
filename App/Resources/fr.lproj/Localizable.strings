@@ -146,6 +146,12 @@
 "settings.openTrustSettings.note" = "Quand l'appareil ne fait pas encore confiance : Réglages > Général > VPN et gestion de l'appareil.";
 "settings.forgetDeletedApps" = "Repérer les apps supprimées de l'appareil";
 "settings.forgetDeletedApps.note" = "Toutes les 10 minutes et à l'ouverture du panneau : XSide les retire de la liste. Désactivé, il le voit quand même au moment de les rafraîchir, sans jamais les réinstaller.";
+"settings.newDevicesWifi" = "Rafraîchir en Wi-Fi les nouveaux appareils";
+"settings.newDevicesWifi.note" = "Pour les appareils qu'XSide ne connaît pas encore. Chaque appareil garde son propre réglage dans le panneau.";
+"settings.notifyAppRemoved" = "Me prévenir quand une app supprimée de l'appareil est retirée de la liste";
+"settings.notifyAppRemoved.note" = "XSide la retire quand même ; seule la notification change.";
+"settings.deviceReminder" = "Rappel sur l'appareil la veille de l'expiration";
+"settings.deviceReminder.note" = "Envoyé par l'app elle-même, si elle a le droit de notifier. Pris en compte à la prochaine installation ou au prochain rafraîchissement.";
 "settings.notifyRefreshSuccess" = "Me prévenir quand un rafraîchissement réussit";
 
 /* Welcome journey */
