@@ -238,10 +238,21 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
     github.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
     [github addTarget:self action:@selector(openGitHub) forControlEvents:UIControlEventTouchUpInside];
 
-    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[head, until, left, ok, github]];
+    // Only when iOS will ask on OK (see `close`): its prompt can't say why, so this does.
+    UILabel *notice = [self label:[self t:@"🔔 En touchant OK, iOS va te demander d'autoriser les notifications : XSide s'en sert pour te prévenir la veille de l'expiration."
+                                       en:@"🔔 When you tap OK, iOS will ask to allow notifications: XSide uses them to remind you the day before it expires."]
+                             size:12 weight:UIFontWeightRegular color:UIColor.secondaryLabelColor];
+    notice.hidden = YES;
+    [UNUserNotificationCenter.currentNotificationCenter getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings *settings) {
+        if (settings.authorizationStatus != UNAuthorizationStatusNotDetermined) return;
+        dispatch_async(dispatch_get_main_queue(), ^{ notice.hidden = NO; });
+    }];
+
+    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[head, until, left, notice, ok, github]];
     stack.axis = UILayoutConstraintAxisVertical;
     [stack setCustomSpacing:16 afterView:head];
     [stack setCustomSpacing:10 afterView:left];
+    [stack setCustomSpacing:12 afterView:notice];
     [stack setCustomSpacing:4 afterView:ok];
 
     for (UIView *v in @[_dim, _sheet]) { v.translatesAutoresizingMaskIntoConstraints = NO; [self.view addSubview:v]; }

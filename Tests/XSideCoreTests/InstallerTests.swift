@@ -264,28 +264,13 @@ ERROR: The application failed to launch. (com.apple.dt.CoreDeviceError error 100
 """
 
 @Suite struct TrustCheckTests {
-    /// Started only to ask: stopped right away.
-    @Test func launchedMeansTrustedAndIsStoppedAgain() async throws {
+    /// The app opens on the device and stays open.
+    @Test func launchedMeansTrusted() async throws {
         let runner = FakeRunner()
-        runner.stub("/usr/bin/xcrun", result: CommandResult(status: 0, stdout: Data("Launched application".utf8), stderr: "")) { args in
-            guard let i = args.firstIndex(of: "--json-output") else { return }
-            try? Data(#"{"result":{"process":{"processIdentifier":4321}}}"#.utf8).write(to: URL(fileURLWithPath: args[i + 1]))
-        }
+        runner.stub("/usr/bin/xcrun", result: CommandResult(status: 0, stdout: Data("Launched application".utf8), stderr: ""))
         #expect(await Installer(runner: runner).trustState(bundleID: "com.x.TEAM", deviceID: "DEV") == .trusted)
-        let calls = runner.calls
-        #expect(calls.count == 2)
-        #expect(Array(calls[0].prefix(7)) == ["/usr/bin/xcrun", "devicectl", "device", "process", "launch", "--device", "DEV"])
-        #expect(calls[0].contains("--no-activate"))
-        #expect(calls[0].last == "com.x.TEAM")
-        #expect(calls[1] == ["/usr/bin/xcrun", "devicectl", "device", "process", "terminate", "--device", "DEV",
-                             "--pid", "4321"])
-    }
-
-    @Test func launchedWithoutAProcessIDIsStillTrusted() async {
-        let runner = FakeRunner()
-        runner.stub("/usr/bin/xcrun", result: CommandResult(status: 0, stdout: Data(), stderr: ""))
-        #expect(await Installer(runner: runner).trustState(bundleID: "com.x.TEAM", deviceID: "DEV") == .trusted)
-        #expect(runner.calls.count == 1) // nothing to stop
+        #expect(runner.calls == [["/usr/bin/xcrun", "devicectl", "device", "process", "launch", "--device", "DEV",
+                                  "com.x.TEAM"]])
     }
 
     @Test func securityRefusalMeansNotTrusted() async {
