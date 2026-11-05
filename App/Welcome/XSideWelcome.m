@@ -3,8 +3,8 @@
 // - after an install (no earlier signature known to the app), a sheet saying the app was
 //   installed with XSide and until when it works;
 // - after a refresh, a small banner at the top that goes away by itself.
-// At each launch it also schedules a local reminder 24 h before expiry, only if the app may
-// already notify (it never asks for permission). It never throws, asserts or blocks: anything
+// At each launch it also schedules a local reminder 24 h before expiry when the app may notify.
+// If the app never asked for that permission, it's asked once, when the sheet is closed. It never throws, asserts or blocks: anything
 // missing (no profile, no window) and it silently does nothing.
 //
 // Built by scripts/bundle.sh for iOS arm64 and shipped in XSide.app/Contents/Resources; XSide
@@ -116,6 +116,8 @@ static void XSHideWindow(void) {
     XSWindow = nil;
     [XSPreviousKey makeKeyWindow];
 }
+
+static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
 
 @interface XSWelcomeController : UIViewController
 - (instancetype)initWithExpiry:(NSDate *)expiry;
@@ -285,7 +287,11 @@ static void XSHideWindow(void) {
     [UIView animateWithDuration:0.25 animations:^{
         self->_sheet.transform = CGAffineTransformMakeTranslation(0, self->_sheet.bounds.size.height + 40);
         self->_dim.alpha = 0;
-    } completion:^(BOOL finished) { XSHideWindow(); }];
+    } completion:^(BOOL finished) {
+        XSHideWindow();
+        // The moment the reminder makes sense: the person just read until when the app works.
+        XSScheduleReminder(self->_expiry, YES);
+    }];
 }
 
 - (void)openGitHub {
@@ -448,8 +454,9 @@ static void XSShow(NSDate *expiry, BOOL refreshed, int attempt) {
 }
 
 /// A local reminder 24 h before expiry, replaced at each launch (so a refresh followed by a
-/// launch moves it). Only when the app may already notify: XSide never asks on its behalf.
-static void XSScheduleReminder(NSDate *expiry) {
+/// launch moves it), when the app may notify. `askIfNeeded`: the app never asked for that
+/// permission, so it's asked now (once: iOS never asks again after an answer).
+static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded) {
 #ifdef XS_TEST_REMINDER
     NSTimeInterval wait = 60; // test build (XSIDE_TEST_REMINDER=1 scripts/bundle.sh): a minute after launch
 #else
@@ -462,6 +469,13 @@ static void XSScheduleReminder(NSDate *expiry) {
     }
     [center getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings *settings) {
         UNAuthorizationStatus status = settings.authorizationStatus;
+        if (status == UNAuthorizationStatusNotDetermined && askIfNeeded) {
+            [center requestAuthorizationWithOptions:UNAuthorizationOptionAlert | UNAuthorizationOptionSound
+                                  completionHandler:^(BOOL granted, NSError *error) {
+                if (granted) dispatch_async(dispatch_get_main_queue(), ^{ XSScheduleReminder(expiry, NO); });
+            }];
+            return;
+        }
         if (status != UNAuthorizationStatusAuthorized && status != UNAuthorizationStatusProvisional) return;
         BOOL fr = XSFrench();
         UNMutableNotificationContent *content = [UNMutableNotificationContent new];
@@ -485,7 +499,7 @@ __attribute__((constructor)) static void XSideWelcomeInit(void) {
         observer = nil;
         NSDate *expiry = XSExpirationDate();
         if (!expiry) return;
-        XSScheduleReminder(expiry);
+        XSScheduleReminder(expiry, NO);
         id announced = [NSUserDefaults.standardUserDefaults objectForKey:XSAnnouncedKey];
         if ([announced isKindOfClass:NSDate.class] && [announced isEqualToDate:expiry]) return;
         XSShow(expiry, [announced isKindOfClass:NSDate.class], 0);
