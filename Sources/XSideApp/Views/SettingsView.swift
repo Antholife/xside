@@ -144,6 +144,9 @@ private struct SettingsPage: View {
     @AppStorage(AppModel.forgetDeletedAppsKey) private var forgetDeletedApps = true
     @AppStorage(AppModel.deviceReminderKey) private var deviceReminder = true
     @AppStorage(BackgroundEngine.refreshDaysBeforeKey) private var refreshDaysBefore = 2
+    @AppStorage(BackgroundEngine.pausedUntilKey) private var pausedUntil = 0.0
+    @AppStorage(BackgroundEngine.acOnlyKey) private var acOnly = false
+    @AppStorage(BackgroundEngine.preferredHoursKey) private var preferredHours = ""
     @AppStorage(AppModel.notifyAppRemovedKey) private var notifyAppRemoved = true
     @Environment(\.openWindow) private var openWindow
     @State private var login = LaunchAtLogin()
@@ -192,6 +195,28 @@ private struct SettingsPage: View {
                 Text(L("settings.refreshDaysBefore.note"))
             }
             .onChange(of: refreshDaysBefore) { model.onNeedsEvaluation?() }
+            PauseRow(pausedUntil: $pausedUntil, onChange: { model.onNeedsEvaluation?() })
+            Toggle(isOn: $acOnly) {
+                Text(L("settings.acOnly"))
+                Text(L("settings.acOnly.note"))
+            }
+            Picker(selection: $preferredHours) {
+                Text(L("settings.hours.any")).tag("")
+                Text(L("settings.hours.night")).tag(RefreshPolicy.Hours.night.rawValue)
+                Text(L("settings.hours.evening")).tag(RefreshPolicy.Hours.evening.rawValue)
+            } label: {
+                Text(L("settings.hours"))
+                Text(L("settings.hours.note"))
+            }
+            .onChange(of: preferredHours) { model.onNeedsEvaluation?() }
+        } header: {
+            Text(L("settings.autoRefresh"))
+        } footer: {
+            Text(L("settings.autoRefresh.footer"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        Section {
             Toggle(isOn: $openAppAfterInstall) {
                 Text(L("settings.openAppAfterInstall"))
                 Text(L("settings.openAppAfterInstall.note"))
@@ -268,6 +293,49 @@ private struct SettingsPage: View {
 }
 
 /// Top of the signing page: everything ready, or what to fix first.
+/// "Pause automatic refreshes": a menu of durations, or until when and "Resume" while paused.
+private struct PauseRow: View {
+    @Binding var pausedUntil: Double
+    let onChange: () -> Void
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            let until = Date(timeIntervalSince1970: pausedUntil)
+            if pausedUntil > 0, until > context.date {
+                LabeledContent {
+                    Button(L("settings.pause.resume")) { set(nil) }
+                } label: {
+                    Label(until == .distantFuture ? L("settings.pause.indefinitely")
+                                                  : L("settings.pause.until", until.formatted(date: .abbreviated, time: .shortened)),
+                          systemImage: "pause.circle.fill")
+                        .foregroundStyle(Color(nsColor: .systemOrange))
+                }
+            } else {
+                LabeledContent(L("settings.pause")) {
+                    Menu(L("settings.pause.menu")) {
+                        Button(L("settings.pause.hour")) { set(Date().addingTimeInterval(3600)) }
+                        Button(L("settings.pause.tomorrow")) { set(Self.tomorrowMorning) }
+                        Button(L("settings.pause.untilResumed")) { set(.distantFuture) }
+                    }
+                    .fixedSize()
+                }
+            }
+        }
+    }
+
+    private func set(_ date: Date?) {
+        pausedUntil = date?.timeIntervalSince1970 ?? 0
+        onChange()
+    }
+
+    /// Tomorrow at 8:00.
+    private static var tomorrowMorning: Date {
+        let calendar = Calendar.current
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+        return calendar.date(bySettingHour: 8, minute: 0, second: 0, of: tomorrow) ?? tomorrow
+    }
+}
+
 private struct SigningHero: View {
     let model: AppModel
 

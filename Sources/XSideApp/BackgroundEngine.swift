@@ -1,4 +1,5 @@
 import AppKit
+import IOKit.ps
 import os
 import XSideCore
 
@@ -107,6 +108,26 @@ final class BackgroundEngine {
                                  debugDays: UserDefaults.standard.double(forKey: debugThresholdKey))
     }
     static let refreshDaysBeforeKey = "refreshDaysBefore"
+    static let pausedUntilKey = "refreshPausedUntil"
+    static let acOnlyKey = "refreshOnACOnly"
+    static let preferredHoursKey = "refreshPreferredHours"
+
+    /// Settings > General "Automatic refreshes".
+    static var policy: RefreshPolicy {
+        let defaults = UserDefaults.standard
+        let paused = defaults.double(forKey: pausedUntilKey) // seconds since 1970, 0: not paused
+        return RefreshPolicy(pausedUntil: paused > 0 ? Date(timeIntervalSince1970: paused) : nil,
+                             acOnly: defaults.bool(forKey: acOnlyKey),
+                             onBattery: onBattery,
+                             preferredHours: defaults.string(forKey: preferredHoursKey).flatMap(RefreshPolicy.Hours.init))
+    }
+
+    /// The Mac runs on battery (a desktop Mac never does).
+    static var onBattery: Bool {
+        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+              let type = IOPSGetProvidingPowerSourceType(info)?.takeUnretainedValue() as String? else { return false }
+        return type == kIOPMBatteryPowerKey
+    }
 
     // MARK: - Triggers
 
@@ -160,7 +181,18 @@ final class BackgroundEngine {
         // Environment broken (or not probed yet): nothing can be refreshed. `reportEnvironment`
         // already notifies each problem once; no per-app notification on top of it.
         guard case .success? = model.environment else { return }
-        let due = RefreshPlanner.startable(dueJobs(), busy: model.busyJobs)
+        let startable = RefreshPlanner.startable(dueJobs(), busy: model.busyJobs)
+        // Settings may hold them back (pause, battery, preferred hours), never past `urgent`.
+        let policy = Self.policy
+        let now = Date()
+        let due = startable.filter { job in
+            guard let expiry = model.records.first(where: { $0.id == job.recordID })?
+                .installations.first(where: { $0.deviceID == job.deviceID })?.expiresAt else { return true }
+            return policy.allows(expiresAt: expiry, now: now)
+        }
+        if due.count < startable.count {
+            Self.logger.notice("\(reason): \(startable.count - due.count) job(s) held back by the settings")
+        }
         guard !due.isEmpty else { return }
         Self.logger.notice("\(reason): \(due.count) job(s) due")
         for job in due where model.refreshNow(job, automatic: true) {
