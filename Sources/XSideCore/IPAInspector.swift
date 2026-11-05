@@ -158,7 +158,7 @@ public enum IPAInspector {
     }
 
     /// Start of each slice: every architecture of a fat binary (at most `maxFatArchs`), else 0.
-    private static func sliceOffsets(_ data: Data) throws -> [Int] {
+    static func sliceOffsets(_ data: Data) throws -> [Int] {
         guard let magicBE = readU32(data, 0, bigEndian: true) else { throw bad() }
         guard magicBE == 0xCAFEBABE || magicBE == 0xCAFEBABF else { return [0] }
         let is64 = magicBE == 0xCAFEBABF

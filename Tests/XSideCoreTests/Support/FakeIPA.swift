@@ -12,6 +12,31 @@ enum FakeIPA {
         return d
     }
 
+    /// Thin arm64 Mach-O with a `__TEXT` segment whose one section starts `padding` bytes after
+    /// the load commands (the room a new command can take), and optionally a last
+    /// `LC_CODE_SIGNATURE`, like a signed app.
+    static func paddedMachO(padding: Int, codeSignatureLast: Bool = false) -> Data {
+        var d = Data()
+        func le32(_ v: UInt32) { withUnsafeBytes(of: v.littleEndian) { d.append(contentsOf: $0) } }
+        func le64(_ v: UInt64) { withUnsafeBytes(of: v.littleEndian) { d.append(contentsOf: $0) } }
+        func name(_ s: String) { var b = Array(s.utf8); b += Array(repeating: 0, count: 16 - b.count); d.append(contentsOf: b) }
+        let segmentSize = 72 + 80
+        let sizeofcmds = segmentSize + (codeSignatureLast ? 16 : 0)
+        let sectionOffset = 32 + sizeofcmds + padding
+        let fileSize = sectionOffset + 16
+        le32(0xFEEDFACF); le32(0x0100000C); le32(0); le32(2)
+        le32(codeSignatureLast ? 2 : 1); le32(UInt32(sizeofcmds)); le32(0); le32(0)
+        le32(0x19); le32(UInt32(segmentSize)); name("__TEXT")             // LC_SEGMENT_64
+        le64(0x100000000); le64(UInt64(fileSize)); le64(0); le64(UInt64(fileSize))
+        le32(5); le32(5); le32(1); le32(0)                                 // prot, nsects 1, flags
+        name("__text"); name("__TEXT"); le64(0x100000000 + UInt64(sectionOffset)); le64(16)
+        le32(UInt32(sectionOffset)); le32(2); le32(0); le32(0); le32(0); le32(0); le32(0); le32(0)
+        if codeSignatureLast { le32(0x1D); le32(16); le32(UInt32(fileSize)); le32(0) }
+        d.append(Data(count: sectionOffset - d.count))
+        d.append(Data(repeating: 0xAB, count: 16))                         // the "code"
+        return d
+    }
+
     /// Big-endian fat binary (0xCAFEBABE) wrapping the given slices.
     static func fatMachO(slices: [Data]) -> Data {
         var d = Data()
