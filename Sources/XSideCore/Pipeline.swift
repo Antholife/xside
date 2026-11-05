@@ -320,20 +320,21 @@ public actor SideloadPipeline {
             let icon = try record.options.iconPath.flatMap { $0.isEmpty ? nil : try resolve($0) }
             try fm.createDirectory(at: workDir, withIntermediateDirectories: true)
 
-            // Deleted from the device (home screen): a refresh would put it back. Checked before
-            // any profile, so no App ID is spent. Only a sure "not there" counts.
-            if refresh, previous != nil,
-               await installer.isInstalled(bundleID: bundleID, deviceID: device.id) == false {
-                Self.logger.notice("\(what): no longer on the device, forgotten there")
-                _ = try? await library.removeInstallation(recordID: recordID, deviceID: device.id)
-                throw XSideError.appRemovedFromDevice
-            }
-
             // Reported once the lock is held: a job queued behind another provisioning is still waiting.
-            let (current, provisioned) = try await provisioningLock.run { [provisioner] in
+            let (current, provisioned) = try await provisioningLock.run { [provisioner, installer, library] in
                 try Task.checkCancellation()
                 let current: SigningEnvironment
                 do { current = try await environment() } catch { throw EnvironmentUnavailable(underlying: error) }
+                // Deleted from the device (home screen): a refresh would put it back. Checked before
+                // any profile, so no App ID is spent, with the job's Xcode. Only a sure "not there" counts.
+                if refresh, previous != nil,
+                   await CommandEnvironment.withDeveloperDir(current.developerDir, {
+                       await installer.isInstalled(bundleID: bundleID, deviceID: device.id)
+                   }) == false {
+                    Self.logger.notice("\(what): no longer on the device, forgotten there")
+                    _ = try? await library.removeInstallation(recordID: recordID, deviceID: device.id)
+                    throw XSideError.appRemovedFromDevice
+                }
                 await progress(.profile)
                 Self.logger.info("\(what): provisioning with \(current.developerDir.path)")
                 let provisioned = try await CommandEnvironment.withDeveloperDir(current.developerDir) {

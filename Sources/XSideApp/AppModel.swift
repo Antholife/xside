@@ -1580,7 +1580,7 @@ final class AppModel {
             let signedID = installed.installations.first { $0.deviceID == deviceID }?.signedBundleID ?? installed.signedBundleID
             // Opening the app is how the device tells; when off, the remembered rule decides.
             let trust: Installer.TrustState = flow.openAppAfter
-                ? await Installer(runner: runner).trustState(bundleID: signedID, deviceID: deviceID)
+                ? await withKnownXcode { [runner] in await Installer(runner: runner).trustState(bundleID: signedID, deviceID: deviceID) }
                 : .unknown
             Self.logger.notice("trust on \(deviceID): \(String(describing: trust))")
             if trust == .trusted, flow.trustDue.contains(deviceID) {
@@ -1736,11 +1736,17 @@ final class AppModel {
         UserDefaults.standard.set(sha1 ?? true as Any, forKey: Self.guideKey(deviceID))
     }
 
+    /// Runs `body`'s tools with the Xcode XSide uses (as the jobs do), else the system's.
+    private func withKnownXcode<T>(_ body: () async throws -> T) async rethrows -> T {
+        guard let dir = lastKnownDeveloperDir else { return try await body() }
+        return try await CommandEnvironment.withDeveloperDir(dir) { try await body() }
+    }
+
     /// Opens Settings > General > VPN & Device Management on the device (see the guide).
     func openTrustSettings(_ deviceID: String) {
         let installer = Installer(runner: runner)
         Task {
-            do { try await installer.openTrustSettings(deviceID: deviceID) } catch {
+            do { try await withKnownXcode { try await installer.openTrustSettings(deviceID: deviceID) } } catch {
                 Self.logger.notice("opening the trust settings on \(deviceID) failed: \(String(describing: error))")
             }
         }

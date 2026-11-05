@@ -670,6 +670,11 @@ private struct DirProvisioner: Provisioning {
 
 private struct DirInstaller: Installing {
     let dirs: DirLog
+    var checks: DirLog?
+    func isInstalled(bundleID: String, deviceID: String) async -> Bool? {
+        await checks?.add(CommandEnvironment.overrides["DEVELOPER_DIR"])
+        return true
+    }
     func install(app: URL, deviceID: String) async throws {
         await dirs.add(CommandEnvironment.overrides["DEVELOPER_DIR"])
     }
@@ -688,6 +693,19 @@ struct PipelineDeveloperDirTests {
         _ = try await pipeline.install(recordID: f.record.id, device: device(), env: env)
         #expect(await dirs.dirs == [env.developerDir.path, env.developerDir.path])
         #expect(CommandEnvironment.overrides["DEVELOPER_DIR"] == nil)
+    }
+
+    /// Review I2: the deleted-app check runs devicectl with the job's Xcode too.
+    @Test func refreshChecksPresenceWithTheJobsXcode() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        try await f.library.upsert(Installation(deviceID: "dev-1", installedAt: fixedNow,
+                                                expiresAt: expiry.addingTimeInterval(-1)), for: f.record.id)
+        let dirs = DirLog(), checks = DirLog()
+        let pipeline = SideloadPipeline(library: f.library, provisioner: DirProvisioner(dirs: dirs),
+                                        resigner: FakeResigner(log: f.log), installer: DirInstaller(dirs: dirs, checks: checks),
+                                        workRoot: f.workRoot, now: { fixedNow })
+        _ = try await pipeline.install(recordID: f.record.id, device: device(), env: env, refresh: true)
+        #expect(await checks.dirs == [env.developerDir.path])
     }
 
     @Test func uninstallRunsWithTheJobsXcode() async throws {
