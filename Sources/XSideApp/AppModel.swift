@@ -1037,6 +1037,43 @@ final class AppModel {
         await installationRemoved(key)
     }
 
+    /// Reads the device's app list and forgets the XSide apps deleted from it (home screen), with
+    /// their reminders, so no refresh puts them back. Rows with a job running are left alone.
+    /// Returns what was forgotten, with the app names (for the notification). Nothing when the
+    /// list can't be read.
+    func forgetDeletedApps(on deviceID: String) async -> [(job: RefreshJob, appName: String)] {
+        guard devices.contains(where: { $0.id == deviceID && $0.isAvailable }),
+              !removingDevices.contains(deviceID) else { return [] }
+        let queriedAt = Date()
+        let installer = Installer(runner: runner)
+        let listed: Set<String>?
+        if let dir = lastKnownDeveloperDir {
+            listed = await CommandEnvironment.withDeveloperDir(dir) { await installer.installedBundleIDs(deviceID: deviceID) }
+        } else {
+            listed = await installer.installedBundleIDs(deviceID: deviceID)
+        }
+        guard let listed, !removingDevices.contains(deviceID) else { return [] }
+        let current = await library.records()
+        var forgotten: [(job: RefreshJob, appName: String)] = []
+        for job in PresenceCheck.missing(current, deviceID: deviceID, installed: listed, queriedAt: queriedAt) {
+            let key = JobKey(recordID: job.recordID, deviceID: job.deviceID)
+            guard jobs[key] == nil, claims[key] == nil,
+                  let record = records.first(where: { $0.id == job.recordID }) else { continue }
+            claim(key)
+            defer { release(key) }
+            do {
+                guard try await library.removeInstallation(recordID: job.recordID, deviceID: job.deviceID) else { continue }
+            } catch {
+                Self.logger.error("forgetting a deleted app failed: \(String(describing: error))")
+                continue
+            }
+            Self.logger.notice("\(record.originalBundleID) no longer on \(deviceID): forgotten there")
+            forgotten.append((job, record.options.displayName ?? record.displayName))
+            await installationRemoved(key)
+        }
+        return forgotten
+    }
+
     /// The installation left the library: its reminder and notification state go too, and a
     /// record left without any installation is deleted (with its files) once nothing uses it.
     private func installationRemoved(_ key: JobKey) async {

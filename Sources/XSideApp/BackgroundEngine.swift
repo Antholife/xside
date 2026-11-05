@@ -151,6 +151,7 @@ final class BackgroundEngine {
         }
         reportEnvironment()
         reportMacBeta()
+        checkPresence()
         reportUnreachable()
         reportNeedsUSB()
         // Environment broken (or not probed yet): nothing can be refreshed. `reportEnvironment`
@@ -402,12 +403,7 @@ final class BackgroundEngine {
         if error is CancellationError { return }
         // Deleted from the device: XSide forgot it there (see `AppModel.run`); say so, once.
         if error as? XSideError == .appRemovedFromDevice {
-            let name = model.records.first { $0.id == job.recordID }.map(Self.appName) ?? "XSide"
-            let device = deviceName(job.deviceID)
-            Task { [notifier] in
-                await notifier.appRemoved(appName: name, deviceName: device,
-                                          id: "removed.\(job.recordID.uuidString).\(job.deviceID)")
-            }
+            notifyRemoved(job, appName: model.records.first { $0.id == job.recordID }.map(Self.appName) ?? "XSide")
             return
         }
         // Manual actions show their error in the UI; only background failures notify.
@@ -458,6 +454,33 @@ final class BackgroundEngine {
                 appName: Self.appName(record), deviceName: deviceName, date: date,
                 id: "refreshed.\(job.recordID.uuidString).\(job.deviceID)")
             if !posted { successGate.forget(recordID: job.recordID, deviceID: job.deviceID) }
+        }
+    }
+
+    private func notifyRemoved(_ job: RefreshJob, appName: String) {
+        let device = deviceName(job.deviceID)
+        Task { [notifier] in
+            await notifier.appRemoved(appName: appName, deviceName: device,
+                                      id: "removed.\(job.recordID.uuidString).\(job.deviceID)")
+        }
+    }
+
+    /// When each device's app list was last read (see `checkPresence`).
+    private var presenceChecked: [String: Date] = [:]
+
+    /// Hourly, and as soon as a device shows up: apps deleted from a reachable device are
+    /// forgotten there (see `AppModel.forgetDeletedApps`).
+    private func checkPresence() {
+        let now = Date()
+        for id in PresenceCheck.devicesToCheck(model.devices, records: model.records,
+                                               lastChecked: presenceChecked, now: now) {
+            presenceChecked[id] = now
+            Task { [weak self] in
+                guard let self else { return }
+                for removed in await model.forgetDeletedApps(on: id) {
+                    notifyRemoved(removed.job, appName: removed.appName)
+                }
+            }
         }
     }
 

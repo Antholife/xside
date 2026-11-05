@@ -182,14 +182,14 @@ private func stubApps(_ runner: FakeRunner, json: String?, status: Int32 = 0) {
         stubApps(runner, json: appsJSON(["com.x.TEAM"]))
         #expect(await Installer(runner: runner).isInstalled(bundleID: "com.x.TEAM", deviceID: "DEV") == true)
         let call = try #require(runner.calls.first)
-        #expect(Array(call.prefix(9)) == ["/usr/bin/xcrun", "devicectl", "device", "info", "apps",
-                                         "--device", "DEV", "--bundle-id", "com.x.TEAM"])
+        #expect(Array(call.prefix(8)) == ["/usr/bin/xcrun", "devicectl", "device", "info", "apps",
+                                         "--device", "DEV", "--include-all-apps"])
         #expect(call.contains("--json-output"))
     }
 
     @Test func missingFromTheListIsNotInstalled() async {
         let runner = FakeRunner()
-        stubApps(runner, json: appsJSON([]))
+        stubApps(runner, json: appsJSON(["com.apple.mobilesafari"]))
         #expect(await Installer(runner: runner).isInstalled(bundleID: "com.x.TEAM", deviceID: "DEV") == false)
     }
 
@@ -203,5 +203,30 @@ private func stubApps(_ runner: FakeRunner, json: String?, status: Int32 = 0) {
         #expect(await Installer(runner: garbled).isInstalled(bundleID: "com.x.TEAM", deviceID: "DEV") == nil)
         let thrown = FakeRunner() // no stub: the runner throws
         #expect(await Installer(runner: thrown).isInstalled(bundleID: "com.x.TEAM", deviceID: "DEV") == nil)
+    }
+}
+
+@Suite struct DeviceAppListTests {
+    @Test func listsTheDevicesApps() async throws {
+        let runner = FakeRunner()
+        stubApps(runner, json: appsJSON(["a.T", "b.T"]))
+        #expect(await Installer(runner: runner).installedBundleIDs(deviceID: "DEV") == ["a.T", "b.T"])
+        let call = try #require(runner.calls.first)
+        #expect(Array(call.prefix(8)) == ["/usr/bin/xcrun", "devicectl", "device", "info", "apps", "--device", "DEV",
+                                         "--include-all-apps"])
+    }
+
+    /// A device always has system apps: an empty list is a bad read, not "every app deleted".
+    @Test func emptyListIsUnknown() async {
+        let runner = FakeRunner()
+        stubApps(runner, json: appsJSON([]))
+        #expect(await Installer(runner: runner).installedBundleIDs(deviceID: "DEV") == nil)
+        #expect(await Installer(runner: runner).isInstalled(bundleID: "a.T", deviceID: "DEV") == nil)
+    }
+
+    @Test func failedListIsUnknown() async {
+        let runner = FakeRunner()
+        stubApps(runner, json: appsJSON([]), status: 1)
+        #expect(await Installer(runner: runner).installedBundleIDs(deviceID: "DEV") == nil)
     }
 }

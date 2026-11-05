@@ -43,18 +43,25 @@ public struct Installer: Sendable {
     /// Whether the app signed as `bundleID` is on the device. Nil when devicectl fails or its
     /// output can't be read: never a guess, a "false" makes XSide forget the app there.
     public func isInstalled(bundleID: String, deviceID: String) async -> Bool? {
+        await installedBundleIDs(deviceID: deviceID)?.contains(bundleID)
+    }
+
+    /// Every app on the device, nil when that can't be told. All of them, not devicectl's default
+    /// "developer apps": an app missing from a filtered list would be forgotten by mistake. So the
+    /// list is never empty (system apps); an empty one is treated as unreadable.
+    public func installedBundleIDs(deviceID: String) async -> Set<String>? {
         let file = FileManager.default.temporaryDirectory
             .appendingPathComponent("xside-apps-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: file) }
         guard let result = try? await runner.run(
             "/usr/bin/xcrun",
-            ["devicectl", "device", "info", "apps", "--device", deviceID, "--bundle-id", bundleID,
+            ["devicectl", "device", "info", "apps", "--device", deviceID, "--include-all-apps",
              "--json-output", file.path],
             cwd: nil, timeout: CommandTimeout.deviceQuery),
               result.status == 0,
               let data = try? Data(contentsOf: file),
-              let ids = Self.installedBundleIDs(data) else { return nil }
-        return ids.contains(bundleID)
+              let ids = Self.installedBundleIDs(data), !ids.isEmpty else { return nil }
+        return Set(ids)
     }
 
     /// The bundle ids in `devicectl device info apps --json-output` (`result.apps[].bundleIdentifier`),
