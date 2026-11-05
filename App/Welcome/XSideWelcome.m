@@ -577,6 +577,20 @@ static void XSShow(NSDate *expiry, BOOL refreshed, int attempt) {
     [NSUserDefaults.standardUserDefaults setObject:expiry forKey:XSAnnouncedKey];
 }
 
+/// XSide's logo as a notification thumbnail. iOS moves the file into its own store, so a fresh
+/// copy is written each time. Nil without the logo or when the file can't be written.
+static UNNotificationAttachment *XSLogoAttachment(void) {
+#ifdef XS_HAS_ICON
+    NSString *name = [NSString stringWithFormat:@"xside-logo-%@.png", NSUUID.UUID.UUIDString];
+    NSURL *url = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:name]];
+    NSData *png = [NSData dataWithBytesNoCopy:(void *)XSWelcomeIcon length:XSWelcomeIcon_len freeWhenDone:NO];
+    if (![png writeToURL:url atomically:YES]) return nil;
+    return [UNNotificationAttachment attachmentWithIdentifier:@"xside-logo" URL:url options:nil error:NULL];
+#else
+    return nil;
+#endif
+}
+
 /// A local reminder 24 h before expiry, replaced at each launch (so a refresh followed by a
 /// launch moves it), when the app may notify. `askIfNeeded`: the app never asked for that
 /// permission, so it's asked now (once: iOS never asks again after an answer).
@@ -610,6 +624,9 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded) {
         content.body = fr ? @"Sauf si XSide l'a rafraîchie entre-temps : connecte l'appareil au Mac où tourne XSide, puis ouvre l'app pour vérifier."
                           : @"Unless XSide refreshed it meanwhile: connect the device to the Mac running XSide, then open the app to check.";
         content.sound = UNNotificationSound.defaultSound;
+        // The icon on the left is always the app's (iOS); XSide's logo goes on the right.
+        UNNotificationAttachment *logo = XSLogoAttachment();
+        if (logo) content.attachments = @[logo];
         UNTimeIntervalNotificationTrigger *trigger = [UNTimeIntervalNotificationTrigger triggerWithTimeInterval:wait repeats:NO];
         [center addNotificationRequest:[UNNotificationRequest requestWithIdentifier:XSReminderID content:content trigger:trigger]
                  withCompletionHandler:^(NSError *error) { NSLog(@"[XSide] reminder scheduled, error %@", error); }];
