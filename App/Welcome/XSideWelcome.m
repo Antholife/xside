@@ -184,6 +184,46 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
     return [NSString stringWithFormat:[self t:@"%ld jours" en:@"%ld days"], (long)days];
 }
 
+/// "Get a reminder before it expires": a tinted card with a bell in the brand gradient.
+- (UIView *)notificationCard {
+    UIView *card = [UIView new];
+    card.backgroundColor = [XSViolet() colorWithAlphaComponent:0.12];
+    card.layer.cornerRadius = 16;
+    card.layer.cornerCurve = kCACornerCurveContinuous;
+    card.layer.borderWidth = 1;
+    card.layer.borderColor = [XSViolet() colorWithAlphaComponent:0.25].CGColor;
+
+    XSGradientButton *badge = [XSGradientButton buttonWithType:UIButtonTypeCustom];
+    badge.userInteractionEnabled = NO;
+    ((CAGradientLayer *)badge.layer).cornerRadius = 19;
+    UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithPointSize:17 weight:UIImageSymbolWeightSemibold];
+    [badge setImage:[UIImage systemImageNamed:@"bell.badge.fill" withConfiguration:config] forState:UIControlStateNormal];
+    badge.tintColor = UIColor.whiteColor;
+
+    UILabel *title = [self label:[self t:@"Te prévenir avant l'expiration" en:@"Get a reminder before it expires"]
+                            size:15 weight:UIFontWeightSemibold color:UIColor.labelColor];
+    UILabel *body = [self label:[self t:@"En touchant OK, iOS va te demander d'autoriser les notifications. XSide s'en sert uniquement pour te prévenir la veille de l'expiration."
+                                     en:@"When you tap OK, iOS will ask to allow notifications. XSide only uses them to remind you the day before it expires."]
+                           size:13 weight:UIFontWeightRegular color:UIColor.secondaryLabelColor];
+    UIStackView *texts = [[UIStackView alloc] initWithArrangedSubviews:@[title, body]];
+    texts.axis = UILayoutConstraintAxisVertical;
+    texts.spacing = 3;
+    UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[badge, texts]];
+    row.spacing = 12;
+    row.alignment = UIStackViewAlignmentTop;
+    row.translatesAutoresizingMaskIntoConstraints = NO;
+    [card addSubview:row];
+    [NSLayoutConstraint activateConstraints:@[
+        [badge.widthAnchor constraintEqualToConstant:38],
+        [badge.heightAnchor constraintEqualToConstant:38],
+        [row.topAnchor constraintEqualToAnchor:card.topAnchor constant:14],
+        [row.bottomAnchor constraintEqualToAnchor:card.bottomAnchor constant:-14],
+        [row.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:14],
+        [row.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-14],
+    ]];
+    return card;
+}
+
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = UIColor.clearColor;
@@ -238,21 +278,23 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
     github.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
     [github addTarget:self action:@selector(openGitHub) forControlEvents:UIControlEventTouchUpInside];
 
-    // Only when iOS will ask on OK (see `close`): its prompt can't say why, so this does.
-    UILabel *notice = [self label:[self t:@"🔔 En touchant OK, iOS va te demander d'autoriser les notifications : XSide s'en sert pour te prévenir la veille de l'expiration."
-                                       en:@"🔔 When you tap OK, iOS will ask to allow notifications: XSide uses them to remind you the day before it expires."]
-                             size:12 weight:UIFontWeightRegular color:UIColor.secondaryLabelColor];
+    // Only when iOS will ask on OK (see `close`): its prompt can't say why, so this card does.
+    UIView *notice = [self notificationCard];
     notice.hidden = YES;
+    __weak UIButton *weakOK = ok;
     [UNUserNotificationCenter.currentNotificationCenter getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings *settings) {
         if (settings.authorizationStatus != UNAuthorizationStatusNotDetermined) return;
-        dispatch_async(dispatch_get_main_queue(), ^{ notice.hidden = NO; });
+        dispatch_async(dispatch_get_main_queue(), ^{
+            notice.hidden = NO;
+            [weakOK setTitle:[self t:@"OK, autoriser les rappels" en:@"OK, allow reminders"] forState:UIControlStateNormal];
+        });
     }];
 
     UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[head, until, left, notice, ok, github]];
     stack.axis = UILayoutConstraintAxisVertical;
     [stack setCustomSpacing:16 afterView:head];
     [stack setCustomSpacing:10 afterView:left];
-    [stack setCustomSpacing:12 afterView:notice];
+    [stack setCustomSpacing:14 afterView:notice];
     [stack setCustomSpacing:4 afterView:ok];
 
     for (UIView *v in @[_dim, _sheet]) { v.translatesAutoresizingMaskIntoConstraints = NO; [self.view addSubview:v]; }
