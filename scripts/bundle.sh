@@ -37,6 +37,15 @@ plutil -replace XSideBuildDate -string "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$APP/Co
 cp -R App/Resources/*.lproj "$APP/Contents/Resources/"
 cp App/Resources/MenuBarIcon.pdf App/Resources/AppIcon.icns App/Resources/GitHubMark.svg "$APP/Contents/Resources/"
 cp -R Resources/ProvisioningTemplate "$APP/Contents/Resources/ProvisioningTemplate"
+# The welcome popup's iOS library (see App/Welcome): signed again by XSide at each install.
+if xcrun -sdk iphoneos --show-sdk-path >/dev/null 2>&1; then
+    xcrun -sdk iphoneos clang -dynamiclib -arch arm64 -mios-version-min=15.0 -fobjc-arc -O2 \
+        -framework UIKit -framework Foundation \
+        -install_name @executable_path/Frameworks/XSideWelcome.dylib \
+        -o "$APP/Contents/Resources/XSideWelcome.dylib" App/Welcome/XSideWelcome.m
+else
+    echo "warning: no iOS SDK, building without the welcome popup library" >&2
+fi
 # Sparkle (self-updates): the framework next to the executable, found through its rpath.
 mkdir -p "$APP/Contents/Frameworks"
 cp -R "$(dirname "$BIN")/Sparkle.framework" "$APP/Contents/Frameworks/"
