@@ -78,11 +78,9 @@ struct InstallProgressView: View {
             }
             // What "XSide features" means, once that step has started.
             if step == .welcome, status == .active || status == .done {
-                Text(L("install.step.welcome.detail"))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                XSideFeaturesList()
                     .padding(.leading, 24)
+                    .padding(.top, 3)
             }
             if status == .failed, let failureMessage {
                 Text(failureMessage)
@@ -92,7 +90,6 @@ struct InstallProgressView: View {
                     .padding(.leading, 24)
             }
         }
-        .help(step == .welcome ? L("install.step.welcome.detail") : "")
         .accessibilityElement(children: .combine)
         .accessibilityLabel(L("install.progress.accessibility", index, timeline.total, step.label, status.label))
     }
@@ -121,6 +118,42 @@ struct InstallProgressView: View {
             Image(systemName: "circle")
                 .foregroundStyle(.tertiary)
         }
+    }
+}
+
+/// What XSide adds to each app, under the "Adding XSide features" step.
+private struct XSideFeaturesList: View {
+    private static let items: [(symbol: String, key: String)] = [
+        ("rectangle.portrait.bottomhalf.inset.filled", "install.feature.sheet"),
+        ("rectangle.topthird.inset.filled", "install.feature.banner"),
+        ("bell.badge.fill", "install.feature.reminder"),
+        ("gearshape.fill", "install.feature.settings"),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(L("install.feature.title"))
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+            ForEach(Self.items, id: \.key) { item in
+                HStack(spacing: 8) {
+                    Image(systemName: item.symbol)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.brand)
+                        .frame(width: 22, height: 22)
+                        .background(Theme.violet.opacity(0.14), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    Text(L(item.key))
+                        .font(.system(size: 12))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.violet.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.violet.opacity(0.18)))
+        .accessibilityElement(children: .combine)
     }
 }
 

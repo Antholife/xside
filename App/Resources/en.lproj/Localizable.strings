@@ -51,7 +51,11 @@
 "install.status.skipped" = "skipped";
 "install.step.profile" = "Apple permission";
 "install.step.welcome" = "Adding XSide features";
-"install.step.welcome.detail" = "In the app: an XSide sheet after the install, a banner after each refresh, a reminder the day before it expires, and an \"Installed with XSide\" section in Settings.";
+"install.feature.title" = "Added to the app";
+"install.feature.sheet" = "An XSide sheet the first time it opens";
+"install.feature.banner" = "A banner after each refresh";
+"install.feature.reminder" = "A reminder the day before it expires";
+"install.feature.settings" = "An \"Installed with XSide\" section in Settings";
 "install.step.signing" = "Signing";
 "install.step.installing" = "Installing";
 "install.cancel" = "Cancel";
