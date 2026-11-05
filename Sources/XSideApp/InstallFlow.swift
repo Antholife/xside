@@ -173,6 +173,8 @@ struct FirstInstallGuide: Equatable {
     let deviceID: String
     let accountName: String
     let needsDeveloperMode: Bool
+    /// XSide opened the trust page on the device itself (it said it doesn't trust the developer).
+    var openedOnDevice = false
 }
 
 /// Text-field friendly mirror of `InstallOptions` (empty string = not customized).

@@ -19,6 +19,11 @@ struct FirstInstallGuideView: View {
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            if guide.openedOnDevice {
+                Label(L("guide.openedOnDevice"), systemImage: "iphone.radiowaves.left.and.right")
+                    .font(.system(size: 12, weight: .medium))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             // Developer Mode first: turning it on restarts the device.
             if guide.needsDeveloperMode {
                 step(1, L("guide.developerMode"))

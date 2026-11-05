@@ -1641,7 +1641,7 @@ final class AppModel {
         guard force || flow.trustDue.contains(device.id) else { return nil }
         let account = (try? environment?.get())?.identityName ?? "Apple Development"
         return FirstInstallGuide(deviceID: device.id, accountName: account,
-                                 needsDeveloperMode: device.developerModeEnabled == false)
+                                 needsDeveloperMode: device.developerModeEnabled == false, openedOnDevice: force)
     }
 
     // MARK: Wi-Fi check
