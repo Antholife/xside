@@ -38,24 +38,22 @@ static BOOL XSFrench(void) {
     return [first.lowercaseString hasPrefix:@"fr"];
 }
 
-/// The view controller on top of the foreground scene's key window, nil while there's none.
-static UIViewController *XSPresenter(void) {
-    UIWindow *window = nil;
+/// The foreground scene, with a window on screen; nil while there's none.
+static UIWindowScene *XSScene(void) {
     for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
         if (scene.activationState != UISceneActivationStateForegroundActive) continue;
         if (![scene isKindOfClass:UIWindowScene.class]) continue;
-        for (UIWindow *w in ((UIWindowScene *)scene).windows) {
-            if (w.isKeyWindow) { window = w; break; }
-            if (!window) window = w;
-        }
-        if (window) break;
+        UIWindowScene *ws = (UIWindowScene *)scene;
+        for (UIWindow *w in ws.windows) if (!w.hidden && w.rootViewController) return ws;
     }
-    UIViewController *top = window.rootViewController;
-    while (top.presentedViewController && !top.presentedViewController.isBeingDismissed) {
-        top = top.presentedViewController;
-    }
-    return top.viewIfLoaded.window ? top : nil;
+    return nil;
 }
+
+/// The sheet's own window, above the app's (and its alerts): the app can present, dismiss or
+/// replace its screens (sign-in, onboarding) without ever covering or closing the sheet.
+static UIWindow *XSWindow;
+/// The app's key window before the sheet, given back when it closes.
+static __weak UIWindow *XSPreviousKey;
 
 // MARK: - The sheet (design "B": a card rising from the bottom over the dimmed app)
 
@@ -260,7 +258,9 @@ static UIColor *XSPink(void) { return [UIColor colorWithRed:0xC9 / 255.0 green:0
         self->_sheet.transform = CGAffineTransformMakeTranslation(0, self->_sheet.bounds.size.height + 40);
         self->_dim.alpha = 0;
     } completion:^(BOOL finished) {
-        [self dismissViewControllerAnimated:NO completion:nil];
+        XSWindow.hidden = YES;
+        XSWindow = nil;
+        [XSPreviousKey makeKeyWindow];
     }];
 }
 
@@ -272,17 +272,24 @@ static UIColor *XSPink(void) { return [UIColor colorWithRed:0xC9 / 255.0 green:0
 @end
 
 static void XSShow(NSDate *expiry, int attempt) {
-    UIViewController *presenter = XSPresenter();
-    if (!presenter) {
+    UIWindowScene *scene = XSScene();
+    if (!scene) {
         if (attempt + 1 >= XSMaxAttempts) return;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             XSShow(expiry, attempt + 1);
         });
         return;
     }
+    if (XSWindow) return;
+    for (UIWindow *w in scene.windows) if (w.isKeyWindow) XSPreviousKey = w;
+    UIWindow *window = [[UIWindow alloc] initWithWindowScene:scene];
+    window.windowLevel = UIWindowLevelAlert + 100;
+    window.backgroundColor = UIColor.clearColor;
     // Hidden at first: the sheet slides up once on screen (see viewDidAppear).
-    [presenter presentViewController:[[XSWelcomeController alloc] initWithExpiry:expiry] animated:NO completion:nil];
-    // Announced once presented: a relaunch before tapping OK doesn't show it again.
+    window.rootViewController = [[XSWelcomeController alloc] initWithExpiry:expiry];
+    XSWindow = window;
+    [window makeKeyAndVisible];
+    // Announced once shown: a relaunch before tapping OK doesn't show it again.
     [NSUserDefaults.standardUserDefaults setObject:expiry forKey:XSAnnouncedKey];
 }
 
