@@ -28,7 +28,8 @@ struct FirstInstallGuideView: View {
             if guide.needsDeveloperMode {
                 step(1, L("guide.developerMode"))
             }
-            step(guide.needsDeveloperMode ? 2 : 1, L("guide.trust", guide.accountName))
+            // Numbered only when there are two steps.
+            step(guide.needsDeveloperMode ? 2 : nil, L("guide.trust", guide.accountName))
             if let openOnDevice {
                 Button(L("guide.openOnDevice"), systemImage: "iphone.and.arrow.forward", action: openOnDevice)
                     .controlSize(.small)
@@ -40,13 +41,20 @@ struct FirstInstallGuideView: View {
         .background(Theme.violet.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
-    private func step(_ n: Int, _ text: String) -> some View {
+    private func step(_ n: Int?, _ text: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text("\(n)")
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
-                .frame(width: 16, height: 16)
-                .background(Theme.brand, in: Circle())
+            if let n {
+                Text("\(n)")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .frame(width: 16, height: 16)
+                    .background(Theme.brand, in: Circle())
+            } else {
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.brand)
+                    .frame(width: 16, height: 16)
+            }
             Text(text)
                 .font(.system(size: 12))
                 .fixedSize(horizontal: false, vertical: true)

@@ -75,7 +75,7 @@
 "guide.title" = "Before opening the app";
 "guide.titleDevice" = "Before opening the app on %@";
 "guide.unlock" = "The app only opens once these settings are done on the device.";
-"guide.trust" = "Then, on the device: Settings > General > VPN & Device Management > %@ > Trust.";
+"guide.trust" = "On the device: Settings > General > VPN & Device Management > %@ > Trust.";
 "guide.openedOnDevice" = "XSide is opening this page in the device's Settings: look at your device. If nothing shows, click the button below or follow the steps.";
 "guide.openOnDevice" = "Open this page on the device";
 "guide.developerMode" = "Turn on Developer Mode: Settings > Privacy & Security > Developer Mode (the device restarts).";
