@@ -230,3 +230,61 @@ private func stubApps(_ runner: FakeRunner, json: String?, status: Int32 = 0) {
         #expect(await Installer(runner: runner).installedBundleIDs(deviceID: "DEV") == nil)
     }
 }
+
+@Suite struct TrustSettingsTests {
+    /// Settings > General > VPN & Device Management, opened on the device itself.
+    @Test func opensTheTrustPageInSettings() async throws {
+        let runner = FakeRunner()
+        runner.stub("/usr/bin/xcrun", result: CommandResult(status: 0, stdout: Data(), stderr: ""))
+        try await Installer(runner: runner).openTrustSettings(deviceID: "DEV")
+        #expect(runner.calls == [["/usr/bin/xcrun", "devicectl", "device", "process", "launch", "--device", "DEV",
+                                  "--terminate-existing", "--payload-url",
+                                  "prefs:root=General&path=ManagedConfigurationList", "com.apple.Preferences"]])
+    }
+
+    @Test func failureIsReported() async {
+        let runner = FakeRunner()
+        runner.stub("/usr/bin/xcrun", result: CommandResult(status: 1, stdout: Data(), stderr: unreachable))
+        await #expect(throws: XSideError.deviceUnavailable) {
+            try await Installer(runner: runner).openTrustSettings(deviceID: "DEV")
+        }
+    }
+}
+
+private let untrustedLaunch = """
+ERROR: The application failed to launch. (com.apple.dt.CoreDeviceError error 10002 (0x2712))
+       NSLocalizedRecoverySuggestion = Provide a valid bundle identifier.
+       ----------------------------------------
+       The request was denied by service delegate (SBMainWorkspace) for reason: Security ("Unable to launch com.x.TEAM because it has an invalid code signature, inadequate entitlements or its profile has not been explicitly trusted by the user").
+"""
+
+private let lockedLaunch = """
+ERROR: The application failed to launch. (com.apple.dt.CoreDeviceError error 10002 (0x2712))
+       The request was denied by service delegate (SBMainWorkspace) for reason: Locked ("Unable to launch com.x.TEAM because the device was not, or could not be, unlocked").
+"""
+
+@Suite struct TrustCheckTests {
+    @Test func launchedMeansTrusted() async throws {
+        let runner = FakeRunner()
+        runner.stub("/usr/bin/xcrun", result: CommandResult(status: 0, stdout: Data("Launched application".utf8), stderr: ""))
+        #expect(await Installer(runner: runner).trustState(bundleID: "com.x.TEAM", deviceID: "DEV") == .trusted)
+        #expect(runner.calls == [["/usr/bin/xcrun", "devicectl", "device", "process", "launch", "--device", "DEV",
+                                  "--no-activate", "com.x.TEAM"]])
+    }
+
+    @Test func securityRefusalMeansNotTrusted() async {
+        let runner = FakeRunner()
+        runner.stub("/usr/bin/xcrun", result: CommandResult(status: 1, stdout: Data(), stderr: untrustedLaunch))
+        #expect(await Installer(runner: runner).trustState(bundleID: "com.x.TEAM", deviceID: "DEV") == .untrusted)
+    }
+
+    /// Anything else says nothing about trust.
+    @Test func otherFailuresAreUnknown() async {
+        for output in [lockedLaunch, unreachable, "garbage"] {
+            let runner = FakeRunner()
+            runner.stub("/usr/bin/xcrun", result: CommandResult(status: 1, stdout: Data(), stderr: output))
+            #expect(await Installer(runner: runner).trustState(bundleID: "com.x.TEAM", deviceID: "DEV") == .unknown)
+        }
+        #expect(await Installer(runner: FakeRunner()).trustState(bundleID: "com.x.TEAM", deviceID: "DEV") == .unknown)
+    }
+}

@@ -263,7 +263,8 @@ struct InstallSheet: View {
                 if flow.wifiCheck == nil {
                     ForEach(flow.guides, id: \.deviceID) { guide in
                         FirstInstallGuideView(guide: guide,
-                                              deviceName: flow.isMultiDevice ? name(of: guide.deviceID) : nil)
+                                              deviceName: flow.isMultiDevice ? name(of: guide.deviceID) : nil,
+                                              openOnDevice: { model.openTrustSettings(guide.deviceID) })
                             .onAppear { model.guideDisplayed(guide) }
                     }
                 }

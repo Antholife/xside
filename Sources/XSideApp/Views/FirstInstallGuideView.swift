@@ -6,6 +6,9 @@ struct FirstInstallGuideView: View {
     let guide: FirstInstallGuide
     /// Named in the title when several devices were installed (one guide each).
     var deviceName: String?
+    /// Opens the trust page in Settings on the device (XSide already opened it once when it saw
+    /// the developer wasn't trusted).
+    var openOnDevice: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -21,6 +24,11 @@ struct FirstInstallGuideView: View {
                 step(1, L("guide.developerMode"))
             }
             step(guide.needsDeveloperMode ? 2 : 1, L("guide.trust", guide.accountName))
+            if let openOnDevice {
+                Button(L("guide.openOnDevice"), systemImage: "iphone.and.arrow.forward", action: openOnDevice)
+                    .controlSize(.small)
+                    .padding(.leading, 24)
+            }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)

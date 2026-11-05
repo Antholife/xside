@@ -1543,7 +1543,7 @@ final class AppModel {
         }
         unhide(deviceID) // installing on it brings it back
         do {
-            try await importAndInstall(flow.ipa, on: device, options: flow.runOptions,
+            let installed = try await importAndInstall(flow.ipa, on: device, options: flow.runOptions,
                                        importedInto: flow.importedRecordID,
                                        imported: { flow.importedRecordID = $0 },
                                        progress: { stage in
@@ -1552,15 +1552,26 @@ final class AppModel {
                                            flow.setStatus(.running(stage), for: deviceID)
                                        })
             flow.setStatus(.succeeded, for: deviceID)
-            if let guide = guideIfFirstInstall(on: device, flow: flow) {
+            // Asked to the device itself; the remembered rule only when it can't tell.
+            let signedID = installed.installations.first { $0.deviceID == deviceID }?.signedBundleID ?? installed.signedBundleID
+            let trust = await Installer(runner: runner).trustState(bundleID: signedID, deviceID: deviceID)
+            Self.logger.notice("trust on \(deviceID): \(String(describing: trust))")
+            if trust == .trusted, flow.trustDue.contains(deviceID) {
+                // Already trusted (another app of the same account): nothing to say, remembered as shown.
+                rememberGuideShown(deviceID)
+            }
+            if trust == .untrusted { openTrustSettings(deviceID) }
+            // Trusted: no guide. Not trusted: the guide, whatever XSide remembers.
+            if trust != .trusted,
+               let guide = guideIfFirstInstall(on: device, flow: flow, force: trust == .untrusted) {
                 flow.guides.append(guide)
-                // The Wi-Fi check is for a device's very first install only, not a guide shown again.
-                if flow.firstInstalls.contains(device.id), devicePrefs.wifiRefresh(for: device.id) {
-                    if device.transport == .usb {
-                        flow.wifiQueue.append(device.id)
-                    } else if let i = flow.runs.firstIndex(where: { $0.deviceID == deviceID }) {
-                        flow.runs[i].wifiVerified = true // already installed over Wi-Fi
-                    }
+            }
+            // The Wi-Fi check is for a device's very first install only, not a guide shown again.
+            if flow.firstInstalls.contains(device.id), devicePrefs.wifiRefresh(for: device.id) {
+                if device.transport == .usb {
+                    flow.wifiQueue.append(device.id)
+                } else if let i = flow.runs.firstIndex(where: { $0.deviceID == deviceID }) {
+                    flow.runs[i].wifiVerified = true // already installed over Wi-Fi
                 }
             }
         } catch {
@@ -1622,8 +1633,9 @@ final class AppModel {
 
     /// The guide is due after a successful install on a device the run marked (`trustDue`). It is
     /// marked as shown only when it is actually displayed (`guideDisplayed`).
-    private func guideIfFirstInstall(on device: Device, flow: InstallFlow) -> FirstInstallGuide? {
-        guard flow.trustDue.contains(device.id) else { return nil }
+    /// `force`: the device said it doesn't trust the developer, whatever XSide remembers.
+    private func guideIfFirstInstall(on device: Device, flow: InstallFlow, force: Bool = false) -> FirstInstallGuide? {
+        guard force || flow.trustDue.contains(device.id) else { return nil }
         let account = (try? environment?.get())?.identityName ?? "Apple Development"
         return FirstInstallGuide(deviceID: device.id, accountName: account,
                                  needsDeveloperMode: device.developerModeEnabled == false)
@@ -1669,13 +1681,27 @@ final class AppModel {
     }
 
     func guideDisplayed(_ guide: FirstInstallGuide) {
-        // The certificate it was shown for: a new one brings the guide back.
-        let sha1 = (try? environment?.get())?.identitySHA1
-        UserDefaults.standard.set(sha1 ?? true as Any, forKey: Self.guideKey(guide.deviceID))
+        rememberGuideShown(guide.deviceID)
         if let flow = install, flow.guides.contains(guide) { flow.shownGuides.insert(guide.deviceID) }
     }
 
     private static func guideKey(_ deviceID: String) -> String { "guideShown.\(deviceID)" }
+
+    /// The certificate the guide was shown (or found unneeded) for: a new one brings it back.
+    private func rememberGuideShown(_ deviceID: String) {
+        let sha1 = (try? environment?.get())?.identitySHA1
+        UserDefaults.standard.set(sha1 ?? true as Any, forKey: Self.guideKey(deviceID))
+    }
+
+    /// Opens Settings > General > VPN & Device Management on the device (see the guide).
+    func openTrustSettings(_ deviceID: String) {
+        let installer = Installer(runner: runner)
+        Task {
+            do { try await installer.openTrustSettings(deviceID: deviceID) } catch {
+                Self.logger.notice("opening the trust settings on \(deviceID) failed: \(String(describing: error))")
+            }
+        }
+    }
 
     /// "Done" / "Cancel": moves to the next queued file. Returns false when the window can close.
     func dismissFlow() -> Bool {

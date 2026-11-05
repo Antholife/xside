@@ -73,6 +73,38 @@ public struct Installer: Sendable {
         return apps.compactMap { $0["bundleIdentifier"] as? String }
     }
 
+    public enum TrustState: Sendable, Equatable { case trusted, untrusted, unknown }
+
+    /// Whether the device trusts the app's developer, found by launching the app in the
+    /// background: iOS refuses an untrusted one "for reason: Security". Any other failure (locked
+    /// device, out of reach) says nothing: `unknown`.
+    public func trustState(bundleID: String, deviceID: String) async -> TrustState {
+        guard let result = try? await runner.run(
+            "/usr/bin/xcrun",
+            ["devicectl", "device", "process", "launch", "--device", deviceID, "--no-activate", bundleID],
+            cwd: nil, timeout: CommandTimeout.deviceQuery) else { return .unknown }
+        if result.status == 0 { return .trusted }
+        let lower = (String(decoding: result.stdout, as: UTF8.self) + "\n" + result.stderr).lowercased()
+        let untrusted = ["for reason: security", "not been explicitly trusted"]
+        return untrusted.contains { lower.contains($0) } ? .untrusted : .unknown
+    }
+
+    /// Opens Settings > General > VPN & Device Management on the device, where the developer is
+    /// trusted. Restarted if already open, so it lands on that page.
+    public func openTrustSettings(deviceID: String) async throws {
+        let result = try await runner.run(
+            "/usr/bin/xcrun",
+            ["devicectl", "device", "process", "launch", "--device", deviceID, "--terminate-existing",
+             "--payload-url", "prefs:root=General&path=ManagedConfigurationList", "com.apple.Preferences"],
+            cwd: nil, timeout: CommandTimeout.deviceQuery)
+        guard result.status == 0 else {
+            let combined = String(decoding: result.stdout, as: UTF8.self) + "\n" + result.stderr
+            let mapped = Self.mapError(combined)
+            if case .commandFailed = mapped { throw XSideError.commandFailed(tool: "devicectl", status: result.status) }
+            throw mapped
+        }
+    }
+
     /// Maps the output of a failed uninstall: nil when it says the app isn't on the device (the
     /// goal is reached), else the same errors as an install, `uninstallFailed` for a message.
     /// Like `mapError`, only error blocks are read, so an app named "Not Installed" is no cause.

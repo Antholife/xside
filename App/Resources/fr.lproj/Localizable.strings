@@ -75,6 +75,7 @@
 "guide.titleDevice" = "Avant d'ouvrir l'app sur %@";
 "guide.unlock" = "L'app ne s'ouvrira qu'après ces réglages sur l'appareil.";
 "guide.trust" = "Ensuite, sur l'appareil : Réglages > Général > VPN et gestion de l'appareil > %@ > Faire confiance.";
+"guide.openOnDevice" = "Ouvrir cette page sur l'appareil";
 "guide.developerMode" = "Active le mode développeur : Réglages > Confidentialité et sécurité > Mode développeur (l'appareil redémarre).";
 
 /* Notifications */
