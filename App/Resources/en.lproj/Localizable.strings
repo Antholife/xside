@@ -525,7 +525,7 @@
 "whatsNew.105.schedule.text" = "1, 2 or 3 days before they expire, a pause (also in the panel), only on power adapter, at night or in the evening. An app about to expire is always refreshed.";
 "whatsNew.105.report.title" = "Report a problem in one click";
 "whatsNew.105.report.text" = "The GitHub form opens already filled in, and the full log waits on your Desktop. Everything is masked.";
-"whatsNew.105.more.text" = "Clear messages for a locked device or one without Developer Mode, new settings (open the app, Wi-Fi for new devices, reminder, notifications), and the keychain option says when to turn it on.";
+"whatsNew.105.more.text" = "The install window shows what XSide adds to the app and lets you choose to open the app or the Trust page. Devices say when they're locked or without Developer Mode, with clear messages. New settings (Wi-Fi for new devices, reminder, notifications), a Reports & Logs page, and the keychain option says when to turn it on.";
 "whatsNew.104.updates.title" = "Updates install by themselves";
 "whatsNew.104.updates.text" = "Turn on Install updates automatically in Settings > Updates: XSide downloads the new version in the background and installs it as soon as nothing runs, then relaunches.";
 "whatsNew.104.cli.title" = "xside in the Terminal";
