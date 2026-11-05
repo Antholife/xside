@@ -38,16 +38,30 @@ enum Diagnostics {
     /// attach to a GitHub issue.
     @MainActor static func export(model: AppModel) {
         let panel = NSSavePanel()
-        let stamp = Date().formatted(.iso8601.year().month().day().dateSeparator(.dash))
-        panel.nameFieldStringValue = "XSide-logs-\(stamp).zip"
+        panel.nameFieldStringValue = archiveName
         panel.allowedContentTypes = [.zip]
         NSApp.activate()
         guard panel.runModal() == .OK, let destination = panel.url else { return }
-        log.notice("exporting logs")
+        Task {
+            if await writeArchive(model: model, to: destination) {
+                NSWorkspace.shared.activateFileViewerSelecting([destination])
+            } else {
+                NSSound.beep()
+            }
+        }
+    }
 
+    private static var archiveName: String {
+        "XSide-logs-\(Date().formatted(.iso8601.year().month().day().dateSeparator(.dash))).zip"
+    }
+
+    /// The logs and a summary of the state, redacted, zipped at `destination`.
+    @MainActor private static func writeArchive(model: AppModel, to destination: URL) async -> Bool {
+        log.notice("exporting logs")
         let fm = FileManager.default
         let folder = fm.temporaryDirectory.appendingPathComponent("XSide-logs-\(UUID().uuidString)")
             .appendingPathComponent("XSide-logs", isDirectory: true)
+        defer { try? fm.removeItem(at: folder.deletingLastPathComponent()) }
         do {
             try fm.createDirectory(at: folder, withIntermediateDirectories: true)
             // Masked again: a value registered after a line was written (a device seen later) is
@@ -61,19 +75,44 @@ enum Diagnostics {
                 .write(to: folder.appendingPathComponent("summary.txt"), atomically: true, encoding: .utf8)
         } catch {
             log.error("log export failed: \(error)")
-            NSSound.beep()
-            return
+            return false
         }
+        try? fm.removeItem(at: destination)
+        let result = try? await ProcessRunner().run("/usr/bin/ditto",
+                                                    ["-c", "-k", "--keepParent", folder.path, destination.path], cwd: nil)
+        return result?.status == 0
+    }
+
+    /// "Report a problem": the logs archive goes to Downloads (shown in the Finder, to drag into
+    /// the issue), and a new GitHub issue opens filled in with the summary and the last log
+    /// lines, all redacted. Nothing is sent: the person reads it and submits it.
+    @MainActor static func reportIssue(model: AppModel) {
         Task {
-            defer { try? fm.removeItem(at: folder.deletingLastPathComponent()) }
-            try? fm.removeItem(at: destination)
-            let result = try? await ProcessRunner().run("/usr/bin/ditto",
-                                                        ["-c", "-k", "--keepParent", folder.path, destination.path], cwd: nil)
-            if result?.status == 0 {
-                NSWorkspace.shared.activateFileViewerSelecting([destination])
-            } else {
-                NSSound.beep()
-            }
+            let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+                ?? FileManager.default.temporaryDirectory
+            let archive = downloads.appendingPathComponent(archiveName)
+            let archived = await writeArchive(model: model, to: archive)
+            let lastLines = LogStore.shared.files().first
+                .flatMap { try? String(contentsOf: $0, encoding: .utf8) }
+                .map { LogStore.shared.redact(IssueReport.tail($0, lines: 40)) } ?? ""
+            let body = """
+                \(L("report.describe"))
+
+
+                \(L("report.attach"))
+
+                ### \(L("report.summary"))
+                ```
+                \(LogStore.shared.redact(model.diagnosticSummary(header: summary)))
+                ```
+
+                ### \(L("report.lastLines"))
+                ```
+                \(lastLines)
+                ```
+                """
+            NSWorkspace.shared.open(IssueReport.url(title: "", body: body))
+            if archived { NSWorkspace.shared.activateFileViewerSelecting([archive]) }
         }
     }
 }

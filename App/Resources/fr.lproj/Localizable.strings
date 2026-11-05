@@ -509,3 +509,10 @@
 "settings.ios.footer" = "XSide la rafraîchit automatiquement depuis ton Mac. github.com/Antholife/xside";
 "settings.ios.validUntil" = "Valable jusqu'au";
 "settings.ios.signedOn" = "Rafraîchie le";
+
+/* Report a problem (GitHub issue) */
+"report.button" = "Signaler un problème…";
+"report.describe" = "**Ce qui s'est passé :** (décris le problème et ce que tu faisais)";
+"report.attach" = "📎 XSide vient d'enregistrer le paquet de diagnostic (XSide-logs-….zip) dans Téléchargements : glisse-le ici. Les noms d'appareils, identifiants et comptes y sont masqués.";
+"report.summary" = "État d'XSide";
+"report.lastLines" = "Dernières lignes du journal";

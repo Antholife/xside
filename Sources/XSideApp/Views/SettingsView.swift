@@ -256,6 +256,7 @@ private struct SettingsPage: View {
                 HStack(spacing: 8) {
                     Button(L("logs.show")) { NSWorkspace.shared.open(Diagnostics.directory) }
                     Button(L("logs.export")) { Diagnostics.export(model: model) }
+                    Button(L("report.button")) { Diagnostics.reportIssue(model: model) }
                 }
                 .fixedSize()
             } label: {

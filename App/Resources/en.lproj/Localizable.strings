@@ -509,3 +509,10 @@
 "settings.ios.footer" = "XSide refreshes it automatically from your Mac. github.com/Antholife/xside";
 "settings.ios.validUntil" = "Valid until";
 "settings.ios.signedOn" = "Last refreshed";
+
+/* Report a problem (GitHub issue) */
+"report.button" = "Report a Problem…";
+"report.describe" = "**What happened:** (describe the problem and what you were doing)";
+"report.attach" = "📎 XSide just saved the diagnostics archive (XSide-logs-….zip) in Downloads: drag it here. Device names, identifiers and accounts are masked in it.";
+"report.summary" = "XSide state";
+"report.lastLines" = "Last log lines";
