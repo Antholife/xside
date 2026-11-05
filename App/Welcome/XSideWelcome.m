@@ -2,7 +2,7 @@
 // profile), at the first launch after it:
 // - after an install (no earlier signature known to the app), a sheet saying the app was
 //   installed with XSide and until when it works;
-// - after a refresh, a small banner at the top that goes away by itself.
+// - after a refresh, a card at the bottom with an OK button.
 // At each launch it also schedules a local reminder 24 h before expiry when the app may notify.
 // If the app never asked for that permission, it's asked once, when the sheet is closed. It never throws, asserts or blocks: anything
 // missing (no profile, no window) and it silently does nothing.
@@ -443,7 +443,7 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
 }
 @end
 
-// MARK: - The banner (after a refresh): a card sliding down from the top, gone after a few seconds
+// MARK: - The banner (after a refresh): a card rising at the bottom, closed with OK
 
 /// Touches outside the banner go to the app.
 @interface XSPassthroughWindow : UIWindow
@@ -475,83 +475,89 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
     BOOL fr = XSFrench();
     self.view.backgroundColor = UIColor.clearColor;
 
-    UIVisualEffectView *card = [[UIVisualEffectView alloc] initWithEffect:
-                                [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThickMaterial]];
-    card.layer.cornerRadius = 22;
-    card.layer.cornerCurve = kCACornerCurveContinuous;
-    card.clipsToBounds = YES;
     // The shadow lives on a holder: the blur view clips.
     UIView *holder = [UIView new];
     holder.layer.shadowColor = UIColor.blackColor.CGColor;
-    holder.layer.shadowOpacity = 0.18;
-    holder.layer.shadowRadius = 14;
-    holder.layer.shadowOffset = CGSizeMake(0, 4);
+    holder.layer.shadowOpacity = 0.22;
+    holder.layer.shadowRadius = 22;
+    holder.layer.shadowOffset = CGSizeMake(0, 8);
+    UIVisualEffectView *card = [[UIVisualEffectView alloc] initWithEffect:
+                                [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThickMaterial]];
+    card.layer.cornerRadius = 26;
+    card.layer.cornerCurve = kCACornerCurveContinuous;
+    card.clipsToBounds = YES;
 
     UIImageView *icon = [[UIImageView alloc] initWithImage:XSIcon()];
-    icon.layer.cornerRadius = 8;
+    icon.layer.cornerRadius = 11;
     icon.layer.cornerCurve = kCACornerCurveContinuous;
     icon.clipsToBounds = YES;
     UILabel *title = [UILabel new];
     title.text = fr ? @"Rafraîchie par XSide" : @"Refreshed by XSide";
-    title.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
+    title.font = [UIFont systemFontOfSize:17 weight:UIFontWeightBold];
     UILabel *subtitle = [UILabel new];
     subtitle.text = [NSString stringWithFormat:fr ? @"Valable jusqu'au %@" : @"Valid until %@", XSDate(_expiry)];
-    subtitle.font = [UIFont systemFontOfSize:13];
+    subtitle.font = [UIFont systemFontOfSize:14];
     subtitle.textColor = UIColor.secondaryLabelColor;
-    subtitle.adjustsFontSizeToFitWidth = YES;
-    subtitle.minimumScaleFactor = 0.8;
+    subtitle.numberOfLines = 0;
     UIStackView *titles = [[UIStackView alloc] initWithArrangedSubviews:@[title, subtitle]];
     titles.axis = UILayoutConstraintAxisVertical;
-    titles.spacing = 1;
-    UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[icon, titles]];
-    row.spacing = 12;
-    row.alignment = UIStackViewAlignmentCenter;
+    titles.spacing = 2;
+    UIStackView *head = [[UIStackView alloc] initWithArrangedSubviews:@[icon, titles]];
+    head.spacing = 14;
+    head.alignment = UIStackViewAlignmentCenter;
 
-    for (UIView *v in @[holder, card, row]) v.translatesAutoresizingMaskIntoConstraints = NO;
+    XSGradientButton *ok = [XSGradientButton buttonWithType:UIButtonTypeCustom];
+    [ok setTitle:@"OK" forState:UIControlStateNormal];
+    [ok setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
+    ok.titleLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightSemibold];
+    [ok addTarget:self action:@selector(close) forControlEvents:UIControlEventTouchUpInside];
+
+    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[head, ok]];
+    stack.axis = UILayoutConstraintAxisVertical;
+    stack.spacing = 16;
+
+    for (UIView *v in @[holder, card, stack]) v.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:holder];
     [holder addSubview:card];
-    [card.contentView addSubview:row];
+    [card.contentView addSubview:stack];
     NSLayoutConstraint *wide = [holder.widthAnchor constraintEqualToAnchor:self.view.widthAnchor constant:-24];
     wide.priority = UILayoutPriorityDefaultHigh; // capped on iPad
     [NSLayoutConstraint activateConstraints:@[
-        [holder.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:6],
+        [holder.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-8],
         [holder.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-        [holder.widthAnchor constraintLessThanOrEqualToConstant:420],
+        [holder.widthAnchor constraintLessThanOrEqualToConstant:460],
         wide,
         [card.topAnchor constraintEqualToAnchor:holder.topAnchor],
         [card.bottomAnchor constraintEqualToAnchor:holder.bottomAnchor],
         [card.leadingAnchor constraintEqualToAnchor:holder.leadingAnchor],
         [card.trailingAnchor constraintEqualToAnchor:holder.trailingAnchor],
-        [row.topAnchor constraintEqualToAnchor:card.contentView.topAnchor constant:12],
-        [row.bottomAnchor constraintEqualToAnchor:card.contentView.bottomAnchor constant:-12],
-        [row.leadingAnchor constraintEqualToAnchor:card.contentView.leadingAnchor constant:14],
-        [row.trailingAnchor constraintEqualToAnchor:card.contentView.trailingAnchor constant:-16],
-        [icon.widthAnchor constraintEqualToConstant:34],
-        [icon.heightAnchor constraintEqualToConstant:34],
+        [stack.topAnchor constraintEqualToAnchor:card.contentView.topAnchor constant:18],
+        [stack.bottomAnchor constraintEqualToAnchor:card.contentView.bottomAnchor constant:-16],
+        [stack.leadingAnchor constraintEqualToAnchor:card.contentView.leadingAnchor constant:18],
+        [stack.trailingAnchor constraintEqualToAnchor:card.contentView.trailingAnchor constant:-18],
+        [icon.widthAnchor constraintEqualToConstant:48],
+        [icon.heightAnchor constraintEqualToConstant:48],
+        [ok.heightAnchor constraintEqualToConstant:48],
     ]];
     _card = holder;
-    [holder addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(close)]];
-    UISwipeGestureRecognizer *up = [[UISwipeGestureRecognizer alloc] initWithTarget:self action:@selector(close)];
-    up.direction = UISwipeGestureRecognizerDirectionUp;
-    [holder addGestureRecognizer:up];
+    // Stays until OK (or a swipe down); the app stays usable around it.
+    UISwipeGestureRecognizer *down = [[UISwipeGestureRecognizer alloc] initWithTarget:self action:@selector(close)];
+    down.direction = UISwipeGestureRecognizerDirectionDown;
+    [holder addGestureRecognizer:down];
 }
 
 - (CGAffineTransform)hidden {
-    return CGAffineTransformMakeTranslation(0, -(CGRectGetMaxY(_card.frame) + 20));
+    return CGAffineTransformMakeTranslation(0, self.view.bounds.size.height - CGRectGetMinY(_card.frame) + 20);
 }
 
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
     [self.view layoutIfNeeded];
     _card.transform = [self hidden];
-    [UIView animateWithDuration:0.55 delay:0 usingSpringWithDamping:0.8 initialSpringVelocity:0.5
+    [UIView animateWithDuration:0.55 delay:0 usingSpringWithDamping:0.82 initialSpringVelocity:0.5
                         options:UIViewAnimationOptionAllowUserInteraction animations:^{
         self->_card.transform = CGAffineTransformIdentity;
     } completion:nil];
-    __weak XSBannerController *weakSelf = self;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(4.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        [weakSelf close];
-    });
 }
 
 - (void)close {
@@ -639,8 +645,8 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded) {
         UNMutableNotificationContent *content = [UNMutableNotificationContent new];
         content.title = [NSString stringWithFormat:fr ? @"%@ expire demain" : @"%@ expires tomorrow", XSAppName()];
         // A refresh only moves the reminder at the next launch: worded so it stays true.
-        content.body = fr ? @"Sauf si XSide l'a rafraîchie entre-temps : connecte l'appareil au Mac où tourne XSide, puis ouvre l'app pour vérifier."
-                          : @"Unless XSide refreshed it meanwhile: connect the device to the Mac running XSide, then open the app to check.";
+        content.body = fr ? @"Sauf si XSide l'a rafraîchie entre-temps. Il lui faut ton Mac allumé avec XSide ouvert, et l'appareil sur le même Wi-Fi ou branché en USB. Ouvre l'app pour vérifier."
+                          : @"Unless XSide refreshed it meanwhile. It needs your Mac on with XSide open, and the device on the same Wi-Fi or plugged in over USB. Open the app to check.";
         content.sound = UNNotificationSound.defaultSound;
         // The icon on the left is always the app's (iOS); XSide's logo goes on the right.
         UNNotificationAttachment *logo = XSLogoAttachment();
