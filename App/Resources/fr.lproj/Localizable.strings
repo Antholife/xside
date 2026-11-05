@@ -50,7 +50,7 @@
 "install.status.pending" = "à venir";
 "install.status.skipped" = "ignorée";
 "install.step.profile" = "Autorisation d'Apple";
-"install.step.welcome" = "Ajout du message XSide";
+"install.step.welcome" = "Ajout des infos XSide";
 "install.step.signing" = "Signature";
 "install.step.installing" = "Installation";
 "install.cancel" = "Annuler";

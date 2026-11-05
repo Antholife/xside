@@ -50,7 +50,7 @@
 "install.status.pending" = "upcoming";
 "install.status.skipped" = "skipped";
 "install.step.profile" = "Apple permission";
-"install.step.welcome" = "Adding the XSide message";
+"install.step.welcome" = "Adding XSide info";
 "install.step.signing" = "Signing";
 "install.step.installing" = "Installing";
 "install.cancel" = "Cancel";
