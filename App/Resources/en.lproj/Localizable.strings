@@ -35,6 +35,8 @@
 "install.field.icon" = "Icon";
 "install.field.iconChoose" = "Choose…";
 "install.field.fileSharing" = "File sharing";
+"install.field.welcomePopup" = "Show an XSide message when it opens";
+"install.field.welcomePopup.note" = "Once after each install and refresh: where the app comes from and until when it works. Turn it off if the app refuses to run.";
 "install.field.iPadFullScreen" = "iPad full screen";
 "install.field.proMotion" = "ProMotion 120 Hz";
 "install.field.minOS" = "Minimum iOS";

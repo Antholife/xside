@@ -1341,6 +1341,8 @@ final class AppModel {
                 let existing = records.first { $0.originalBundleID == info.bundleID }
                 flow.existing = existing
                 flow.draft = OptionsDraft(existing?.options ?? InstallOptions())
+                // A new app gets the welcome popup by default; a known one keeps its saved choice.
+                if existing == nil { flow.draft.welcomePopup = true }
                 flow.phase = .editing(error: nil)
                 autoselectDevice() // the default now depends on where the app is installed
                 #if DEBUG

@@ -13,10 +13,15 @@ public struct InstallOptions: Codable, Equatable, Sendable {
     /// Grant the keychain groups the app shares with its vendor's other apps. Off by default: the
     /// vendor is read from the IPA itself, so a crafted IPA could claim one to read their logins.
     public var shareKeychain: Bool = false
+    /// The app shows "Installed with XSide · valid until …" once after each install and refresh
+    /// (a small library XSide adds to it). Off unless chosen: apps installed before it existed
+    /// don't get it; new installs have it on by default (see the install window's draft).
+    public var welcomePopup: Bool = false
 
     public init(displayName: String? = nil, customBundleID: String? = nil, version: String? = nil,
                 iconPath: String? = nil, fileSharing: Bool = false, iPadFullScreen: Bool = false,
-                proMotion: Bool = false, minimumOSVersion: String? = nil, shareKeychain: Bool = false) {
+                proMotion: Bool = false, minimumOSVersion: String? = nil, shareKeychain: Bool = false,
+                welcomePopup: Bool = false) {
         self.displayName = displayName
         self.customBundleID = customBundleID
         self.version = version
@@ -26,6 +31,7 @@ public struct InstallOptions: Codable, Equatable, Sendable {
         self.proMotion = proMotion
         self.minimumOSVersion = minimumOSVersion
         self.shareKeychain = shareKeychain
+        self.welcomePopup = welcomePopup
     }
 
     /// Every key is optional: options saved by an older version (or missing a key) still load.
@@ -40,6 +46,7 @@ public struct InstallOptions: Codable, Equatable, Sendable {
         proMotion = try c.decodeIfPresent(Bool.self, forKey: .proMotion) ?? false
         minimumOSVersion = try c.decodeIfPresent(String.self, forKey: .minimumOSVersion)
         shareKeychain = try c.decodeIfPresent(Bool.self, forKey: .shareKeychain) ?? false
+        welcomePopup = try c.decodeIfPresent(Bool.self, forKey: .welcomePopup) ?? false
     }
 }
 
