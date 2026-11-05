@@ -625,11 +625,8 @@ __attribute__((constructor)) static void XSideWelcomeInit(void) {
         observer = nil;
         NSDate *expiry = XSExpirationDate();
         if (!expiry) return;
-#ifdef XS_TEST_REMINDER
-        XSScheduleReminder(expiry, YES); // test build: asks at launch too, to try it without a reinstall
-#else
-        XSScheduleReminder(expiry, NO);
-#endif
+        XSScheduleReminder(expiry, NO); // asked only when the sheet closes, as it says
+
         id announced = [NSUserDefaults.standardUserDefaults objectForKey:XSAnnouncedKey];
         if ([announced isKindOfClass:NSDate.class] && [announced isEqualToDate:expiry]) return;
         XSShow(expiry, [announced isKindOfClass:NSDate.class], 0);

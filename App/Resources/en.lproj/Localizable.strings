@@ -138,6 +138,13 @@
 "notification.appRemoved.body" = "It was deleted from %@, so XSide removed it from its list. Install it again to bring it back.";
 "notification.refreshed.genericDevice" = "your device";
 "settings.notifications" = "Notifications";
+"settings.afterInstall" = "Installs and devices";
+"settings.openAppAfterInstall" = "Open the app on the device after an install";
+"settings.openAppAfterInstall.note" = "Also lets XSide know whether the device trusts the developer.";
+"settings.openTrustSettings" = "Open the Trust page on the device";
+"settings.openTrustSettings.note" = "When the device doesn't trust the developer yet: Settings > General > VPN & Device Management.";
+"settings.forgetDeletedApps" = "Notice apps deleted from the device";
+"settings.forgetDeletedApps.note" = "Every 10 minutes and when the panel opens: XSide removes them from its list. When off, it still notices when refreshing them, and never reinstalls them.";
 "settings.notifyRefreshSuccess" = "Notify me when a refresh succeeds";
 
 /* Welcome journey */

@@ -139,6 +139,9 @@ private struct SettingsPage: View {
     let pane: SettingsPane
     @AppStorage(AppLanguage.storageKey) private var language = AppLanguage.system.rawValue
     @AppStorage(Notifier.notifyRefreshSuccessKey) private var notifyRefreshSuccess = true
+    @AppStorage(AppModel.openAppAfterInstallKey) private var openAppAfterInstall = true
+    @AppStorage(AppModel.openTrustSettingsKey) private var openTrustSettings = true
+    @AppStorage(AppModel.forgetDeletedAppsKey) private var forgetDeletedApps = true
     @Environment(\.openWindow) private var openWindow
     @State private var login = LaunchAtLogin()
     @State private var notifications = NotificationPermission()
@@ -175,6 +178,21 @@ private struct SettingsPage: View {
                 Text(L("settings.language.fr")).tag(AppLanguage.fr.rawValue)
             }
             KeepInDockToggle()
+        }
+        Section(L("settings.afterInstall")) {
+            Toggle(isOn: $openAppAfterInstall) {
+                Text(L("settings.openAppAfterInstall"))
+                Text(L("settings.openAppAfterInstall.note"))
+            }
+            Toggle(isOn: $openTrustSettings) {
+                Text(L("settings.openTrustSettings"))
+                Text(L("settings.openTrustSettings.note"))
+            }
+            .disabled(!openAppAfterInstall)
+            Toggle(isOn: $forgetDeletedApps) {
+                Text(L("settings.forgetDeletedApps"))
+                Text(L("settings.forgetDeletedApps.note"))
+            }
         }
         if let issue = model.library.loadIssue {
             Section { LibraryIssueBanner(issue: issue) }

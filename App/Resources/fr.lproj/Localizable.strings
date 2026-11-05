@@ -138,6 +138,13 @@
 "notification.appRemoved.body" = "Elle a été supprimée de %@ : XSide l'a retirée de sa liste. Réinstalle-la pour la retrouver.";
 "notification.refreshed.genericDevice" = "ton appareil";
 "settings.notifications" = "Notifications";
+"settings.afterInstall" = "Installation et appareils";
+"settings.openAppAfterInstall" = "Ouvrir l'app sur l'appareil après l'installation";
+"settings.openAppAfterInstall.note" = "Permet aussi à XSide de savoir si l'appareil fait confiance au développeur.";
+"settings.openTrustSettings" = "Ouvrir la page « Faire confiance » sur l'appareil";
+"settings.openTrustSettings.note" = "Quand l'appareil ne fait pas encore confiance : Réglages > Général > VPN et gestion de l'appareil.";
+"settings.forgetDeletedApps" = "Repérer les apps supprimées de l'appareil";
+"settings.forgetDeletedApps.note" = "Toutes les 10 minutes et à l'ouverture du panneau : XSide les retire de la liste. Désactivé, il le voit quand même au moment de les rafraîchir, sans jamais les réinstaller.";
 "settings.notifyRefreshSuccess" = "Me prévenir quand un rafraîchissement réussit";
 
 /* Welcome journey */
