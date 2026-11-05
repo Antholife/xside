@@ -4,6 +4,8 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [1.0.5-beta] - 2026-11-05
+
 ### Added
 - **XSide in your apps.** Every app XSide installs says where it comes from and until when it works: after an install, a sheet with the XSide logo, the expiry date and the days left (in its own window, so the app's screens can't cover or close it); after a refresh, a smaller card at the bottom, closed with OK. A new install step, "Adding XSide features", lists what's added.
 - **A reminder on the device**, the day before an app expires, with XSide's logo, sent by the app itself. If the app never asked for notifications, the permission is asked once, when the install sheet is closed, and the sheet says why beforehand.
@@ -102,6 +104,7 @@ First public beta.
 - English and French.
 - Universal app: Apple silicon and Intel.
 
+[1.0.5-beta]: https://github.com/Antholife/xside/compare/v1.0.4-beta...v1.0.5-beta
 [1.0.4-beta]: https://github.com/Antholife/xside/compare/v1.0.3-beta...v1.0.4-beta
 [1.0.3-beta]: https://github.com/Antholife/xside/compare/v1.0.2-beta...v1.0.3-beta
 [1.0.2-beta]: https://github.com/Antholife/xside/compare/v1.0.1-beta...v1.0.2-beta
