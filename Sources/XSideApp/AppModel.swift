@@ -1454,7 +1454,7 @@ final class AppModel {
         flow.failure = nil
         // The Wi-Fi check follows a first install over USB (see `guideIfFirstInstall`, below).
         if targets.count == 1, let device = devices.first(where: { $0.id == targets[0] }) {
-            flow.wifiStepPlanned = guideIfFirstInstall(on: device) != nil
+            flow.wifiStepPlanned = neverInstalled(on: device.id)
                 && devicePrefs.wifiRefresh(for: device.id) && device.transport == .usb
         } else {
             flow.wifiStepPlanned = false
@@ -1475,6 +1475,9 @@ final class AppModel {
     /// reused by the next devices. Each device's failure is kept on its row and the run goes on.
     /// The run's task is kept on the flow for "Cancel install" (`cancelInstall`).
     private func runInstall(_ flow: InstallFlow, on targets: [String]) {
+        // Before anything is installed: the devices' state as it was.
+        flow.trustDue = Set(targets.filter(trustGuideDue(on:)))
+        flow.firstInstalls = Set(targets.filter(neverInstalled(on:)))
         flow.phase = .running(.preparing)
         flow.cancelRequested = false
         flow.wasCancelled = false
@@ -1538,9 +1541,10 @@ final class AppModel {
                                            flow.setStatus(.running(stage), for: deviceID)
                                        })
             flow.setStatus(.succeeded, for: deviceID)
-            if let guide = guideIfFirstInstall(on: device) {
+            if let guide = guideIfFirstInstall(on: device, flow: flow) {
                 flow.guides.append(guide)
-                if devicePrefs.wifiRefresh(for: device.id) {
+                // The Wi-Fi check is for a device's very first install only, not a guide shown again.
+                if flow.firstInstalls.contains(device.id), devicePrefs.wifiRefresh(for: device.id) {
                     if device.transport == .usb {
                         flow.wifiQueue.append(device.id)
                     } else if let i = flow.runs.firstIndex(where: { $0.deviceID == deviceID }) {
@@ -1592,10 +1596,23 @@ final class AppModel {
         showInstallWindow?()
     }
 
-    /// The guide is due after the first successful install on a device. It is marked as shown only
-    /// when it is actually displayed (`guideDisplayed`).
-    private func guideIfFirstInstall(on device: Device) -> FirstInstallGuide? {
-        guard !UserDefaults.standard.bool(forKey: Self.guideKey(device.id)) else { return nil }
+    /// No guide was ever shown for that device: its first install with XSide.
+    private func neverInstalled(on deviceID: String) -> Bool {
+        TrustGuide.Shown(stored: UserDefaults.standard.object(forKey: Self.guideKey(deviceID))) == .never
+    }
+
+    /// Whether the trust guide is due on that device, judged before the run installs anything
+    /// there: never shown, no XSide app left on it (iOS forgot the trust), or a new certificate.
+    private func trustGuideDue(on deviceID: String) -> Bool {
+        TrustGuide.isDue(shown: TrustGuide.Shown(stored: UserDefaults.standard.object(forKey: Self.guideKey(deviceID))),
+                         currentIdentity: (try? environment?.get())?.identitySHA1,
+                         deviceHasApps: records.contains { $0.installations.contains { $0.deviceID == deviceID } })
+    }
+
+    /// The guide is due after a successful install on a device the run marked (`trustDue`). It is
+    /// marked as shown only when it is actually displayed (`guideDisplayed`).
+    private func guideIfFirstInstall(on device: Device, flow: InstallFlow) -> FirstInstallGuide? {
+        guard flow.trustDue.contains(device.id) else { return nil }
         let account = (try? environment?.get())?.identityName ?? "Apple Development"
         return FirstInstallGuide(deviceID: device.id, accountName: account,
                                  needsDeveloperMode: device.developerModeEnabled == false)
@@ -1641,7 +1658,9 @@ final class AppModel {
     }
 
     func guideDisplayed(_ guide: FirstInstallGuide) {
-        UserDefaults.standard.set(true, forKey: Self.guideKey(guide.deviceID))
+        // The certificate it was shown for: a new one brings the guide back.
+        let sha1 = (try? environment?.get())?.identitySHA1
+        UserDefaults.standard.set(sha1 ?? true as Any, forKey: Self.guideKey(guide.deviceID))
         if let flow = install, flow.guides.contains(guide) { flow.shownGuides.insert(guide.deviceID) }
     }
 

@@ -55,6 +55,10 @@ final class InstallFlow {
     /// The last run was cancelled: the window says so instead of showing an error.
     var wasCancelled = false
 
+    /// Devices whose trust guide is due if the install succeeds, judged when the run started.
+    var trustDue: Set<String> = []
+    /// Devices getting their very first XSide install in this run (Wi-Fi check after it).
+    var firstInstalls: Set<String> = []
     /// First-install guides due after this flow's successes, one per device.
     var guides: [FirstInstallGuide] = []
     /// Devices whose guide has been displayed.
