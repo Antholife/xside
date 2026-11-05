@@ -39,6 +39,31 @@ static NSDate *XSExpirationDate(void) {
     return [date isKindOfClass:NSDate.class] ? date : nil;
 }
 
+/// The notification center of the app as installed. Some tweaked apps make NSBundle report
+/// another bundle id (e.g. "com.google.ios.youtube", for Google sign-in); iOS then refuses
+/// notifications to that app, which isn't installed (UNErrorDomain 1, seen 2026-11-05). The
+/// real id is read from the Info.plist file itself.
+static UNUserNotificationCenter *XSCenter(void) {
+    static UNUserNotificationCenter *center;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSString *path = [NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"Info.plist"];
+        NSData *data = [NSData dataWithContentsOfFile:path];
+        NSDictionary *info = data ? [NSPropertyListSerialization propertyListWithData:data options:0 format:NULL error:NULL] : nil;
+        NSString *real = [info isKindOfClass:NSDictionary.class] ? info[@"CFBundleIdentifier"] : nil;
+        NSString *reported = NSBundle.mainBundle.bundleIdentifier;
+        NSLog(@"[XSide] bundle id: reported %@, real %@", reported, real);
+        SEL init = NSSelectorFromString(@"initWithBundleIdentifier:");
+        if ([real isKindOfClass:NSString.class] && real.length && ![real isEqualToString:reported]
+            && [UNUserNotificationCenter instancesRespondToSelector:init]) {
+            UNUserNotificationCenter *own = [UNUserNotificationCenter alloc];
+            center = ((UNUserNotificationCenter *(*)(id, SEL, NSString *))[own methodForSelector:init])(own, init, real);
+        }
+        if (!center) center = UNUserNotificationCenter.currentNotificationCenter;
+    });
+    return center;
+}
+
 static BOOL XSFrench(void) {
     NSString *first = NSLocale.preferredLanguages.firstObject ?: @"";
     return [first.lowercaseString hasPrefix:@"fr"];
@@ -327,7 +352,7 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
     UIView *notice = [self notificationCard];
     notice.hidden = YES;
     __weak UIButton *weakOK = ok;
-    [UNUserNotificationCenter.currentNotificationCenter getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings *settings) {
+    [XSCenter() getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings *settings) {
         if (settings.authorizationStatus != UNAuthorizationStatusNotDetermined) return;
         dispatch_async(dispatch_get_main_queue(), ^{
             notice.hidden = NO;
@@ -561,7 +586,7 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded) {
 #else
     NSTimeInterval wait = [expiry timeIntervalSinceNow] - 86400;
 #endif
-    UNUserNotificationCenter *center = UNUserNotificationCenter.currentNotificationCenter;
+    UNUserNotificationCenter *center = XSCenter();
     if (wait < 60) {
         [center removePendingNotificationRequestsWithIdentifiers:@[XSReminderID]];
         return;
