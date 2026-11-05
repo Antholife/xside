@@ -52,6 +52,14 @@ struct RefreshPolicyTests {
                               certificateChanged: true, calendar: calendar))
     }
 
+    /// Review M5: the on-device reminder comes after the refresh would have happened, never at the
+    /// same time (with "1 day before", 24 h before expiry fired at every cycle).
+    @Test func reminderLeadIsHalfTheRefreshWindow() {
+        #expect(RefreshPolicy.reminderLead(threshold: 1 * days) == 12 * 3600)
+        #expect(RefreshPolicy.reminderLead(threshold: 2 * days) == 24 * 3600)
+        #expect(RefreshPolicy.reminderLead(threshold: 3 * days) == 24 * 3600)
+    }
+
     /// No setting may let an app expire: under 12 h left, it's refreshed anyway.
     @Test func urgentAppsAlwaysGo() {
         let policy = RefreshPolicy(pausedUntil: .distantFuture, acOnly: true, onBattery: true, preferredHours: .night)

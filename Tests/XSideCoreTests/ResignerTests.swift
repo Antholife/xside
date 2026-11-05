@@ -28,7 +28,7 @@ private struct Fixture {
     let fake: FakeRunner
     var welcomeDylib: URL?
     var settings: (@Sendable (ProvisioningProfile) -> SettingsSection)?
-    var welcomeOptions: [String: Bool] = [:]
+    var welcomeOptions: [String: Int] = [:]
     var resigner: Resigner {
         let options = welcomeOptions
         return Resigner(runner: RoutingRunner(fake: fake), welcomeDylib: welcomeDylib, settingsSection: settings,
@@ -148,11 +148,11 @@ private func plist(_ app: URL) throws -> [String: Any] {
     @Test func writesTheWelcomeOptionsForTheLibrary() async throws {
         var f = try await fixture(executable: FakeIPA.paddedMachO(padding: 256))
         f.welcomeDylib = try welcomeDylib()
-        f.welcomeOptions = ["reminder": false]
+        f.welcomeOptions = ["reminder": 0, "reminderLeadHours": 12]
         let app = try await run(f)
         let info = try #require(try PropertyListSerialization.propertyList(
             from: Data(contentsOf: app.appendingPathComponent("Info.plist")), format: nil) as? [String: Any])
-        #expect((info["XSideWelcome"] as? [String: Bool]) == ["reminder": false])
+        #expect((info["XSideWelcome"] as? [String: Int]) == ["reminder": 0, "reminderLeadHours": 12])
     }
 
     @Test func settingsPageProblemsDontFailTheInstall() async throws {

@@ -216,7 +216,7 @@ final class AppModel {
             resigner: Resigner(runner: runner,
                                welcomeDylib: Self.featuresOff ? nil : Bundle.main.url(forResource: "XSideWelcome", withExtension: "dylib"),
                                settingsSection: Self.featuresOff ? nil : Self.settingsSection,
-                               welcomeOptions: { ["reminder": AppModel.setting(AppModel.deviceReminderKey)] }),
+                               welcomeOptions: { AppModel.welcomeOptions() }),
             installer: Installer(runner: runner),
             workRoot: paths.jobsWork, now: { Date() }, macIsBeta: XcodeLauncher.macIsBeta)
         // An update waits while an install or a refresh runs (`release` retries it after).
@@ -1723,6 +1723,15 @@ final class AppModel {
     /// The reminder the installed app shows itself, the day before it expires (written into the
     /// app at each install and refresh).
     nonisolated static let deviceReminderKey = "deviceReminder"
+    /// What the welcome library reads in each app (see `Resigner.welcomeOptions`).
+    nonisolated static func welcomeOptions() -> [String: Int] {
+        let defaults = UserDefaults.standard
+        let threshold = RefreshPlanner.threshold(daysBefore: defaults.integer(forKey: "refreshDaysBefore"),
+                                                 debugDays: defaults.double(forKey: "debugThresholdDays"))
+        return ["reminder": setting(deviceReminderKey) ? 1 : 0,
+                "reminderLeadHours": Int(RefreshPolicy.reminderLead(threshold: threshold) / 3600)]
+    }
+
     /// The notification when XSide forgets an app deleted from its device.
     static let notifyAppRemovedKey = "notifyAppRemoved"
 

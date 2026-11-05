@@ -20,6 +20,12 @@ public struct RefreshPolicy: Sendable, Equatable {
 
     public static let urgent: TimeInterval = 12 * 3600
 
+    /// How long before expiry the app's own reminder fires: half the refresh window, at most a
+    /// day, so it only shows when the refresh that should have happened didn't.
+    public static func reminderLead(threshold: TimeInterval) -> TimeInterval {
+        min(24 * 3600, threshold / 2)
+    }
+
     public var pausedUntil: Date?
     public var acOnly: Bool
     public var onBattery: Bool

@@ -68,6 +68,14 @@ static BOOL XSReminderOn(void) {
     return [on isKindOfClass:NSNumber.class] ? [on boolValue] : YES;
 }
 
+/// How long before expiry the reminder fires (`XSideWelcome.reminderLeadHours`), 24 h by default.
+static NSTimeInterval XSReminderLead(void) {
+    id options = XSInfo()[@"XSideWelcome"];
+    id hours = [options isKindOfClass:NSDictionary.class] ? options[@"reminderLeadHours"] : nil;
+    NSInteger h = [hours isKindOfClass:NSNumber.class] ? [hours integerValue] : 24;
+    return (h > 0 && h <= 48 ? h : 24) * 3600.0;
+}
+
 static UNUserNotificationCenter *XSCenter(void) {
     static UNUserNotificationCenter *center;
     static dispatch_once_t once;
@@ -626,7 +634,7 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded) {
 #ifdef XS_TEST_REMINDER
     NSTimeInterval wait = 60; // test build (XSIDE_TEST_REMINDER=1 scripts/bundle.sh): a minute after launch
 #else
-    NSTimeInterval wait = [expiry timeIntervalSinceNow] - 86400;
+    NSTimeInterval wait = [expiry timeIntervalSinceNow] - XSReminderLead();
 #endif
     UNUserNotificationCenter *center = XSCenter();
     if (wait < 60 || !XSReminderOn()) {
@@ -647,7 +655,10 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded) {
         if (status != UNAuthorizationStatusAuthorized && status != UNAuthorizationStatusProvisional) return;
         BOOL fr = XSFrench();
         UNMutableNotificationContent *content = [UNMutableNotificationContent new];
-        content.title = [NSString stringWithFormat:fr ? @"%@ expire demain" : @"%@ expires tomorrow", XSAppName()];
+        NSInteger hours = (NSInteger)(XSReminderLead() / 3600);
+        content.title = hours >= 20
+            ? [NSString stringWithFormat:fr ? @"%@ expire demain" : @"%@ expires tomorrow", XSAppName()]
+            : [NSString stringWithFormat:fr ? @"%@ expire dans %ld h" : @"%@ expires in %ld hours", XSAppName(), (long)hours];
         // A refresh only moves the reminder at the next launch: worded so it stays true.
         content.body = fr ? @"Sauf si XSide l'a rafraîchie entre-temps. Il lui faut ton Mac allumé avec XSide ouvert, et l'appareil sur le même Wi-Fi ou branché en USB. Ouvre l'app pour vérifier."
                           : @"Unless XSide refreshed it meanwhile. It needs your Mac on with XSide open, and the device on the same Wi-Fi or plugged in over USB. Open the app to check.";

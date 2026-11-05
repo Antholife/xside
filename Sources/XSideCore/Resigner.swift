@@ -50,8 +50,8 @@ public struct Resigner: Sendable {
     /// The section added to the app's iOS Settings page, built from the profile it's signed with.
     private let settingsSection: (@Sendable (ProvisioningProfile) -> SettingsSection)?
     /// Read by the welcome library at launch, from the Info.plist key `XSideWelcome` (e.g.
-    /// "reminder": false when the on-device reminder is off in XSide's Settings).
-    private let welcomeOptions: @Sendable () -> [String: Bool]
+    /// "reminder": 0 when the on-device reminder is off in XSide's Settings, "reminderLeadHours").
+    private let welcomeOptions: @Sendable () -> [String: Int]
     private static let codesign = "/usr/bin/codesign"
     private static let logger = Log("resign")
     static let welcomeName = "XSideWelcome.dylib"
@@ -59,7 +59,7 @@ public struct Resigner: Sendable {
 
     public init(runner: CommandRunning, welcomeDylib: URL? = nil,
                 settingsSection: (@Sendable (ProvisioningProfile) -> SettingsSection)? = nil,
-                welcomeOptions: @escaping @Sendable () -> [String: Bool] = { [:] }) {
+                welcomeOptions: @escaping @Sendable () -> [String: Int] = { [:] }) {
         self.runner = runner
         self.welcomeDylib = welcomeDylib
         self.settingsSection = settingsSection
