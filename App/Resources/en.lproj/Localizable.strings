@@ -415,6 +415,7 @@
 
 /* Popover tiles */
 "popover.tile.install" = "Install an app";
+"popover.tile.pause" = "Pause";
 "popover.tile.refreshAll" = "Refresh all";
 "popover.tile.refreshAll.help" = "Refresh every app that can be right now (%d)";
 "popover.tile.refreshAll.none" = "Nothing to refresh right now: no app is reachable, or they're all paused or already running";
@@ -529,7 +530,6 @@
 
 /* Report a problem (GitHub issue) */
 "report.button" = "Report a Problem…";
-"report.describe" = "**What happened:** (describe the problem and what you were doing)";
 "report.attach" = "📎 XSide just saved the diagnostics archive (XSide-logs-….zip) in Downloads: drag it here. Device names, identifiers and accounts are masked in it.";
 "report.summary" = "XSide state";
 "report.lastLines" = "Last log lines";

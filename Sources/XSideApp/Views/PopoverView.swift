@@ -15,6 +15,7 @@ struct PopoverView: View {
 }
 
 private struct PopoverContent: View {
+    @AppStorage(BackgroundEngine.pausedUntilKey) private var pausedUntil = 0.0
     let model: AppModel
     @Environment(\.openWindow) private var openWindow
     /// Closes the popover: every action that leads elsewhere (window, web page) does.
@@ -61,6 +62,9 @@ private struct PopoverContent: View {
             }
             if let issue = model.library.loadIssue, !model.libraryIssueDismissed {
                 LibraryIssueBanner(issue: issue, onDismiss: model.dismissLibraryIssue)
+            }
+            if let until = RefreshPause.until(pausedUntil) {
+                PausedBanner(until: until) { setPause(nil) }
             }
             ForEach(model.unpairedDevices) { device in
                 PairPrompt(device: device, isPairing: model.pairing.contains(device.id),
@@ -115,7 +119,28 @@ private struct PopoverContent: View {
             // Says why it's off, or how many it refreshes (system tooltips don't show in a popover).
             .hoverBubble(refreshable == 0 ? L("popover.tile.refreshAll.none") : L("popover.tile.refreshAll.help", refreshable),
                          alignment: .trailing, below: true)
+            // Pause the automatic refreshes (or resume them).
+            if RefreshPause.until(pausedUntil) != nil {
+                Button { setPause(nil) } label: {
+                    ActionTileLabel(symbol: "play.fill", title: L("settings.pause.resume"))
+                }
+                .buttonStyle(ActionTileStyle(prominent: false))
+            } else {
+                Menu {
+                    RefreshPause.choices { setPause($0) }
+                } label: {
+                    ActionTileLabel(symbol: "pause.fill", title: L("popover.tile.pause"))
+                }
+                .menuStyle(.button)
+                .menuIndicator(.hidden)
+                .buttonStyle(ActionTileStyle(prominent: false))
+            }
         }
+    }
+
+    private func setPause(_ date: Date?) {
+        pausedUntil = date?.timeIntervalSince1970 ?? 0
+        model.onNeedsEvaluation?()
     }
 
     @ViewBuilder private func devices(_ groups: [DeviceGroup]) -> some View {
@@ -470,7 +495,7 @@ private struct PopoverFooter: View {
                     }
                     IconTile(symbol: "ladybug.fill", help: L("popover.reportBug")) {
                         dismiss()
-                        NSWorkspace.shared.open(AppLinks.newBugReport)
+                        Diagnostics.reportIssue(model: model) // a filled-in issue and the logs archive
                     }
                 }
                 Spacer()
@@ -591,6 +616,27 @@ private struct ActionTileBody: View {
             .onHover { isHovering = $0 && isEnabled }
             .animation(.easeOut(duration: 0.15), value: isHovering)
             .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+    }
+}
+
+/// Automatic refreshes are paused: until when, and "Resume".
+private struct PausedBanner: View {
+    let until: Date
+    let resume: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "pause.circle.fill")
+                .foregroundStyle(Color(nsColor: .systemOrange))
+            Text(RefreshPause.label(until))
+                .font(.system(size: 12, weight: .medium))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 4)
+            Button(L("settings.pause.resume"), action: resume)
+                .controlSize(.small)
+        }
+        .padding(10)
+        .background(Color(nsColor: .systemOrange).opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
 

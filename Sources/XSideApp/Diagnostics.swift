@@ -95,10 +95,16 @@ enum Diagnostics {
             let lastLines = LogStore.shared.files().first
                 .flatMap { try? String(contentsOf: $0, encoding: .utf8) }
                 .map { LogStore.shared.redact(IssueReport.tail($0, lines: 40)) } ?? ""
-            let body = """
-                \(L("report.describe"))
-
-
+            let info = Bundle.main.infoDictionary ?? [:]
+            let version = "\(info["CFBundleShortVersionString"] as? String ?? "?") (\(info["CFBundleVersion"] as? String ?? "?"))"
+            let os = ProcessInfo.processInfo.operatingSystemVersion
+            var system = "macOS \(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"
+            if case .success(let env)? = model.environment {
+                system += ", Xcode \(env.developerDir.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent)"
+            }
+            let devices = model.devices.filter(\.isPaired)
+                .map { "\($0.model), iOS \($0.osVersion ?? "?")" }.joined(separator: " · ")
+            let logs = """
                 \(L("report.attach"))
 
                 ### \(L("report.summary"))
@@ -111,7 +117,10 @@ enum Diagnostics {
                 \(lastLines)
                 ```
                 """
-            NSWorkspace.shared.open(IssueReport.url(title: "", body: body))
+            NSWorkspace.shared.open(IssueReport.url(template: "bug_report.yml",
+                                                    fields: [("version", version), ("system", system),
+                                                             ("device", devices), ("logs", logs)],
+                                                    cut: "logs"))
             if archived { NSWorkspace.shared.activateFileViewerSelecting([archive]) }
         }
     }

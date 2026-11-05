@@ -415,6 +415,7 @@
 
 /* Tuiles de la popup */
 "popover.tile.install" = "Installer une app";
+"popover.tile.pause" = "Pause";
 "popover.tile.refreshAll" = "Tout rafraîchir";
 "popover.tile.refreshAll.help" = "Rafraîchir toutes les apps qui peuvent l'être maintenant (%d)";
 "popover.tile.refreshAll.none" = "Rien à rafraîchir pour l'instant : aucune app joignable, ou elles sont toutes en pause ou déjà en cours";
@@ -529,7 +530,6 @@
 
 /* Report a problem (GitHub issue) */
 "report.button" = "Signaler un problème…";
-"report.describe" = "**Ce qui s'est passé :** (décris le problème et ce que tu faisais)";
 "report.attach" = "📎 XSide vient d'enregistrer le paquet de diagnostic (XSide-logs-….zip) dans Téléchargements : glisse-le ici. Les noms d'appareils, identifiants et comptes y sont masqués.";
 "report.summary" = "État d'XSide";
 "report.lastLines" = "Dernières lignes du journal";

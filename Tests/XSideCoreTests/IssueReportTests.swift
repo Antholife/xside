@@ -8,19 +8,23 @@ struct IssueReportTests {
         return Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value ?? "") })
     }
 
-    @Test func opensANewIssueOnTheRepo() throws {
-        let url = IssueReport.url(title: "Bug: install fails", body: "Line & more ? #1")
+    /// Blank issues are off on the repo: the bug form, its fields filled in by id.
+    @Test func fillsTheBugForm() throws {
+        let url = IssueReport.url(template: "bug_report.yml",
+                                  fields: [("version", "1.0.5 (130)"), ("logs", "Line & more ? #1 + 2")], cut: "logs")
         #expect(url.absoluteString.hasPrefix("https://github.com/Antholife/xside/issues/new?"))
-        #expect(query(url)["title"] == "Bug: install fails")
-        #expect(query(url)["body"] == "Line & more ? #1")
+        #expect(query(url)["template"] == "bug_report.yml")
+        #expect(query(url)["version"] == "1.0.5 (130)")
+        #expect(query(url)["logs"] == "Line & more ? #1 + 2")
     }
 
     /// GitHub refuses very long links: the body is cut, keeping its start, and says so.
     @Test func longBodiesAreCut() {
         let body = String(repeating: "é", count: 20_000)
-        let url = IssueReport.url(title: "T", body: body)
+        let url = IssueReport.url(template: "bug_report.yml", fields: [("version", "1.0.5"), ("logs", body)], cut: "logs")
         #expect(url.absoluteString.count <= IssueReport.maxURLLength)
-        let sent = query(url)["body"] ?? ""
+        #expect(query(url)["version"] == "1.0.5")
+        let sent = query(url)["logs"] ?? ""
         #expect(sent.hasPrefix("ééé"))
         #expect(sent.hasSuffix(IssueReport.cutMarker))
     }

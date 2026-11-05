@@ -300,24 +300,17 @@ private struct PauseRow: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
-            let until = Date(timeIntervalSince1970: pausedUntil)
-            if pausedUntil > 0, until > context.date {
+            if let until = RefreshPause.until(pausedUntil, now: context.date) {
                 LabeledContent {
                     Button(L("settings.pause.resume")) { set(nil) }
                 } label: {
-                    Label(until == .distantFuture ? L("settings.pause.indefinitely")
-                                                  : L("settings.pause.until", until.formatted(date: .abbreviated, time: .shortened)),
-                          systemImage: "pause.circle.fill")
+                    Label(RefreshPause.label(until), systemImage: "pause.circle.fill")
                         .foregroundStyle(Color(nsColor: .systemOrange))
                 }
             } else {
                 LabeledContent(L("settings.pause")) {
-                    Menu(L("settings.pause.menu")) {
-                        Button(L("settings.pause.hour")) { set(Date().addingTimeInterval(3600)) }
-                        Button(L("settings.pause.tomorrow")) { set(Self.tomorrowMorning) }
-                        Button(L("settings.pause.untilResumed")) { set(.distantFuture) }
-                    }
-                    .fixedSize()
+                    Menu(L("settings.pause.menu")) { RefreshPause.choices { set($0) } }
+                        .fixedSize()
                 }
             }
         }
@@ -327,9 +320,31 @@ private struct PauseRow: View {
         pausedUntil = date?.timeIntervalSince1970 ?? 0
         onChange()
     }
+}
+
+/// The pause of automatic refreshes, shared by Settings and the popover (stored as seconds since
+/// 1970 under `BackgroundEngine.pausedUntilKey`, 0 when not paused).
+@MainActor enum RefreshPause {
+    /// When the pause ends, nil when not paused (or over).
+    static func until(_ stored: Double, now: Date = Date()) -> Date? {
+        let until = Date(timeIntervalSince1970: stored)
+        return stored > 0 && until > now ? until : nil
+    }
+
+    static func label(_ until: Date) -> String {
+        until == .distantFuture ? L("settings.pause.indefinitely")
+                                : L("settings.pause.until", until.formatted(date: .abbreviated, time: .shortened))
+    }
+
+    /// The menu's durations.
+    @ViewBuilder static func choices(_ pick: @escaping @MainActor (Date) -> Void) -> some View {
+        Button(L("settings.pause.hour")) { pick(Date().addingTimeInterval(3600)) }
+        Button(L("settings.pause.tomorrow")) { pick(tomorrowMorning) }
+        Button(L("settings.pause.untilResumed")) { pick(.distantFuture) }
+    }
 
     /// Tomorrow at 8:00.
-    private static var tomorrowMorning: Date {
+    static var tomorrowMorning: Date {
         let calendar = Calendar.current
         let tomorrow = calendar.date(byAdding: .day, value: 1, to: Date()) ?? Date()
         return calendar.date(bySettingHour: 8, minute: 0, second: 0, of: tomorrow) ?? tomorrow
