@@ -402,7 +402,7 @@
 /* Logs */
 "settings.pane.reports" = "Signalement et journaux";
 "report.title" = "Signaler un problème";
-"report.subtitle" = "Ouvre le formulaire de bug sur GitHub, déjà rempli (versions, appareils, état d'XSide, dernières lignes du journal), et enregistre le journal complet dans Téléchargements pour le joindre. Tout est masqué, et rien n'est envoyé tant que tu ne valides pas sur GitHub.";
+"report.subtitle" = "1. Le formulaire de bug s'ouvre sur GitHub, déjà rempli (versions, appareils, état d'XSide, dernières lignes du journal).\n2. Le journal complet (XSide-logs-….zip) est enregistré sur ton Bureau : glisse-le dans le champ « Logs » du formulaire. GitHub ne permet pas de le joindre tout seul.\nTout est masqué, et rien n'est envoyé tant que tu ne valides pas sur GitHub.";
 "logs.title" = "Journaux";
 "logs.subtitle" = "Ce que XSide a fait, étape par étape. Tes infos personnelles (e-mail, équipe, appareils) sont masquées : tu peux joindre l'export à une issue GitHub.";
 "logs.show" = "Afficher";
@@ -533,6 +533,6 @@
 
 /* Report a problem (GitHub issue) */
 "report.button" = "Signaler un problème…";
-"report.attach" = "📎 XSide vient d'enregistrer le paquet de diagnostic (XSide-logs-….zip) dans Téléchargements : glisse-le ici. Les noms d'appareils, identifiants et comptes y sont masqués.";
+"report.attach" = "📎 Glisse ici le fichier XSide-logs-….zip qu'XSide vient d'enregistrer sur ton Bureau (le journal complet). Les noms d'appareils, identifiants et comptes y sont masqués.";
 "report.summary" = "État d'XSide";
 "report.lastLines" = "Dernières lignes du journal";

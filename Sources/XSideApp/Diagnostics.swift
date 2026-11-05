@@ -83,14 +83,15 @@ enum Diagnostics {
         return result?.status == 0
     }
 
-    /// "Report a problem": the logs archive goes to Downloads (shown in the Finder, to drag into
+    /// "Report a problem": the logs archive goes to the Desktop (shown in the Finder, to drag into
     /// the issue), and a new GitHub issue opens filled in with the summary and the last log
     /// lines, all redacted. Nothing is sent: the person reads it and submits it.
     @MainActor static func reportIssue(model: AppModel) {
         Task {
-            let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            // On the Desktop: easy to find and drag into the form.
+            let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
                 ?? FileManager.default.temporaryDirectory
-            let archive = downloads.appendingPathComponent(archiveName)
+            let archive = desktop.appendingPathComponent(archiveName)
             let archived = await writeArchive(model: model, to: archive)
             let lastLines = LogStore.shared.files().first
                 .flatMap { try? String(contentsOf: $0, encoding: .utf8) }

@@ -402,7 +402,7 @@
 /* Logs */
 "settings.pane.reports" = "Reports & Logs";
 "report.title" = "Report a problem";
-"report.subtitle" = "Opens the bug form on GitHub, already filled in (versions, devices, XSide's state, the last log lines), and saves the full log in Downloads to attach. Everything is masked, and nothing is sent until you submit it on GitHub.";
+"report.subtitle" = "1. The bug form opens on GitHub, already filled in (versions, devices, XSide's state, the last log lines).\n2. The full log (XSide-logs-….zip) is saved on your Desktop: drag it into the form's \"Logs\" field. GitHub can't attach it by itself.\nEverything is masked, and nothing is sent until you submit it on GitHub.";
 "logs.title" = "Logs";
 "logs.subtitle" = "What XSide did, step by step. Personal details (e-mail, team, devices) are masked: you can attach the export to a GitHub issue.";
 "logs.show" = "Show";
@@ -533,6 +533,6 @@
 
 /* Report a problem (GitHub issue) */
 "report.button" = "Report a Problem…";
-"report.attach" = "📎 XSide just saved the diagnostics archive (XSide-logs-….zip) in Downloads: drag it here. Device names, identifiers and accounts are masked in it.";
+"report.attach" = "📎 Drag here the XSide-logs-….zip file XSide just saved on your Desktop (the full log). Device names, identifiers and accounts are masked in it.";
 "report.summary" = "XSide state";
 "report.lastLines" = "Last log lines";
