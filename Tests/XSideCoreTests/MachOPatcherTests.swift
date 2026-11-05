@@ -40,6 +40,15 @@ struct MachOPatcherTests {
         #expect(dylibName(d, cmds.last!.pos) == Self.path)
     }
 
+    /// Review M1: a section said to start past the end of the file (an untrusted .ipa) is refused,
+    /// never read out of range (which would crash XSide).
+    @Test func truncatedBinaryIsRefused() throws {
+        let full = FakeIPA.paddedMachO(padding: 256)
+        let url = try file(full.prefix(32 + 152 + 20))
+        #expect(throws: MachOPatcher.Failure.self) { try MachOPatcher.addWeakDylib(Self.path, to: url) }
+        #expect(try Data(contentsOf: url) == full.prefix(32 + 152 + 20))
+    }
+
     @Test func patchIsIdempotent() throws {
         let url = try file(FakeIPA.paddedMachO(padding: 256))
         _ = try MachOPatcher.addWeakDylib(Self.path, to: url)

@@ -38,8 +38,10 @@ public enum MachOPatcher {
                 continue
             }
             let end = start + headerSize + Int(u32(data, start + 20))
+            // Inside the file too: an untrusted binary may claim anything.
             guard let firstData = firstSectionOffset(data, start: start, commands: commands),
                   start + firstData >= end + command.count,
+                  start + firstData <= data.count, end + command.count <= data.count,
                   data[end..<end + command.count].allSatisfy({ $0 == 0 }) else { throw Failure.noRoom }
             toPatch.append((start, commands))
         }
