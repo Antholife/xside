@@ -43,8 +43,11 @@ if xcrun -sdk iphoneos --show-sdk-path >/dev/null 2>&1; then
     WELCOME_GEN="$(mktemp -d)"
     sips -Z 180 docs/assets/icon.png --out "$WELCOME_GEN/icon.png" >/dev/null
     (cd "$WELCOME_GEN" && xxd -i -n XSWelcomeIcon icon.png > XSideWelcomeIcon.h)
+    # XSIDE_TEST_REMINDER=1: the on-device reminder fires a minute after launch, to try it.
+    TEST_FLAGS=""
+    [ "${XSIDE_TEST_REMINDER:-}" = 1 ] && TEST_FLAGS="-DXS_TEST_REMINDER" && echo "warning: test reminder build"
     xcrun -sdk iphoneos clang -dynamiclib -arch arm64 -mios-version-min=15.0 -fobjc-arc -O2 \
-        -I "$WELCOME_GEN" \
+        -I "$WELCOME_GEN" $TEST_FLAGS \
         -framework UIKit -framework Foundation -framework QuartzCore -framework CoreGraphics -framework UserNotifications \
         -install_name @executable_path/Frameworks/XSideWelcome.dylib \
         -o "$APP/Contents/Resources/XSideWelcome.dylib" App/Welcome/XSideWelcome.m

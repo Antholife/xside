@@ -450,7 +450,11 @@ static void XSShow(NSDate *expiry, BOOL refreshed, int attempt) {
 /// A local reminder 24 h before expiry, replaced at each launch (so a refresh followed by a
 /// launch moves it). Only when the app may already notify: XSide never asks on its behalf.
 static void XSScheduleReminder(NSDate *expiry) {
+#ifdef XS_TEST_REMINDER
+    NSTimeInterval wait = 60; // test build (XSIDE_TEST_REMINDER=1 scripts/bundle.sh): a minute after launch
+#else
     NSTimeInterval wait = [expiry timeIntervalSinceNow] - 86400;
+#endif
     UNUserNotificationCenter *center = UNUserNotificationCenter.currentNotificationCenter;
     if (wait < 60) {
         [center removePendingNotificationRequestsWithIdentifiers:@[XSReminderID]];
