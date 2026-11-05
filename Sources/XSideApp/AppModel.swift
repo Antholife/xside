@@ -1468,12 +1468,17 @@ final class AppModel {
         }
     }
 
+    /// Devices whose last install failed because they were locked: their tile says to unlock
+    /// them (devicectl doesn't tell whether a device is locked), until the next attempt there.
+    private(set) var needsUnlock: Set<String> = []
+
     /// One device of a run. A first install queues its guide and, over USB with Wi-Fi refresh on,
     /// its Wi-Fi check.
     private func installOne(_ flow: InstallFlow, on deviceID: String) async {
         flow.lastStage = .preparing
         flow.phase = .running(.preparing)
         flow.setStatus(.running(.preparing), for: deviceID)
+        needsUnlock.remove(deviceID)
         // Looked up now: the device may have gone (or changed transport) during the earlier ones.
         guard !removingDevices.contains(deviceID),
               let device = devices.first(where: { $0.id == deviceID && $0.isAvailable }) else {
@@ -1508,6 +1513,7 @@ final class AppModel {
             if error is CancellationError {
                 flow.setStatus(.cancelled, for: deviceID)
             } else {
+                if case .deviceLocked? = error as? XSideError { needsUnlock.insert(deviceID) }
                 flow.setStatus(.failed(StepFailure(stage: flow.lastStage, message: localizedMessage(error))), for: deviceID)
             }
         }

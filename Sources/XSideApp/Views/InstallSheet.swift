@@ -627,7 +627,7 @@ private struct DevicePicker: View {
                     DeviceTile(device: device, isSelected: flow.deviceIDs.contains(device.id),
                                wifiRefresh: Binding(get: { model.devicePrefs.wifiRefresh(for: device.id) },
                                                     set: { model.setWifiRefresh($0, for: device.id) }),
-                               isRunning: flow.isRunning) {
+                               isRunning: flow.isRunning, issue: issue(device)) {
                         flow.toggle(device.id)
                     }
                     .disabled(!device.isAvailable || flow.isRunning)
@@ -657,6 +657,20 @@ private struct DevicePicker: View {
 
     private var availableIDs: Set<String> { Set(devices.filter(\.isAvailable).map(\.id)) }
 
+    /// What stops an install there, on the tile itself: two iPhones side by side are easy to mix up.
+    private func issue(_ device: Device) -> String? {
+        guard device.isAvailable else { return nil }
+        #if DEBUG
+        // Debug-only: XSIDE_FAKE_PREFLIGHT=1 shows both, on the first two available tiles.
+        if ProcessInfo.processInfo.environment["XSIDE_FAKE_PREFLIGHT"] == "1", let index = devices.filter(\.isAvailable).firstIndex(of: device), index < 2 {
+            return L(index == 0 ? "install.device.developerModeOff" : "install.device.locked")
+        }
+        #endif
+        if device.developerModeEnabled == false { return L("install.device.developerModeOff") }
+        if model.needsUnlock.contains(device.id) { return L("install.device.locked") }
+        return nil
+    }
+
     private func checkForNewDevice() {
         let known = knownIDs ?? []
         defer { knownIDs = availableIDs }
@@ -682,6 +696,8 @@ private struct DeviceTile: View {
     let isSelected: Bool
     @Binding var wifiRefresh: Bool
     let isRunning: Bool
+    /// Developer Mode off, or locked at the last try (see `DevicePicker.issue`).
+    let issue: String?
     let select: () -> Void
     @Environment(\.isEnabled) private var isEnabled
     @State private var isHovering = false
@@ -722,6 +738,13 @@ private struct DeviceTile: View {
                         .padding(.horizontal, 7)
                         .padding(.vertical, 2)
                         .background(Theme.cardFill, in: Capsule())
+                    }
+                    if let issue {
+                        Label(issue, systemImage: "exclamationmark.triangle.fill")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Color(nsColor: .systemOrange))
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

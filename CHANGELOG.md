@@ -4,8 +4,12 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added
+- The install window's device tiles say what stops an install there: "Developer Mode off", or "Unlock it" after an attempt failed on a locked device.
+
 ### Fixed
 - A device with Developer Mode off: the install window says so and how to turn it on, and doesn't start an install that can only fail. If it fails anyway, the message says Developer Mode is off instead of "Couldn't create the provisioning profile".
+- A device out of reach during an uninstall (CoreDevice error 1011) is reported as unreachable, not as a failed uninstall.
 - A locked device that Xcode has to prepare for development: the message says to unlock it, instead of "Couldn't create the provisioning profile".
 
 ## [1.0.4-beta] - 2026-11-03

@@ -113,6 +113,16 @@ ERROR: The device is not able to fulfill the requested usage assertion requireme
         }
     }
 
+    @Test func anUnreachableDeviceIsUnavailable() {
+        // devicectl's answer for an unplugged iPhone (2026-11-05).
+        let output = """
+            ERROR: This device is not currently reachable. (com.apple.dt.CoreDeviceError error 1011 (0x3F3))
+                   DeviceIdentifier = ecid_1
+            """
+        #expect(Installer.mapUninstallError(output) == .deviceUnavailable)
+        #expect(Installer.mapError(output) == .deviceUnavailable)
+    }
+
     @Test func mapsFailures() {
         #expect(Installer.mapUninstallError(unreachable) == .deviceUnavailable)
         #expect(Installer.mapUninstallError("ERROR: Unable to uninstall: the device is locked.") == .deviceLocked)

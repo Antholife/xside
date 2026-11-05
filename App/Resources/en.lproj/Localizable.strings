@@ -418,6 +418,8 @@
 "install.keychain.what" = "Lets this app share sign-ins with the same publisher's other apps installed by XSide (e.g. stay signed in across Google apps). When off, it keeps its own.";
 "install.keychain.risk" = "Only for an IPA you trust: a modified app could read the other apps' sign-ins.";
 "install.installOn" = "Install on";
+"install.device.developerModeOff" = "Developer Mode off";
+"install.device.locked" = "Unlock it";
 "install.options.customize" = "Name, bundle ID, version, icon…";
 "install.options.customize.hint" = "Unchanged";
 "install.progress.title" = "Installing %@";

@@ -44,7 +44,7 @@ public struct Installer: Sendable {
     /// goal is reached), else the same errors as an install, `uninstallFailed` for a message.
     /// Like `mapError`, only error blocks are read, so an app named "Not Installed" is no cause.
     public static func mapUninstallError(_ output: String) -> XSideError? {
-        if output.lowercased().contains("coredeviceerror error 4016") { return .deviceUnavailable }
+        if isUnreachable(output) { return .deviceUnavailable }
         let texts = errorBlocks(output).flatMap { $0.lines }.map { withoutQuotedNames($0).lowercased() }
         let gone = ["is not installed", "app not installed", "application not installed", "no such app",
                     "no app with bundle identifier", "no application with bundle identifier"]
@@ -63,7 +63,7 @@ public struct Installer: Sendable {
     /// devicectl often prints a generic `ERROR:` line and the real cause below it, see `errorBlocks`.
     public static func mapError(_ output: String) -> XSideError {
         let lower = output.lowercased()
-        if lower.contains("coredeviceerror error 4016") { return .deviceUnavailable }
+        if isUnreachable(output) { return .deviceUnavailable }
         if lower.contains("maximumappsreached") { return .maxAppsReached }
         let blocks = errorBlocks(output)
         let messages = blocks.map(\.first)
@@ -78,6 +78,14 @@ public struct Installer: Sendable {
         }
         if let first = messages.first { return .installFailed(first) }
         return .commandFailed(tool: "devicectl", status: -1)
+    }
+
+    /// CoreDevice can't reach the device: 4016 (isolating networks), 1011 ("This device is not
+    /// currently reachable", seen 2026-11-05 with an unplugged iPhone).
+    static func isUnreachable(_ output: String) -> Bool {
+        let lower = output.lowercased()
+        return ["coredeviceerror error 4016", "coredeviceerror error 1011", "device is not currently reachable"]
+            .contains { lower.contains($0) }
     }
 
     /// Each `ERROR:` line (`first`, its text) with the lines that detail it (`lines`, all of
