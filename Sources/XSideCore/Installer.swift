@@ -78,15 +78,37 @@ public struct Installer: Sendable {
     /// Whether the device trusts the app's developer, found by launching the app in the
     /// background: iOS refuses an untrusted one "for reason: Security". Any other failure (locked
     /// device, out of reach) says nothing: `unknown`.
+    /// A trusted app was started only to ask: it is stopped again at once (just installed, it
+    /// wasn't running before).
     public func trustState(bundleID: String, deviceID: String) async -> TrustState {
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("xside-launch-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
         guard let result = try? await runner.run(
             "/usr/bin/xcrun",
-            ["devicectl", "device", "process", "launch", "--device", deviceID, "--no-activate", bundleID],
+            ["devicectl", "device", "process", "launch", "--device", deviceID, "--no-activate",
+             "--json-output", file.path, bundleID],
             cwd: nil, timeout: CommandTimeout.deviceQuery) else { return .unknown }
-        if result.status == 0 { return .trusted }
+        if result.status == 0 {
+            if let pid = (try? Data(contentsOf: file)).flatMap(Self.launchedProcessID) {
+                _ = try? await runner.run(
+                    "/usr/bin/xcrun",
+                    ["devicectl", "device", "process", "terminate", "--device", deviceID, "--pid", String(pid)],
+                    cwd: nil, timeout: CommandTimeout.deviceQuery)
+            }
+            return .trusted
+        }
         let lower = (String(decoding: result.stdout, as: UTF8.self) + "\n" + result.stderr).lowercased()
         let untrusted = ["for reason: security", "not been explicitly trusted"]
         return untrusted.contains { lower.contains($0) } ? .untrusted : .unknown
+    }
+
+    /// `result.process.processIdentifier` of `devicectl device process launch --json-output`.
+    static func launchedProcessID(_ json: Data) -> Int? {
+        guard let root = try? JSONSerialization.jsonObject(with: json) as? [String: Any],
+              let result = root["result"] as? [String: Any],
+              let process = result["process"] as? [String: Any] else { return nil }
+        return (process["processIdentifier"] as? NSNumber)?.intValue
     }
 
     /// Opens Settings > General > VPN & Device Management on the device, where the developer is
