@@ -400,7 +400,10 @@
 "whatsNew.101.thanks" = "d'avoir signalé les .ipa refusés et aidé à trouver la cause.";
 
 /* Logs */
-"logs.title" = "Logs";
+"settings.pane.reports" = "Signalement et journaux";
+"report.title" = "Signaler un problème";
+"report.subtitle" = "Ouvre le formulaire de bug sur GitHub, déjà rempli (versions, appareils, état d'XSide, dernières lignes du journal), et enregistre le journal complet dans Téléchargements pour le joindre. Tout est masqué, et rien n'est envoyé tant que tu ne valides pas sur GitHub.";
+"logs.title" = "Journaux";
 "logs.subtitle" = "Ce que XSide a fait, étape par étape. Tes infos personnelles (e-mail, équipe, appareils) sont masquées : tu peux joindre l'export à une issue GitHub.";
 "logs.show" = "Afficher";
 "logs.export" = "Exporter…";

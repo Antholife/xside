@@ -400,6 +400,9 @@
 "whatsNew.101.thanks" = "for reporting the refused .ipa files and helping track down the cause.";
 
 /* Logs */
+"settings.pane.reports" = "Reports & Logs";
+"report.title" = "Report a problem";
+"report.subtitle" = "Opens the bug form on GitHub, already filled in (versions, devices, XSide's state, the last log lines), and saves the full log in Downloads to attach. Everything is masked, and nothing is sent until you submit it on GitHub.";
 "logs.title" = "Logs";
 "logs.subtitle" = "What XSide did, step by step. Personal details (e-mail, team, devices) are masked: you can attach the export to a GitHub issue.";
 "logs.show" = "Show";

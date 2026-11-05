@@ -20,7 +20,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .signing: L("settings.signing")
         case .notifications: L("settings.notifications")
         case .updates: L("updates.title")
-        case .logs: L("logs.title")
+        case .logs: L("settings.pane.reports")
         case .about: L("settings.about")
         }
     }
@@ -278,10 +278,20 @@ private struct SettingsPage: View {
     @ViewBuilder private var logs: some View {
         Section {
             LabeledContent {
+                Button(L("report.button")) { Diagnostics.reportIssue(model: model) }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.violet)
+                    .fixedSize()
+            } label: {
+                Label(L("report.title"), systemImage: "ladybug.fill")
+                Text(L("report.subtitle"))
+            }
+        }
+        Section {
+            LabeledContent {
                 HStack(spacing: 8) {
                     Button(L("logs.show")) { NSWorkspace.shared.open(Diagnostics.directory) }
                     Button(L("logs.export")) { Diagnostics.export(model: model) }
-                    Button(L("report.button")) { Diagnostics.reportIssue(model: model) }
                 }
                 .fixedSize()
             } label: {
