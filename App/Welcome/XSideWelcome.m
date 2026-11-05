@@ -1,16 +1,22 @@
-// XSideWelcome: loaded by apps XSide installs with "Show an XSide message when it opens".
-// Once after each install or refresh (each new provisioning profile), it shows a sheet saying
-// the app was installed with XSide and until when it works. It never throws, asserts or blocks:
-// anything missing (no profile, no window) and it silently does nothing.
+// XSideWelcome: loaded by every app XSide installs. Once per signature (each new provisioning
+// profile), at the first launch after it:
+// - after an install (no earlier signature known to the app), a sheet saying the app was
+//   installed with XSide and until when it works;
+// - after a refresh, a small banner at the top that goes away by itself.
+// At each launch it also schedules a local reminder 24 h before expiry, only if the app may
+// already notify (it never asks for permission). It never throws, asserts or blocks: anything
+// missing (no profile, no window) and it silently does nothing.
 //
 // Built by scripts/bundle.sh for iOS arm64 and shipped in XSide.app/Contents/Resources; XSide
 // copies it into the app's Frameworks/ and signs it with the app.
 
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
+#import <UserNotifications/UserNotifications.h>
 
 static NSString *const XSAnnouncedKey = @"io.github.xside.welcome.announcedExpiry";
 static NSString *const XSRepoURL = @"https://github.com/Antholife/xside";
+static NSString *const XSReminderID = @"io.github.xside.welcome.expiryReminder";
 static const int XSMaxAttempts = 10;
 
 /// ExpirationDate of the app's own embedded.mobileprovision (a CMS blob around an XML plist).
@@ -49,8 +55,8 @@ static UIWindowScene *XSScene(void) {
     return nil;
 }
 
-/// The sheet's own window, above the app's (and its alerts): the app can present, dismiss or
-/// replace its screens (sign-in, onboarding) without ever covering or closing the sheet.
+/// The sheet's (or banner's) own window, above the app's (and its alerts): the app can present,
+/// dismiss or replace its screens (sign-in, onboarding) without ever covering or closing it.
 static UIWindow *XSWindow;
 /// The app's key window before the sheet, given back when it closes.
 static __weak UIWindow *XSPreviousKey;
@@ -81,6 +87,35 @@ static UIColor *XSPink(void) { return [UIColor colorWithRed:0xC9 / 255.0 green:0
     return self;
 }
 @end
+
+static NSString *XSDate(NSDate *date) {
+    NSDateFormatter *formatter = [NSDateFormatter new];
+    formatter.locale = NSLocale.currentLocale;
+    [formatter setLocalizedDateFormatFromTemplate:@"EEEdMMMjmm"];
+    return [formatter stringFromDate:date];
+}
+
+static NSString *XSAppName(void) {
+    NSDictionary *info = NSBundle.mainBundle.infoDictionary;
+    NSString *name = info[@"CFBundleDisplayName"] ?: info[@"CFBundleName"];
+    if ([name isKindOfClass:NSString.class] && name.length) return name;
+    return XSFrench() ? @"L'app" : @"The app";
+}
+
+static UIImage *XSIcon(void) {
+#ifdef XS_HAS_ICON
+    return [UIImage imageWithData:[NSData dataWithBytesNoCopy:(void *)XSWelcomeIcon
+                                                         length:XSWelcomeIcon_len freeWhenDone:NO]];
+#else
+    return nil;
+#endif
+}
+
+static void XSHideWindow(void) {
+    XSWindow.hidden = YES;
+    XSWindow = nil;
+    [XSPreviousKey makeKeyWindow];
+}
 
 @interface XSWelcomeController : UIViewController
 - (instancetype)initWithExpiry:(NSDate *)expiry;
@@ -172,11 +207,7 @@ static UIColor *XSPink(void) { return [UIColor colorWithRed:0xC9 / 255.0 green:0
     grab.backgroundColor = UIColor.tertiaryLabelColor;
     grab.layer.cornerRadius = 2.5;
 
-    UIImageView *icon = [UIImageView new];
-#ifdef XS_HAS_ICON
-    icon.image = [UIImage imageWithData:[NSData dataWithBytesNoCopy:(void *)XSWelcomeIcon
-                                                             length:XSWelcomeIcon_len freeWhenDone:NO]];
-#endif
+    UIImageView *icon = [[UIImageView alloc] initWithImage:XSIcon()];
     icon.layer.cornerRadius = 13;
     icon.layer.cornerCurve = kCACornerCurveContinuous;
     icon.clipsToBounds = YES;
@@ -191,10 +222,7 @@ static UIColor *XSPink(void) { return [UIColor colorWithRed:0xC9 / 255.0 green:0
     head.spacing = 14;
     head.alignment = UIStackViewAlignmentCenter;
 
-    NSDateFormatter *formatter = [NSDateFormatter new];
-    formatter.locale = NSLocale.currentLocale;
-    [formatter setLocalizedDateFormatFromTemplate:@"EEEdMMMjmm"];
-    UIView *until = [self line:[self t:@"Valable jusqu'au" en:@"Valid until"] value:[formatter stringFromDate:_expiry]];
+    UIView *until = [self line:[self t:@"Valable jusqu'au" en:@"Valid until"] value:XSDate(_expiry)];
     UIView *left = [self line:[self t:@"Encore" en:@"Time left"] value:[self daysLeft]];
 
     XSGradientButton *ok = [XSGradientButton buttonWithType:UIButtonTypeCustom];
@@ -257,11 +285,7 @@ static UIColor *XSPink(void) { return [UIColor colorWithRed:0xC9 / 255.0 green:0
     [UIView animateWithDuration:0.25 animations:^{
         self->_sheet.transform = CGAffineTransformMakeTranslation(0, self->_sheet.bounds.size.height + 40);
         self->_dim.alpha = 0;
-    } completion:^(BOOL finished) {
-        XSWindow.hidden = YES;
-        XSWindow = nil;
-        [XSPreviousKey makeKeyWindow];
-    }];
+    } completion:^(BOOL finished) { XSHideWindow(); }];
 }
 
 - (void)openGitHub {
@@ -271,26 +295,181 @@ static UIColor *XSPink(void) { return [UIColor colorWithRed:0xC9 / 255.0 green:0
 }
 @end
 
-static void XSShow(NSDate *expiry, int attempt) {
+// MARK: - The banner (after a refresh): a card sliding down from the top, gone after a few seconds
+
+/// Touches outside the banner go to the app.
+@interface XSPassthroughWindow : UIWindow
+@end
+@implementation XSPassthroughWindow
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hit = [super hitTest:point withEvent:event];
+    return (hit == self || hit == self.rootViewController.view) ? nil : hit;
+}
+@end
+
+@interface XSBannerController : UIViewController
+- (instancetype)initWithExpiry:(NSDate *)expiry;
+@end
+
+@implementation XSBannerController {
+    NSDate *_expiry;
+    UIView *_card;
+    BOOL _closing;
+}
+
+- (instancetype)initWithExpiry:(NSDate *)expiry {
+    if ((self = [super initWithNibName:nil bundle:nil])) _expiry = expiry;
+    return self;
+}
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    BOOL fr = XSFrench();
+    self.view.backgroundColor = UIColor.clearColor;
+
+    UIVisualEffectView *card = [[UIVisualEffectView alloc] initWithEffect:
+                                [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThickMaterial]];
+    card.layer.cornerRadius = 22;
+    card.layer.cornerCurve = kCACornerCurveContinuous;
+    card.clipsToBounds = YES;
+    // The shadow lives on a holder: the blur view clips.
+    UIView *holder = [UIView new];
+    holder.layer.shadowColor = UIColor.blackColor.CGColor;
+    holder.layer.shadowOpacity = 0.18;
+    holder.layer.shadowRadius = 14;
+    holder.layer.shadowOffset = CGSizeMake(0, 4);
+
+    UIImageView *icon = [[UIImageView alloc] initWithImage:XSIcon()];
+    icon.layer.cornerRadius = 8;
+    icon.layer.cornerCurve = kCACornerCurveContinuous;
+    icon.clipsToBounds = YES;
+    UILabel *title = [UILabel new];
+    title.text = fr ? @"Rafraîchie par XSide" : @"Refreshed by XSide";
+    title.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
+    UILabel *subtitle = [UILabel new];
+    subtitle.text = [NSString stringWithFormat:fr ? @"Valable jusqu'au %@" : @"Valid until %@", XSDate(_expiry)];
+    subtitle.font = [UIFont systemFontOfSize:13];
+    subtitle.textColor = UIColor.secondaryLabelColor;
+    subtitle.adjustsFontSizeToFitWidth = YES;
+    subtitle.minimumScaleFactor = 0.8;
+    UIStackView *titles = [[UIStackView alloc] initWithArrangedSubviews:@[title, subtitle]];
+    titles.axis = UILayoutConstraintAxisVertical;
+    titles.spacing = 1;
+    UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[icon, titles]];
+    row.spacing = 12;
+    row.alignment = UIStackViewAlignmentCenter;
+
+    for (UIView *v in @[holder, card, row]) v.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:holder];
+    [holder addSubview:card];
+    [card.contentView addSubview:row];
+    NSLayoutConstraint *wide = [holder.widthAnchor constraintEqualToAnchor:self.view.widthAnchor constant:-24];
+    wide.priority = UILayoutPriorityDefaultHigh; // capped on iPad
+    [NSLayoutConstraint activateConstraints:@[
+        [holder.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:6],
+        [holder.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [holder.widthAnchor constraintLessThanOrEqualToConstant:420],
+        wide,
+        [card.topAnchor constraintEqualToAnchor:holder.topAnchor],
+        [card.bottomAnchor constraintEqualToAnchor:holder.bottomAnchor],
+        [card.leadingAnchor constraintEqualToAnchor:holder.leadingAnchor],
+        [card.trailingAnchor constraintEqualToAnchor:holder.trailingAnchor],
+        [row.topAnchor constraintEqualToAnchor:card.contentView.topAnchor constant:12],
+        [row.bottomAnchor constraintEqualToAnchor:card.contentView.bottomAnchor constant:-12],
+        [row.leadingAnchor constraintEqualToAnchor:card.contentView.leadingAnchor constant:14],
+        [row.trailingAnchor constraintEqualToAnchor:card.contentView.trailingAnchor constant:-16],
+        [icon.widthAnchor constraintEqualToConstant:34],
+        [icon.heightAnchor constraintEqualToConstant:34],
+    ]];
+    _card = holder;
+    [holder addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(close)]];
+    UISwipeGestureRecognizer *up = [[UISwipeGestureRecognizer alloc] initWithTarget:self action:@selector(close)];
+    up.direction = UISwipeGestureRecognizerDirectionUp;
+    [holder addGestureRecognizer:up];
+}
+
+- (CGAffineTransform)hidden {
+    return CGAffineTransformMakeTranslation(0, -(CGRectGetMaxY(_card.frame) + 20));
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    [self.view layoutIfNeeded];
+    _card.transform = [self hidden];
+    [UIView animateWithDuration:0.55 delay:0 usingSpringWithDamping:0.8 initialSpringVelocity:0.5
+                        options:UIViewAnimationOptionAllowUserInteraction animations:^{
+        self->_card.transform = CGAffineTransformIdentity;
+    } completion:nil];
+    __weak XSBannerController *weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(4.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [weakSelf close];
+    });
+}
+
+- (void)close {
+    if (_closing) return;
+    _closing = YES;
+    [UIView animateWithDuration:0.3 animations:^{
+        self->_card.transform = [self hidden];
+    } completion:^(BOOL finished) { XSHideWindow(); }];
+}
+@end
+
+// MARK: - Showing them
+
+/// `refreshed`: the app already knew an earlier signature (an install over it): the banner.
+static void XSShow(NSDate *expiry, BOOL refreshed, int attempt) {
     UIWindowScene *scene = XSScene();
     if (!scene) {
         if (attempt + 1 >= XSMaxAttempts) return;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            XSShow(expiry, attempt + 1);
+            XSShow(expiry, refreshed, attempt + 1);
         });
         return;
     }
     if (XSWindow) return;
-    for (UIWindow *w in scene.windows) if (w.isKeyWindow) XSPreviousKey = w;
-    UIWindow *window = [[UIWindow alloc] initWithWindowScene:scene];
+    UIWindow *window;
+    if (refreshed) {
+        // Never key: the app keeps its keyboard and focus.
+        window = [[XSPassthroughWindow alloc] initWithWindowScene:scene];
+        window.rootViewController = [[XSBannerController alloc] initWithExpiry:expiry];
+    } else {
+        for (UIWindow *w in scene.windows) if (w.isKeyWindow) XSPreviousKey = w;
+        window = [[UIWindow alloc] initWithWindowScene:scene];
+        // Hidden at first: the sheet slides up once on screen (see viewDidAppear).
+        window.rootViewController = [[XSWelcomeController alloc] initWithExpiry:expiry];
+    }
     window.windowLevel = UIWindowLevelAlert + 100;
     window.backgroundColor = UIColor.clearColor;
-    // Hidden at first: the sheet slides up once on screen (see viewDidAppear).
-    window.rootViewController = [[XSWelcomeController alloc] initWithExpiry:expiry];
     XSWindow = window;
-    [window makeKeyAndVisible];
+    if (refreshed) window.hidden = NO; else [window makeKeyAndVisible];
     // Announced once shown: a relaunch before tapping OK doesn't show it again.
     [NSUserDefaults.standardUserDefaults setObject:expiry forKey:XSAnnouncedKey];
+}
+
+/// A local reminder 24 h before expiry, replaced at each launch (so a refresh followed by a
+/// launch moves it). Only when the app may already notify: XSide never asks on its behalf.
+static void XSScheduleReminder(NSDate *expiry) {
+    NSTimeInterval wait = [expiry timeIntervalSinceNow] - 86400;
+    UNUserNotificationCenter *center = UNUserNotificationCenter.currentNotificationCenter;
+    if (wait < 60) {
+        [center removePendingNotificationRequestsWithIdentifiers:@[XSReminderID]];
+        return;
+    }
+    [center getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings *settings) {
+        UNAuthorizationStatus status = settings.authorizationStatus;
+        if (status != UNAuthorizationStatusAuthorized && status != UNAuthorizationStatusProvisional) return;
+        BOOL fr = XSFrench();
+        UNMutableNotificationContent *content = [UNMutableNotificationContent new];
+        content.title = [NSString stringWithFormat:fr ? @"%@ expire demain" : @"%@ expires tomorrow", XSAppName()];
+        // A refresh only moves the reminder at the next launch: worded so it stays true.
+        content.body = fr ? @"Sauf si XSide l'a rafraîchie entre-temps : connecte l'appareil au Mac où tourne XSide, puis ouvre l'app pour vérifier."
+                          : @"Unless XSide refreshed it meanwhile: connect the device to the Mac running XSide, then open the app to check.";
+        content.sound = UNNotificationSound.defaultSound;
+        UNTimeIntervalNotificationTrigger *trigger = [UNTimeIntervalNotificationTrigger triggerWithTimeInterval:wait repeats:NO];
+        [center addNotificationRequest:[UNNotificationRequest requestWithIdentifier:XSReminderID content:content trigger:trigger]
+                 withCompletionHandler:nil];
+    }];
 }
 
 __attribute__((constructor)) static void XSideWelcomeInit(void) {
@@ -302,8 +481,9 @@ __attribute__((constructor)) static void XSideWelcomeInit(void) {
         observer = nil;
         NSDate *expiry = XSExpirationDate();
         if (!expiry) return;
+        XSScheduleReminder(expiry);
         id announced = [NSUserDefaults.standardUserDefaults objectForKey:XSAnnouncedKey];
         if ([announced isKindOfClass:NSDate.class] && [announced isEqualToDate:expiry]) return;
-        XSShow(expiry, 0);
+        XSShow(expiry, [announced isKindOfClass:NSDate.class], 0);
     }];
 }

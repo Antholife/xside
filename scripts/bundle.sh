@@ -45,7 +45,7 @@ if xcrun -sdk iphoneos --show-sdk-path >/dev/null 2>&1; then
     (cd "$WELCOME_GEN" && xxd -i -n XSWelcomeIcon icon.png > XSideWelcomeIcon.h)
     xcrun -sdk iphoneos clang -dynamiclib -arch arm64 -mios-version-min=15.0 -fobjc-arc -O2 \
         -I "$WELCOME_GEN" \
-        -framework UIKit -framework Foundation -framework QuartzCore -framework CoreGraphics \
+        -framework UIKit -framework Foundation -framework QuartzCore -framework CoreGraphics -framework UserNotifications \
         -install_name @executable_path/Frameworks/XSideWelcome.dylib \
         -o "$APP/Contents/Resources/XSideWelcome.dylib" App/Welcome/XSideWelcome.m
     rm -rf "$WELCOME_GEN"

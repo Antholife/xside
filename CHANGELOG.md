@@ -11,6 +11,9 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 
 - The "trust the developer" guide (Settings > General > VPN & Device Management) comes back after an install on a device that had no XSide app left (iOS forgets the trust then), or with a new certificate. It used to show only once per device.
 
+- Apps installed with XSide show who installed them: after an install, a sheet with the XSide logo, the expiry date and the days left (once per signature, in its own window so the app's screens can't cover or close it); after a refresh, a small banner at the top instead, gone after a few seconds. Added during a new install step, "Adding the XSide message".
+- Apps that may already send notifications also remind on the device itself, 24 h before they expire. XSide never asks for that permission on their behalf.
+
 ### Fixed
 - A device with Developer Mode off: the install window says so and how to turn it on, and doesn't start an install that can only fail. If it fails anyway, the message says Developer Mode is off instead of "Couldn't create the provisioning profile".
 - A device out of reach during an uninstall (CoreDevice error 1011) is reported as unreachable, not as a failed uninstall.
