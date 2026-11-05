@@ -211,7 +211,8 @@ final class AppModel {
             library: library,
             provisioner: Provisioner(runner: runner, templateDir: paths.template, workDir: paths.provisioningWork,
                                      cacheDirs: paths.xcodeProfileDirs),
-            resigner: Resigner(runner: runner), installer: Installer(runner: runner),
+            resigner: Resigner(runner: runner,
+                               welcomeDylib: Bundle.main.url(forResource: "XSideWelcome", withExtension: "dylib")), installer: Installer(runner: runner),
             workRoot: paths.jobsWork, now: { Date() }, macIsBeta: XcodeLauncher.macIsBeta)
         // An update waits while an install or a refresh runs (`release` retries it after).
         updater.isBusy = { [unowned self] in !self.claims.isEmpty || self.install?.isRunning == true }

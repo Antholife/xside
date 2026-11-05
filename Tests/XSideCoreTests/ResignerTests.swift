@@ -26,14 +26,26 @@ private func makeProfile() -> ProvisioningProfile {
 private struct Fixture {
     let work: URL, ipa: URL, profileURL: URL
     let fake: FakeRunner
-    var resigner: Resigner { Resigner(runner: RoutingRunner(fake: fake)) }
+    var welcomeDylib: URL?
+    var resigner: Resigner { Resigner(runner: RoutingRunner(fake: fake), welcomeDylib: welcomeDylib) }
 }
+
+/// A stand-in for XSideWelcome.dylib (its content isn't read, only copied).
+private func welcomeDylib() throws -> URL {
+    let url = try tempDir("welcome").appendingPathComponent("XSideWelcome.dylib")
+    try Data("WELCOME".utf8).write(to: url)
+    return url
+}
+
+private let welcomePath = "@executable_path/Frameworks/XSideWelcome.dylib"
 
 private func fixture(encrypted: Bool = false, extensions: [String] = ["PlugIns", "Extensions", "Watch"],
                      withIcons: Bool = false, appName: String = "Demo", work: URL? = nil,
+                     executable: Data? = nil,
                      prepare: (URL) throws -> Void = { _ in }) async throws -> Fixture {
     let src = try tempDir("src")
-    let app = try FakeIPA.makeApp(at: src, name: appName, extensions: extensions, encrypted: encrypted)
+    let app = try FakeIPA.makeApp(at: src, name: appName, extensions: extensions, encrypted: encrypted,
+                                  executableData: executable)
     try prepare(app)
     if withIcons { try addAssetCatalogIcons(app) }
     // stale signatures
@@ -67,6 +79,45 @@ private func plist(_ app: URL) throws -> [String: Any] {
 }
 
 @Suite struct ResignerTests {
+    @Test func injectsWelcomeDylibWhenOn() async throws {
+        var f = try await fixture(executable: FakeIPA.paddedMachO(padding: 256))
+        f.welcomeDylib = try welcomeDylib()
+        let app = try await run(f, options: InstallOptions(welcomePopup: true))
+        let copied = app.appendingPathComponent("Frameworks/XSideWelcome.dylib")
+        #expect(try Data(contentsOf: copied) == Data("WELCOME".utf8))
+        let executable = try Data(contentsOf: app.appendingPathComponent("Demo"))
+        #expect(executable.range(of: Data(welcomePath.utf8)) != nil)
+        let targets = f.fake.calls.map { $0.last! }
+        #expect(targets.firstIndex(of: copied.path)! < targets.firstIndex(of: app.path)!)
+    }
+
+    @Test func noInjectionWhenOff() async throws {
+        let original = FakeIPA.paddedMachO(padding: 256)
+        var f = try await fixture(executable: original)
+        f.welcomeDylib = try welcomeDylib()
+        let app = try await run(f)
+        #expect(!FileManager.default.fileExists(atPath: app.appendingPathComponent("Frameworks/XSideWelcome.dylib").path))
+        #expect(try Data(contentsOf: app.appendingPathComponent("Demo")) == original)
+    }
+
+    @Test func resignWithoutDylibInstallsNormally() async throws {
+        let original = FakeIPA.paddedMachO(padding: 256)
+        let f = try await fixture(executable: original)
+        let app = try await run(f, options: InstallOptions(welcomePopup: true))
+        #expect(!FileManager.default.fileExists(atPath: app.appendingPathComponent("Frameworks/XSideWelcome.dylib").path))
+        #expect(try Data(contentsOf: app.appendingPathComponent("Demo")) == original)
+    }
+
+    @Test func resignSkipsPopupWhenPatchFails() async throws {
+        let original = FakeIPA.paddedMachO(padding: 8)
+        var f = try await fixture(executable: original)
+        f.welcomeDylib = try welcomeDylib()
+        let app = try await run(f, options: InstallOptions(welcomePopup: true))
+        #expect(!FileManager.default.fileExists(atPath: app.appendingPathComponent("Frameworks/XSideWelcome.dylib").path))
+        #expect(try Data(contentsOf: app.appendingPathComponent("Demo")) == original)
+        #expect(f.fake.calls.last?.last == app.path) // signed and returned as usual
+    }
+
     @Test func stripsExtensions() async throws {
         let f = try await fixture()
         let app = try await run(f)

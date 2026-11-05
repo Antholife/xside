@@ -52,9 +52,17 @@ public struct InstallOptions: Codable, Equatable, Sendable {
 
 public struct Resigner: Sendable {
     private let runner: CommandRunning
+    /// The welcome popup's iOS library (XSide.app's resource), nil when this build has none.
+    private let welcomeDylib: URL?
     private static let codesign = "/usr/bin/codesign"
+    private static let logger = Log("resign")
+    static let welcomeName = "XSideWelcome.dylib"
+    static let welcomeLoadPath = "@executable_path/Frameworks/\(welcomeName)"
 
-    public init(runner: CommandRunning) { self.runner = runner }
+    public init(runner: CommandRunning, welcomeDylib: URL? = nil) {
+        self.runner = runner
+        self.welcomeDylib = welcomeDylib
+    }
 
     /// Unpacks `ipa` into `workDir`, rewrites it and signs it inside-out. Returns the signed `.app`.
     public func resign(ipa: URL, workDir: URL, bundleID: String, options: InstallOptions,
@@ -90,6 +98,7 @@ public struct Resigner: Sendable {
 
         try editInfoPlist(app: app, bundleID: bundleID, options: options)
         if let iconURL { try await applyIcon(iconURL, to: app, workDir: workDir) }
+        if options.welcomePopup { addWelcomePopup(to: app, executable: executableURL) }
 
         for url in allFiles(under: app) where url.lastPathComponent == "_CodeSignature" {
             try? fm.removeItem(at: url)
@@ -113,6 +122,28 @@ public struct Resigner: Sendable {
         try await sign(app, identity: identitySHA1, entitlements: entitlements)
         StepProgress.report?(1)
         return app
+    }
+
+    /// Copies the welcome library into `Frameworks/` and makes the executable load it (weakly).
+    /// Never fails the install: on any problem the app is left as it was, without the popup.
+    private func addWelcomePopup(to app: URL, executable: URL) {
+        guard let welcomeDylib, FileManager.default.fileExists(atPath: welcomeDylib.path) else {
+            Self.logger.notice("welcome popup unavailable (no library in this build)")
+            return
+        }
+        let fm = FileManager.default
+        let frameworks = app.appendingPathComponent("Frameworks")
+        let target = frameworks.appendingPathComponent(Self.welcomeName)
+        do {
+            try fm.createDirectory(at: frameworks, withIntermediateDirectories: true)
+            if exists(target) { try fm.removeItem(at: target) }
+            try fm.copyItem(at: welcomeDylib, to: target)
+            let outcome = try MachOPatcher.addWeakDylib(Self.welcomeLoadPath, to: executable)
+            Self.logger.info("welcome popup added (\(outcome == .added ? "new load command" : "already loaded"))")
+        } catch {
+            try? fm.removeItem(at: target)
+            Self.logger.notice("welcome popup skipped: \(String(describing: error))")
+        }
     }
 
     // MARK: - Entitlements
