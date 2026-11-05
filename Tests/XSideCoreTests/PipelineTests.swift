@@ -76,8 +76,9 @@ private struct FakeResigner: Resigning {
     let log: CallLog
     func resign(ipa: URL, workDir: URL, bundleID: String, options: InstallOptions, iconURL: URL?,
                 profileURL: URL, profile: ProvisioningProfile, identitySHA1: String,
-                otherBundleIDs: Set<String>) async throws -> URL {
+                otherBundleIDs: Set<String>, onSigning: @Sendable () async -> Void) async throws -> URL {
         await log.resign(ipa, workDir, bundleID, iconURL, profileURL, profile)
+        await onSigning()
         // Simulate unpacking into the work dir.
         let app = workDir.appendingPathComponent("Payload/Demo.app", isDirectory: true)
         try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
@@ -204,7 +205,7 @@ struct PipelineTests {
         let f = try await Fixture(); defer { f.cleanup() }
         let steps = StepLog()
         _ = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env) { await steps.add($0) }
-        #expect(await steps.items == [.profile, .signing, .installing])
+        #expect(await steps.items == [.profile, .welcome, .signing, .installing])
     }
 
     @Test func stopsReportingAtFailedStep() async throws {

@@ -1101,9 +1101,9 @@ final class AppModel {
     }
 
     fileprivate func setStepPercent(_ percent: Int, for key: JobKey) {
-        // Only the signing reports progress: a report arriving after it ended (they hop to the
-        // main actor separately) must not show "100 %" on the transfer.
-        guard jobs[key] == .step(.signing), stepPercent[key] != percent else { return }
+        // Only unpacking (the welcome step) and signing report progress: a report arriving after
+        // they ended (they hop to the main actor separately) must not show "100 %" on the transfer.
+        guard jobs[key] == .step(.welcome) || jobs[key] == .step(.signing), stepPercent[key] != percent else { return }
         stepPercent[key] = percent
         updateDockBadge()
     }
@@ -1342,8 +1342,6 @@ final class AppModel {
                 let existing = records.first { $0.originalBundleID == info.bundleID }
                 flow.existing = existing
                 flow.draft = OptionsDraft(existing?.options ?? InstallOptions())
-                // A new app gets the welcome popup by default; a known one keeps its saved choice.
-                if existing == nil { flow.draft.welcomePopup = true }
                 flow.phase = .editing(error: nil)
                 autoselectDevice() // the default now depends on where the app is installed
                 #if DEBUG

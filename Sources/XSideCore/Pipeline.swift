@@ -13,7 +13,8 @@ public protocol Resigning: Sendable {
     /// must never be granted.
     func resign(ipa: URL, workDir: URL, bundleID: String, options: InstallOptions,
                 iconURL: URL?, profileURL: URL, profile: ProvisioningProfile,
-                identitySHA1: String, otherBundleIDs: Set<String>) async throws -> URL
+                identitySHA1: String, otherBundleIDs: Set<String>,
+                onSigning: @Sendable () async -> Void) async throws -> URL
 }
 
 public protocol Installing: Sendable {
@@ -29,7 +30,8 @@ extension Installer: Installing {}
 
 /// Phase reported by `SideloadPipeline.install(recordID:device:env:refresh:progress:)` as each step starts.
 public enum InstallStep: Int, CaseIterable, Sendable {
-    case profile, signing, installing
+    /// `welcome`: unpacking the app and adding the XSide welcome popup to it, before signing.
+    case profile, welcome, signing, installing
 }
 
 /// FIFO async mutex: `run` bodies execute one at a time, in arrival order. A task already
@@ -339,8 +341,8 @@ public actor SideloadPipeline {
                provisioned.profile.expirationDate <= previous.expiresAt {
                 throw XSideError.profileNotRenewed
             }
-            await progress(.signing)
-            Self.logger.info("\(what): signing")
+            await progress(.welcome)
+            Self.logger.info("\(what): adding the welcome popup")
             let others = await library.records().filter { $0.id != recordID }
                 .reduce(into: Set<String>()) { ids, other in
                     ids.insert(other.signedBundleID)
@@ -351,7 +353,11 @@ public actor SideloadPipeline {
                 try await resigner.resign(
                     ipa: ipa, workDir: workDir, bundleID: bundleID, options: record.options,
                     iconURL: icon, profileURL: provisioned.url, profile: provisioned.profile,
-                    identitySHA1: current.identitySHA1, otherBundleIDs: others)
+                    identitySHA1: current.identitySHA1, otherBundleIDs: others,
+                    onSigning: {
+                        await progress(.signing)
+                        Self.logger.info("\(what): signing")
+                    })
             }
             await progress(.installing)
             Self.logger.info("\(what): installing")

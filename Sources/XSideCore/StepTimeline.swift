@@ -11,11 +11,12 @@ public enum JobStage: Equatable, Sendable {
 
 /// A step of the progress list shown to the user.
 public enum ProgressStep: Int, CaseIterable, Sendable {
-    case preparing, profile, signing, installing, wifiCheck
+    case preparing, profile, welcome, signing, installing, wifiCheck
 
     public init(_ step: InstallStep) {
         switch step {
         case .profile: self = .profile
+        case .welcome: self = .welcome
         case .signing: self = .signing
         case .installing: self = .installing
         }

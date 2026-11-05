@@ -135,6 +135,7 @@ extension ProgressStep {
         switch self {
         case .preparing: L("install.step.preparing")
         case .profile: L("install.step.profile")
+        case .welcome: L("install.step.welcome")
         case .signing: L("install.step.signing")
         case .installing: L("install.step.installing")
         case .wifiCheck: L("wifi.title")

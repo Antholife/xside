@@ -13,15 +13,10 @@ public struct InstallOptions: Codable, Equatable, Sendable {
     /// Grant the keychain groups the app shares with its vendor's other apps. Off by default: the
     /// vendor is read from the IPA itself, so a crafted IPA could claim one to read their logins.
     public var shareKeychain: Bool = false
-    /// The app shows "Installed with XSide · valid until …" once after each install and refresh
-    /// (a small library XSide adds to it). Off unless chosen: apps installed before it existed
-    /// don't get it; new installs have it on by default (see the install window's draft).
-    public var welcomePopup: Bool = false
 
     public init(displayName: String? = nil, customBundleID: String? = nil, version: String? = nil,
                 iconPath: String? = nil, fileSharing: Bool = false, iPadFullScreen: Bool = false,
-                proMotion: Bool = false, minimumOSVersion: String? = nil, shareKeychain: Bool = false,
-                welcomePopup: Bool = false) {
+                proMotion: Bool = false, minimumOSVersion: String? = nil, shareKeychain: Bool = false) {
         self.displayName = displayName
         self.customBundleID = customBundleID
         self.version = version
@@ -31,7 +26,6 @@ public struct InstallOptions: Codable, Equatable, Sendable {
         self.proMotion = proMotion
         self.minimumOSVersion = minimumOSVersion
         self.shareKeychain = shareKeychain
-        self.welcomePopup = welcomePopup
     }
 
     /// Every key is optional: options saved by an older version (or missing a key) still load.
@@ -46,7 +40,6 @@ public struct InstallOptions: Codable, Equatable, Sendable {
         proMotion = try c.decodeIfPresent(Bool.self, forKey: .proMotion) ?? false
         minimumOSVersion = try c.decodeIfPresent(String.self, forKey: .minimumOSVersion)
         shareKeychain = try c.decodeIfPresent(Bool.self, forKey: .shareKeychain) ?? false
-        welcomePopup = try c.decodeIfPresent(Bool.self, forKey: .welcomePopup) ?? false
     }
 }
 
@@ -67,12 +60,13 @@ public struct Resigner: Sendable {
     /// Unpacks `ipa` into `workDir`, rewrites it and signs it inside-out. Returns the signed `.app`.
     public func resign(ipa: URL, workDir: URL, bundleID: String, options: InstallOptions,
                        iconURL: URL?, profileURL: URL, profile: ProvisioningProfile,
-                       identitySHA1: String, otherBundleIDs: Set<String> = []) async throws -> URL {
+                       identitySHA1: String, otherBundleIDs: Set<String> = [],
+                       onSigning: @Sendable () async -> Void = {}) async throws -> URL {
         let fm = FileManager.default
         try fm.createDirectory(at: workDir, withIntermediateDirectories: true)
         try cleanPreviousRun(in: workDir)
-        // Half of the step's progress is the unzip, the other half the signatures.
-        let unzip = try await StepProgress.within(0...0.5) {
+        // The welcome step's progress is the unzip; the signing step's, the signatures.
+        let unzip = try await StepProgress.within(0...1) {
             try await ZipLimits.extract(ipa, to: workDir, runner: runner)
         }
         guard unzip.status == 0 else {
@@ -98,7 +92,7 @@ public struct Resigner: Sendable {
 
         try editInfoPlist(app: app, bundleID: bundleID, options: options)
         if let iconURL { try await applyIcon(iconURL, to: app, workDir: workDir) }
-        if options.welcomePopup { addWelcomePopup(to: app, executable: executableURL) }
+        addWelcomePopup(to: app, executable: executableURL)
 
         for url in allFiles(under: app) where url.lastPathComponent == "_CodeSignature" {
             try? fm.removeItem(at: url)
@@ -113,18 +107,20 @@ public struct Resigner: Sendable {
                                      shareKeychain: options.shareKeychain, otherBundleIDs: otherBundleIDs)
             .write(to: entitlements)
 
+        await onSigning()
         let targets = signTargets(in: app)
         for (index, target) in targets.enumerated() {
             try requireType(target.pathExtension == "dylib" ? .typeRegular : .typeDirectory, target)
             try await sign(target, identity: identitySHA1, entitlements: nil)
-            StepProgress.report?(0.5 + 0.5 * Double(index + 1) / Double(targets.count + 1))
+            StepProgress.report?(Double(index + 1) / Double(targets.count + 1))
         }
         try await sign(app, identity: identitySHA1, entitlements: entitlements)
         StepProgress.report?(1)
         return app
     }
 
-    /// Copies the welcome library into `Frameworks/` and makes the executable load it (weakly).
+    /// Every app gets the welcome popup: copies the library into `Frameworks/` and makes the
+    /// executable load it (weakly).
     /// Never fails the install: on any problem the app is left as it was, without the popup.
     private func addWelcomePopup(to app: URL, executable: URL) {
         guard let welcomeDylib, FileManager.default.fileExists(atPath: welcomeDylib.path) else {

@@ -39,6 +39,13 @@ private func welcomeDylib() throws -> URL {
 
 private let welcomePath = "@executable_path/Frameworks/XSideWelcome.dylib"
 
+private final class LockedCount: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count: Int?
+    func set(_ v: Int) { lock.lock(); count = v; lock.unlock() }
+    var value: Int? { lock.lock(); defer { lock.unlock() }; return count }
+}
+
 private func fixture(encrypted: Bool = false, extensions: [String] = ["PlugIns", "Extensions", "Watch"],
                      withIcons: Bool = false, appName: String = "Demo", work: URL? = nil,
                      executable: Data? = nil,
@@ -82,7 +89,7 @@ private func plist(_ app: URL) throws -> [String: Any] {
     @Test func injectsWelcomeDylibWhenOn() async throws {
         var f = try await fixture(executable: FakeIPA.paddedMachO(padding: 256))
         f.welcomeDylib = try welcomeDylib()
-        let app = try await run(f, options: InstallOptions(welcomePopup: true))
+        let app = try await run(f)
         let copied = app.appendingPathComponent("Frameworks/XSideWelcome.dylib")
         #expect(try Data(contentsOf: copied) == Data("WELCOME".utf8))
         let executable = try Data(contentsOf: app.appendingPathComponent("Demo"))
@@ -91,19 +98,21 @@ private func plist(_ app: URL) throws -> [String: Any] {
         #expect(targets.firstIndex(of: copied.path)! < targets.firstIndex(of: app.path)!)
     }
 
-    @Test func noInjectionWhenOff() async throws {
-        let original = FakeIPA.paddedMachO(padding: 256)
-        var f = try await fixture(executable: original)
+    @Test func announcesSigningAfterTheWelcomeStep() async throws {
+        var f = try await fixture(executable: FakeIPA.paddedMachO(padding: 256))
         f.welcomeDylib = try welcomeDylib()
-        let app = try await run(f)
-        #expect(!FileManager.default.fileExists(atPath: app.appendingPathComponent("Frameworks/XSideWelcome.dylib").path))
-        #expect(try Data(contentsOf: app.appendingPathComponent("Demo")) == original)
+        let calls = f.fake
+        let codesignCallsAtSigning = LockedCount()
+        _ = try await f.resigner.resign(ipa: f.ipa, workDir: f.work, bundleID: "com.example.new", options: InstallOptions(),
+                                        iconURL: nil, profileURL: f.profileURL, profile: makeProfile(),
+                                        identitySHA1: "FAKESHA1", onSigning: { codesignCallsAtSigning.set(calls.calls.count) })
+        #expect(codesignCallsAtSigning.value == 0) // announced before the first codesign
     }
 
     @Test func resignWithoutDylibInstallsNormally() async throws {
         let original = FakeIPA.paddedMachO(padding: 256)
         let f = try await fixture(executable: original)
-        let app = try await run(f, options: InstallOptions(welcomePopup: true))
+        let app = try await run(f)
         #expect(!FileManager.default.fileExists(atPath: app.appendingPathComponent("Frameworks/XSideWelcome.dylib").path))
         #expect(try Data(contentsOf: app.appendingPathComponent("Demo")) == original)
     }
@@ -112,7 +121,7 @@ private func plist(_ app: URL) throws -> [String: Any] {
         let original = FakeIPA.paddedMachO(padding: 8)
         var f = try await fixture(executable: original)
         f.welcomeDylib = try welcomeDylib()
-        let app = try await run(f, options: InstallOptions(welcomePopup: true))
+        let app = try await run(f)
         #expect(!FileManager.default.fileExists(atPath: app.appendingPathComponent("Frameworks/XSideWelcome.dylib").path))
         #expect(try Data(contentsOf: app.appendingPathComponent("Demo")) == original)
         #expect(f.fake.calls.last?.last == app.path) // signed and returned as usual

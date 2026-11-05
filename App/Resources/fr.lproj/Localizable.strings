@@ -35,8 +35,6 @@
 "install.field.icon" = "Icône";
 "install.field.iconChoose" = "Choisir…";
 "install.field.fileSharing" = "Partage de fichiers";
-"install.field.welcomePopup" = "Afficher un message XSide à l'ouverture";
-"install.field.welcomePopup.note" = "Une fois après chaque installation et rafraîchissement : d'où vient l'app et jusqu'à quand elle marche. Désactive-le si l'app refuse de se lancer.";
 "install.field.iPadFullScreen" = "Plein écran iPad";
 "install.field.proMotion" = "ProMotion 120 Hz";
 "install.field.minOS" = "iOS minimum";
@@ -52,6 +50,7 @@
 "install.status.pending" = "à venir";
 "install.status.skipped" = "ignorée";
 "install.step.profile" = "Autorisation d'Apple";
+"install.step.welcome" = "Ajout du message XSide";
 "install.step.signing" = "Signature";
 "install.step.installing" = "Installation";
 "install.cancel" = "Annuler";

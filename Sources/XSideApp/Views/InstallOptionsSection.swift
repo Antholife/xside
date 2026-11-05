@@ -35,22 +35,6 @@ struct InstallOptionsSection: View {
                         .padding(.bottom, 12)
                         .transition(.opacity)
                 }
-                Divider().padding(.leading, 48)
-                OptionRow(symbol: "text.bubble", title: L("install.field.welcomePopup"), detail: nil) {
-                    Toggle(L("install.field.welcomePopup"), isOn: $flow.draft.welcomePopup)
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                        .controlSize(.mini)
-                        .tint(Theme.violet)
-                }
-                Text(L("install.field.welcomePopup.note"))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.leading, 48)
-                    .padding(.trailing, 12)
-                    .padding(.bottom, 10)
                 // Only offered when the app asks for shared groups; off unless the user trusts the IPA.
                 if let info = flow.info, !info.sharedKeychainGroups.isEmpty {
                     Divider().padding(.leading, 48)
