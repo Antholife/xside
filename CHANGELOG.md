@@ -11,7 +11,7 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 
 - After an install, XSide opens the app on the device, which also tells whether the device trusts the developer. Not trusted: the "trust the developer" guide shows and XSide opens Settings > General > VPN & Device Management on the device itself (a button opens it again). Trusted: no guide. When the device can't tell (locked), the guide shows on a first install, after the last XSide app was deleted from the device, or with a new certificate.
 
-- Apps installed with XSide show who installed them: after an install, a sheet with the XSide logo, the expiry date and the days left (once per signature, in its own window so the app's screens can't cover or close it); after a refresh, a small banner at the top instead, gone after a few seconds. Added during a new install step, "Adding XSide info".
+- Apps installed with XSide show who installed them: after an install, a sheet with the XSide logo, the expiry date and the days left (once per signature, in its own window so the app's screens can't cover or close it); after a refresh, a small banner at the top instead, gone after a few seconds. Added during a new install step, "Adding XSide features", which lists them.
 - Apps also remind on the device itself, 24 h before they expire. If the app never asked for notifications, that permission is asked once, when the install sheet is closed (never again after an answer); the sheet says why beforehand.
 
 - Each app's page in the iOS Settings app (Settings > the app) gets an "Installed with XSide" section: valid until, last refreshed, and a link to XSide. Rewritten at each refresh; the app's own settings stay as they were.

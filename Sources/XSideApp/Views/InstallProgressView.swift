@@ -76,6 +76,14 @@ struct InstallProgressView: View {
                     .padding(.leading, 24)
                     .animation(.smooth(duration: 0.4), value: activePercent)
             }
+            // What "XSide features" means, once that step has started.
+            if step == .welcome, status == .active || status == .done {
+                Text(L("install.step.welcome.detail"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 24)
+            }
             if status == .failed, let failureMessage {
                 Text(failureMessage)
                     .font(.system(size: 12))
@@ -84,6 +92,7 @@ struct InstallProgressView: View {
                     .padding(.leading, 24)
             }
         }
+        .help(step == .welcome ? L("install.step.welcome.detail") : "")
         .accessibilityElement(children: .combine)
         .accessibilityLabel(L("install.progress.accessibility", index, timeline.total, step.label, status.label))
     }

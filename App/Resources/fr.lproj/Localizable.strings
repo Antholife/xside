@@ -50,7 +50,8 @@
 "install.status.pending" = "à venir";
 "install.status.skipped" = "ignorée";
 "install.step.profile" = "Autorisation d'Apple";
-"install.step.welcome" = "Ajout des infos XSide";
+"install.step.welcome" = "Ajout des fonctionnalités XSide";
+"install.step.welcome.detail" = "Dans l'app : une fenêtre XSide après l'installation, un bandeau après chaque rafraîchissement, un rappel la veille de l'expiration et une section « Installée avec XSide » dans Réglages.";
 "install.step.signing" = "Signature";
 "install.step.installing" = "Installation";
 "install.cancel" = "Annuler";
