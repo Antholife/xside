@@ -8,6 +8,7 @@ public enum IssueReport {
     /// GitHub (and browsers) refuse longer links.
     public static let maxURLLength = 7_500
     public static let cutMarker = "\n…"
+    private static let fence = "```"
 
     /// The link, with the `cut` field shortened (from its end) until it fits `maxURLLength`.
     public static func url(template: String, fields: [(id: String, value: String)], cut: String) -> URL {
@@ -22,11 +23,24 @@ public enum IssueReport {
             guard url.absoluteString.count > maxURLLength,
                   let index = values.firstIndex(where: { $0.id == cut }), !values[index].value.isEmpty else { return url }
             let text = values[index].value
-            let base = text.hasSuffix(cutMarker) ? String(text.dropLast(cutMarker.count)) : text
+            let base = Self.uncut(text)
             // Shrunk in proportion to how much too long it is (encoded characters vary in length).
             let keep = Int(Double(base.count) * Double(maxURLLength) / Double(url.absoluteString.count) * 0.95)
-            values[index].value = keep <= 0 ? "" : String(base.prefix(min(keep, base.count - 1))) + cutMarker
+            values[index].value = keep <= 0 ? "" : Self.cut(String(base.prefix(min(keep, base.count - 1))))
         }
+    }
+
+    /// `text` cut short: the marker, and the code block it ends in closed again.
+    private static func cut(_ text: String) -> String {
+        let open = text.components(separatedBy: fence).count % 2 == 0
+        return text + cutMarker + (open ? "\n" + fence : "")
+    }
+
+    /// The text before `cut` added its ending.
+    private static func uncut(_ text: String) -> String {
+        if text.hasSuffix(cutMarker + "\n" + fence) { return String(text.dropLast(cutMarker.count + 1 + fence.count)) }
+        if text.hasSuffix(cutMarker) { return String(text.dropLast(cutMarker.count)) }
+        return text
     }
 
     /// `text` with each app's identifiers (`apps[n]`, any order) replaced by `<app-n+1>`, longest

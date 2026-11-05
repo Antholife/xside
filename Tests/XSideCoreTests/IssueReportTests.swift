@@ -36,6 +36,15 @@ struct IssueReportTests {
         #expect(masked == "install <app-1> as <app-1> on <device-1>; <app-2> done")
     }
 
+    /// Review M9: a cut inside a code block closes it, or the rest of the issue reads as code.
+    @Test func aCutCodeBlockIsClosed() {
+        let body = "Intro\n```\n" + String(repeating: "log line\n", count: 3_000) + "```"
+        let url = IssueReport.url(template: "bug_report.yml", fields: [("logs", body)], cut: "logs")
+        let sent = query(url)["logs"] ?? ""
+        #expect(sent.components(separatedBy: "```").count % 2 == 1) // fences paired
+        #expect(sent.hasSuffix("```"))
+    }
+
     /// The last lines matter most in a log.
     @Test func keepsTheLastLines() {
         let log = (1...100).map { "line \($0)" }.joined(separator: "\n")
