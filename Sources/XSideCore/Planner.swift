@@ -32,6 +32,14 @@ public enum RefreshPlanner {
         }
     }
 
+    /// Signed with another certificate of the same team than the one in use (replaced or revoked):
+    /// the old signature may stop working at any time.
+    public static func certificateChanged(_ i: Installation, currentIdentitySHA1: String?, currentTeamID: String?) -> Bool {
+        currentIdentitySHA1 != nil && i.signingIdentitySHA1 != nil
+            && i.signingIdentitySHA1?.uppercased() != currentIdentitySHA1?.uppercased()
+            && (i.teamID == nil || i.teamID == currentTeamID)
+    }
+
     /// Installations to refresh now. Already-expired ones are still due. Paused ones never are.
     /// `currentIdentitySHA1`: the signing certificate in use. An installation signed with another
     /// one (certificate replaced or revoked) is due now whatever its expiry: the old signature may
@@ -46,10 +54,7 @@ public enum RefreshPlanner {
         for record in records {
             for i in record.installations where !i.refreshPaused {
                 guard available.contains(i.deviceID) else { continue }
-                let certificateChanged = currentIdentitySHA1 != nil && i.signingIdentitySHA1 != nil
-                    && i.signingIdentitySHA1?.uppercased() != currentIdentitySHA1?.uppercased()
-                    && (i.teamID == nil || i.teamID == currentTeamID)
-                if certificateChanged {
+                if certificateChanged(i, currentIdentitySHA1: currentIdentitySHA1, currentTeamID: currentTeamID) {
                     // Only a failed attempt delays it (a success records the new certificate).
                     if i.lastErrorKey != nil, let last = i.lastAttempt, isRecent(last, now: now, within: retryDelay) { continue }
                 } else {

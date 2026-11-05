@@ -32,8 +32,10 @@ public struct RefreshPolicy: Sendable, Equatable {
         self.preferredHours = preferredHours
     }
 
-    public func allows(expiresAt: Date, now: Date, calendar: Calendar = .current) -> Bool {
-        if expiresAt.timeIntervalSince(now) <= Self.urgent { return true }
+    /// `certificateChanged`: signed with a replaced or revoked certificate, so it may stop
+    /// launching any time: never held back either.
+    public func allows(expiresAt: Date, now: Date, certificateChanged: Bool = false, calendar: Calendar = .current) -> Bool {
+        if certificateChanged || expiresAt.timeIntervalSince(now) <= Self.urgent { return true }
         if let pausedUntil, now < pausedUntil { return false }
         if acOnly, onBattery { return false }
         if let preferredHours, !preferredHours.range.contains(calendar.component(.hour, from: now)) { return false }

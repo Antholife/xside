@@ -82,6 +82,14 @@ struct PlannerTests {
                                        threshold: RefreshPlanner.threshold(debugDays: 7)).count == 1)
     }
 
+    @Test func certificateChangedIsShared() {
+        let signed = Installation(deviceID: "D1", installedAt: now, expiresAt: now, signingIdentitySHA1: "aa", teamID: "T")
+        #expect(RefreshPlanner.certificateChanged(signed, currentIdentitySHA1: "BB", currentTeamID: "T"))
+        #expect(!RefreshPlanner.certificateChanged(signed, currentIdentitySHA1: "AA", currentTeamID: "T"))
+        #expect(!RefreshPlanner.certificateChanged(signed, currentIdentitySHA1: "BB", currentTeamID: "OTHER"))
+        #expect(!RefreshPlanner.certificateChanged(signed, currentIdentitySHA1: nil, currentTeamID: "T"))
+    }
+
     /// Settings > General: 1, 2 (default) or 3 days before expiry; the debug override still wins.
     @Test func chosenDaysBeforeExpiry() {
         #expect(RefreshPlanner.threshold(daysBefore: 1, debugDays: 0) == 86_400)

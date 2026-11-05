@@ -45,6 +45,13 @@ struct RefreshPolicyTests {
         #expect(!evening.allows(expiresAt: expiry, now: at(23), calendar: calendar))
     }
 
+    /// Review I1: an app signed with a replaced or revoked certificate may stop launching any time.
+    @Test func certificateChangeAlwaysGoes() {
+        let policy = RefreshPolicy(pausedUntil: .distantFuture, acOnly: true, onBattery: true, preferredHours: .night)
+        #expect(policy.allows(expiresAt: at(14).addingTimeInterval(5 * days), now: at(14),
+                              certificateChanged: true, calendar: calendar))
+    }
+
     /// No setting may let an app expire: under 12 h left, it's refreshed anyway.
     @Test func urgentAppsAlwaysGo() {
         let policy = RefreshPolicy(pausedUntil: .distantFuture, acOnly: true, onBattery: true, preferredHours: .night)

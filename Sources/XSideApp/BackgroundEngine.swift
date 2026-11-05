@@ -186,9 +186,11 @@ final class BackgroundEngine {
         let policy = Self.policy
         let now = Date()
         let due = startable.filter { job in
-            guard let expiry = model.records.first(where: { $0.id == job.recordID })?
-                .installations.first(where: { $0.deviceID == job.deviceID })?.expiresAt else { return true }
-            return policy.allows(expiresAt: expiry, now: now)
+            guard let installation = model.records.first(where: { $0.id == job.recordID })?
+                .installations.first(where: { $0.deviceID == job.deviceID }) else { return true }
+            let changed = RefreshPlanner.certificateChanged(installation, currentIdentitySHA1: model.signingEnvironment?.identitySHA1,
+                                                            currentTeamID: model.signingEnvironment?.teamID)
+            return policy.allows(expiresAt: installation.expiresAt, now: now, certificateChanged: changed)
         }
         if due.count < startable.count {
             Self.logger.notice("\(reason): \(startable.count - due.count) job(s) held back by the settings")
