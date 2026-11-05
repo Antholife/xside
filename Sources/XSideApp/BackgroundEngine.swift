@@ -71,6 +71,7 @@ final class BackgroundEngine {
         #endif
 
         model.onNeedsEvaluation = { [weak self] in self?.evaluate(reason: "change") }
+        model.onPopoverShown = { [weak self] in self?.checkPresence(interval: PresenceCheck.panelInterval) }
         model.onDeviceRemoved = { [weak self] id in self?.forgetDevice(id) }
         model.onInstallationRemoved = { [weak self] job in self?.forgetInstallation(job) }
         model.onRefreshResumed = { [weak self] job in self?.refreshResumed(job) }
@@ -468,12 +469,13 @@ final class BackgroundEngine {
     /// When each device's app list was last read (see `checkPresence`).
     private var presenceChecked: [String: Date] = [:]
 
-    /// Hourly, and as soon as a device shows up: apps deleted from a reachable device are
-    /// forgotten there (see `AppModel.forgetDeletedApps`).
-    private func checkPresence() {
+    /// Every 10 minutes, as soon as a device shows up, and when the panel opens (at most once a
+    /// minute): apps deleted from a reachable device are forgotten there (see
+    /// `AppModel.forgetDeletedApps`).
+    private func checkPresence(interval: TimeInterval = PresenceCheck.interval) {
         let now = Date()
         for id in PresenceCheck.devicesToCheck(model.devices, records: model.records,
-                                               lastChecked: presenceChecked, now: now) {
+                                               lastChecked: presenceChecked, now: now, interval: interval) {
             presenceChecked[id] = now
             Task { [weak self] in
                 guard let self else { return }

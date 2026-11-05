@@ -54,12 +54,21 @@ struct PresenceCheckTests {
                 == [RefreshJob(recordID: r.id, deviceID: "D1")])
     }
 
-    @Test func checksAvailableDevicesWithAppsHourly() {
+    @Test func checksAvailableDevicesWithAppsEveryTenMinutes() {
         let r = record([inst("D1"), inst("D2"), inst("D3")])
         let devices = [device("D1"), device("D2"), device("D3", available: false), device("D4")]
-        let last = ["D2": now.addingTimeInterval(-59 * 60)]
+        let last = ["D2": now.addingTimeInterval(-9 * 60)]
         #expect(PresenceCheck.devicesToCheck(devices, records: [r], lastChecked: last, now: now) == ["D1"])
-        let later = ["D1": now.addingTimeInterval(-61 * 60), "D2": now.addingTimeInterval(-hour)]
+        let later = ["D1": now.addingTimeInterval(-11 * 60), "D2": now.addingTimeInterval(-10 * 60)]
         #expect(PresenceCheck.devicesToCheck(devices, records: [r], lastChecked: later, now: now) == ["D1", "D2"])
+    }
+
+    /// Opening XSide's panel checks sooner: what it lists should be what's on the device.
+    @Test func aShorterIntervalWhenThePanelOpens() {
+        let r = record([inst("D1")])
+        let last = ["D1": now.addingTimeInterval(-90)]
+        #expect(PresenceCheck.devicesToCheck([device("D1")], records: [r], lastChecked: last, now: now).isEmpty)
+        #expect(PresenceCheck.devicesToCheck([device("D1")], records: [r], lastChecked: last, now: now,
+                                             interval: PresenceCheck.panelInterval) == ["D1"])
     }
 }

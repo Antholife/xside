@@ -7,7 +7,7 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 ### Added
 - The install window's device tiles say what stops an install there: "Developer Mode off", or "Unlock it" after an attempt failed on a locked device.
 
-- An app deleted from the device (home screen) is no longer put back by the next refresh: XSide sees it's gone (before a refresh, and every hour on each reachable device), removes it from its list for that device, drops its expiry reminder and says so in a notification.
+- An app deleted from the device (home screen) is no longer put back by the next refresh: XSide sees it's gone (before a refresh, every 10 minutes on each reachable device, and when the panel opens), removes it from its list for that device, drops its expiry reminder and says so in a notification.
 
 - After an install, XSide asks the device whether it trusts the developer (by starting the app in the background). Not trusted: the "trust the developer" guide shows and XSide opens Settings > General > VPN & Device Management on the device itself (a button opens it again). Trusted: no guide. When the device can't tell (locked), the guide shows on a first install, after the last XSide app was deleted from the device, or with a new certificate.
 

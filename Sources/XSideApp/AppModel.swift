@@ -179,6 +179,8 @@ final class AppModel {
 
     /// Something the due evaluation depends on changed (device list, signing environment).
     var onNeedsEvaluation: (() -> Void)?
+    /// The panel just opened.
+    var onPopoverShown: (() -> Void)?
     /// A device was removed from XSide: forget what is kept per (app, device).
     var onDeviceRemoved: ((_ deviceID: String) -> Void)?
     /// An installation is gone (uninstalled, removed from the list) or paused: forget what is kept
@@ -595,6 +597,7 @@ final class AppModel {
         if visible {
             refreshDevices()
             recheckEnvironment()
+            onPopoverShown?()
             Task { await reloadRecords() }
         }
     }

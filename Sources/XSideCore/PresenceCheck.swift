@@ -3,13 +3,16 @@ import Foundation
 /// Finds the apps deleted from a device behind XSide's back (home screen), so they are forgotten
 /// there instead of reinstalled by the next refresh.
 public enum PresenceCheck {
-    /// How often a reachable device's app list is read.
-    public static let interval: TimeInterval = 3600
+    /// How often a reachable device's app list is read (a quick query, under a second).
+    public static let interval: TimeInterval = 600
+    /// When XSide's panel opens: what it lists should match the device.
+    public static let panelInterval: TimeInterval = 60
 
     /// Available devices holding at least one XSide app, not checked within `interval`, in
     /// `devices` order.
     public static func devicesToCheck(_ devices: [Device], records: [AppRecord],
-                                      lastChecked: [String: Date], now: Date) -> [String] {
+                                      lastChecked: [String: Date], now: Date,
+                                      interval: TimeInterval = interval) -> [String] {
         let withApps = Set(records.flatMap { $0.installations.map(\.deviceID) })
         return devices.filter { d in
             d.isAvailable && withApps.contains(d.id)
