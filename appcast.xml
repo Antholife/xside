@@ -5,6 +5,41 @@
     <link>https://github.com/Antholife/xside</link>
     <!-- items -->
     <item>
+      <title>XSide 1.0.5-beta</title>
+      <pubDate>Thu, 05 Nov 2026 15:42:33 +0100</pubDate>
+      <sparkle:version>179</sparkle:version>
+      <sparkle:shortVersionString>1.0.5</sparkle:shortVersionString>
+      <sparkle:channel>beta</sparkle:channel>
+      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<h3>Added</h3>
+<ul>
+<li><b>XSide in your apps.</b> Every app XSide installs says where it comes from and until when it works: after an install, a sheet with the XSide logo, the expiry date and the days left (in its own window, so the app's screens can't cover or close it); after a refresh, a smaller card at the bottom, closed with OK. A new install step, "Adding XSide features", lists what's added.</li>
+<li><b>A reminder on the device</b>, the day before an app expires, with XSide's logo, sent by the app itself. If the app never asked for notifications, the permission is asked once, when the install sheet is closed, and the sheet says why beforehand.</li>
+<li><b>An "Installed with XSide" section in the app's iOS Settings page</b> (<i>Settings &gt; Apps &gt; the app</i>): valid until, last refreshed, and XSide's address. Rewritten at each refresh; the app's own settings stay as they were. The install sheet says where to find it.</li>
+<li><b>The app opens on the device after an install</b>, which also tells whether the device trusts the developer. If not, XSide opens <i>Settings &gt; General &gt; VPN &amp; Device Management</i> on the device itself, and the guide says so (with a button to open it again). If it does, no guide. When the device can't tell (locked), the guide shows on a first install, after the last XSide app was deleted from the device, or with a new certificate.</li>
+<li><b>Apps deleted from the device stay deleted.</b> XSide notices (before a refresh, every 10 minutes on each reachable device, and when the panel opens), removes them from its list, drops their reminder, and says so in a notification. A refresh no longer puts them back.</li>
+<li><b>Choose when apps refresh</b> (<i>Settings &gt; General &gt; Automatic refreshes</i>): 1, 2 (default) or 3 days before they expire; pause (1 hour, until tomorrow morning, until resumed), also from a new <b>Pause</b> tile in the panel, which says while refreshes are paused; only on power adapter; a preferred time (night or evening). An app expiring within 12 hours is refreshed anyway, and refreshes you start yourself are never held back.</li>
+<li><b>Report a problem</b> (<i>Settings &gt; Reports &amp; Logs</i>, and the bug button in the panel): opens XSide's bug form on GitHub, filled in with the versions, the devices, XSide's state and the last log lines, and saves the full log archive on the Desktop to drag into it. The issue doesn't name your apps (<code>&lt;app-1&gt;</code>…); device names, serial numbers, account and team are masked in both, and nothing is sent until you submit.</li>
+<li><i>Settings &gt; General &gt; Installs and devices</i>: open the app after an install and open the Trust page (both defaults, changeable in each install's Options), notice deleted apps, refresh new devices over Wi-Fi or not. <i>Settings &gt; Notifications</i>: the reminder on the device, the notification when a deleted app leaves the list.</li>
+<li>The install window's device tiles say what stops an install there: "Developer Mode off", or "Unlock it" after an attempt failed on a locked device.</li>
+</ul>
+<h3>Changed</h3>
+<ul>
+<li>The trust guide shows a single step without a number, and no longer starts with "Then".</li>
+<li>The shared keychain option says to turn it on when signing in fails ("can't sign in", "app not verified").</li>
+<li><i>Settings &gt; Logs</i> is now <i>Reports &amp; Logs</i>, with <i>Report a problem</i> first.</li>
+</ul>
+<h3>Fixed</h3>
+<ul>
+<li>Reminders in tweaked apps that pretend to be another app (e.g. a modded YouTube reporting "com.google.ios.youtube" for Google sign-in): iOS refused them notifications without asking. XSide now asks with the app's real identity, and an app name with special characters ("YouTube +") gets a plain internal name.</li>
+<li>A device with Developer Mode off: the install window says so and how to turn it on, and doesn't start an install that can only fail. If it fails anyway, the message says Developer Mode is off instead of "Couldn't create the provisioning profile".</li>
+<li>A locked device that Xcode has to prepare for development: the message says to unlock it, instead of "Couldn't create the provisioning profile".</li>
+<li>A device out of reach during an uninstall (CoreDevice error 1011) is reported as unreachable, not as a failed uninstall.</li>
+</ul>]]></description>
+      <sparkle:fullReleaseNotesLink>https://github.com/Antholife/xside/releases</sparkle:fullReleaseNotesLink>
+      <enclosure url="https://github.com/Antholife/xside/releases/download/v1.0.5-beta/XSide-1.0.5-beta.zip" sparkle:edSignature="LnUbESbfk4Lt91jR4S33xN+6jqnCKmvpjMWauiM0NpE6QECPJCKFh0r2u7C2x2xNxR43wN3t7kGdkjXnZaeqCw==" length="7099086" type="application/octet-stream"/>
+    </item>
+    <item>
       <title>XSide 1.0.4-beta</title>
       <pubDate>Tue, 03 Nov 2026 17:09:42 +0100</pubDate>
       <sparkle:version>121</sparkle:version>
