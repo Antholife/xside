@@ -52,14 +52,17 @@ XSide installs `.ipa` files on your iPhone and iPad with a free Apple Account, t
 |---|---|
 | 📥 **Drop to install** | Drop an `.ipa` onto the menu-bar icon, or pick one, and install it on one or several devices. |
 | ✅ **Checks before installing** | An iOS too old for the app, a device already holding its 3 apps (uninstall one right there), no App ID left: you know before. |
-| 🔄 **Auto-refresh** | Apps are refreshed 2 days before they expire, over USB or Wi-Fi (your choice, per device), or all at once with *Refresh all*. |
+| 🔄 **Auto-refresh** | Apps are refreshed before they expire (1, 2 or 3 days, your choice), over USB or Wi-Fi (per device), or all at once with *Refresh all*. Pause, only on power adapter, at night or in the evening: an app about to expire is always refreshed. |
+| 🏷️ **XSide in your apps** | Each app says where it comes from and until when it works: a sheet after an install, a card after a refresh, an *Installed with XSide* section in its iOS Settings page, and a reminder on the phone the day before it expires. |
+| 🛡️ **Trust in one tap** | After an install, XSide opens the app on the device; if the device doesn't trust the developer yet, it opens the right Settings page there. |
+| 🗑️ **Deleted stays deleted** | An app deleted from the device is removed from XSide's list, never reinstalled. |
 | 🔔 **Never miss an expiry** | Reminders, a badge on the menu-bar icon, and notifications with *Refresh now* and *Open XSide* buttons. |
 | 📱 **At a glance** | A panel under the menu-bar icon: each app's own icon, its devices, the days left, and the week's App IDs as a strip. |
 | 📊 **Real progress** | Percentages while signing, time spent while sending to the device, and the percentage on the Dock icon. |
 | 🎛️ **Per-app controls** | Refresh now, pause refreshing, or uninstall from the device. |
 | ⬆️ **Updates itself** | New versions arrive automatically (Sparkle, signed); choose how often and the channel. |
 | 🧭 **Guided setup** | A first-launch walkthrough: Xcode, Apple Account, signing certificate, notifications, devices. |
-| 🐞 **Easy bug reports** | Logs with your personal details masked, exported in one click, and a bug button in the panel. |
+| 🐞 **Easy bug reports** | *Report a problem* opens the GitHub bug form already filled in, and saves the full log on your Desktop to attach. Personal details are masked. |
 | 🌍 **Localized** | English and French. |
 
 ## ⚙️ How it works

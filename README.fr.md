@@ -52,14 +52,17 @@ XSide installe des fichiers `.ipa` sur ton iPhone et ton iPad avec un compte App
 |---|---|
 | 📥 **Glisser pour installer** | Glisse un `.ipa` sur l'icône de la barre des menus, ou choisis-le, et installe-le sur un ou plusieurs appareils. |
 | ✅ **Vérifications avant installation** | iOS trop ancien pour l'app, appareil qui a déjà ses 3 apps (désinstalles-en une sur place), plus d'App ID : tu le sais avant. |
-| 🔄 **Rafraîchissement auto** | Les apps sont rafraîchies 2 jours avant leur expiration, en USB ou en Wi-Fi (au choix, par appareil), ou toutes d'un coup avec *Tout rafraîchir*. |
+| 🔄 **Rafraîchissement auto** | Les apps sont rafraîchies avant leur expiration (1, 2 ou 3 jours, au choix), en USB ou en Wi-Fi (par appareil), ou toutes d'un coup avec *Tout rafraîchir*. Pause, seulement sur secteur, la nuit ou le soir : une app sur le point d'expirer est toujours rafraîchie. |
+| 🏷️ **XSide dans tes apps** | Chaque app dit d'où elle vient et jusqu'à quand elle marche : une fenêtre après l'installation, une carte après un rafraîchissement, une section *Installée avec XSide* dans ses Réglages iOS, et un rappel sur le téléphone la veille de l'expiration. |
+| 🛡️ **Faire confiance en un geste** | Après l'installation, XSide ouvre l'app sur l'appareil ; s'il ne fait pas encore confiance au développeur, la bonne page des Réglages s'ouvre directement. |
+| 🗑️ **Supprimée, c'est supprimée** | Une app supprimée de l'appareil disparaît de la liste d'XSide, sans jamais être réinstallée. |
 | 🔔 **Aucune expiration ratée** | Rappels, pastille sur l'icône de la barre des menus, et notifications avec les boutons *Rafraîchir maintenant* et *Ouvrir XSide*. |
 | 📱 **D'un coup d'œil** | Un panneau sous l'icône de la barre des menus : l'icône de chaque app, ses appareils, les jours restants, et les App ID de la semaine en frise. |
 | 📊 **Vraie progression** | Des pourcentages pendant la signature, le temps écoulé pendant l'envoi sur l'appareil, et le pourcentage sur l'icône du Dock. |
 | 🎛️ **Contrôle par app** | Rafraîchir maintenant, mettre en pause ou désinstaller de l'appareil. |
 | ⬆️ **Se met à jour tout seul** | Les nouvelles versions arrivent automatiquement (Sparkle, signées) ; choisis la fréquence et le canal. |
 | 🧭 **Configuration guidée** | Un parcours au premier lancement : Xcode, Apple Account, certificat de signature, notifications, appareils. |
-| 🐞 **Signaler un bug facilement** | Des logs où tes infos personnelles sont masquées, exportés en un clic, et un bouton bug dans le panneau. |
+| 🐞 **Signaler un bug facilement** | *Signaler un problème* ouvre le formulaire GitHub déjà rempli, et enregistre le journal complet sur ton Bureau pour le joindre. Tes infos personnelles sont masquées. |
 | 🌍 **Traduit** | Français et anglais. |
 
 ## ⚙️ Comment ça marche

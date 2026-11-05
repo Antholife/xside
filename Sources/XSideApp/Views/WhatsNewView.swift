@@ -54,6 +54,22 @@ struct ReleaseNotes {
 
     static var all: [ReleaseNotes] {
         [
+            ReleaseNotes(version: "1.0.5", label: "beta", items: [
+                Item(symbol: "app.badge.checkmark.fill",
+                     title: L("whatsNew.105.inApp.title"), text: L("whatsNew.105.inApp.text")),
+                Item(symbol: "bell.badge.fill",
+                     title: L("whatsNew.105.reminder.title"), text: L("whatsNew.105.reminder.text")),
+                Item(symbol: "checkmark.shield.fill",
+                     title: L("whatsNew.105.trust.title"), text: L("whatsNew.105.trust.text")),
+                Item(symbol: "trash.slash.fill",
+                     title: L("whatsNew.105.deleted.title"), text: L("whatsNew.105.deleted.text")),
+                Item(symbol: "clock.badge.checkmark.fill",
+                     title: L("whatsNew.105.schedule.title"), text: L("whatsNew.105.schedule.text")),
+                Item(symbol: "ladybug.fill",
+                     title: L("whatsNew.105.report.title"), text: L("whatsNew.105.report.text")),
+                Item(symbol: "plus.square.on.square",
+                     title: L("whatsNew.103.more.title"), text: L("whatsNew.105.more.text")),
+            ], thanks: []),
             ReleaseNotes(version: "1.0.4", label: "beta", items: [
                 Item(symbol: "arrow.triangle.2.circlepath.circle.fill",
                      title: L("whatsNew.104.updates.title"), text: L("whatsNew.104.updates.text")),

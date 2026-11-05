@@ -5,26 +5,26 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 ## [Unreleased]
 
 ### Added
+- **XSide in your apps.** Every app XSide installs says where it comes from and until when it works: after an install, a sheet with the XSide logo, the expiry date and the days left (in its own window, so the app's screens can't cover or close it); after a refresh, a smaller card at the bottom, closed with OK. A new install step, "Adding XSide features", lists what's added.
+- **A reminder on the device**, the day before an app expires, with XSide's logo, sent by the app itself. If the app never asked for notifications, the permission is asked once, when the install sheet is closed, and the sheet says why beforehand.
+- **An "Installed with XSide" section in the app's iOS Settings page** (*Settings > Apps > the app*): valid until, last refreshed, a link to XSide. Rewritten at each refresh; the app's own settings stay as they were. The install sheet says where to find it.
+- **The app opens on the device after an install**, which also tells whether the device trusts the developer. If not, XSide opens *Settings > General > VPN & Device Management* on the device itself, and the guide says so (with a button to open it again). If it does, no guide. When the device can't tell (locked), the guide shows on a first install, after the last XSide app was deleted from the device, or with a new certificate.
+- **Apps deleted from the device stay deleted.** XSide notices (before a refresh, every 10 minutes on each reachable device, and when the panel opens), removes them from its list, drops their reminder, and says so in a notification. A refresh no longer puts them back.
+- **Choose when apps refresh** (*Settings > General > Automatic refreshes*): 1, 2 (default) or 3 days before they expire; pause (1 hour, until tomorrow morning, until resumed), also from a new **Pause** tile in the panel, which says while refreshes are paused; only on power adapter; a preferred time (night or evening). An app expiring within 12 hours is refreshed anyway, and refreshes you start yourself are never held back.
+- **Report a problem** (*Settings > Reports & Logs*, and the bug button in the panel): opens XSide's bug form on GitHub, filled in with the versions, the devices, XSide's state and the last log lines, and saves the full log archive on the Desktop to drag into it. Everything is masked (device names, identifiers, accounts), and nothing is sent until you submit.
+- *Settings > General > Installs and devices*: open the app after an install and open the Trust page (both defaults, changeable in each install's Options), notice deleted apps, refresh new devices over Wi-Fi or not. *Settings > Notifications*: the reminder on the device, the notification when a deleted app leaves the list.
 - The install window's device tiles say what stops an install there: "Developer Mode off", or "Unlock it" after an attempt failed on a locked device.
 
-- An app deleted from the device (home screen) is no longer put back by the next refresh: XSide sees it's gone (before a refresh, every 10 minutes on each reachable device, and when the panel opens), removes it from its list for that device, drops its expiry reminder and says so in a notification.
-
-- After an install, XSide opens the app on the device, which also tells whether the device trusts the developer. Not trusted: the "trust the developer" guide shows and XSide opens Settings > General > VPN & Device Management on the device itself (a button opens it again). Trusted: no guide. When the device can't tell (locked), the guide shows on a first install, after the last XSide app was deleted from the device, or with a new certificate.
-
-- Apps installed with XSide show who installed them: after an install, a sheet with the XSide logo, the expiry date and the days left (once per signature, in its own window so the app's screens can't cover or close it); after a refresh, a smaller card at the bottom instead, closed with OK. Added during a new install step, "Adding XSide features", which lists them.
-- Apps also remind on the device itself, 24 h before they expire. If the app never asked for notifications, that permission is asked once, when the install sheet is closed (never again after an answer); the sheet says why beforehand.
-
-- Each app's page in the iOS Settings app (Settings > the app) gets an "Installed with XSide" section: valid until, last refreshed, and a link to XSide. Rewritten at each refresh; the app's own settings stay as they were.
-
-- *Settings > General > Automatic refreshes*: refresh apps 1, 2 (default) or 3 days before they expire; pause them (1 hour, until tomorrow morning, until resumed); only on power adapter; a preferred time (night or evening). An app expiring within 12 hours is refreshed anyway, and manual refreshes are never held back. The panel has a **Pause** tile too, and says while refreshes are paused.
-- **Report a problem** (*Settings > Logs*, and the bug button in the panel): opens XSide's bug form on GitHub, filled in with XSide's state and the last log lines, and saves the full diagnostics archive on the Desktop to drag into it. Everything is masked (device names, identifiers, accounts) and nothing is sent until you submit.
-- *Settings > General > Installs and devices*: open the app after an install, open the Trust page when the device needs it (both defaults, changeable in each install's Options), notice apps deleted from the device, and refresh new devices over Wi-Fi or not. *Settings > Notifications* can turn off the reminder on the device and the notification when a deleted app leaves the list.
+### Changed
+- The trust guide shows a single step without a number, and no longer starts with "Then".
+- The shared keychain option says to turn it on when signing in fails ("can't sign in", "app not verified").
+- *Settings > Logs* is now *Reports & Logs*, with *Report a problem* first.
 
 ### Fixed
-- On-device reminders in tweaked apps that pretend to be another app (e.g. a modded YouTube reporting "com.google.ios.youtube" for Google sign-in): iOS refused them notifications without asking. XSide now asks with the app's real identity, and an app name with special characters ("YouTube +") gets a plain internal name.
+- Reminders in tweaked apps that pretend to be another app (e.g. a modded YouTube reporting "com.google.ios.youtube" for Google sign-in): iOS refused them notifications without asking. XSide now asks with the app's real identity, and an app name with special characters ("YouTube +") gets a plain internal name.
 - A device with Developer Mode off: the install window says so and how to turn it on, and doesn't start an install that can only fail. If it fails anyway, the message says Developer Mode is off instead of "Couldn't create the provisioning profile".
-- A device out of reach during an uninstall (CoreDevice error 1011) is reported as unreachable, not as a failed uninstall.
 - A locked device that Xcode has to prepare for development: the message says to unlock it, instead of "Couldn't create the provisioning profile".
+- A device out of reach during an uninstall (CoreDevice error 1011) is reported as unreachable, not as a failed uninstall.
 
 ## [1.0.4-beta] - 2026-11-03
 
