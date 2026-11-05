@@ -179,7 +179,7 @@ private struct SettingsPage: View {
             }
             KeepInDockToggle()
         }
-        Section(L("settings.afterInstall")) {
+        Section {
             Toggle(isOn: $openAppAfterInstall) {
                 Text(L("settings.openAppAfterInstall"))
                 Text(L("settings.openAppAfterInstall.note"))
@@ -193,6 +193,12 @@ private struct SettingsPage: View {
                 Text(L("settings.forgetDeletedApps"))
                 Text(L("settings.forgetDeletedApps.note"))
             }
+        } header: {
+            Text(L("settings.afterInstall"))
+        } footer: {
+            Text(L("settings.afterInstall.footer"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         if let issue = model.library.loadIssue {
             Section { LibraryIssueBanner(issue: issue) }

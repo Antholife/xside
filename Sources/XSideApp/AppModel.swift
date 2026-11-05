@@ -1567,8 +1567,8 @@ final class AppModel {
             flow.setStatus(.succeeded, for: deviceID)
             // Asked to the device itself; the remembered rule only when it can't tell.
             let signedID = installed.installations.first { $0.deviceID == deviceID }?.signedBundleID ?? installed.signedBundleID
-            // Opening the app is how the device tells; off in Settings, the remembered rule decides.
-            let trust: Installer.TrustState = Self.setting(Self.openAppAfterInstallKey)
+            // Opening the app is how the device tells; when off, the remembered rule decides.
+            let trust: Installer.TrustState = flow.openAppAfter
                 ? await Installer(runner: runner).trustState(bundleID: signedID, deviceID: deviceID)
                 : .unknown
             Self.logger.notice("trust on \(deviceID): \(String(describing: trust))")
@@ -1576,7 +1576,7 @@ final class AppModel {
                 // Already trusted (another app of the same account): nothing to say, remembered as shown.
                 rememberGuideShown(deviceID)
             }
-            if trust == .untrusted, Self.setting(Self.openTrustSettingsKey) { openTrustSettings(deviceID) }
+            if trust == .untrusted, flow.openTrustPage { openTrustSettings(deviceID) }
             // Trusted: no guide. Not trusted: the guide, whatever XSide remembers.
             if trust != .trusted,
                let guide = guideIfFirstInstall(on: device, flow: flow, force: trust == .untrusted) {
@@ -1703,7 +1703,8 @@ final class AppModel {
 
     private static func guideKey(_ deviceID: String) -> String { "guideShown.\(deviceID)" }
 
-    // MARK: Install settings (Settings > General > After an install), all on by default
+    // MARK: Install settings (Settings > General > Installs and devices), all on by default.
+    // The first two are the defaults of each install window (`InstallFlow.openAppAfter`).
 
     static let openAppAfterInstallKey = "openAppAfterInstall"
     static let openTrustSettingsKey = "openTrustSettingsAutomatically"

@@ -16,6 +16,8 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 
 - Each app's page in the iOS Settings app (Settings > the app) gets an "Installed with XSide" section: valid until, last refreshed, and a link to XSide. Rewritten at each refresh; the app's own settings stay as they were.
 
+- *Settings > General > Installs and devices*: open the app after an install, open the Trust page when the device needs it (both defaults, changeable in each install's Options), and notice apps deleted from the device.
+
 ### Fixed
 - On-device reminders in tweaked apps that pretend to be another app (e.g. a modded YouTube reporting "com.google.ios.youtube" for Google sign-in): iOS refused them notifications without asking. XSide now asks with the app's real identity, and an app name with special characters ("YouTube +") gets a plain internal name.
 - A device with Developer Mode off: the install window says so and how to turn it on, and doesn't start an install that can only fail. If it fails anyway, the message says Developer Mode is off instead of "Couldn't create the provisioning profile".

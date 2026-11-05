@@ -53,10 +53,28 @@ struct InstallOptionsSection: View {
                         .padding(.trailing, 12)
                         .padding(.bottom, 10)
                 }
+                // After the install (defaults from Settings > General).
+                Divider().padding(.leading, 48)
+                OptionRow(symbol: "iphone.and.arrow.forward", title: L("settings.openAppAfterInstall"), detail: nil) {
+                    switchToggle(L("settings.openAppAfterInstall"), isOn: $flow.openAppAfter)
+                }
+                Divider().padding(.leading, 48)
+                OptionRow(symbol: "checkmark.shield.fill", title: L("settings.openTrustSettings"), detail: nil) {
+                    switchToggle(L("settings.openTrustSettings"), isOn: $flow.openTrustPage)
+                        .disabled(!flow.openAppAfter)
+                }
             }
             .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .disabled(flow.isRunning)
         }
+    }
+
+    private func switchToggle(_ title: String, isOn: Binding<Bool>) -> some View {
+        Toggle(title, isOn: isOn)
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+            .tint(Theme.violet)
     }
 
     /// What's changed from the app's own values, or a hint of what's inside.

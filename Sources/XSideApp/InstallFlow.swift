@@ -57,6 +57,10 @@ final class InstallFlow {
 
     /// Devices whose trust guide is due if the install succeeds, judged when the run started.
     var trustDue: Set<String> = []
+    /// For this install: open the app on the device after it, and the Trust page when needed.
+    /// Prefilled from Settings > General (the defaults).
+    var openAppAfter = AppModel.setting(AppModel.openAppAfterInstallKey)
+    var openTrustPage = AppModel.setting(AppModel.openTrustSettingsKey)
     /// Devices getting their very first XSide install in this run (Wi-Fi check after it).
     var firstInstalls: Set<String> = []
     /// First-install guides due after this flow's successes, one per device.

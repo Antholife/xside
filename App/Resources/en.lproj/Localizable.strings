@@ -139,6 +139,7 @@
 "notification.refreshed.genericDevice" = "your device";
 "settings.notifications" = "Notifications";
 "settings.afterInstall" = "Installs and devices";
+"settings.afterInstall.footer" = "The first two are defaults: each install can change them in its Options.";
 "settings.openAppAfterInstall" = "Open the app on the device after an install";
 "settings.openAppAfterInstall.note" = "Also lets XSide know whether the device trusts the developer.";
 "settings.openTrustSettings" = "Open the Trust page on the device";
