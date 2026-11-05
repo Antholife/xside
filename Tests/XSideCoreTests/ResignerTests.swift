@@ -113,6 +113,32 @@ private func plist(_ app: URL) throws -> [String: Any] {
         #expect(items[1]["DefaultValue"] as? String == "U-1") // built from the profile it's signed with
     }
 
+    /// "YouTube +" as CFBundleName: iOS refuses the app notifications. The shown name stays.
+    @Test func specialCharactersLeaveTheBundleName() async throws {
+        let f = try await fixture { app in
+            let url = app.appendingPathComponent("Info.plist")
+            var plist = try #require(try PropertyListSerialization.propertyList(from: Data(contentsOf: url), format: nil) as? [String: Any])
+            plist["CFBundleName"] = "Demo +"
+            plist["CFBundleDisplayName"] = nil
+            try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0).write(to: url)
+            let fr = app.appendingPathComponent("fr.lproj")
+            try FileManager.default.createDirectory(at: fr, withIntermediateDirectories: true)
+            let text = [#""CFBundleName" = "Démo +";"#, #""NSCameraUsageDescription" = "Caméra";"#].joined(separator: "\n")
+            try Data(text.utf8)
+                .write(to: fr.appendingPathComponent("InfoPlist.strings"))
+        }
+        let app = try await run(f)
+        let info = try #require(try PropertyListSerialization.propertyList(
+            from: Data(contentsOf: app.appendingPathComponent("Info.plist")), format: nil) as? [String: Any])
+        #expect(info["CFBundleName"] as? String == "Demo")
+        #expect(info["CFBundleDisplayName"] as? String == "Demo +")
+        let strings = try #require(try PropertyListSerialization.propertyList(
+            from: Data(contentsOf: app.appendingPathComponent("fr.lproj/InfoPlist.strings")), format: nil) as? [String: String])
+        #expect(strings["CFBundleName"] == "Demo")
+        #expect(strings["CFBundleDisplayName"] == "Démo +")
+        #expect(strings["NSCameraUsageDescription"] == "Caméra")
+    }
+
     @Test func settingsPageProblemsDontFailTheInstall() async throws {
         var f = try await fixture { app in
             try Data("x".utf8).write(to: app.appendingPathComponent("Settings.bundle"))

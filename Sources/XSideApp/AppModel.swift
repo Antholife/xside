@@ -214,13 +214,23 @@ final class AppModel {
             provisioner: Provisioner(runner: runner, templateDir: paths.template, workDir: paths.provisioningWork,
                                      cacheDirs: paths.xcodeProfileDirs),
             resigner: Resigner(runner: runner,
-                               welcomeDylib: Bundle.main.url(forResource: "XSideWelcome", withExtension: "dylib"),
-                               settingsSection: Self.settingsSection),
+                               welcomeDylib: Self.featuresOff ? nil : Bundle.main.url(forResource: "XSideWelcome", withExtension: "dylib"),
+                               settingsSection: Self.featuresOff ? nil : Self.settingsSection),
             installer: Installer(runner: runner),
             workRoot: paths.jobsWork, now: { Date() }, macIsBeta: XcodeLauncher.macIsBeta)
         // An update waits while an install or a refresh runs (`release` retries it after).
         updater.isBusy = { [unowned self] in !self.claims.isEmpty || self.install?.isRunning == true }
         Task { await start() }
+    }
+
+    /// Debug-only: XSIDE_NO_FEATURES=1 installs apps without anything XSide adds (no library, no
+    /// Settings section), to tell an app's own behavior from XSide's.
+    private static var featuresOff: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.environment["XSIDE_NO_FEATURES"] == "1"
+        #else
+        return false
+        #endif
     }
 
     /// The "Installed with XSide" section of the app's page in the iOS Settings app, in XSide's

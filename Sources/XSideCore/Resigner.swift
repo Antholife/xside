@@ -339,7 +339,39 @@ public struct Resigner: Sendable {
         if options.iPadFullScreen { plist["UIRequiresFullScreen"] = true }
         if options.proMotion { plist["CADisableMinimumFrameDurationOnPhone"] = true }
         if let min = options.minimumOSVersion { plist["MinimumOSVersion"] = min }
+        let executable = plist["CFBundleExecutable"] as? String ?? "App"
+        Self.plainBundleName(&plist, executable: executable)
         try write(plist, format: format, to: url)
+        plainLocalizedBundleNames(app: app, executable: executable)
+    }
+
+    /// A CFBundleName with special characters gets a plain one (see `BundleName`); the name shown
+    /// keeps the original, as CFBundleDisplayName when there was none.
+    static func plainBundleName(_ entries: inout [String: Any], executable: String) {
+        guard let name = entries["CFBundleName"] as? String,
+              let plain = BundleName.safe(name, executable: executable) else { return }
+        if entries["CFBundleDisplayName"] == nil { entries["CFBundleDisplayName"] = name }
+        entries["CFBundleName"] = plain
+    }
+
+    /// The same in each `<lang>.lproj/InfoPlist.strings`. A file it can't read is left alone.
+    private func plainLocalizedBundleNames(app: URL, executable: String) {
+        let fm = FileManager.default
+        guard let dirs = try? fm.contentsOfDirectory(at: app, includingPropertiesForKeys: nil) else { return }
+        for dir in dirs where dir.pathExtension == "lproj" {
+            let url = dir.appendingPathComponent("InfoPlist.strings")
+            guard (try? fm.attributesOfItem(atPath: url.path)[.type] as? FileAttributeType) == .typeRegular,
+                  let data = try? Data(contentsOf: url),
+                  var entries = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+                  entries["CFBundleName"] != nil else { continue }
+            let before = entries["CFBundleName"] as? String
+            Self.plainBundleName(&entries, executable: executable)
+            guard entries["CFBundleName"] as? String != before else { continue }
+            // Written as a binary plist, which iOS reads like the text format.
+            if let out = try? PropertyListSerialization.data(fromPropertyList: entries, format: .binary, options: 0) {
+                try? out.write(to: url)
+            }
+        }
     }
 
     private func write(_ plist: [String: Any], format: PropertyListSerialization.PropertyListFormat, to url: URL) throws {
