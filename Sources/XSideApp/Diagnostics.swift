@@ -51,6 +51,16 @@ enum Diagnostics {
         }
     }
 
+    /// `archiveName`, with " 2", " 3"… when that name is taken in `folder`.
+    private static func uniqueArchiveName(in folder: URL) -> String {
+        let base = String(archiveName.dropLast(4))
+        var name = archiveName, n = 2
+        while FileManager.default.fileExists(atPath: folder.appendingPathComponent(name).path) {
+            name = "\(base) \(n).zip"; n += 1
+        }
+        return name
+    }
+
     private static var archiveName: String {
         "XSide-logs-\(Date().formatted(.iso8601.year().month().day().dateSeparator(.dash))).zip"
     }
@@ -88,11 +98,18 @@ enum Diagnostics {
     /// lines, all redacted. Nothing is sent: the person reads it and submits it.
     @MainActor static func reportIssue(model: AppModel) {
         Task {
-            // On the Desktop: easy to find and drag into the form.
-            let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
-                ?? FileManager.default.temporaryDirectory
-            let archive = desktop.appendingPathComponent(archiveName)
-            let archived = await writeArchive(model: model, to: archive)
+            // On the Desktop: easy to find and drag into the form. If macOS denies it, Downloads,
+            // then the temporary folder. Never over an earlier archive.
+            let fm = FileManager.default
+            let folders = [fm.urls(for: .desktopDirectory, in: .userDomainMask).first,
+                           fm.urls(for: .downloadsDirectory, in: .userDomainMask).first,
+                           fm.temporaryDirectory].compactMap { $0 }
+            var archive = folders[0].appendingPathComponent(uniqueArchiveName(in: folders[0]))
+            var archived = false
+            for folder in folders {
+                archive = folder.appendingPathComponent(uniqueArchiveName(in: folder))
+                if await writeArchive(model: model, to: archive) { archived = true; break }
+            }
             // Public: apps as <app-N>, as in the summary's "app N".
             let apps = model.records.map { r in [r.originalBundleID, r.signedBundleID] + r.installations.compactMap(\.signedBundleID) }
             let lastLines = LogStore.shared.files().first

@@ -199,6 +199,7 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
     BOOL _fr;
     UIView *_dim;
     UIView *_sheet;
+    BOOL _closing;
 }
 
 - (instancetype)initWithExpiry:(NSDate *)expiry {
@@ -341,6 +342,7 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
     _sheet.layer.shadowOpacity = 0.2;
     _sheet.layer.shadowRadius = 20;
     _sheet.layer.shadowOffset = CGSizeMake(0, -6);
+    _sheet.accessibilityViewIsModal = YES;
 
     UIView *grab = [UIView new];
     grab.backgroundColor = UIColor.tertiaryLabelColor;
@@ -437,7 +439,15 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
     } completion:nil];
 }
 
+// VoiceOver: the sheet is modal, and the two-finger scrub closes it like OK.
+- (BOOL)accessibilityPerformEscape {
+    [self close];
+    return YES;
+}
+
 - (void)close {
+    if (_closing) return; // OK then the dimmed area: one close, one permission request
+    _closing = YES;
     [UIView animateWithDuration:0.25 animations:^{
         self->_sheet.transform = CGAffineTransformMakeTranslation(0, self->_sheet.bounds.size.height + 40);
         self->_dim.alpha = 0;

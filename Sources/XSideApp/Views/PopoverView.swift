@@ -63,8 +63,11 @@ private struct PopoverContent: View {
             if let issue = model.library.loadIssue, !model.libraryIssueDismissed {
                 LibraryIssueBanner(issue: issue, onDismiss: model.dismissLibraryIssue)
             }
-            if let until = RefreshPause.until(pausedUntil) {
-                PausedBanner(until: until) { setPause(nil) }
+            // Re-read every 30 s: the pause ends by itself.
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                if let until = RefreshPause.until(pausedUntil, now: context.date) {
+                    PausedBanner(until: until) { setPause(nil) }
+                }
             }
             ForEach(model.unpairedDevices) { device in
                 PairPrompt(device: device, isPairing: model.pairing.contains(device.id),
@@ -119,7 +122,7 @@ private struct PopoverContent: View {
             // Says why it's off, or how many it refreshes (system tooltips don't show in a popover).
             .hoverBubble(refreshable == 0 ? L("popover.tile.refreshAll.none") : L("popover.tile.refreshAll.help", refreshable),
                          alignment: .trailing, below: true)
-            // Pause the automatic refreshes (or resume them).
+            // Pause the automatic refreshes (or resume them). The popover re-renders when it opens.
             if RefreshPause.until(pausedUntil) != nil {
                 Button { setPause(nil) } label: {
                     ActionTileLabel(symbol: "play.fill", title: L("settings.pause.resume"))

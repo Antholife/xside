@@ -1093,7 +1093,10 @@ final class AppModel {
         for job in PresenceCheck.missing(current, deviceID: deviceID, installed: listed, queriedAt: queriedAt) {
             let key = JobKey(recordID: job.recordID, deviceID: job.deviceID)
             guard jobs[key] == nil, claims[key] == nil,
-                  let record = records.first(where: { $0.id == job.recordID }) else { continue }
+                  let record = records.first(where: { $0.id == job.recordID }),
+                  // Read again: an install may have finished during the earlier iterations' awaits.
+                  let installation = record.installations.first(where: { $0.deviceID == deviceID }),
+                  installation.installedAt < queriedAt else { continue }
             claim(key)
             defer { release(key) }
             do {
