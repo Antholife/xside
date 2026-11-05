@@ -212,11 +212,22 @@ final class AppModel {
             provisioner: Provisioner(runner: runner, templateDir: paths.template, workDir: paths.provisioningWork,
                                      cacheDirs: paths.xcodeProfileDirs),
             resigner: Resigner(runner: runner,
-                               welcomeDylib: Bundle.main.url(forResource: "XSideWelcome", withExtension: "dylib")), installer: Installer(runner: runner),
+                               welcomeDylib: Bundle.main.url(forResource: "XSideWelcome", withExtension: "dylib"),
+                               settingsSection: Self.settingsSection),
+            installer: Installer(runner: runner),
             workRoot: paths.jobsWork, now: { Date() }, macIsBeta: XcodeLauncher.macIsBeta)
         // An update waits while an install or a refresh runs (`release` retries it after).
         updater.isBusy = { [unowned self] in !self.claims.isEmpty || self.install?.isRunning == true }
         Task { await start() }
+    }
+
+    /// The "Installed with XSide" section of the app's page in the iOS Settings app, in XSide's
+    /// language (the page can't follow the device's): written at each install and refresh.
+    nonisolated static func settingsSection(_ profile: ProvisioningProfile) -> SettingsSection {
+        let style = Date.FormatStyle(date: .abbreviated, time: .shortened).locale(appLocale)
+        return SettingsSection(title: L("settings.ios.title"), footer: L("settings.ios.footer"),
+                               rows: [(L("settings.ios.validUntil"), profile.expirationDate.formatted(style)),
+                                      (L("settings.ios.signedOn"), profile.creationDate.formatted(style))])
     }
 
     // MARK: - Startup

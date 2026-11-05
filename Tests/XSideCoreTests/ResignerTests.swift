@@ -27,7 +27,8 @@ private struct Fixture {
     let work: URL, ipa: URL, profileURL: URL
     let fake: FakeRunner
     var welcomeDylib: URL?
-    var resigner: Resigner { Resigner(runner: RoutingRunner(fake: fake), welcomeDylib: welcomeDylib) }
+    var settings: (@Sendable (ProvisioningProfile) -> SettingsSection)?
+    var resigner: Resigner { Resigner(runner: RoutingRunner(fake: fake), welcomeDylib: welcomeDylib, settingsSection: settings) }
 }
 
 /// A stand-in for XSideWelcome.dylib (its content isn't read, only copied).
@@ -96,6 +97,29 @@ private func plist(_ app: URL) throws -> [String: Any] {
         #expect(executable.range(of: Data(welcomePath.utf8)) != nil)
         let targets = f.fake.calls.map { $0.last! }
         #expect(targets.firstIndex(of: copied.path)! < targets.firstIndex(of: app.path)!)
+    }
+
+    @Test func addsTheXSideSectionToTheSettingsPage() async throws {
+        var f = try await fixture()
+        f.settings = { profile in
+            SettingsSection(title: "Installée avec XSide", footer: nil,
+                            rows: [("Valable jusqu'au", profile.uuid)])
+        }
+        let app = try await run(f)
+        let data = try Data(contentsOf: app.appendingPathComponent("Settings.bundle/Root.plist"))
+        let root = try #require(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+        let items = try #require(root["PreferenceSpecifiers"] as? [[String: Any]])
+        #expect(items.map { $0["Title"] as? String } == ["Installée avec XSide", "Valable jusqu'au"])
+        #expect(items[1]["DefaultValue"] as? String == "U-1") // built from the profile it's signed with
+    }
+
+    @Test func settingsPageProblemsDontFailTheInstall() async throws {
+        var f = try await fixture { app in
+            try Data("x".utf8).write(to: app.appendingPathComponent("Settings.bundle"))
+        }
+        f.settings = { _ in SettingsSection(title: "T", footer: nil, rows: []) }
+        let app = try await run(f)
+        #expect(try Data(contentsOf: app.appendingPathComponent("Settings.bundle")) == Data("x".utf8))
     }
 
     @Test func announcesSigningAfterTheWelcomeStep() async throws {

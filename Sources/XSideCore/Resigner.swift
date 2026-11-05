@@ -47,14 +47,18 @@ public struct Resigner: Sendable {
     private let runner: CommandRunning
     /// The welcome popup's iOS library (XSide.app's resource), nil when this build has none.
     private let welcomeDylib: URL?
+    /// The section added to the app's iOS Settings page, built from the profile it's signed with.
+    private let settingsSection: (@Sendable (ProvisioningProfile) -> SettingsSection)?
     private static let codesign = "/usr/bin/codesign"
     private static let logger = Log("resign")
     static let welcomeName = "XSideWelcome.dylib"
     static let welcomeLoadPath = "@executable_path/Frameworks/\(welcomeName)"
 
-    public init(runner: CommandRunning, welcomeDylib: URL? = nil) {
+    public init(runner: CommandRunning, welcomeDylib: URL? = nil,
+                settingsSection: (@Sendable (ProvisioningProfile) -> SettingsSection)? = nil) {
         self.runner = runner
         self.welcomeDylib = welcomeDylib
+        self.settingsSection = settingsSection
     }
 
     /// Unpacks `ipa` into `workDir`, rewrites it and signs it inside-out. Returns the signed `.app`.
@@ -93,6 +97,12 @@ public struct Resigner: Sendable {
         try editInfoPlist(app: app, bundleID: bundleID, options: options)
         if let iconURL { try await applyIcon(iconURL, to: app, workDir: workDir) }
         addWelcomePopup(to: app, executable: executableURL)
+        if let settingsSection {
+            // Never fails the install: the app keeps its page as it was.
+            do { try SettingsBundle.add(settingsSection(profile), to: app) } catch {
+                Self.logger.notice("settings section skipped: \(String(describing: error))")
+            }
+        }
 
         for url in allFiles(under: app) where url.lastPathComponent == "_CodeSignature" {
             try? fm.removeItem(at: url)
