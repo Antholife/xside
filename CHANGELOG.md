@@ -4,6 +4,8 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [1.0.6-beta] - 2026-11-06
+
 ### Added
 - **Notifications per device** (the device's … menu in the panel): turn them off for an iPhone you manage for someone else; its apps are still refreshed, without any notification on this Mac (the reminder the app shows on the phone itself stays).
 - `xside pause [2h|30m|1d]` and `xside resume` pause and resume automatic refreshes from the Terminal; `xside status` says while they're paused.
@@ -122,6 +124,7 @@ First public beta.
 - English and French.
 - Universal app: Apple silicon and Intel.
 
+[1.0.6-beta]: https://github.com/Antholife/xside/compare/v1.0.5-beta...v1.0.6-beta
 [1.0.5-beta]: https://github.com/Antholife/xside/compare/v1.0.4-beta...v1.0.5-beta
 [1.0.4-beta]: https://github.com/Antholife/xside/compare/v1.0.3-beta...v1.0.4-beta
 [1.0.3-beta]: https://github.com/Antholife/xside/compare/v1.0.2-beta...v1.0.3-beta
