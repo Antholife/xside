@@ -5,6 +5,7 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 ## [Unreleased]
 
 ### Added
+- **Notifications per device** (the device's … menu in the panel): turn them off for an iPhone you manage for someone else; its apps are still refreshed, without notifications or expiry reminders.
 - `xside pause [2h|30m|1d]` and `xside resume` pause and resume automatic refreshes from the Terminal; `xside status` says while they're paused.
 - Updates can be checked every hour; XSide also checks when it starts and after each app refresh (at most every 10 minutes).
 - The install window warns when an app wasn't built for the device's iOS (it would open in compatibility mode, e.g. a YouTube built with the iOS 26 SDK on an iOS 27 iPhone), and when it's older than the version already installed.

@@ -156,6 +156,7 @@ private struct PopoverContent: View {
                 VStack(alignment: .leading, spacing: 2) {
                     DeviceCard(group: group,
                                onWifiRefresh: { model.setWifiRefresh($0, for: group.id) },
+                               onNotifies: { model.setNotifies($0, for: group.id) },
                                onRemove: {
                                    afterClosing {
                                        guard AppRowAlerts.confirmRemoveDevice() else { return }

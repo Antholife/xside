@@ -25,6 +25,19 @@ private func tempDir() throws -> URL {
 }
 
 struct DevicePrefsTests {
+    /// A friend's iPhone: XSide still refreshes its apps, without notifying about them.
+    @Test func notificationsPerDevice() throws {
+        var prefs = DevicePrefs()
+        #expect(prefs.notifies("D1"))
+        prefs.setNotifies(false, for: "D1")
+        #expect(!prefs.notifies("D1"))
+        #expect(prefs.notifies("D2"))
+        let decoded = try JSONDecoder().decode(DevicePrefs.self, from: JSONEncoder().encode(prefs))
+        #expect(!decoded.notifies("D1"))
+        prefs.forget("D1")
+        #expect(prefs.notifies("D1"))
+    }
+
     /// The default only decides for devices that have no setting of their own yet.
     @Test func newDevicesFollowTheDefault() {
         var prefs = DevicePrefs()

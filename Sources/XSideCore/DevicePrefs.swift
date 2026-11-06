@@ -7,13 +7,15 @@ public struct DevicePrefs: Codable, Equatable, Sendable {
     private var wifiOn: Set<String> = []
     /// Wi-Fi refresh for devices without a setting of their own (Settings > General). On by default.
     public private(set) var newDevicesWifi = true
+    /// Devices XSide doesn't notify about (an iPhone it manages for someone else).
+    private var silenced: Set<String> = []
     /// Devices removed from XSide while still paired: kept out of the popover until an app is
     /// installed on them again.
     private var hidden: Set<String> = []
 
     public init() {}
 
-    private enum CodingKeys: String, CodingKey { case wifiOff, wifiOn, newDevicesWifi, hidden }
+    private enum CodingKeys: String, CodingKey { case wifiOff, wifiOn, newDevicesWifi, hidden, silenced }
 
     /// Tolerant: a file written before a key existed still loads.
     public init(from decoder: any Decoder) throws {
@@ -21,6 +23,7 @@ public struct DevicePrefs: Codable, Equatable, Sendable {
         wifiOff = try c.decodeIfPresent(Set<String>.self, forKey: .wifiOff) ?? []
         wifiOn = try c.decodeIfPresent(Set<String>.self, forKey: .wifiOn) ?? []
         newDevicesWifi = try c.decodeIfPresent(Bool.self, forKey: .newDevicesWifi) ?? true
+        silenced = try c.decodeIfPresent(Set<String>.self, forKey: .silenced) ?? []
         hidden = try c.decodeIfPresent(Set<String>.self, forKey: .hidden) ?? []
     }
 
@@ -47,10 +50,18 @@ public struct DevicePrefs: Codable, Equatable, Sendable {
         newDevicesWifi = on
     }
 
+    /// Whether XSide notifies about this device's apps (refreshes, failures, expiry reminders).
+    public func notifies(_ deviceID: String) -> Bool { !silenced.contains(deviceID) }
+
+    public mutating func setNotifies(_ on: Bool, for deviceID: String) {
+        if on { silenced.remove(deviceID) } else { silenced.insert(deviceID) }
+    }
+
     /// Drops the device's settings (not whether it is hidden).
     public mutating func forget(_ deviceID: String) {
         wifiOff.remove(deviceID)
         wifiOn.remove(deviceID)
+        silenced.remove(deviceID)
     }
 
     /// Reachable now but only over Wi-Fi while Wi-Fi refresh is off: it can't be refreshed until

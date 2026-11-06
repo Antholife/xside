@@ -250,6 +250,7 @@
 "journey.how.pairing.text" = "Branche ton iPhone ou ton iPad en USB, déverrouille-le et touche « Se fier ». Ensuite, le Wi-Fi suffit (même réseau). Un appareil jamais branché n'est pas visible en Wi-Fi.";
 "popover.plugInUSB" = "Branche-le en USB pour rafraîchir";
 "popover.device.menu" = "Options de l'appareil";
+"popover.device.notifications" = "Notifications pour cet appareil";
 "popover.device.wifiRefresh" = "Rafraîchir en Wi-Fi";
 "popover.device.remove" = "Retirer cet appareil";
 "popover.device.removeBusy" = "Une installation est en cours sur cet appareil";

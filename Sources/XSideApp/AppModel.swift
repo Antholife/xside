@@ -25,6 +25,7 @@ struct DeviceGroup: Identifiable {
     let kind: DeviceKind
     let apps: [AppEntry]
     var wifiRefresh = true
+    var notifies = true
     /// Reachable only over Wi-Fi while Wi-Fi refresh is off: due apps need a USB cable.
     var needsUSB = false
     var canRemove = true
@@ -181,6 +182,8 @@ final class AppModel {
     var onNeedsEvaluation: (() -> Void)?
     /// The panel just opened.
     var onPopoverShown: (() -> Void)?
+    /// A device's notifications were turned on or off (its expiry reminders follow).
+    var onDeviceNotificationsChanged: (() -> Void)?
     /// A device was removed from XSide: forget what is kept per (app, device).
     var onDeviceRemoved: ((_ deviceID: String) -> Void)?
     /// An installation is gone (uninstalled, removed from the list) or paused: forget what is kept
@@ -680,7 +683,7 @@ final class AppModel {
         var groups = shown.map { d in
             DeviceGroup(id: d.id, device: d, name: d.name, kind: d.kind,
                         apps: entries.filter { $0.installation.deviceID == d.id },
-                        wifiRefresh: devicePrefs.wifiRefresh(for: d.id),
+                        wifiRefresh: devicePrefs.wifiRefresh(for: d.id), notifies: devicePrefs.notifies(d.id),
                         needsUSB: devicePrefs.isWifiBlocked(d), canRemove: canRemoveDevice(d.id))
         }
         let known = Set(pairedDevices.map(\.id))
@@ -731,6 +734,14 @@ final class AppModel {
         updated.setWifiRefresh(on, for: deviceID)
         savePrefs(updated)
         onNeedsEvaluation?()
+    }
+
+    /// XSide's notifications about that device's apps, on or off.
+    func setNotifies(_ on: Bool, for deviceID: String) {
+        var updated = devicePrefs
+        updated.setNotifies(on, for: deviceID)
+        savePrefs(updated)
+        onDeviceNotificationsChanged?()
     }
 
     /// Wi-Fi refresh for devices XSide doesn't know yet. Known ones (listed now, or holding an

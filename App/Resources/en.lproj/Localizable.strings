@@ -250,6 +250,7 @@
 "journey.how.pairing.text" = "Plug your iPhone or iPad in with USB, unlock it and tap “Trust”. After that, Wi-Fi is enough (same network). A device that was never plugged in isn't visible over Wi-Fi.";
 "popover.plugInUSB" = "Plug it in with USB to refresh";
 "popover.device.menu" = "Device options";
+"popover.device.notifications" = "Notifications for this device";
 "popover.device.wifiRefresh" = "Refresh over Wi-Fi";
 "popover.device.remove" = "Remove this device";
 "popover.device.removeBusy" = "An install is running on this device";

@@ -76,6 +76,7 @@ final class BackgroundEngine {
         model.onNeedsEvaluation = { [weak self] in self?.evaluate(reason: "change") }
         model.onPopoverShown = { [weak self] in self?.checkPresence(interval: PresenceCheck.panelInterval) }
         model.onDeviceRemoved = { [weak self] id in self?.forgetDevice(id) }
+        model.onDeviceNotificationsChanged = { [weak self] in self?.reconcileReminders() }
         model.onInstallationRemoved = { [weak self] job in self?.forgetInstallation(job) }
         model.onRefreshResumed = { [weak self] job in self?.refreshResumed(job) }
         // Allowed only now (journey, Settings): the reminders couldn't be scheduled before.
@@ -232,7 +233,7 @@ final class BackgroundEngine {
     }
 
     private func notifyNeedsUSB(_ job: RefreshJob) {
-        guard let record = model.records.first(where: { $0.id == job.recordID }),
+        guard model.devicePrefs.notifies(job.deviceID), let record = model.records.first(where: { $0.id == job.recordID }),
               let installation = record.installations.first(where: { $0.deviceID == job.deviceID }) else { return }
         let deviceName = deviceName(job.deviceID)
         let date = installation.expiresAt.formatted(
@@ -394,7 +395,7 @@ final class BackgroundEngine {
         ticksSinceReconcile = 0
         enqueueReminders { [weak self] in
             guard let self else { return }
-            let jobs = RefreshPlanner.refreshedJobs(model.records)
+            let jobs = RefreshPlanner.refreshedJobs(model.records).filter { model.devicePrefs.notifies($0.deviceID) }
             await notifier.removeExpiryReminders(keeping: Set(jobs.map {
                 ExpiryWatch.reminderID(recordID: $0.recordID, deviceID: $0.deviceID)
             }))
@@ -412,7 +413,10 @@ final class BackgroundEngine {
     private func scheduleCurrentReminder(_ job: RefreshJob) async {
         guard let record = model.records.first(where: { $0.id == job.recordID }),
               let installation = record.installations.first(where: { $0.deviceID == job.deviceID }),
-              !installation.refreshPaused else { return }
+              !installation.refreshPaused, model.devicePrefs.notifies(job.deviceID) else {
+            await notifier.removeExpiryReminder(recordID: job.recordID, deviceID: job.deviceID)
+            return
+        }
         await notifier.scheduleExpiryReminder(recordID: record.id, deviceID: job.deviceID, appName: Self.appName(record),
                                               deviceName: deviceName(job.deviceID), expiresAt: installation.expiresAt)
     }
@@ -480,7 +484,7 @@ final class BackgroundEngine {
     /// Success of a refresh of an existing installation (automatic or manual), unless disabled in
     /// Settings. At most one per (app, device, expiresAt).
     private func notifySuccess(_ job: RefreshJob, wasRefresh: Bool) {
-        guard wasRefresh, UserDefaults.standard.object(forKey: Notifier.notifyRefreshSuccessKey) as? Bool ?? true,
+        guard wasRefresh, model.devicePrefs.notifies(job.deviceID), UserDefaults.standard.object(forKey: Notifier.notifyRefreshSuccessKey) as? Bool ?? true,
               let record = model.records.first(where: { $0.id == job.recordID }),
               let installation = record.installations.first(where: { $0.deviceID == job.deviceID }) else { return }
         let deviceName = deviceName(job.deviceID)
@@ -498,7 +502,7 @@ final class BackgroundEngine {
     }
 
     private func notifyRemoved(_ job: RefreshJob, appName: String) {
-        guard AppModel.setting(AppModel.notifyAppRemovedKey) else { return }
+        guard AppModel.setting(AppModel.notifyAppRemovedKey), model.devicePrefs.notifies(job.deviceID) else { return }
         let device = deviceName(job.deviceID)
         Task { [notifier] in
             await notifier.appRemoved(appName: appName, deviceName: device,
@@ -529,6 +533,7 @@ final class BackgroundEngine {
     /// The gate is consumed only for a notification the system accepted: with notifications
     /// denied, the cause is still notified once the user enables them.
     private func notifyFailure(_ job: RefreshJob, errorKey: String, message: String) {
+        guard model.devicePrefs.notifies(job.deviceID) else { return } // a device notifications were turned off for
         Task {
             guard await notifier.canDeliver() else {
                 Self.logger.notice("notifications not authorized: \(errorKey) not notified")

@@ -9,13 +9,18 @@ struct DeviceCard: View {
     let symbolName: String
     let isReachable: Bool
     let wifiRefresh: Bool
+    let notifies: Bool
     let canRemove: Bool
     let onWifiRefresh: @MainActor @Sendable (Bool) -> Void
+    let onNotifies: @MainActor @Sendable (Bool) -> Void
     let onRemove: () -> Void
 
 
-    init(group: DeviceGroup, onWifiRefresh: @escaping @MainActor @Sendable (Bool) -> Void, onRemove: @escaping () -> Void) {
+    init(group: DeviceGroup, onWifiRefresh: @escaping @MainActor @Sendable (Bool) -> Void,
+         onNotifies: @escaping @MainActor @Sendable (Bool) -> Void, onRemove: @escaping () -> Void) {
         wifiRefresh = group.wifiRefresh
+        notifies = group.notifies
+        self.onNotifies = onNotifies
         canRemove = group.canRemove
         self.onWifiRefresh = onWifiRefresh
         self.onRemove = onRemove
@@ -46,6 +51,7 @@ struct DeviceCard: View {
                 .accessibilityHidden(true)
             Menu {
                 Toggle(L("popover.device.wifiRefresh"), isOn: Binding(get: { wifiRefresh }, set: onWifiRefresh))
+                Toggle(L("popover.device.notifications"), isOn: Binding(get: { notifies }, set: onNotifies))
                 Divider()
                 // Confirmed by the caller, once the popover is closed: an alert inside it would
                 // close along with it.
