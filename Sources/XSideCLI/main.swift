@@ -14,6 +14,8 @@ let usage = """
       status [--json]                  Apps, devices and days left
       refresh <app> [--device <name>]  Refresh an app now (name or bundle id, partial is fine)
       refresh --all                    Refresh every app that can be now
+      pause [<duration>]               Pause automatic refreshes: 2h, 30m, 1d… (none: until resumed)
+      resume                           Resume automatic refreshes
       install <file.ipa>               Open the .ipa in XSide's install window
       open                             Open XSide
 
@@ -91,6 +93,12 @@ var isAppRunning: Bool { !NSRunningApplication.runningApplications(withBundleIde
         return
     }
     if !isAppRunning { print("⚠️  XSide isn't running: nothing gets refreshed until it is (xside open).\n") }
+    let paused = UserDefaults(suiteName: bundleID)?.double(forKey: "refreshPausedUntil") ?? 0
+    if paused > 0, Date(timeIntervalSince1970: paused) > now {
+        let until = Date(timeIntervalSince1970: paused)
+        print(until == .distantFuture ? "⏸  Automatic refreshes paused until resumed (xside resume).\n"
+                                     : "⏸  Automatic refreshes paused until \(until.formatted(date: .abbreviated, time: .shortened)) (xside resume).\n")
+    }
     if rows.isEmpty { print("No app installed with XSide yet."); return }
     let date = Date.FormatStyle(date: .abbreviated, time: .shortened)
     for device in Dictionary(grouping: rows, by: \.device).keys.sorted() {
@@ -187,6 +195,14 @@ case "refresh":
     let device = takeOption("--device")
     guard let app = arguments.first else { fail("which app? (xside refresh <app>, or --all)") }
     ask(.refresh(app: app, device: device))
+case "pause":
+    if let text = arguments.first {
+        guard let seconds = CLIBridge.duration(text) else { fail("\(text) isn't a duration (e.g. 2h, 30m, 1d)") }
+        ask(.pause(seconds: seconds))
+    }
+    ask(.pause(seconds: nil))
+case "resume":
+    ask(.resume)
 case "install":
     guard let path = arguments.first else { fail("which .ipa? (xside install <file.ipa>)") }
     let file = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL

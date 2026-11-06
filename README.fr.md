@@ -123,6 +123,8 @@ Active-le dans *Réglages > Général > Outil en ligne de commande*, puis :
 xside status                     # apps, appareils et jours restants (--json aussi)
 xside refresh youtube            # rafraîchir une app maintenant (nom ou identifiant, partiel accepté)
 xside refresh --all              # toutes celles qui peuvent l'être
+xside pause 2h                   # met en pause les rafraîchissements auto (2h, 30m, 1d ; rien : jusqu'à reprise)
+xside resume                     # les reprend
 xside install ~/Downloads/a.ipa  # l'ouvrir dans la fenêtre d'installation
 ```
 

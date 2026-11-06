@@ -123,6 +123,8 @@ Turn it on in *Settings > General > Command line tool*, then:
 xside status                     # apps, devices and days left (--json too)
 xside refresh youtube            # refresh an app now (name or bundle id, partial is fine)
 xside refresh --all              # every app that can be now
+xside pause 2h                   # pause automatic refreshes (2h, 30m, 1d; none: until resumed)
+xside resume                     # resume them
 xside install ~/Downloads/a.ipa  # open it in the install window
 ```
 

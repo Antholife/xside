@@ -1237,6 +1237,18 @@ final class AppModel {
         func describe(_ e: AppEntry) -> String { "\(appName(e)) on \(deviceName(e))" }
         let targets: [AppEntry]
         switch command {
+        case .pause(let seconds):
+            let until = seconds.map { Date().addingTimeInterval(TimeInterval($0)) } ?? .distantFuture
+            UserDefaults.standard.set(until.timeIntervalSince1970, forKey: BackgroundEngine.pausedUntilKey)
+            onNeedsEvaluation?()
+            Self.logger.notice("command line pause until \(until.formatted(.iso8601))")
+            return (true, until == .distantFuture
+                ? "Automatic refreshes paused until you resume them (xside resume). An app expiring within 12 hours is still refreshed."
+                : "Automatic refreshes paused until \(until.formatted(date: .abbreviated, time: .shortened)). An app expiring within 12 hours is still refreshed.")
+        case .resume:
+            UserDefaults.standard.set(0.0, forKey: BackgroundEngine.pausedUntilKey)
+            onNeedsEvaluation?()
+            return (true, "Automatic refreshes resumed.")
         case .refreshAll:
             targets = entries.filter { !$0.installation.refreshPaused }
             guard !targets.isEmpty else { return (false, "No app to refresh (none installed, or all paused).") }

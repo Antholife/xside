@@ -18,6 +18,18 @@ public enum CLIBridge {
         /// Apps whose name or bundle id contains `app` (case-insensitive), on `device` if given
         /// (name contains it, or its id).
         case refresh(app: String, device: String?)
+        /// Pause automatic refreshes for `seconds`, or until resumed (nil).
+        case pause(seconds: Int?)
+        case resume
+    }
+
+    /// "2h", "30m", "1d", or a number of minutes; nil when it isn't a positive duration.
+    public static func duration(_ text: String) -> Int? {
+        let t = text.trimmingCharacters(in: .whitespaces).lowercased()
+        let units: [Character: Int] = ["m": 60, "h": 3600, "d": 86_400]
+        let unit = t.last.flatMap { units[$0] }
+        guard let value = Int(unit == nil ? t : String(t.dropLast())), value > 0 else { return nil }
+        return value * (unit ?? 60)
     }
 
     /// One request: `id` ties the answer to it.
@@ -35,6 +47,9 @@ public enum CLIBridge {
             case .refreshAll: ["id": id, "command": "refresh-all"]
             case .refresh(let app, let device):
                 ["id": id, "command": "refresh", "app": app].merging(device.map { ["device": $0] } ?? [:]) { $1 }
+            case .pause(let seconds):
+                ["id": id, "command": "pause"].merging(seconds.map { ["seconds": String($0)] } ?? [:]) { $1 }
+            case .resume: ["id": id, "command": "resume"]
             }
         }
 
@@ -45,6 +60,8 @@ public enum CLIBridge {
             case "refresh":
                 guard let app = info["app"], !app.isEmpty else { return nil }
                 self.init(id: id, command: .refresh(app: app, device: info["device"]))
+            case "pause": self.init(id: id, command: .pause(seconds: info["seconds"].flatMap { Int($0) }))
+            case "resume": self.init(id: id, command: .resume)
             default: return nil
             }
         }

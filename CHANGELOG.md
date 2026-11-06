@@ -5,7 +5,11 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 ## [Unreleased]
 
 ### Added
-- Installing another version of an app over the one on the device: its card says "Updated by XSide", with the new and the previous version, instead of "Refreshed by XSide".
+- `xside pause [2h|30m|1d]` and `xside resume` pause and resume automatic refreshes from the Terminal; `xside status` says while they're paused.
+- Updates can be checked every hour; XSide also checks when it starts and after each app refresh (at most every 10 minutes).
+- The install window warns when an app wasn't built for the device's iOS (it would open in compatibility mode, e.g. a YouTube built with the iOS 26 SDK on an iOS 27 iPhone), and when it's older than the version already installed.
+- Each app in the panel shows its installed version.
+- Installing another version of an app over the one on the device: its card says "Updated by XSide" (or "Older version installed by XSide"), with the new and the previous version, instead of "Refreshed by XSide".
 
 ## [1.0.5-beta] - 2026-11-05
 
