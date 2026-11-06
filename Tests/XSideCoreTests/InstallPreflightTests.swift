@@ -10,6 +10,9 @@ struct InstallPreflightTests {
         #expect(InstallPreflight.compare("17.4", "17.10") == .orderedAscending)
         #expect(InstallPreflight.compare("18", "18.0") == .orderedSame)
         #expect(InstallPreflight.compare("26.1", "18.6.2") == .orderedDescending)
+        // Review 1.0.6 #6: leading digits of each part ("1.10a" is 1.10, not 1.0).
+        #expect(InstallPreflight.compare("1.10a", "1.9") == .orderedDescending)
+        #expect(InstallPreflight.compare("21.37.04", "21.37.4") == .orderedSame)
     }
 
     @Test func developerModeOffComesAloneForThatDevice() {

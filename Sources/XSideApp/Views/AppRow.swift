@@ -87,8 +87,9 @@ struct AppRow: View {
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(isPaused ? .secondary : .primary)
                         .lineLimit(1)
-                    // The version on that device (older state: the .ipa's).
-                    if let version = entry.installation.appVersion ?? entry.record.version {
+                    // The version on that device, once an install or refresh has recorded it (the
+                    // record's may be a newer .ipa not installed there yet).
+                    if let version = entry.installation.appVersion {
                         Text(version)
                             .font(.system(size: 10.5, weight: .medium, design: .rounded))
                             .monospacedDigit()

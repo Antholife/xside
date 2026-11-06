@@ -69,8 +69,14 @@ var isAppRunning: Bool { !NSRunningApplication.runningApplications(withBundleIde
         if json { print("{\"running\":\(isAppRunning),\"apps\":[]}") } else { print("No app installed with XSide yet.") }
         return
     }
-    let names = UserDefaults(suiteName: bundleID)?.dictionary(forKey: "deviceNames") as? [String: String] ?? [:]
+    let defaults = UserDefaults(suiteName: bundleID)
+    let names = defaults?.dictionary(forKey: "deviceNames") as? [String: String] ?? [:]
     let now = Date()
+    // XSide's own settings: how long before expiry it refreshes, and whether that's paused.
+    let threshold = RefreshPlanner.threshold(daysBefore: defaults?.integer(forKey: "refreshDaysBefore") ?? 0,
+                                             debugDays: defaults?.double(forKey: "debugThresholdDays") ?? 0)
+    let pausedStored = defaults?.double(forKey: "refreshPausedUntil") ?? 0
+    let pausedUntil = pausedStored > 0 && Date(timeIntervalSince1970: pausedStored) > now ? Date(timeIntervalSince1970: pausedStored) : nil
     struct Row: Encodable {
         let app: String, bundleID: String, device: String, deviceID: String
         let expires: Date, daysLeft: Int, nextRefresh: Date, paused: Bool, lastError: String?
@@ -80,22 +86,21 @@ var isAppRunning: Bool { !NSRunningApplication.runningApplications(withBundleIde
             Row(app: record.options.displayName ?? record.displayName, bundleID: record.originalBundleID,
                 device: names[i.deviceID] ?? i.deviceID, deviceID: i.deviceID, expires: i.expiresAt,
                 daysLeft: max(0, Int((i.expiresAt.timeIntervalSince(now) / 86_400).rounded(.up))),
-                nextRefresh: i.expiresAt.addingTimeInterval(-RefreshPlanner.threshold),
+                nextRefresh: i.expiresAt.addingTimeInterval(-threshold),
                 paused: i.refreshPaused, lastError: i.lastErrorKey)
         }
     }
     if json {
-        struct Status: Encodable { let running: Bool; let apps: [Row] }
+        /// `pausedUntil`: automatic refreshes paused until then (absent: not paused; far future: until resumed).
+        struct Status: Encodable { let running: Bool; let pausedUntil: Date?; let apps: [Row] }
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        print(String(decoding: (try? encoder.encode(Status(running: isAppRunning, apps: rows))) ?? Data(), as: UTF8.self))
+        print(String(decoding: (try? encoder.encode(Status(running: isAppRunning, pausedUntil: pausedUntil, apps: rows))) ?? Data(), as: UTF8.self))
         return
     }
     if !isAppRunning { print("⚠️  XSide isn't running: nothing gets refreshed until it is (xside open).\n") }
-    let paused = UserDefaults(suiteName: bundleID)?.double(forKey: "refreshPausedUntil") ?? 0
-    if paused > 0, Date(timeIntervalSince1970: paused) > now {
-        let until = Date(timeIntervalSince1970: paused)
+    if let until = pausedUntil {
         print(until == .distantFuture ? "⏸  Automatic refreshes paused until resumed (xside resume).\n"
                                      : "⏸  Automatic refreshes paused until \(until.formatted(date: .abbreviated, time: .shortened)) (xside resume).\n")
     }
@@ -109,7 +114,9 @@ var isAppRunning: Bool { !NSRunningApplication.runningApplications(withBundleIde
                 line += "expired"
             } else {
                 line += "\(row.daysLeft) day\(row.daysLeft == 1 ? "" : "s") left"
-                line += row.paused ? " · paused" : " · next refresh \(max(row.nextRefresh, now).formatted(date))"
+                line += row.paused ? " · paused"
+                    : pausedUntil != nil ? " · refreshes paused"
+                    : " · next refresh \(max(row.nextRefresh, now).formatted(date))"
             }
             if let error = row.lastError, !row.paused { line += " · last refresh failed (\(error))" }
             print(line)

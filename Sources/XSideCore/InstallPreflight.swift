@@ -81,8 +81,9 @@ public enum InstallPreflight {
 
     /// Numeric comparison of dotted versions ("17.4" < "17.10", "18" == "18.0").
     public static func compare(_ a: String, _ b: String) -> ComparisonResult {
-        let x = a.split(separator: ".").map { Int($0) ?? 0 }
-        let y = b.split(separator: ".").map { Int($0) ?? 0 }
+        // The leading digits of each part: "1.10a" is 1.10, "04" is 4.
+        func parts(_ s: String) -> [Int] { s.split(separator: ".").map { Int($0.prefix { $0.isNumber }) ?? 0 } }
+        let x = parts(a), y = parts(b)
         for i in 0..<max(x.count, y.count) {
             let l = i < x.count ? x[i] : 0, r = i < y.count ? y[i] : 0
             if l != r { return l < r ? .orderedAscending : .orderedDescending }

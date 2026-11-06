@@ -87,6 +87,11 @@ final class Updater {
             guard let self, self.availableVersion != version else { return }
             self.availableVersion = version
             Self.log.notice("update \(version) available")
+            // Found again by an extra check after "Remind me later": the panel says so, the
+            // notification waits a day.
+            let key = "updateNotified.\(version)"
+            if let last = UserDefaults.standard.object(forKey: key) as? Date, Date().timeIntervalSince(last) < 86_400 { return }
+            UserDefaults.standard.set(Date(), forKey: key)
             self.onAvailable?(version)
         }
         reminders.onDone = { [weak self] in self?.availableVersion = nil }

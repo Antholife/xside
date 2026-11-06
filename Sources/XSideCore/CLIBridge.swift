@@ -23,13 +23,18 @@ public enum CLIBridge {
         case resume
     }
 
-    /// "2h", "30m", "1d", or a number of minutes; nil when it isn't a positive duration.
+    /// The longest pause a duration may ask for: "until resumed" is the way past it.
+    public static let maxPause = 365 * 86_400
+
+    /// "2h", "30m", "1d", or a number of minutes; nil when it isn't a positive duration of at
+    /// most `maxPause` (never an overflow).
     public static func duration(_ text: String) -> Int? {
         let t = text.trimmingCharacters(in: .whitespaces).lowercased()
         let units: [Character: Int] = ["m": 60, "h": 3600, "d": 86_400]
         let unit = t.last.flatMap { units[$0] }
         guard let value = Int(unit == nil ? t : String(t.dropLast())), value > 0 else { return nil }
-        return value * (unit ?? 60)
+        let (seconds, overflow) = value.multipliedReportingOverflow(by: unit ?? 60)
+        return overflow || seconds > maxPause ? nil : seconds
     }
 
     /// One request: `id` ties the answer to it.
@@ -60,7 +65,14 @@ public enum CLIBridge {
             case "refresh":
                 guard let app = info["app"], !app.isEmpty else { return nil }
                 self.init(id: id, command: .refresh(app: app, device: info["device"]))
-            case "pause": self.init(id: id, command: .pause(seconds: info["seconds"].flatMap { Int($0) }))
+            case "pause":
+                // Present but unreadable: refused, never read as "until resumed".
+                if let text = info["seconds"] {
+                    guard let seconds = Int(text), seconds > 0 else { return nil }
+                    self.init(id: id, command: .pause(seconds: seconds))
+                } else {
+                    self.init(id: id, command: .pause(seconds: nil))
+                }
             case "resume": self.init(id: id, command: .resume)
             default: return nil
             }

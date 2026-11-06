@@ -425,7 +425,8 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
     stack.translatesAutoresizingMaskIntoConstraints = NO;
     [scroll addSubview:stack];
     NSLayoutConstraint *fitsContent = [scroll.heightAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.heightAnchor];
-    fitsContent.priority = UILayoutPriorityDefaultHigh;
+    // Below the labels' compression resistance (750): too tall, it scrolls rather than squashing them.
+    fitsContent.priority = UILayoutPriorityDefaultHigh - 1;
     NSLayoutConstraint *fullWidth = [_sheet.widthAnchor constraintEqualToAnchor:self.view.widthAnchor];
     fullWidth.priority = UILayoutPriorityDefaultHigh; // capped on iPad
     [NSLayoutConstraint activateConstraints:@[
@@ -747,11 +748,13 @@ __attribute__((constructor)) static void XSideWelcomeInit(void) {
         XSScheduleReminder(expiry, NO); // asked only when the sheet closes, as it says
 
         id announced = [NSUserDefaults.standardUserDefaults objectForKey:XSAnnouncedKey];
-        if ([announced isKindOfClass:NSDate.class] && [announced isEqualToDate:expiry]) return;
-        // Known since 1.0.6: before, an update reads as a refresh.
+        // Known since 1.0.6: before, an update reads as a refresh. "21.37.04" and "21.37.4" are the same.
         id seen = [NSUserDefaults.standardUserDefaults objectForKey:XSAnnouncedVersionKey];
         NSString *version = XSAppVersion();
-        NSString *previous = [seen isKindOfClass:NSString.class] && version && ![seen isEqualToString:version] ? seen : nil;
+        NSString *previous = [seen isKindOfClass:NSString.class] && version
+            && [version compare:seen options:NSNumericSearch] != NSOrderedSame ? seen : nil;
+        // Nothing new: same signature and same version (a new version with the same profile still shows).
+        if ([announced isKindOfClass:NSDate.class] && [announced isEqualToDate:expiry] && !previous) return;
         XSShow(expiry, [announced isKindOfClass:NSDate.class], previous, 0);
     }];
 }

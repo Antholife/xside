@@ -5,16 +5,22 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 ## [Unreleased]
 
 ### Added
-- **Notifications per device** (the device's … menu in the panel): turn them off for an iPhone you manage for someone else; its apps are still refreshed, without notifications or expiry reminders.
+- **Notifications per device** (the device's … menu in the panel): turn them off for an iPhone you manage for someone else; its apps are still refreshed, without any notification on this Mac (the reminder the app shows on the phone itself stays).
 - `xside pause [2h|30m|1d]` and `xside resume` pause and resume automatic refreshes from the Terminal; `xside status` says while they're paused.
 - Updates can be checked every hour; XSide also checks when it starts and after each app refresh (at most every 10 minutes).
-- The install window warns when an app wasn't built for the device's iOS (it would open in compatibility mode, e.g. a YouTube built with the iOS 26 SDK on an iOS 27 iPhone), and when it's older than the version already installed.
+- The install window warns when an app wasn't built for the device's iOS (it may open in compatibility mode, e.g. a YouTube built with the iOS 26 SDK on an iOS 27 iPhone), and when it's older than the version already installed.
 - Each app in the panel shows its installed version.
 - Installing another version of an app over the one on the device: its card says "Updated by XSide" (or "Older version installed by XSide"), with the new and the previous version, instead of "Refreshed by XSide".
 
 ### Changed
 - The XSide sheet in apps follows the reader's text size (Dynamic Type) and scrolls when it doesn't fit (landscape, large text).
 - "Last refreshed" in the app's iOS Settings section is the time it was signed, not the profile's creation.
+
+### Fixed
+- `xside pause` refuses a duration past a year instead of crashing on a huge number, and a garbled pause request is refused instead of pausing until resumed.
+- `xside status` counts the next refresh with the chosen days before expiry (it assumed 2), says when refreshes are paused, and `--json` has `pausedUntil`.
+- Version checks read the leading digits of each part ("1.10a" is newer than "1.9", "21.37.04" equals "21.37.4"), and the "older version" warning only compares the same copy of an app.
+- An update found again after "Remind me later" no longer notifies more than once a day.
 
 ## [1.0.5-beta] - 2026-11-05
 

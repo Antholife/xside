@@ -1160,7 +1160,10 @@ final class AppModel {
                     $0.deviceID == id && ($0.signedBundleID ?? existing?.signedBundleID) == signedID
                 } ?? false,
                 developerModeEnabled: device.developerModeEnabled,
-                installedVersion: existing?.installations.first { $0.deviceID == id }.flatMap { $0.appVersion })
+                // The same copy only (same bundle id): another one is a separate app.
+                installedVersion: existing?.installations.first {
+                    $0.deviceID == id && ($0.signedBundleID ?? existing?.signedBundleID) == signedID
+                }.flatMap { $0.appVersion })
         }
         #if DEBUG
         // Debug-only: XSIDE_FAKE_PREFLIGHT=1 shows every warning, on the first selected device.
@@ -1168,10 +1171,12 @@ final class AppModel {
            let first = targets.max(by: { $0.otherApps.count < $1.otherApps.count }) {
             return [.iOSTooOld(deviceID: first.deviceID, required: "99.0", actual: first.osVersion ?? "?"),
                     .deviceFull(deviceID: first.deviceID, apps: first.otherApps),
+                    .notBuiltForDevice(deviceID: first.deviceID, sdk: "26.4", deviceOS: first.osVersion ?? "27.0"),
+                    .olderVersion(deviceID: first.deviceID, installing: "1.0", installed: "2.0"),
                     .noAppIDLeft]
         }
         #endif
-        let version = flow.draft.version.trimmingCharacters(in: .whitespaces)
+        let version = flow.draft.version.trimmingCharacters(in: .whitespacesAndNewlines)
         return InstallPreflight.check(minimumOS: minOS.isEmpty ? info.minimumOSVersion : minOS, targets: targets,
                                       needsNewAppID: needsNewAppID, appIDsRemaining: appIDsRemaining,
                                       sdkVersion: info.sdkVersion, appVersion: version.isEmpty ? info.version : version)

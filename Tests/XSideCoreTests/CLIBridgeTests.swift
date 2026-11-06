@@ -20,5 +20,15 @@ struct CLIBridgeTests {
         #expect(CLIBridge.duration("soon") == nil)
         #expect(CLIBridge.duration("0h") == nil)
         #expect(CLIBridge.duration("-1h") == nil)
+        // Review 1.0.6 #3: never an overflow (a crash), and no pause past a year.
+        #expect(CLIBridge.duration("999999999999999999m") == nil)
+        #expect(CLIBridge.duration("400d") == nil)
+        #expect(CLIBridge.duration("365d") == 365 * 86_400)
+    }
+
+    /// Review 1.0.6 #4: an unreadable duration is no request, never "until resumed".
+    @Test func unreadablePauseIsRefused() {
+        #expect(CLIBridge.Request(userInfo: ["id": "1", "command": "pause", "seconds": "abc"]) == nil)
+        #expect(CLIBridge.Request(userInfo: ["id": "1", "command": "pause"])?.command == .pause(seconds: nil))
     }
 }
