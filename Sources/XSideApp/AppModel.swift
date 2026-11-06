@@ -1148,7 +1148,8 @@ final class AppModel {
                 hasThisApp: existing?.installations.contains {
                     $0.deviceID == id && ($0.signedBundleID ?? existing?.signedBundleID) == signedID
                 } ?? false,
-                developerModeEnabled: device.developerModeEnabled)
+                developerModeEnabled: device.developerModeEnabled,
+                installedVersion: existing?.installations.first { $0.deviceID == id }.flatMap { $0.appVersion })
         }
         #if DEBUG
         // Debug-only: XSIDE_FAKE_PREFLIGHT=1 shows every warning, on the first selected device.
@@ -1159,8 +1160,10 @@ final class AppModel {
                     .noAppIDLeft]
         }
         #endif
+        let version = flow.draft.version.trimmingCharacters(in: .whitespaces)
         return InstallPreflight.check(minimumOS: minOS.isEmpty ? info.minimumOSVersion : minOS, targets: targets,
-                                      needsNewAppID: needsNewAppID, appIDsRemaining: appIDsRemaining)
+                                      needsNewAppID: needsNewAppID, appIDsRemaining: appIDsRemaining,
+                                      sdkVersion: info.sdkVersion, appVersion: version.isEmpty ? info.version : version)
     }
 
     /// The running step's progress per row, in whole percents, when its tool reports one.

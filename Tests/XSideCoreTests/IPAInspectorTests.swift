@@ -20,6 +20,9 @@ struct IPAInspectorTests {
         let root2 = try tempDir(); defer { try? FileManager.default.removeItem(at: root2) }
         let a2 = try FakeIPA.makeApp(at: root2, plistExtras: ["CFBundleName": "Nom", "CFBundleDisplayName": "Affiché"])
         #expect(try IPAInspector.info(of: a2).name == "Affiché")
+        let root3 = try tempDir(); defer { try? FileManager.default.removeItem(at: root3) }
+        let a3 = try FakeIPA.makeApp(at: root3, plistExtras: ["CFBundleName": "N", "DTPlatformVersion": "26.4"])
+        #expect(try IPAInspector.info(of: a3).sdkVersion == "26.4")
     }
 
     @Test(arguments: ["../evil", "/etc/passwd", "a/b", "..", "."])

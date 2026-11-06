@@ -475,6 +475,8 @@ private struct PreflightNotes: View {
         case .iOSTooOld: "iphone.gen3.slash"
         case .deviceFull: "square.stack.3d.up.fill"
         case .noAppIDLeft, .lastAppID: "number"
+        case .notBuiltForDevice: "rectangle.dashed"
+        case .olderVersion: "arrow.uturn.backward.circle"
         }
     }
 
@@ -496,6 +498,8 @@ private struct PreflightNotes: View {
         case .deviceFull(let id, _): L("preflight.deviceFull", name(id))
         case .noAppIDLeft: L("preflight.noAppIDLeft")
         case .lastAppID: L("preflight.lastAppID")
+        case .notBuiltForDevice(let id, let sdk, let os): L("preflight.notBuiltForDevice", name(id), os, sdk)
+        case .olderVersion(let id, let installing, let installed): L("preflight.olderVersion", installing, installed, name(id))
         }
     }
 }

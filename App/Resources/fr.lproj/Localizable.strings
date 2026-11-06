@@ -455,6 +455,8 @@
 "preflight.iOSTooOld" = "%1$@ est sous iOS %2$@, mais cette app demande iOS %3$@ : elle ne s'y ouvrira pas.";
 "preflight.deviceFull" = "%@ a déjà 3 apps de XSide, le maximum avec un compte gratuit. Laquelle désinstaller ?";
 "preflight.noAppIDLeft" = "Plus d'App ID cette semaine (estimation) : installer une nouvelle app échouera sûrement jusqu'à ce qu'il s'en libère un.";
+"preflight.notBuiltForDevice" = "%1$@ est sous iOS %2$@, mais cette app a été construite pour iOS %3$@ : elle s'ouvrira sans doute en mode compatibilité (agrandie, sans s'adapter à l'écran). Une version plus récente de l'app corrige ça.";
+"preflight.olderVersion" = "C'est la version %1$@, plus ancienne que la %2$@ installée sur %3$@. C'est bien le bon fichier ?";
 "preflight.lastAppID" = "Cette installation utilise ton dernier App ID de la semaine (estimation).";
 "notification.action.refresh" = "Rafraîchir maintenant";
 "notification.action.open" = "Ouvrir XSide";

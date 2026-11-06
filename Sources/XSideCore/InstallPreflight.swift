@@ -16,9 +16,12 @@ public enum InstallPreflight {
         public let hasThisApp: Bool
         /// From devicectl; nil when it doesn't say (then nothing is assumed).
         public let developerModeEnabled: Bool?
+        /// The version of this app on the device, when it's there and known.
+        public let installedVersion: String?
 
         public init(deviceID: String, osVersion: String?, otherApps: [String], hasThisApp: Bool,
-                    developerModeEnabled: Bool? = nil) {
+                    developerModeEnabled: Bool? = nil, installedVersion: String? = nil) {
+            self.installedVersion = installedVersion
             self.deviceID = deviceID
             self.developerModeEnabled = developerModeEnabled
             self.osVersion = osVersion
@@ -38,11 +41,16 @@ public enum InstallPreflight {
         case noAppIDLeft
         /// The last App ID of the week.
         case lastAppID
+        /// Built with an older iOS SDK than the device's iOS: may run in compatibility mode.
+        case notBuiltForDevice(deviceID: String, sdk: String, deviceOS: String)
+        /// An older version than the one on the device (the wrong file?).
+        case olderVersion(deviceID: String, installing: String, installed: String)
     }
 
     /// `needsNewAppID`: the signed bundle id isn't registered yet (a first install, or a new id).
+    /// `sdkVersion` / `appVersion`: the .ipa's build SDK and version (nil: not checked).
     public static func check(minimumOS: String?, targets: [Target], needsNewAppID: Bool,
-                             appIDsRemaining: Int?) -> [Warning] {
+                             appIDsRemaining: Int?, sdkVersion: String? = nil, appVersion: String? = nil) -> [Warning] {
         var warnings: [Warning] = []
         for target in targets {
             if target.developerModeEnabled == false {
@@ -54,6 +62,15 @@ public enum InstallPreflight {
             }
             if !target.hasThisApp, target.otherApps.count >= appsPerDevice {
                 warnings.append(.deviceFull(deviceID: target.deviceID, apps: target.otherApps))
+            }
+            // Major versions only: iOS 27 devices need an app built with the iOS 27 SDK.
+            if let sdk = sdkVersion, let os = target.osVersion,
+               let sdkMajor = Int(sdk.split(separator: ".").first ?? ""), let osMajor = Int(os.split(separator: ".").first ?? ""),
+               sdkMajor < osMajor {
+                warnings.append(.notBuiltForDevice(deviceID: target.deviceID, sdk: sdk, deviceOS: os))
+            }
+            if let appVersion, let installed = target.installedVersion, compare(appVersion, installed) == .orderedAscending {
+                warnings.append(.olderVersion(deviceID: target.deviceID, installing: appVersion, installed: installed))
             }
         }
         if needsNewAppID, let left = appIDsRemaining {

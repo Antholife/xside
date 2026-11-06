@@ -13,10 +13,14 @@ public struct AppInfo: Equatable, Sendable {
     public let sharedKeychainVendor: String?
     /// Lowest iOS the app runs on (`MinimumOSVersion`), when it says.
     public let minimumOSVersion: String?
+    /// iOS SDK the app was built with (`DTPlatformVersion`): on a newer iOS, the app may run in
+    /// compatibility mode (not laid out for new screens).
+    public let sdkVersion: String?
 
     public init(bundleID: String, name: String, version: String?, executable: String,
                 sharedKeychainGroups: [String] = [], sharedKeychainVendor: String? = nil,
-                minimumOSVersion: String? = nil) {
+                minimumOSVersion: String? = nil, sdkVersion: String? = nil) {
+        self.sdkVersion = sdkVersion
         self.bundleID = bundleID
         self.name = name
         self.version = version
@@ -108,7 +112,8 @@ public enum IPAInspector {
             ?? app.deletingPathExtension().lastPathComponent
         return AppInfo(bundleID: bundleID, name: name,
                        version: plist["CFBundleShortVersionString"] as? String, executable: executable,
-                       minimumOSVersion: (plist["MinimumOSVersion"] as? String).flatMap { $0.isEmpty ? nil : $0 })
+                       minimumOSVersion: (plist["MinimumOSVersion"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+                       sdkVersion: (plist["DTPlatformVersion"] as? String).flatMap { $0.isEmpty ? nil : $0 })
     }
 
     /// True if any slice of the Mach-O carries an LC_ENCRYPTION_INFO(_64) with cryptid != 0.
