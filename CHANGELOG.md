@@ -4,6 +4,9 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added
+- Installing another version of an app over the one on the device: its card says "Updated by XSide", with the new and the previous version, instead of "Refreshed by XSide".
+
 ## [1.0.5-beta] - 2026-11-05
 
 ### Added

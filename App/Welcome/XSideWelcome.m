@@ -15,6 +15,8 @@
 #import <UserNotifications/UserNotifications.h>
 
 static NSString *const XSAnnouncedKey = @"io.github.xside.welcome.announcedExpiry";
+/// The app's version when it was last announced: a different one means XSide installed an update.
+static NSString *const XSAnnouncedVersionKey = @"io.github.xside.welcome.announcedVersion";
 static NSString *const XSRepoURL = @"https://github.com/Antholife/xside";
 static NSString *const XSReminderID = @"io.github.xside.welcome.expiryReminder";
 #ifdef XS_TEST_REMINDER
@@ -74,6 +76,12 @@ static NSTimeInterval XSReminderLead(void) {
     id hours = [options isKindOfClass:NSDictionary.class] ? options[@"reminderLeadHours"] : nil;
     NSInteger h = [hours isKindOfClass:NSNumber.class] ? [hours integerValue] : 24;
     return (h > 0 && h <= 48 ? h : 24) * 3600.0;
+}
+
+/// The app's version (CFBundleShortVersionString), as installed.
+static NSString *XSAppVersion(void) {
+    id v = XSInfo()[@"CFBundleShortVersionString"];
+    return [v isKindOfClass:NSString.class] && [v length] ? v : nil;
 }
 
 static UNUserNotificationCenter *XSCenter(void) {
@@ -478,17 +486,23 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
 @end
 
 @interface XSBannerController : UIViewController
-- (instancetype)initWithExpiry:(NSDate *)expiry;
+/// `previousVersion`: the version the app had before XSide installed this one (an update), nil
+/// for a refresh of the same version.
+- (instancetype)initWithExpiry:(NSDate *)expiry previousVersion:(NSString *)previousVersion;
 @end
 
 @implementation XSBannerController {
     NSDate *_expiry;
+    NSString *_previousVersion;
     UIView *_card;
     BOOL _closing;
 }
 
-- (instancetype)initWithExpiry:(NSDate *)expiry {
-    if ((self = [super initWithNibName:nil bundle:nil])) _expiry = expiry;
+- (instancetype)initWithExpiry:(NSDate *)expiry previousVersion:(NSString *)previousVersion {
+    if ((self = [super initWithNibName:nil bundle:nil])) {
+        _expiry = expiry;
+        _previousVersion = previousVersion;
+    }
     return self;
 }
 
@@ -514,10 +528,16 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
     icon.layer.cornerCurve = kCACornerCurveContinuous;
     icon.clipsToBounds = YES;
     UILabel *title = [UILabel new];
-    title.text = fr ? @"Rafraîchie par XSide" : @"Refreshed by XSide";
+    NSString *version = XSAppVersion();
+    BOOL updated = _previousVersion != nil && version != nil;
+    title.text = updated ? (fr ? @"Mise à jour par XSide" : @"Updated by XSide")
+                         : (fr ? @"Rafraîchie par XSide" : @"Refreshed by XSide");
     title.font = [UIFont systemFontOfSize:17 weight:UIFontWeightBold];
     UILabel *subtitle = [UILabel new];
-    subtitle.text = [NSString stringWithFormat:fr ? @"Valable jusqu'au %@" : @"Valid until %@", XSDate(_expiry)];
+    NSString *until = [NSString stringWithFormat:fr ? @"Valable jusqu'au %@" : @"Valid until %@", XSDate(_expiry)];
+    subtitle.text = updated
+        ? [NSString stringWithFormat:fr ? @"Version %@ (avant : %@)\n%@" : @"Version %@ (was %@)\n%@", version, _previousVersion, until]
+        : until;
     subtitle.font = [UIFont systemFontOfSize:14];
     subtitle.textColor = UIColor.secondaryLabelColor;
     subtitle.numberOfLines = 0;
@@ -594,12 +614,13 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
 // MARK: - Showing them
 
 /// `refreshed`: the app already knew an earlier signature (an install over it): the banner.
-static void XSShow(NSDate *expiry, BOOL refreshed, int attempt) {
+/// `previousVersion`: set when that install was another version of the app (an update).
+static void XSShow(NSDate *expiry, BOOL refreshed, NSString *previousVersion, int attempt) {
     UIWindowScene *scene = XSScene();
     if (!scene) {
         if (attempt + 1 >= XSMaxAttempts) return;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            XSShow(expiry, refreshed, attempt + 1);
+            XSShow(expiry, refreshed, previousVersion, attempt + 1);
         });
         return;
     }
@@ -608,7 +629,7 @@ static void XSShow(NSDate *expiry, BOOL refreshed, int attempt) {
     if (refreshed) {
         // Never key: the app keeps its keyboard and focus.
         window = [[XSPassthroughWindow alloc] initWithWindowScene:scene];
-        window.rootViewController = [[XSBannerController alloc] initWithExpiry:expiry];
+        window.rootViewController = [[XSBannerController alloc] initWithExpiry:expiry previousVersion:previousVersion];
     } else {
         for (UIWindow *w in scene.windows) if (w.isKeyWindow) XSPreviousKey = w;
         window = [[UIWindow alloc] initWithWindowScene:scene];
@@ -621,6 +642,8 @@ static void XSShow(NSDate *expiry, BOOL refreshed, int attempt) {
     if (refreshed) window.hidden = NO; else [window makeKeyAndVisible];
     // Announced once shown: a relaunch before tapping OK doesn't show it again.
     [NSUserDefaults.standardUserDefaults setObject:expiry forKey:XSAnnouncedKey];
+    NSString *version = XSAppVersion();
+    if (version) [NSUserDefaults.standardUserDefaults setObject:version forKey:XSAnnouncedVersionKey];
 }
 
 /// XSide's logo as a notification thumbnail. iOS moves the file into its own store, so a fresh
@@ -695,6 +718,10 @@ __attribute__((constructor)) static void XSideWelcomeInit(void) {
 
         id announced = [NSUserDefaults.standardUserDefaults objectForKey:XSAnnouncedKey];
         if ([announced isKindOfClass:NSDate.class] && [announced isEqualToDate:expiry]) return;
-        XSShow(expiry, [announced isKindOfClass:NSDate.class], 0);
+        // Known since 1.0.6: before, an update reads as a refresh.
+        id seen = [NSUserDefaults.standardUserDefaults objectForKey:XSAnnouncedVersionKey];
+        NSString *version = XSAppVersion();
+        NSString *previous = [seen isKindOfClass:NSString.class] && version && ![seen isEqualToString:version] ? seen : nil;
+        XSShow(expiry, [announced isKindOfClass:NSDate.class], previous, 0);
     }];
 }
