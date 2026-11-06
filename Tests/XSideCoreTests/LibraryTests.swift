@@ -81,8 +81,18 @@ struct LibraryTests {
         #expect(second.installations == [inst("dev1")])
         #expect(second.options.customBundleID == "com.custom.id")
         #expect(second.displayName == "Demo 2")
+        #expect(first.version == "1.0")
+        #expect(second.version == "2.0") // the new .ipa's version
         #expect(try String(contentsOf: root.appendingPathComponent(second.ipaPath), encoding: .utf8) == "two")
         #expect(await lib.records().count == 1)
+    }
+
+    /// Written before versions were kept: no version, nothing else lost.
+    @Test func recordsWithoutVersionStillLoad() throws {
+        let json = #"{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","originalBundleID":"com.x","ipaPath":"a.ipa","installations":[{"deviceID":"D","installedAt":0,"expiresAt":0}]}"#
+        let record = try JSONDecoder().decode(AppRecord.self, from: Data(json.utf8))
+        #expect(record.version == nil)
+        #expect(record.installations.first?.appVersion == nil)
     }
 
     @Test func upsertReplacesAndRemoveDeletes() async throws {

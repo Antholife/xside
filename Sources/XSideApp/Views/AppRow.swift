@@ -82,10 +82,21 @@ struct AppRow: View {
         HStack(spacing: 10) {
             AppIconView(icon: icon, isBusy: step != nil || isUninstalling, isPaused: isPaused)
             VStack(alignment: .leading, spacing: 2) {
-                Text(appName)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(isPaused ? .secondary : .primary)
-                    .lineLimit(1)
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Text(appName)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(isPaused ? .secondary : .primary)
+                        .lineLimit(1)
+                    // The version on that device (older state: the .ipa's).
+                    if let version = entry.installation.appVersion ?? entry.record.version {
+                        Text(version)
+                            .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .layoutPriority(-1)
+                    }
+                }
                 Text(subtitle(validity: validity, now: now))
                     .font(.system(size: 11))
                     .foregroundStyle(validity.isExpired && step == nil && !isPaused ? Color(nsColor: .systemRed) : .secondary)

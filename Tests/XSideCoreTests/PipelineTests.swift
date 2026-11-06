@@ -197,7 +197,7 @@ struct PipelineTests {
         #expect(result == Installation(deviceID: "dev-1", installedAt: fixedNow, expiresAt: expiry,
                                        lastAttempt: fixedNow, lastErrorKey: nil,
                                        signedBundleID: "com.example.demo.TEAM123456",
-                                       signingIdentitySHA1: "FAKESHA1", teamID: "TEAM123456"))
+                                       signingIdentitySHA1: "FAKESHA1", teamID: "TEAM123456", appVersion: "1.0"))
         let stored = try #require(await f.library.records().first?.installations.first)
         #expect(stored.deviceID == "dev-1")
         #expect(stored.expiresAt == expiry)
@@ -529,6 +529,17 @@ struct PipelineTests {
         }
         #expect(try #require(await f.library.records().first).installations.isEmpty)
         #expect(await f.log.total == 0) // no profile (no App ID spent), nothing reinstalled
+    }
+
+    /// The version actually on the device: the custom one when set, else the .ipa's.
+    @Test func installRecordsTheAppVersion() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let plain = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
+        #expect(plain.appVersion == "1.0")
+        let g = try await Fixture(); defer { g.cleanup() }
+        try await g.library.setOptions(InstallOptions(version: "9.9"), for: g.record.id)
+        let custom = try await g.pipeline().install(recordID: g.record.id, device: device(), env: env)
+        #expect(custom.appVersion == "9.9")
     }
 
     @Test func refreshWhenPresenceIsUnknownGoesOn() async throws {

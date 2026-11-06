@@ -240,7 +240,8 @@ final class AppModel {
         let style = Date.FormatStyle(date: .abbreviated, time: .shortened).locale(appLocale)
         return SettingsSection(title: L("settings.ios.title"), footer: L("settings.ios.footer"),
                                rows: [(L("settings.ios.validUntil"), profile.expirationDate.formatted(style)),
-                                      (L("settings.ios.signedOn"), profile.creationDate.formatted(style))])
+                                      // When it's signed, i.e. now (a cached profile may be older).
+                                      (L("settings.ios.signedOn"), Date().formatted(style))])
     }
 
     // MARK: - Startup

@@ -530,7 +530,10 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
     UILabel *title = [UILabel new];
     NSString *version = XSAppVersion();
     BOOL updated = _previousVersion != nil && version != nil;
-    title.text = updated ? (fr ? @"Mise à jour par XSide" : @"Updated by XSide")
+    // An older version installed over a newer one: said as such, not as an update.
+    BOOL older = updated && [version compare:_previousVersion options:NSNumericSearch] == NSOrderedAscending;
+    title.text = older ? (fr ? @"Version antérieure installée par XSide" : @"Older version installed by XSide")
+               : updated ? (fr ? @"Mise à jour par XSide" : @"Updated by XSide")
                          : (fr ? @"Rafraîchie par XSide" : @"Refreshed by XSide");
     title.font = [UIFont systemFontOfSize:17 weight:UIFontWeightBold];
     UILabel *subtitle = [UILabel new];

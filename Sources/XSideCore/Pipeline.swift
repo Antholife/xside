@@ -385,7 +385,8 @@ public actor SideloadPipeline {
             let installation = Installation(deviceID: device.id, installedAt: date,
                                             expiresAt: provisioned.profile.expirationDate,
                                             lastAttempt: date, lastErrorKey: nil, signedBundleID: bundleID,
-                                            signingIdentitySHA1: current.identitySHA1, teamID: current.teamID)
+                                            signingIdentitySHA1: current.identitySHA1, teamID: current.teamID,
+                                            appVersion: record.options.version ?? record.version)
             try await library.upsert(installation, for: recordID, requireExisting: previous != nil)
             Self.logger.notice("\(what): done, expires \(installation.expiresAt.formatted(.iso8601))")
             return installation

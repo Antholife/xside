@@ -17,10 +17,14 @@ public struct Installation: Codable, Equatable, Sendable {
     /// The user stopped XSide refreshing it there: the app stays on the device (and in the
     /// popover) until it expires. A new install of the app on that device clears it.
     public var refreshPaused: Bool
+    /// The app's version installed there (the custom one, else the .ipa's). nil in older state.
+    public var appVersion: String?
 
     public init(deviceID: String, installedAt: Date, expiresAt: Date,
                 lastAttempt: Date? = nil, lastErrorKey: String? = nil, signedBundleID: String? = nil,
-                signingIdentitySHA1: String? = nil, teamID: String? = nil, refreshPaused: Bool = false) {
+                signingIdentitySHA1: String? = nil, teamID: String? = nil, refreshPaused: Bool = false,
+                appVersion: String? = nil) {
+        self.appVersion = appVersion
         self.deviceID = deviceID
         self.installedAt = installedAt
         self.expiresAt = expiresAt
@@ -43,6 +47,7 @@ public struct Installation: Codable, Equatable, Sendable {
         signingIdentitySHA1 = try c.decodeIfPresent(String.self, forKey: .signingIdentitySHA1)
         teamID = try c.decodeIfPresent(String.self, forKey: .teamID)
         refreshPaused = (try? c.decodeIfPresent(Bool.self, forKey: .refreshPaused)) ?? false
+        appVersion = try? c.decodeIfPresent(String.self, forKey: .appVersion)
     }
 }
 
@@ -62,6 +67,8 @@ public struct AppRecord: Codable, Identifiable, Equatable, Sendable {
     /// counter date an App ID even after its cached profiles were replaced. nil in state written
     /// before this was tracked.
     public var appIDFirstUse: [String: Date]?
+    /// Version of the current .ipa (`CFBundleShortVersionString`). nil in older state.
+    public var version: String?
 
     public init(id: UUID, displayName: String, originalBundleID: String, signedBundleID: String,
                 ipaPath: String, options: InstallOptions, installations: [Installation], teamID: String,
@@ -94,6 +101,7 @@ public struct AppRecord: Codable, Identifiable, Equatable, Sendable {
         options = try c.decodeIfPresent(InstallOptions.self, forKey: .options) ?? InstallOptions()
         installations = try c.decodeIfPresent([Installation].self, forKey: .installations) ?? []
         appIDFirstUse = try c.decodeIfPresent([String: Date].self, forKey: .appIDFirstUse)
+        version = try? c.decodeIfPresent(String.self, forKey: .version)
     }
 }
 
@@ -216,15 +224,17 @@ public actor AppLibrary {
         }
 
         let previous = items
-        let record: AppRecord
+        var record: AppRecord
         if let index {
             items[index].displayName = info.name
             items[index].ipaPath = relative
+            items[index].version = info.version
             record = items[index]
         } else {
             record = AppRecord(id: id, displayName: info.name, originalBundleID: info.bundleID,
                                signedBundleID: signed, ipaPath: relative,
                                options: InstallOptions(), installations: [], teamID: teamID)
+            record.version = info.version
             items.append(record)
         }
         do { try save() } catch { items = previous; throw error }
