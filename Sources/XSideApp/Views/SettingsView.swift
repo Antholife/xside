@@ -410,10 +410,14 @@ private struct UpdatesSection: View {
             }
             .disabled(!automatic)
             .onChange(of: installsAutomatically) { _, on in updater.automaticallyInstalls = on }
-            Picker(L("updates.frequency"), selection: $frequency) {
+            Picker(selection: $frequency) {
+                Text(L("updates.frequency.hourly")).tag(Updater.Frequency.hourly)
                 Text(L("updates.frequency.daily")).tag(Updater.Frequency.daily)
                 Text(L("updates.frequency.weekly")).tag(Updater.Frequency.weekly)
                 Text(L("updates.frequency.monthly")).tag(Updater.Frequency.monthly)
+            } label: {
+                Text(L("updates.frequency"))
+                Text(L("updates.frequency.note"))
             }
             .disabled(!automatic)
             .onChange(of: frequency) { _, value in updater.frequency = value }

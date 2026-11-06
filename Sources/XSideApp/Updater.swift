@@ -12,6 +12,7 @@ final class Updater {
 
     /// How often the background check runs.
     enum Frequency: TimeInterval, CaseIterable, Identifiable {
+        case hourly = 3_600
         case daily = 86_400
         case weekly = 604_800
         case monthly = 2_592_000
@@ -100,6 +101,18 @@ final class Updater {
         }
         #endif
         Self.log.notice("updater started, automatic checks \(controller.updater.automaticallyChecksForUpdates), every \(Int(controller.updater.updateCheckInterval)) s, channel \(Self.channel.rawValue)")
+    }
+
+    /// Least time between two checks started by `checkSoon`.
+    private static let soonThrottle: TimeInterval = 10 * 60
+
+    /// A background check now, besides Sparkle's schedule: at launch and after an app refresh
+    /// (the Mac is awake and online then). Only with automatic checks on, at most every 10 min.
+    func checkSoon(_ reason: String) {
+        guard let updater = controller?.updater, updater.automaticallyChecksForUpdates, !updater.sessionInProgress else { return }
+        if let last = updater.lastUpdateCheckDate, Date().timeIntervalSince(last) < Self.soonThrottle { return }
+        Self.log.notice("checking for updates (\(reason))")
+        updater.checkForUpdatesInBackground()
     }
 
     var isAvailable: Bool {

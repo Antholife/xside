@@ -47,6 +47,8 @@ final class BackgroundEngine {
         Self.logger.notice("engine started (threshold \(Self.threshold / 86_400) d)")
         notifier.start()
         announceInstalledUpdate()
+        // At launch too, a little later (Sparkle starts its own schedule meanwhile).
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in self?.model.updater.checkSoon("launch") }
         model.updater.onAvailable = { [weak self] version in
             guard let self else { return }
             Task { await self.notifier.updateAvailable(version: version) }
@@ -434,6 +436,7 @@ final class BackgroundEngine {
             if updated != gate { gate = updated; persistGate() }
             notifySuccess(job, wasRefresh: wasRefresh)
             scheduleReminder(job)
+            if wasRefresh { model.updater.checkSoon("after a refresh") }
             return
         }
         // Cancelled by the user: nothing failed, nothing to report.

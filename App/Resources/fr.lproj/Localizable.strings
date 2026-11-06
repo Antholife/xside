@@ -430,6 +430,8 @@
 "updates.current" = "XSide %@ β";
 "updates.lastCheck" = "Dernière vérification %@";
 "updates.frequency" = "Vérifier";
+"updates.frequency.note" = "XSide vérifie aussi à son lancement et après chaque rafraîchissement d'app (au plus toutes les 10 minutes).";
+"updates.frequency.hourly" = "Toutes les heures";
 "updates.frequency.daily" = "Chaque jour";
 "updates.frequency.weekly" = "Chaque semaine";
 "updates.frequency.monthly" = "Chaque mois";
