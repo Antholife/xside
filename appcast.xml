@@ -5,6 +5,37 @@
     <link>https://github.com/Antholife/xside</link>
     <!-- items -->
     <item>
+      <title>XSide 1.0.6-beta</title>
+      <pubDate>Fri, 06 Nov 2026 14:58:58 +0100</pubDate>
+      <sparkle:version>189</sparkle:version>
+      <sparkle:shortVersionString>1.0.6</sparkle:shortVersionString>
+      <sparkle:channel>beta</sparkle:channel>
+      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<h3>Added</h3>
+<ul>
+<li><b>Notifications per device</b> (the device's … menu in the panel): turn them off for an iPhone you manage for someone else; its apps are still refreshed, without any notification on this Mac (the reminder the app shows on the phone itself stays).</li>
+<li><code>xside pause [2h|30m|1d]</code> and <code>xside resume</code> pause and resume automatic refreshes from the Terminal; <code>xside status</code> says while they're paused.</li>
+<li>Updates can be checked every hour; XSide also checks when it starts and after each app refresh (at most every 10 minutes).</li>
+<li>The install window warns when an app wasn't built for the device's iOS (it may open in compatibility mode, e.g. a YouTube built with the iOS 26 SDK on an iOS 27 iPhone), and when it's older than the version already installed.</li>
+<li>Each app in the panel shows its installed version.</li>
+<li>Installing another version of an app over the one on the device: its card says "Updated by XSide" (or "Older version installed by XSide"), with the new and the previous version, instead of "Refreshed by XSide".</li>
+</ul>
+<h3>Changed</h3>
+<ul>
+<li>The XSide sheet in apps follows the reader's text size (Dynamic Type) and scrolls when it doesn't fit (landscape, large text).</li>
+<li>"Last refreshed" in the app's iOS Settings section is the time it was signed, not the profile's creation.</li>
+</ul>
+<h3>Fixed</h3>
+<ul>
+<li><code>xside pause</code> refuses a duration past a year instead of crashing on a huge number, and a garbled pause request is refused instead of pausing until resumed.</li>
+<li><code>xside status</code> counts the next refresh with the chosen days before expiry (it assumed 2), says when refreshes are paused, and <code>--json</code> has <code>pausedUntil</code>.</li>
+<li>Version checks read the leading digits of each part ("1.10a" is newer than "1.9", "21.37.04" equals "21.37.4"), and the "older version" warning only compares the same copy of an app.</li>
+<li>An update found again after "Remind me later" no longer notifies more than once a day.</li>
+</ul>]]></description>
+      <sparkle:fullReleaseNotesLink>https://github.com/Antholife/xside/releases</sparkle:fullReleaseNotesLink>
+      <enclosure url="https://github.com/Antholife/xside/releases/download/v1.0.6-beta/XSide-1.0.6-beta.zip" sparkle:edSignature="4oqqNWezeqT30X8YoyMNZR8dh0LAs9VcN+zEic/zZDeWcAzrdTRIduMVuxcVJ+SlZZzO2JuNRyY91Z+KE71PBg==" length="7153830" type="application/octet-stream"/>
+    </item>
+    <item>
       <title>XSide 1.0.5-beta</title>
       <pubDate>Thu, 05 Nov 2026 15:42:33 +0100</pubDate>
       <sparkle:version>179</sparkle:version>
