@@ -12,6 +12,10 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 - Each app in the panel shows its installed version.
 - Installing another version of an app over the one on the device: its card says "Updated by XSide" (or "Older version installed by XSide"), with the new and the previous version, instead of "Refreshed by XSide".
 
+### Changed
+- The XSide sheet in apps follows the reader's text size (Dynamic Type) and scrolls when it doesn't fit (landscape, large text).
+- "Last refreshed" in the app's iOS Settings section is the time it was signed, not the profile's creation.
+
 ## [1.0.5-beta] - 2026-11-05
 
 ### Added

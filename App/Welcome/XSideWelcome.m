@@ -151,6 +151,12 @@ static UIColor *XSPink(void) { return [UIColor colorWithRed:0xC9 / 255.0 green:0
 }
 @end
 
+/// A system font that follows the reader's text size (Dynamic Type), up to 1.6 times `size`.
+static UIFont *XSScaledFont(CGFloat size, UIFontWeight weight) {
+    return [UIFontMetrics.defaultMetrics scaledFontForFont:[UIFont systemFontOfSize:size weight:weight]
+                                          maximumPointSize:size * 1.6];
+}
+
 static NSString *XSDate(NSDate *date) {
     NSDateFormatter *formatter = [NSDateFormatter new];
     formatter.locale = NSLocale.currentLocale;
@@ -224,7 +230,7 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
 - (UILabel *)label:(NSString *)text size:(CGFloat)size weight:(UIFontWeight)weight color:(UIColor *)color {
     UILabel *l = [UILabel new];
     l.text = text;
-    l.font = [UIFont systemFontOfSize:size weight:weight];
+    l.font = XSScaledFont(size, weight);
     l.textColor = color;
     l.numberOfLines = 0;
     l.adjustsFontForContentSizeCategory = YES;
@@ -275,8 +281,8 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
                           : [NSString stringWithFormat:[self t:@"Réglages > %@" en:@"Settings > %@"], XSAppName()];
     NSString *text = [NSString stringWithFormat:[self t:@"Ces infos restent dans %@" en:@"These details stay in %@"], path];
     NSMutableAttributedString *styled = [[NSMutableAttributedString alloc] initWithString:text attributes:@{
-        NSFontAttributeName: [UIFont systemFontOfSize:13], NSForegroundColorAttributeName: UIColor.secondaryLabelColor}];
-    [styled addAttributes:@{NSFontAttributeName: [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold],
+        NSFontAttributeName: XSScaledFont(13, UIFontWeightRegular), NSForegroundColorAttributeName: UIColor.secondaryLabelColor}];
+    [styled addAttributes:@{NSFontAttributeName: XSScaledFont(13, UIFontWeightSemibold),
                             NSForegroundColorAttributeName: UIColor.labelColor}
                     range:[text rangeOfString:path]];
     UILabel *label = [UILabel new];
@@ -380,12 +386,14 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
     XSGradientButton *ok = [XSGradientButton buttonWithType:UIButtonTypeCustom];
     [ok setTitle:@"OK" forState:UIControlStateNormal];
     [ok setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
-    ok.titleLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightSemibold];
+    ok.titleLabel.font = XSScaledFont(16, UIFontWeightSemibold);
+    ok.titleLabel.adjustsFontForContentSizeCategory = YES;
     [ok addTarget:self action:@selector(close) forControlEvents:UIControlEventTouchUpInside];
     UIButton *github = [UIButton buttonWithType:UIButtonTypeSystem];
     [github setTitle:[self t:@"XSide sur GitHub" en:@"XSide on GitHub"] forState:UIControlStateNormal];
     github.tintColor = XSViolet();
-    github.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
+    github.titleLabel.font = XSScaledFont(15, UIFontWeightSemibold);
+    github.titleLabel.adjustsFontForContentSizeCategory = YES;
     [github addTarget:self action:@selector(openGitHub) forControlEvents:UIControlEventTouchUpInside];
 
     // Only when iOS will ask on OK (see `close`): its prompt can't say why, so this card does.
@@ -408,8 +416,16 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
     [stack setCustomSpacing:14 afterView:notice];
     [stack setCustomSpacing:4 afterView:ok];
 
+    // The content scrolls when it doesn't fit (landscape, large text); otherwise the sheet is its height.
+    UIScrollView *scroll = [UIScrollView new];
+    scroll.alwaysBounceVertical = NO;
+    scroll.showsHorizontalScrollIndicator = NO;
     for (UIView *v in @[_dim, _sheet]) { v.translatesAutoresizingMaskIntoConstraints = NO; [self.view addSubview:v]; }
-    for (UIView *v in @[grab, stack]) { v.translatesAutoresizingMaskIntoConstraints = NO; [_sheet addSubview:v]; }
+    for (UIView *v in @[grab, scroll]) { v.translatesAutoresizingMaskIntoConstraints = NO; [_sheet addSubview:v]; }
+    stack.translatesAutoresizingMaskIntoConstraints = NO;
+    [scroll addSubview:stack];
+    NSLayoutConstraint *fitsContent = [scroll.heightAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.heightAnchor];
+    fitsContent.priority = UILayoutPriorityDefaultHigh;
     NSLayoutConstraint *fullWidth = [_sheet.widthAnchor constraintEqualToAnchor:self.view.widthAnchor];
     fullWidth.priority = UILayoutPriorityDefaultHigh; // capped on iPad
     [NSLayoutConstraint activateConstraints:@[
@@ -425,10 +441,17 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
         [grab.centerXAnchor constraintEqualToAnchor:_sheet.centerXAnchor],
         [grab.widthAnchor constraintEqualToConstant:38],
         [grab.heightAnchor constraintEqualToConstant:5],
-        [stack.topAnchor constraintEqualToAnchor:grab.bottomAnchor constant:18],
-        [stack.leadingAnchor constraintEqualToAnchor:_sheet.leadingAnchor constant:20],
-        [stack.trailingAnchor constraintEqualToAnchor:_sheet.trailingAnchor constant:-20],
-        [stack.bottomAnchor constraintEqualToAnchor:_sheet.safeAreaLayoutGuide.bottomAnchor constant:-10],
+        [_sheet.topAnchor constraintGreaterThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:12],
+        [scroll.topAnchor constraintEqualToAnchor:grab.bottomAnchor constant:18],
+        [scroll.leadingAnchor constraintEqualToAnchor:_sheet.leadingAnchor constant:20],
+        [scroll.trailingAnchor constraintEqualToAnchor:_sheet.trailingAnchor constant:-20],
+        [scroll.bottomAnchor constraintEqualToAnchor:_sheet.safeAreaLayoutGuide.bottomAnchor constant:-10],
+        fitsContent,
+        [stack.topAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.topAnchor],
+        [stack.bottomAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.bottomAnchor],
+        [stack.leadingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.leadingAnchor],
+        [stack.trailingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.trailingAnchor],
+        [stack.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor],
         [icon.widthAnchor constraintEqualToConstant:54],
         [icon.heightAnchor constraintEqualToConstant:54],
         [ok.heightAnchor constraintEqualToConstant:50],
@@ -535,13 +558,16 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
     title.text = older ? (fr ? @"Version antérieure installée par XSide" : @"Older version installed by XSide")
                : updated ? (fr ? @"Mise à jour par XSide" : @"Updated by XSide")
                          : (fr ? @"Rafraîchie par XSide" : @"Refreshed by XSide");
-    title.font = [UIFont systemFontOfSize:17 weight:UIFontWeightBold];
+    title.font = XSScaledFont(17, UIFontWeightBold);
+    title.adjustsFontForContentSizeCategory = YES;
+    title.numberOfLines = 0;
     UILabel *subtitle = [UILabel new];
     NSString *until = [NSString stringWithFormat:fr ? @"Valable jusqu'au %@" : @"Valid until %@", XSDate(_expiry)];
     subtitle.text = updated
         ? [NSString stringWithFormat:fr ? @"Version %@ (avant : %@)\n%@" : @"Version %@ (was %@)\n%@", version, _previousVersion, until]
         : until;
-    subtitle.font = [UIFont systemFontOfSize:14];
+    subtitle.font = XSScaledFont(14, UIFontWeightRegular);
+    subtitle.adjustsFontForContentSizeCategory = YES;
     subtitle.textColor = UIColor.secondaryLabelColor;
     subtitle.numberOfLines = 0;
     UIStackView *titles = [[UIStackView alloc] initWithArrangedSubviews:@[title, subtitle]];
@@ -554,7 +580,8 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
     XSGradientButton *ok = [XSGradientButton buttonWithType:UIButtonTypeCustom];
     [ok setTitle:@"OK" forState:UIControlStateNormal];
     [ok setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
-    ok.titleLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightSemibold];
+    ok.titleLabel.font = XSScaledFont(16, UIFontWeightSemibold);
+    ok.titleLabel.adjustsFontForContentSizeCategory = YES;
     [ok addTarget:self action:@selector(close) forControlEvents:UIControlEventTouchUpInside];
 
     UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[head, ok]];
