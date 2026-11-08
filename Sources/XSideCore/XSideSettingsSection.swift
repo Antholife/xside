@@ -1,13 +1,15 @@
 import Foundation
 
 extension SettingsSection {
-    /// The "Réglages XSide" section (spec §2 and its corrections), with fr and en texts. Dates and
+    /// The "Réglages XSide" section (spec §2 and its corrections; on its own page, opened from one
+    /// row of the app's page, see `SettingsBundle`), with fr and en texts. Dates and
     /// other values come formatted (Mac locale): the dylib rewrites them at each launch in the
     /// device's. The toggles and choices start at `inApp`'s values (the installation's), else the
     /// defaults. Row keys, read and written by the dylib in the app's defaults under
     /// `io.github.xside.settings.<key>`:
     /// validUntil, refreshedOn, version, installedOn, connection, lastRefresh (read-only text);
-    /// level (all|essentials|none), showValidity, alertLate, refreshCard, reminder (booleans),
+    /// showValidity, alertLate, refreshCard, reminder (booleans; "Messages XSide" is derived from
+    /// them, see `InAppSettings.derivedLevel`),
     /// language (automatic|fr|en), autoRefresh (boolean).
     public static func xside(validUntil: String, refreshedOn: String, version: String, installedOn: String,
                              connection: String = "—", lastRefresh: String = "—",
@@ -15,11 +17,9 @@ extension SettingsSection {
         let s = inApp ?? InAppSettings.defaults(reminder: true, at: Date())
         let p = SettingsBundle.keyPrefix
         func title(_ name: String) -> String { p + "title." + name }
-        func choice(_ name: String, _ values: [String], _ current: String, detailed: Bool = false) -> Row {
-            let short = values.map { p + "\(name).\($0)" }
-            // Detailed: the list explains each choice ("<name>.<value>.detail"), the row shows the short name.
-            return .choice(titleKey: title(name), key: name, titleKeys: detailed ? short.map { $0 + ".detail" } : short,
-                           values: values, defaultValue: current, shortTitleKeys: detailed ? short : nil)
+        func choice(_ name: String, _ values: [String], _ current: String) -> Row {
+            .choice(titleKey: title(name), key: name, titleKeys: values.map { p + "\(name).\($0)" },
+                    values: values, defaultValue: current)
         }
         let rows: [Row] = [
             .value(titleKey: title("validUntil"), key: "validUntil", defaultValue: validUntil),
@@ -28,7 +28,6 @@ extension SettingsSection {
             .value(titleKey: title("installedOn"), key: "installedOn", defaultValue: installedOn),
             .value(titleKey: title("connection"), key: "connection", defaultValue: connection),
             .value(titleKey: title("lastRefresh"), key: "lastRefresh", defaultValue: lastRefresh),
-            choice("level", ["all", "essentials", "none"], s.level.value.rawValue, detailed: true),
             .toggle(titleKey: title("showValidity"), key: "showValidity", defaultValue: s.showValidity.value),
             .toggle(titleKey: title("alertLate"), key: "alertLate", defaultValue: s.alertLate.value),
             .toggle(titleKey: title("refreshCard"), key: "refreshCard", defaultValue: s.refreshCard.value),
@@ -49,8 +48,6 @@ extension SettingsSection {
             ("title.validUntil", "Valable jusqu'au"), ("title.refreshedOn", "Rafraîchie le"),
             ("title.version", "Version"), ("title.installedOn", "Installée le"),
             ("title.connection", "Connexion au Mac"), ("title.lastRefresh", "Dernier rafraîchissement"),
-            ("title.level", "Messages XSide"),
-            ("level.all", "Tous"), ("level.essentials", "Essentiels"), ("level.none", "Aucun"),
             ("title.showValidity", "Afficher la validité à l'ouverture"),
             ("title.alertLate", "Alerter si pas rafraîchie"),
             ("title.refreshCard", "Carte après un rafraîchissement"),
@@ -58,9 +55,6 @@ extension SettingsSection {
             ("title.autoRefresh", "Rafraîchissement automatique"),
             ("title.language", "Langue des messages XSide"),
             ("language.automatic", "Automatique"), ("language.fr", "Français"), ("language.en", "English"),
-            ("level.all.detail", "Tous les messages"),
-            ("level.essentials.detail", "Essentiels : seulement en cas de problème"),
-            ("level.none.detail", "Aucun : rien dans l'app"),
             // iOS shows the footer as plain grey text: a list made of lines.
             ("footer", "✦ Installée avec XSide\n"
                 + "• Rafraîchie automatiquement depuis ton Mac\n"
@@ -74,8 +68,6 @@ extension SettingsSection {
             ("title.validUntil", "Valid until"), ("title.refreshedOn", "Last refreshed"),
             ("title.version", "Version"), ("title.installedOn", "Installed on"),
             ("title.connection", "Connection to the Mac"), ("title.lastRefresh", "Last refresh"),
-            ("title.level", "XSide messages"),
-            ("level.all", "All"), ("level.essentials", "Essentials"), ("level.none", "None"),
             ("title.showValidity", "Show validity when opening"),
             ("title.alertLate", "Alert if not refreshed"),
             ("title.refreshCard", "Card after a refresh"),
@@ -83,9 +75,6 @@ extension SettingsSection {
             ("title.autoRefresh", "Automatic refresh"),
             ("title.language", "XSide messages language"),
             ("language.automatic", "Automatic"), ("language.fr", "Français"), ("language.en", "English"),
-            ("level.all.detail", "All messages"),
-            ("level.essentials.detail", "Essentials: only when something's wrong"),
-            ("level.none.detail", "None: nothing in the app"),
             ("footer", "✦ Installed with XSide\n"
                 + "• Refreshed automatically from your Mac\n"
                 + "• Your choices apply on this iPhone right away\n"

@@ -129,10 +129,8 @@ static void XSHideWindow(void) {
     UIImageView *gear = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"gearshape.fill"]];
     gear.tintColor = XSViolet();
     gear.contentMode = UIViewContentModeScaleAspectFit;
-    // iOS 18 moved apps' pages under Settings > Apps.
-    BOOL apps = [NSProcessInfo.processInfo isOperatingSystemAtLeastVersion:(NSOperatingSystemVersion){18, 0, 0}];
-    NSString *path = apps ? [NSString stringWithFormat:[self t:@"Réglages > Apps > %@" en:@"Settings > Apps > %@"], XSAppName()]
-                          : [NSString stringWithFormat:[self t:@"Réglages > %@" en:@"Settings > %@"], XSAppName()];
+    // XSide's page sits under the app's own (one row there opens it).
+    NSString *path = [XSSettingsPath() stringByAppendingString:[self t:@" > Réglages XSide" en:@" > XSide Settings"]];
     NSString *text = [NSString stringWithFormat:[self t:@"Ces infos restent dans %@" en:@"These details stay in %@"], path];
     NSMutableAttributedString *styled = [[NSMutableAttributedString alloc] initWithString:text attributes:@{
         NSFontAttributeName: XSScaledFont(13, UIFontWeightRegular), NSForegroundColorAttributeName: UIColor.secondaryLabelColor}];

@@ -9,11 +9,12 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-/// level, showValidity, alertLate, refreshCard, reminder, language, autoRefresh.
+/// showValidity, alertLate, refreshCard, reminder, language, autoRefresh. (No "level": it is
+/// derived from the four switches; a stored one from an earlier build is ignored.)
 NSArray<NSString *> *XSSettingFields(void);
 
 /// The Mac's defaults for an installation (InAppSettings.defaults): everything on (the reminder
-/// as given), level "all", language "automatic"; dated `at`, changed by the Mac.
+/// as given), language "automatic"; dated `at`, changed by the Mac.
 NSDictionary *XSSettingsDefaults(BOOL reminder, NSDate *at);
 
 /// Whether `value` is valid for `field` (a Bool NSNumber, or one of the field's strings).
@@ -36,8 +37,12 @@ NSDictionary *XSSettingsSetting(NSDictionary *s, NSString *field, id value, NSDa
 id _Nullable XSSettingValue(NSDictionary *s, NSString *field);
 BOOL XSSettingBool(NSDictionary *s, NSString *field);
 
-// MARK: Effective visibility: the port of InAppSettings' helpers (spec §1 matrix, the
-// Essentials ceiling). Tested on the Swift side (InAppSettingsTests.visibilityMatrix) and here.
+// MARK: Level and visibility: the port of InAppSettings' helpers (spec §1 matrix, each switch
+// for itself). Tested on the Swift side (InAppSettingsTests) and here.
+
+/// "all" (four switches on), "essentials" (only alertLate and reminder), "none" (all off) or
+/// "custom": InAppSettings.derivedLevel.
+NSString *XSDerivedLevel(NSDictionary *s);
 
 BOOL XSShowsLatePill(NSDictionary *s, BOOL late);
 BOOL XSShowsValidityPill(NSDictionary *s, BOOL late);
@@ -50,7 +55,7 @@ BOOL XSIsLate(NSTimeInterval timeLeft, NSInteger thresholdHours);
 
 // MARK: Channel JSON (dates as integer epoch milliseconds, see Sources/XSideCore/Channel.swift)
 
-/// The settings as JSON objects ({"level":{"changedAt":ms,"changedBy":"mac","value":"all"},…}).
+/// The settings as JSON objects ({"alertLate":{"changedAt":ms,"changedBy":"mac","value":true},…}).
 NSDictionary *XSSettingsJSONObject(NSDictionary *s);
 /// Settings from a channel JSON object; nil unless every field is present and valid.
 NSDictionary *_Nullable XSSettingsFromJSONObject(id _Nullable json);

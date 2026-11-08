@@ -270,7 +270,7 @@ XSPillContent *XSPendingPillContent(NSString *key) {
 
 void XSShowPendingPill(void) {
     if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return; // next launch
-    if ([XSSettingValue(XSCurrentSettings(), @"level") isEqual:@"none"]) return;
+    if ([XSDerivedLevel(XSCurrentSettings()) isEqual:@"none"]) return;
     NSString *key = XSTakePendingFailure();
     if (key) XSShowPill(XSPendingPillContent(key));
 }
@@ -278,10 +278,11 @@ void XSShowPendingPill(void) {
 static NSString *const XSNotificationsExplainedKey = @"io.github.xside.welcome.notificationsExplained";
 
 void XSOfferNotificationsIfNeeded(void (^otherwise)(void)) {
-    // Under "Essentiels" the install sheet (which asks today) never shows: once, a pill says why
-    // and asks on OK. Never under "Aucun", never twice, never when iOS already has an answer.
+    // The install sheet asks when it closes, but only once and only if the reminder was on then:
+    // with the reminder on and iOS never asked, once, a pill says why and asks on OK. Never with
+    // the reminder off, never twice, never when iOS already has an answer.
     NSDictionary *s = XSCurrentSettings();
-    BOOL wanted = [XSSettingValue(s, @"level") isEqual:@"essentials"] && XSSchedulesReminder(s)
+    BOOL wanted = XSSchedulesReminder(s)
         && ![XSDefaults() boolForKey:XSNotificationsExplainedKey];
     if (!wanted) { otherwise(); return; }
     [XSCenter() getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings *settings) {
@@ -328,7 +329,7 @@ XSPillContent *XSLaunchPillContent(NSDate *expiry) {
     // A refresh asked from this phone failed, or was never heard of, while the app was away (its
     // notification may have gone unseen). It answers the person's own request: only "Aucun" hides it.
     NSString *failure = XSTakePendingFailure();
-    if (failure && ![XSSettingValue(s, @"level") isEqual:@"none"]) return XSPendingPillContent(failure);
+    if (failure && ![XSDerivedLevel(s) isEqual:@"none"]) return XSPendingPillContent(failure);
 
     if (!XSSettingBool(s, @"autoRefresh")) {
         // Spec "Late pill when paused": never "XSide couldn't refresh it", under the same switches.

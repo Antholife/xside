@@ -49,6 +49,9 @@ static void XSStore(NSDictionary *settings) {
         NSString *key = [XSRowPrefix stringByAppendingString:f];
         if (![[d objectForKey:key] isEqual:value]) [d setObject:value forKey:key];
     }
+    // "Messages XSide" of an earlier 1.1 build: now derived from the switches, its row is gone.
+    NSString *oldLevel = [XSRowPrefix stringByAppendingString:@"level"];
+    if ([d objectForKey:oldLevel]) [d removeObjectForKey:oldLevel];
     if (![[d objectForKey:XSStoredKey] isEqual:settings]) [d setObject:settings forKey:XSStoredKey];
     if (![[d objectForKey:XSShadowKey] isEqual:shadow]) [d setObject:shadow forKey:XSShadowKey];
     XSCached = settings;

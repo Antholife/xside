@@ -118,9 +118,13 @@ private func plist(_ app: URL) throws -> [String: Any] {
         let data = try Data(contentsOf: app.appendingPathComponent("Settings.bundle/Root.plist"))
         let root = try #require(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
         let items = try #require(root["PreferenceSpecifiers"] as? [[String: Any]])
-        #expect(items.map { $0["Title"] as? String } == [nil, "v"]) // XSide's own page: iOS titles it
+        #expect(items.map { $0["Title"] as? String } == [nil, "t"]) // one row opening XSide's page
+        let childData = try Data(contentsOf: app.appendingPathComponent("Settings.bundle/XSide.plist"))
+        let child = try #require(try PropertyListSerialization.propertyList(from: childData, format: nil) as? [String: Any])
+        let rows = try #require(child["PreferenceSpecifiers"] as? [[String: Any]])
+        #expect(rows.map { $0["Title"] as? String } == [nil, "v"])
 
-        #expect(items[1]["DefaultValue"] as? String == "U-1") // built from the profile it's signed with
+        #expect(rows[1]["DefaultValue"] as? String == "U-1") // built from the profile it's signed with
     }
 
     /// "YouTube +" as CFBundleName: iOS refuses the app notifications. The shown name stays.
@@ -173,8 +177,9 @@ private func plist(_ app: URL) throws -> [String: Any] {
         #expect(welcome["channelSecret"] as? Data == Data(repeating: 7, count: 32))
         #expect(welcome["installedAt"] as? Date == Self.when.addingTimeInterval(-86_400))
         let settings = try #require(welcome["settings"] as? [String: [String: Any]])
-        #expect(Set(settings.keys) == ["level", "showValidity", "alertLate", "refreshCard", "reminder", "language", "autoRefresh"])
-        #expect(settings["level"]?["value"] as? String == "all")
+        // No "level": it is derived from the four switches.
+        #expect(Set(settings.keys) == ["showValidity", "alertLate", "refreshCard", "reminder", "language", "autoRefresh"])
+        #expect(settings["alertLate"]?["value"] as? Bool == true)
         #expect(settings["reminder"]?["value"] as? Bool == false)
         #expect(settings["showValidity"]?["changedBy"] as? String == "mac")
         #expect(settings["language"]?["value"] as? String == "fr")
@@ -207,7 +212,7 @@ private func plist(_ app: URL) throws -> [String: Any] {
         #expect(welcome["installedAt"] as? Date == Self.when.addingTimeInterval(-500))
         #expect(welcome["signedAt"] as? Date == Self.when.addingTimeInterval(30)) // "Rafraîchie le" on the phone
         #expect(welcome["reminder"] as? Int == 0)
-        let data = try Data(contentsOf: app.appendingPathComponent("Settings.bundle/Root.plist"))
+        let data = try Data(contentsOf: app.appendingPathComponent("Settings.bundle/XSide.plist"))
         let root = try #require(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
         let items = try #require(root["PreferenceSpecifiers"] as? [[String: Any]])
         #expect(items.last?["DefaultValue"] as? String == "4.2")

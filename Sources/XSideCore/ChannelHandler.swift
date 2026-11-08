@@ -99,7 +99,7 @@ public enum ChannelHandler {
         func c<V>(_ f: Field<V>) -> Field<V> {
             f.changedAt > limit ? Field(value: f.value, changedAt: now, changedBy: f.changedBy) : f
         }
-        return InAppSettings(level: c(s.level), showValidity: c(s.showValidity), alertLate: c(s.alertLate),
+        return InAppSettings(showValidity: c(s.showValidity), alertLate: c(s.alertLate),
                              refreshCard: c(s.refreshCard), reminder: c(s.reminder), language: c(s.language),
                              autoRefresh: c(s.autoRefresh))
     }

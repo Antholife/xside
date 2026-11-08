@@ -4,11 +4,10 @@ import Foundation
 /// Objective-C dylib reads these exact keys:
 ///
 /// - `thresholdHours` (Int), `reminderLeadHours` (Int)
-/// - `reminder` (Int 0/1): legacy switch of the current dylib, kept equal to `settings.reminder`
-///   (and 0 under "Aucun")
-/// - `settings` (dictionary): `level`, `showValidity`, `alertLate`, `refreshCard`, `reminder`,
+/// - `reminder` (Int 0/1): legacy switch of the 1.0.x dylib, kept equal to `settings.reminder`
+/// - `settings` (dictionary): `showValidity`, `alertLate`, `refreshCard`, `reminder`,
 ///   `language`, `autoRefresh`; each one a dictionary `{value, changedAt, changedBy}` where
-///   `value` is a string (`level`: all|essentials|none, `language`: automatic|fr|en) or a Bool,
+///   `value` is a string (`language`: automatic|fr|en) or a Bool,
 ///   `changedAt` a plist date and `changedBy` "mac" or "device"
 /// - `installationID` (String), `channelSecret` (plist data, 32 bytes): the channel credentials
 /// - `installedAt` (plist date): first install of the app on this device
@@ -47,7 +46,6 @@ public struct WelcomePayload: Sendable, Equatable {
             "reminderLeadHours": reminderLeadHours,
             "reminder": s.schedulesReminder ? 1 : 0,
             "settings": [
-                "level": field(s.level, s.level.value.rawValue),
                 "showValidity": field(s.showValidity, s.showValidity.value),
                 "alertLate": field(s.alertLate, s.alertLate.value),
                 "refreshCard": field(s.refreshCard, s.refreshCard.value),

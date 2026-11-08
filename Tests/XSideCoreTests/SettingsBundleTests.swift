@@ -34,21 +34,44 @@ private func specifiers(_ app: URL) throws -> [[String: Any]] {
     try #require(try root(app)["PreferenceSpecifiers"] as? [[String: Any]])
 }
 
+/// XSide's own page, opened from the "Réglages XSide" row.
+private func child(_ app: URL) throws -> [String: Any] {
+    let data = try Data(contentsOf: app.appendingPathComponent("Settings.bundle/XSide.plist"))
+    return try #require(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+}
+
+private func childItems(_ app: URL) throws -> [[String: Any]] {
+    try #require(try child(app)["PreferenceSpecifiers"] as? [[String: Any]])
+}
+
 struct SettingsBundleTests {
+    /// The app's page gets one row, "Réglages XSide", opening XSide's own page with the section.
     @Test func createsThePageWhenTheAppHasNone() throws {
         let app = try makeApp()
         try SettingsBundle.add(section, to: app)
         let items = try specifiers(app)
-        #expect(items.count == 3)
+        #expect(items.count == 2)
         #expect(items[0]["Type"] as? String == "PSGroupSpecifier")
-        // iOS already heads the page "<App> Settings": a second title would stack right under it.
-        #expect(items[0]["Title"] == nil)
-        #expect(items[0]["FooterText"] as? String == "io.github.xside.settings.footer")
-        #expect(items[1]["Type"] as? String == "PSTitleValueSpecifier")
-        #expect(items[1]["Title"] as? String == "io.github.xside.settings.title.validUntil")
-        #expect(items[1]["DefaultValue"] as? String == "jeu. 12 nov.")
+        // iOS already heads the page "<App> Settings": no second title, no footer here.
+        #expect(items[0]["Title"] == nil && items[0]["FooterText"] == nil)
+        #expect(items[1]["Type"] as? String == "PSChildPaneSpecifier")
+        #expect(items[1]["File"] as? String == "XSide")
+        #expect(items[1]["Title"] as? String == "io.github.xside.settings.title.group")
         #expect((items[1]["Key"] as? String)?.hasPrefix("io.github.xside.settings.") == true)
-        #expect(items[2]["Title"] as? String == "io.github.xside.settings.title.refreshedOn")
+        let page = try child(app)
+        #expect(page["Title"] as? String == "io.github.xside.settings.title.group")
+        #expect(page["StringsTable"] as? String == "XSide")
+        #expect(try root(app)["StringsTable"] as? String == "XSide")
+        let rows = try childItems(app)
+        #expect(rows.count == 3)
+        #expect(rows[0]["Type"] as? String == "PSGroupSpecifier")
+        #expect(rows[0]["Title"] == nil)
+        #expect(rows[0]["FooterText"] as? String == "io.github.xside.settings.footer")
+        #expect(rows[1]["Type"] as? String == "PSTitleValueSpecifier")
+        #expect(rows[1]["Title"] as? String == "io.github.xside.settings.title.validUntil")
+        #expect(rows[1]["DefaultValue"] as? String == "jeu. 12 nov.")
+        #expect((rows[1]["Key"] as? String)?.hasPrefix("io.github.xside.settings.") == true)
+        #expect(rows[2]["Title"] as? String == "io.github.xside.settings.title.refreshedOn")
     }
 
     @Test func appendsToTheAppsOwnPage() throws {
@@ -62,36 +85,41 @@ struct SettingsBundleTests {
             .write(to: bundle.appendingPathComponent("Root.plist"))
         try SettingsBundle.add(section, to: app)
         let items = try specifiers(app)
-        #expect(items.count == 4)
+        #expect(items.count == 3)
         #expect(items[0]["Key"] as? String == "dark")
-        // After the app's own settings, the title separates XSide's.
-        #expect(items[1]["Title"] as? String == "io.github.xside.settings.title.group")
+        #expect(items[1]["Type"] as? String == "PSGroupSpecifier")
+        #expect(items[2]["Type"] as? String == "PSChildPaneSpecifier")
         #expect(try root(app)["StringsTable"] as? String == "Root")
-    }
-
-    /// A page that only holds XSide's section (from an earlier signing) counts as XSide's own.
-    @Test func aPageWithOnlyXSidesSectionHasNoGroupTitle() throws {
-        let app = try makeApp()
-        try SettingsBundle.add(section, to: app)
-        try SettingsBundle.add(section, to: app)
-        #expect(try specifiers(app)[0]["Title"] == nil)
-        let empty = try makeApp()
-        let bundle = empty.appendingPathComponent("Settings.bundle")
-        try FileManager.default.createDirectory(at: bundle, withIntermediateDirectories: true)
-        try PropertyListSerialization.data(fromPropertyList: ["PreferenceSpecifiers": [[String: Any]]()], format: .xml, options: 0)
-            .write(to: bundle.appendingPathComponent("Root.plist"))
-        try SettingsBundle.add(section, to: empty)
-        #expect(try specifiers(empty)[0]["Title"] == nil)
+        #expect(try child(app)["StringsTable"] as? String == "Root") // the same table as the page
+        #expect(try childItems(app).count == 3)
     }
 
     @Test func addingTwiceReplacesTheSection() throws {
         let app = try makeApp()
         try SettingsBundle.add(section, to: app)
         try SettingsBundle.add(SettingsSection(titleKey: "T", footerKey: nil, rows: [.value(titleKey: "V", key: "validUntil", defaultValue: "ven. 19 nov.")], strings: [:]), to: app)
-        let items = try specifiers(app)
-        #expect(items.count == 2)
-        #expect(items[1]["DefaultValue"] as? String == "ven. 19 nov.")
-        #expect(items[0]["FooterText"] == nil)
+        #expect(try specifiers(app).count == 2)
+        #expect(try specifiers(app)[1]["Title"] as? String == "T")
+        let rows = try childItems(app)
+        #expect(rows.count == 2)
+        #expect(rows[1]["DefaultValue"] as? String == "ven. 19 nov.")
+        #expect(rows[0]["FooterText"] == nil)
+    }
+
+    /// XSide's page file is checked like the page: never written through a link or over a folder.
+    @Test func refusesALinkedOrOddChildPage() throws {
+        let app = try makeApp()
+        let bundle = app.appendingPathComponent("Settings.bundle")
+        try FileManager.default.createDirectory(at: bundle, withIntermediateDirectories: true)
+        let elsewhere = try tempDir().appendingPathComponent("target.plist")
+        try Data().write(to: elsewhere)
+        try FileManager.default.createSymbolicLink(at: bundle.appendingPathComponent("XSide.plist"), withDestinationURL: elsewhere)
+        #expect(throws: (any Error).self) { try SettingsBundle.add(section, to: app) }
+        #expect(try Data(contentsOf: elsewhere).isEmpty)
+        let folder = try makeApp()
+        try FileManager.default.createDirectory(at: folder.appendingPathComponent("Settings.bundle/XSide.plist"),
+                                                withIntermediateDirectories: true)
+        #expect(throws: (any Error).self) { try SettingsBundle.add(section, to: folder) }
     }
 
     @Test func refusesWhatIsntAPage() throws {
@@ -123,10 +151,10 @@ struct SettingsBundleTests {
     @Test func settingsSectionHasTogglesAndChoices() throws {
         let app = try makeApp()
         try SettingsBundle.add(xsideSection(), to: app)
-        let items = try specifiers(app)
+        let items = try childItems(app)
         let p = "io.github.xside.settings."
         func item(_ key: String) throws -> [String: Any] { try #require(items.first { $0["Key"] as? String == p + key }) }
-        #expect(items.count == 14)
+        #expect(items.count == 13)
         #expect(items.dropFirst().prefix(6).allSatisfy { $0["Type"] as? String == "PSTitleValueSpecifier" })
         #expect(try item("connection")["DefaultValue"] as? String == "—")
         #expect(try item("version")["DefaultValue"] as? String == "1.2")
@@ -136,15 +164,12 @@ struct SettingsBundleTests {
         #expect(try item("showValidity")["DefaultValue"] as? Bool == true) // on by default (Anthony)
         #expect(try item("reminder")["DefaultValue"] as? Bool == false) // the installation's value
         #expect(try item("autoRefresh")["DefaultValue"] as? Bool == true)
-        let level = try item("level")
-        #expect(level["Type"] as? String == "PSMultiValueSpecifier")
-        #expect(level["Values"] as? [String] == ["all", "essentials", "none"])
-        // The list explains each choice; the row shows the short name.
-        #expect(level["Titles"] as? [String] == [p + "level.all.detail", p + "level.essentials.detail", p + "level.none.detail"])
-        #expect(level["ShortTitles"] as? [String] == [p + "level.all", p + "level.essentials", p + "level.none"])
-        #expect(try item("language")["ShortTitles"] == nil)
-        #expect(level["DefaultValue"] as? String == "all")
-        #expect(try item("language")["Values"] as? [String] == ["automatic", "fr", "en"])
+        // "Messages XSide" is gone: the level is derived from the four switches.
+        #expect(items.first { $0["Key"] as? String == p + "level" } == nil)
+        let language = try item("language")
+        #expect(language["Type"] as? String == "PSMultiValueSpecifier")
+        #expect(language["Values"] as? [String] == ["automatic", "fr", "en"])
+        #expect(language["Titles"] as? [String] == [p + "language.automatic", p + "language.fr", p + "language.en"])
     }
 
     @Test func settingsTitlesGetTheirOwnTableOtherwise() throws {
@@ -158,11 +183,7 @@ struct SettingsBundleTests {
         #expect(fr[p + "title.group"] == "Réglages XSide")
         #expect(fr[p + "title.connection"] == "Connexion au Mac")
         #expect(fr[p + "title.lastRefresh"] == "Dernier rafraîchissement")
-        #expect(fr[p + "level.essentials"] == "Essentiels")
-        #expect(fr[p + "level.essentials.detail"] == "Essentiels : seulement en cas de problème")
-        #expect(fr[p + "level.none.detail"] == "Aucun : rien dans l'app")
-        #expect(en[p + "level.all.detail"] == "All messages")
-        #expect(en[p + "level.essentials.detail"] == "Essentials: only when something's wrong")
+        #expect(fr.keys.allSatisfy { !$0.hasPrefix(p + "level") && $0 != p + "title.level" })
         #expect(fr[p + "footer"]?.hasPrefix("✦ Installée avec XSide\n• Rafraîchie automatiquement depuis ton Mac\n• ") == true)
         #expect(en[p + "footer"]?.contains("\n• Your choices apply on this iPhone right away\n") == true)
         #expect(fr[p + "footer"]?.hasSuffix("github.com/Antholife/xside") == true)

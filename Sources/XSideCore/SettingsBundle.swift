@@ -9,10 +9,8 @@ public struct SettingsSection: Sendable {
         /// at each launch, `defaultValue` what the Mac wrote at signing.
         case value(titleKey: String, key: String, defaultValue: String)
         case toggle(titleKey: String, key: String, defaultValue: Bool)
-        /// `titleKeys` are shown in the list, `values` are stored (same order); `shortTitleKeys`,
-        /// when given, are what the row shows (the list then can explain each choice).
-        case choice(titleKey: String, key: String, titleKeys: [String], values: [String], defaultValue: String,
-                    shortTitleKeys: [String]? = nil)
+        /// `titleKeys` are shown, `values` are stored (same order).
+        case choice(titleKey: String, key: String, titleKeys: [String], values: [String], defaultValue: String)
     }
 
     public let titleKey: String
@@ -28,7 +26,8 @@ public struct SettingsSection: Sendable {
     }
 }
 
-/// Writes `SettingsSection`s into `<App>.app/Settings.bundle/Root.plist`.
+/// Writes a `SettingsSection` into the app's Settings.bundle: one row "Réglages XSide" on the app's
+/// page (`Root.plist`), opening XSide's own page (`XSide.plist`) that holds the section.
 public enum SettingsBundle {
     /// Every item XSide adds carries a key with this prefix, so a re-sign replaces them. The
     /// dylib reads and writes the app's defaults under `keyPrefix + row key`.
@@ -36,6 +35,8 @@ public enum SettingsBundle {
 
     /// The strings table XSide creates when the app's page has none.
     static let ownTable = "XSide"
+    /// XSide's page in the bundle (`<name>.plist`), named by the row's `File`.
+    static let paneFile = "XSide"
 
     private static func hasStrings(named table: String, in bundle: URL) -> Bool {
         let fm = FileManager.default
@@ -48,15 +49,17 @@ public enum SettingsBundle {
 
     struct NotAPage: Error {}
 
-    /// Adds (or replaces) the section at the end of the app's page, creating the page if the app
-    /// has none. The app's own items and keys stay as they were. Titles are keys of the app's own
-    /// `StringsTable` when its page has one (XSide's texts merged into each `<lang>.lproj`, the
-    /// app's entries kept), else of a table of XSide's, `XSide`. Throws on a page it can't read,
-    /// or on links (a link could make it write outside the app).
+    /// Adds (or replaces) XSide's row at the end of the app's page, creating the page if the app
+    /// has none, and writes XSide's page with the section. The app's own items and keys stay as
+    /// they were. Titles are keys of the app's own `StringsTable` when its page has one (XSide's
+    /// texts merged into each `<lang>.lproj`, the app's entries kept), else of a table of XSide's,
+    /// `XSide`; XSide's page uses the same table. Throws on a page it can't read, or on links (a
+    /// link could make it write outside the app).
     public static func add(_ section: SettingsSection, to app: URL) throws {
         let fm = FileManager.default
         let bundle = app.appendingPathComponent("Settings.bundle")
         let rootURL = bundle.appendingPathComponent("Root.plist")
+        let paneURL = bundle.appendingPathComponent(paneFile + ".plist")
         var root: [String: Any] = [:]
         if let type = try? fm.attributesOfItem(atPath: bundle.path)[.type] as? FileAttributeType {
             guard type == .typeDirectory else { throw NotAPage() }
@@ -67,31 +70,35 @@ public enum SettingsBundle {
                 else { throw NotAPage() }
                 root = read
             }
+            // Replaced only if it is a plain file (from an earlier signing).
+            if let paneType = try? fm.attributesOfItem(atPath: paneURL.path)[.type] as? FileAttributeType,
+               paneType != .typeRegular { throw NotAPage() }
         } else {
             try fm.createDirectory(at: bundle, withIntermediateDirectories: false)
         }
+        // The app's page: its own items, then a group (untitled: iOS heads the page "<App>
+        // Settings" already, and the row says what it opens) with the one row.
         var items = (root["PreferenceSpecifiers"] as? [[String: Any]] ?? [])
             .filter { ($0["Key"] as? String)?.hasPrefix(keyPrefix) != true }
-        // iOS heads every app's page "<App> Settings" already: on a page that holds only XSide's
-        // section, a group title would stack right under it. After the app's own items, it
-        // separates XSide's.
-        var group: [String: Any] = ["Type": "PSGroupSpecifier", "Key": keyPrefix + "group"]
-        if !items.isEmpty { group["Title"] = section.titleKey }
+        items.append(["Type": "PSGroupSpecifier", "Key": keyPrefix + "group"])
+        items.append(["Type": "PSChildPaneSpecifier", "Title": section.titleKey, "File": paneFile,
+                      "Key": keyPrefix + "pane"])
+
+        // XSide's page: the section, its footer under the rows.
+        var group: [String: Any] = ["Type": "PSGroupSpecifier", "Key": keyPrefix + "section"]
         if let footer = section.footerKey { group["FooterText"] = footer }
-        items.append(group)
+        var rows: [[String: Any]] = [group]
         for row in section.rows {
             switch row {
             case let .value(titleKey, key, defaultValue):
-                items.append(["Type": "PSTitleValueSpecifier", "Title": titleKey,
-                              "Key": keyPrefix + key, "DefaultValue": defaultValue])
+                rows.append(["Type": "PSTitleValueSpecifier", "Title": titleKey,
+                             "Key": keyPrefix + key, "DefaultValue": defaultValue])
             case let .toggle(titleKey, key, defaultValue):
-                items.append(["Type": "PSToggleSwitchSpecifier", "Title": titleKey,
-                              "Key": keyPrefix + key, "DefaultValue": defaultValue])
-            case let .choice(titleKey, key, titleKeys, values, defaultValue, shortTitleKeys):
-                var item: [String: Any] = ["Type": "PSMultiValueSpecifier", "Title": titleKey, "Key": keyPrefix + key,
-                                           "Titles": titleKeys, "Values": values, "DefaultValue": defaultValue]
-                if let shortTitleKeys { item["ShortTitles"] = shortTitleKeys }
-                items.append(item)
+                rows.append(["Type": "PSToggleSwitchSpecifier", "Title": titleKey,
+                             "Key": keyPrefix + key, "DefaultValue": defaultValue])
+            case let .choice(titleKey, key, titleKeys, values, defaultValue):
+                rows.append(["Type": "PSMultiValueSpecifier", "Title": titleKey, "Key": keyPrefix + key,
+                             "Titles": titleKeys, "Values": values, "DefaultValue": defaultValue])
             }
         }
         // The page's own table; with none named iOS reads "Root", so XSide's keys go there when the
@@ -106,9 +113,10 @@ public enum SettingsBundle {
             root["StringsTable"] = table
         }
         root["PreferenceSpecifiers"] = items
-        let data = try PropertyListSerialization.data(fromPropertyList: root, format: .xml, options: 0)
-        try data.write(to: rootURL, options: .atomic)
-        // After the page itself: a strings file that can't be merged only leaves keys untranslated.
+        let pane: [String: Any] = ["Title": section.titleKey, "StringsTable": table, "PreferenceSpecifiers": rows]
+        try PropertyListSerialization.data(fromPropertyList: pane, format: .xml, options: 0).write(to: paneURL, options: .atomic)
+        try PropertyListSerialization.data(fromPropertyList: root, format: .xml, options: 0).write(to: rootURL, options: .atomic)
+        // After the pages: a strings file that can't be merged only leaves keys untranslated.
         // A table name with a path in it would make us write elsewhere.
         if !table.isEmpty, !table.contains("/"), !table.contains("..") {
             let info = (try? Data(contentsOf: app.appendingPathComponent("Info.plist")))

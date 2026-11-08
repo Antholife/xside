@@ -77,7 +77,7 @@ import CryptoKit
         func f<V>(_ v: V, _ ms: Double, _ by: ChangeOrigin) -> Field<V> {
             Field(value: v, changedAt: Date(timeIntervalSince1970: ms / 1000), changedBy: by)
         }
-        return InAppSettings(level: f(.essentials, 1_799_999_000_123, .device), showValidity: f(true, 1_799_999_000_456, .mac),
+        return InAppSettings(showValidity: f(true, 1_799_999_000_456, .mac),
                              alertLate: f(false, 1_799_999_001_000, .device), refreshCard: f(true, 1_799_999_002_000, .mac),
                              reminder: f(false, 1_799_999_003_000, .mac), language: f(.fr, 1_799_999_004_000, .device),
                              autoRefresh: f(true, 1_799_999_005_007, .mac))

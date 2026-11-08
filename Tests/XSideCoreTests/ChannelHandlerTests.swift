@@ -55,13 +55,13 @@ import Foundation
     @Test func checkInClampsFarFutureDates() {
         let mac = InAppSettings.defaults(reminder: true, at: now.addingTimeInterval(-3600))
         let phone = mac.setting(\.reminder, to: false, at: now.addingTimeInterval(86_400 * 365), by: .device)
-            .setting(\.level, to: .none, at: now.addingTimeInterval(100), by: .device) // within the window: kept
+            .setting(\.refreshCard, to: false, at: now.addingTimeInterval(100), by: .device) // within the window: kept
         let future = RefreshOutcome(at: now.addingTimeInterval(86_400), succeeded: true)
         let (reply, update) = ChannelHandler.handle(.checkIn(settings: phone, lastRefresh: future, appVersion: nil),
                                                     installation: installation(inApp: mac), now: now, reminder: true)
         guard case let .settings(merged, _) = reply else { Issue.record("no settings"); return }
         #expect(merged.reminder == Field(value: false, changedAt: now, changedBy: .device))
-        #expect(merged.level.changedAt == now.addingTimeInterval(100))
+        #expect(merged.refreshCard.changedAt == now.addingTimeInterval(100))
         #expect(update == .merged(merged, checkIn: now, outcome: RefreshOutcome(at: now, succeeded: true)))
         // A later Mac change wins over the clamped one.
         let later = merged.setting(\.reminder, to: true, at: now.addingTimeInterval(1), by: .mac)
@@ -243,7 +243,7 @@ import Foundation
         let seeded = paused.seededInApp(reminder: false, at: now)
         #expect(seeded.reminder.value == false)
         #expect(seeded.autoRefresh.value == false) // already paused from the Mac
-        #expect(seeded.level == Field(value: .all, changedAt: now, changedBy: .mac))
+        #expect(seeded.alertLate == Field(value: true, changedAt: now, changedBy: .mac))
         let kept = installation().seededInApp(reminder: false, at: now)
         #expect(kept == installation().inApp) // already there: unchanged
     }

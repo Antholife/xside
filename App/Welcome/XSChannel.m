@@ -264,7 +264,7 @@ void XSCheckIn(void (^done)(void)) {
             NSDictionary *outcome = XSRefreshOutcomeFromJSONObject(reply[@"lastRefresh"]);
             if (outcome) XSAdoptRefreshOutcome(outcome);
             NSDate *expiry = XSExpirationDate();
-            if (expiry) XSScheduleReminder(expiry, NO); // the reminder switch or level may have changed
+            if (expiry) XSScheduleReminder(expiry, NO); // the reminder switch may have changed
         }
         if (done) done();
     }] start];
@@ -355,7 +355,7 @@ void XSRequestRefresh(void) {
         return;
     }
     XSRefreshRunning = YES;
-    if ([XSSettingValue(XSCurrentSettings(), @"level") isEqual:@"none"]) { XSStartRefresh(); return; } // "Aucun": never ask
+    if ([XSDerivedLevel(XSCurrentSettings()) isEqual:@"none"]) { XSStartRefresh(); return; } // "Aucun": never ask
     // A failure is told by a notification: the first Refresh is the moment to ask for them,
     // saying why, before the request (one iOS prompt at a time).
     [XSCenter() getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings *settings) {

@@ -1,9 +1,9 @@
 import Foundation
 
-/// How much XSide may show inside an app ("Messages XSide"). `essentials` is a ceiling: only
-/// problem alerts (late pill, reminder), and only those whose own switch is on. `none` shows
-/// nothing, the install sheet included.
-public enum MessageLevel: String, Codable, Sendable { case all, essentials, none }
+/// How much XSide shows inside an app, as a summary of the four switches (see
+/// `InAppSettings.derivedLevel`): never stored, so it can't disagree with them. `essentials` =
+/// only the problem alerts (late pill, reminder); `custom` = any other mix.
+public enum MessageLevel: String, Codable, Sendable { case all, essentials, none, custom }
 
 /// Language of the dylib's own texts (iOS translates the Settings titles itself).
 public enum MessageLanguage: String, Codable, Sendable { case automatic, fr, en }
@@ -48,8 +48,8 @@ public struct RefreshOutcome: Codable, Equatable, Sendable {
 }
 
 /// The XSide-in-app settings of one installation (app x device).
+/// (Settings stored by an earlier 1.1 build also had a "level" field: decoding ignores it.)
 public struct InAppSettings: Codable, Equatable, Sendable {
-    public var level: Field<MessageLevel>
     public var showValidity: Field<Bool>
     public var alertLate: Field<Bool>
     public var refreshCard: Field<Bool>
@@ -57,10 +57,9 @@ public struct InAppSettings: Codable, Equatable, Sendable {
     public var language: Field<MessageLanguage>
     public var autoRefresh: Field<Bool>
 
-    public init(level: Field<MessageLevel>, showValidity: Field<Bool>, alertLate: Field<Bool>,
+    public init(showValidity: Field<Bool>, alertLate: Field<Bool>,
                 refreshCard: Field<Bool>, reminder: Field<Bool>, language: Field<MessageLanguage>,
                 autoRefresh: Field<Bool>) {
-        self.level = level
         self.showValidity = showValidity
         self.alertLate = alertLate
         self.refreshCard = refreshCard
@@ -73,15 +72,14 @@ public struct InAppSettings: Codable, Equatable, Sendable {
     /// everything else on (the validity pill too: Anthony, 2026-11-08).
     public static func defaults(reminder: Bool, at: Date) -> InAppSettings {
         func f<V>(_ v: V) -> Field<V> { Field(value: v, changedAt: at, changedBy: .mac) }
-        return InAppSettings(level: f(.all), showValidity: f(true), alertLate: f(true),
+        return InAppSettings(showValidity: f(true), alertLate: f(true),
                              refreshCard: f(true), reminder: f(reminder), language: f(.automatic),
                              autoRefresh: f(true))
     }
 
     /// Field-by-field merge (see `Field.merge`). Symmetric: `merge(a, b) == merge(b, a)`.
     public static func merge(_ a: InAppSettings, _ b: InAppSettings) -> InAppSettings {
-        InAppSettings(level: .merge(a.level, b.level),
-                      showValidity: .merge(a.showValidity, b.showValidity),
+        InAppSettings(showValidity: .merge(a.showValidity, b.showValidity),
                       alertLate: .merge(a.alertLate, b.alertLate),
                       refreshCard: .merge(a.refreshCard, b.refreshCard),
                       reminder: .merge(a.reminder, b.reminder),
@@ -97,22 +95,43 @@ public struct InAppSettings: Codable, Equatable, Sendable {
         return copy
     }
 
-    // MARK: Effective visibility (spec §1 matrix + the Essentials ceiling)
+    // MARK: Level and visibility (spec §1 matrix; each switch decides for itself)
+
+    /// The four switches summed up: all on, only the problem alerts (late pill and reminder), all
+    /// off, or any other mix.
+    public var derivedLevel: MessageLevel {
+        switch (showValidity.value, alertLate.value, refreshCard.value, reminder.value) {
+        case (true, true, true, true): .all
+        case (false, true, false, true): .essentials
+        case (false, false, false, false): .none
+        default: .custom
+        }
+    }
+
+    /// Copy with the four switches set for `level`, each stamped; `custom` changes nothing.
+    public func applying(level: MessageLevel, at date: Date, by origin: ChangeOrigin) -> InAppSettings {
+        let values: (validity: Bool, late: Bool, card: Bool, reminder: Bool)
+        switch level {
+        case .all: values = (true, true, true, true)
+        case .essentials: values = (false, true, false, true)
+        case .none: values = (false, false, false, false)
+        case .custom: return self
+        }
+        return setting(\.showValidity, to: values.validity, at: date, by: origin)
+            .setting(\.alertLate, to: values.late, at: date, by: origin)
+            .setting(\.refreshCard, to: values.card, at: date, by: origin)
+            .setting(\.reminder, to: values.reminder, at: date, by: origin)
+    }
 
     /// The late pill. Callers on a paused installation show the "automatic refresh off" variant
     /// instead of the "XSide couldn't refresh it" text, under this same condition.
-    public func showsLatePill(late: Bool) -> Bool {
-        late && level.value != .none && alertLate.value
-    }
+    public func showsLatePill(late: Bool) -> Bool { late && alertLate.value }
 
-    /// The normal validity pill. Never together with the late pill (which replaces it), and
-    /// never under Essentials (which only allows problem alerts).
-    public func showsValidityPill(late: Bool) -> Bool {
-        level.value == .all && showValidity.value && !showsLatePill(late: late)
-    }
+    /// The normal validity pill; never together with the late pill, which replaces it.
+    public func showsValidityPill(late: Bool) -> Bool { showValidity.value && !showsLatePill(late: late) }
 
-    public var showsRefreshCard: Bool { level.value == .all && refreshCard.value }
-    public var schedulesReminder: Bool { level.value != .none && reminder.value }
-    /// The install sheet is not a problem alert: only "all" shows it.
-    public var showsInstallSheet: Bool { level.value == .all }
+    public var showsRefreshCard: Bool { refreshCard.value }
+    public var schedulesReminder: Bool { reminder.value }
+    /// The install sheet shows unless all four switches are off.
+    public var showsInstallSheet: Bool { derivedLevel != .none }
 }

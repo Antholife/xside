@@ -36,7 +36,6 @@ static NSDictionary *field(id value, int64_t at, NSString *by) {
 /// ChannelTests.fixtureSettings.
 static NSDictionary *fixtureSettings(void) {
     return @{
-        @"level": field(@"essentials", 1799999000123, @"device"),
         @"showValidity": field(@YES, 1799999000456, @"mac"),
         @"alertLate": field(@NO, 1799999001000, @"device"),
         @"refreshCard": field(@YES, 1799999002000, @"mac"),
@@ -133,11 +132,11 @@ int main(int argc, const char *argv[]) {
         NSDictionary *mac = XSSettingsSetting(base, @"language", @"fr", at(2), @"mac");
         mac = XSSettingsSetting(mac, @"reminder", @NO, at(1), @"mac");
         NSDictionary *dev = XSSettingsSetting(base, @"reminder", @YES, at(3), @"device");
-        dev = XSSettingsSetting(dev, @"level", @"essentials", at(1), @"device");
+        dev = XSSettingsSetting(dev, @"refreshCard", @NO, at(1), @"device");
         dev = XSSettingsSetting(dev, @"language", @"en", at(1), @"device");
         for (NSDictionary *m in @[XSSettingsMerge(mac, dev), XSSettingsMerge(dev, mac)]) {
             check([XSSettingValue(m, @"language") isEqual:@"fr"] && [XSSettingValue(m, @"reminder") isEqual:@YES]
-                  && [m[@"reminder"][@"changedBy"] isEqual:@"device"] && [XSSettingValue(m, @"level") isEqual:@"essentials"]
+                  && [m[@"reminder"][@"changedBy"] isEqual:@"device"] && [XSSettingValue(m, @"refreshCard") isEqual:@NO]
                   && [m[@"showValidity"] isEqual:base[@"showValidity"]], @"merge keeps the newest change per field");
         }
         NSDictionary *tm = XSSettingsSetting(base, @"alertLate", @NO, at(5), @"mac");
@@ -147,17 +146,18 @@ int main(int argc, const char *argv[]) {
         NSDictionary *d0 = XSSettingsDefaults(NO, t0);
         check(!XSSettingBool(d0, @"reminder") && XSSettingBool(d0, @"showValidity") && XSSettingBool(d0, @"alertLate")
               && XSSettingBool(d0, @"refreshCard") && XSSettingBool(d0, @"autoRefresh")
-              && [XSSettingValue(d0, @"level") isEqual:@"all"] && [XSSettingValue(d0, @"language") isEqual:@"automatic"],
+              && d0[@"level"] == nil && [XSSettingValue(d0, @"language") isEqual:@"automatic"],
               @"defaults");
-        NSDictionary *partial = XSSettingsSanitized(@{@"level": field(@"bogus", 1, @"mac"), @"reminder": field(@NO, 7, @"device"),
+        NSDictionary *partial = XSSettingsSanitized(@{@"alertLate": field(@"bogus", 1, @"mac"), @"reminder": field(@NO, 7, @"device"),
+                                                      @"level": field(@"none", 9, @"device"),
                                                       @"language": @"fr"}, base);
-        check([XSSettingValue(partial, @"level") isEqual:@"all"] && [XSSettingValue(partial, @"reminder") isEqual:@NO]
+        check([XSSettingValue(partial, @"alertLate") isEqual:@YES] && [XSSettingValue(partial, @"reminder") isEqual:@NO]
+              && partial[@"level"] == nil
               && [XSSettingValue(partial, @"language") isEqual:@"automatic"], @"sanitized: invalid fields fall back");
 
-        // Visibility: InAppSettingsTests.visibilityMatrix.
-        NSDictionary *(^S)(NSString *, BOOL, BOOL, BOOL, BOOL) = ^(NSString *level, BOOL validity, BOOL alert, BOOL card, BOOL reminder) {
+        // Visibility and level: InAppSettingsTests.visibilityFollowsTheFourSwitches / levelIsDerived….
+        NSDictionary *(^S)(BOOL, BOOL, BOOL, BOOL) = ^(BOOL validity, BOOL alert, BOOL card, BOOL reminder) {
             NSDictionary *s = XSSettingsDefaults(reminder, t0);
-            s = XSSettingsSetting(s, @"level", level, t0, @"mac");
             s = XSSettingsSetting(s, @"showValidity", @(validity), t0, @"mac");
             s = XSSettingsSetting(s, @"alertLate", @(alert), t0, @"mac");
             return XSSettingsSetting(s, @"refreshCard", @(card), t0, @"mac");
@@ -165,29 +165,26 @@ int main(int argc, const char *argv[]) {
         BOOL rows[4][6] = {{1, 1, 1, 0, 0, 1}, {0, 1, 0, 0, 0, 1}, {1, 0, 1, 0, 1, 0}, {0, 0, 0, 0, 0, 0}};
         BOOL matrix = YES;
         for (int i = 0; i < 4; i++) {
-            NSDictionary *s = S(@"all", rows[i][0], rows[i][1], YES, YES);
+            NSDictionary *s = S(rows[i][0], rows[i][1], YES, YES);
             matrix = matrix && XSShowsValidityPill(s, NO) == rows[i][2] && XSShowsLatePill(s, NO) == rows[i][3]
                 && XSShowsValidityPill(s, YES) == rows[i][4] && XSShowsLatePill(s, YES) == rows[i][5];
         }
-        check(matrix, @"visibility matrix (level all)");
-        NSDictionary *e = S(@"essentials", YES, YES, YES, YES);
-        check(!XSShowsValidityPill(e, NO) && !XSShowsValidityPill(e, YES) && XSShowsLatePill(e, YES) && !XSShowsLatePill(e, NO)
-              && !XSShowsRefreshCard(e) && !XSShowsInstallSheet(e) && XSSchedulesReminder(e), @"essentials ceiling");
-        NSDictionary *eOff = S(@"essentials", YES, NO, YES, NO);
-        check(!XSShowsLatePill(eOff, YES) && !XSSchedulesReminder(eOff), @"essentials respects the switches");
-        NSDictionary *none = S(@"none", YES, YES, YES, YES);
-        check(!XSShowsValidityPill(none, NO) && !XSShowsLatePill(none, YES) && !XSShowsRefreshCard(none)
-              && !XSSchedulesReminder(none) && !XSShowsInstallSheet(none), @"none shows nothing");
-        NSDictionary *a = S(@"all", NO, YES, NO, YES);
-        check(!XSShowsRefreshCard(a) && XSShowsInstallSheet(a) && XSSchedulesReminder(a)
-              && XSShowsRefreshCard(S(@"all", NO, YES, YES, YES)), @"card and sheet under all");
+        check(matrix, @"visibility matrix");
+        check(!XSShowsRefreshCard(S(YES, YES, NO, YES)) && XSShowsRefreshCard(S(NO, NO, YES, NO))
+              && !XSSchedulesReminder(S(YES, YES, YES, NO)) && XSSchedulesReminder(S(NO, NO, NO, YES)), @"card and reminder: own switch");
+        BOOL sheet = !XSShowsInstallSheet(S(NO, NO, NO, NO));
+        for (int i = 0; i < 4; i++) sheet = sheet && XSShowsInstallSheet(S(i == 0, i == 1, i == 2, i == 3));
+        check(sheet, @"install sheet unless all four are off");
+        check([XSDerivedLevel(S(YES, YES, YES, YES)) isEqual:@"all"] && [XSDerivedLevel(S(NO, YES, NO, YES)) isEqual:@"essentials"]
+              && [XSDerivedLevel(S(NO, NO, NO, NO)) isEqual:@"none"] && [XSDerivedLevel(S(YES, YES, NO, YES)) isEqual:@"custom"]
+              && [XSDerivedLevel(S(NO, YES, NO, NO)) isEqual:@"custom"], @"derived level");
         check(XSIsLate(41 * 3600, 48) && !XSIsLate(43 * 3600, 48) && XSIsLate(17 * 3600, 24), @"late = threshold - 6 h");
 
         // JSON round trip of the settings.
         check(sameSettings(XSSettingsFromJSONObject(XSSettingsJSONObject(fixtureSettings())) ?: @{}, fixtureSettings()),
               @"settings JSON round trip");
         NSMutableDictionary *missing = [XSSettingsJSONObject(fixtureSettings()) mutableCopy];
-        [missing removeObjectForKey:@"level"];
+        [missing removeObjectForKey:@"alertLate"];
         check(XSSettingsFromJSONObject(missing) == nil, @"settings JSON with a missing field refused");
     }
     if (failures) { fprintf(stderr, "%d check(s) failed\n", failures); return 1; }

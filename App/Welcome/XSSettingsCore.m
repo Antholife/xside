@@ -7,12 +7,11 @@ static NSArray<NSString *> *XSBoolFields(void) {
 }
 
 NSArray<NSString *> *XSSettingFields(void) {
-    return @[@"level", @"showValidity", @"alertLate", @"refreshCard", @"reminder", @"language", @"autoRefresh"];
+    return @[@"showValidity", @"alertLate", @"refreshCard", @"reminder", @"language", @"autoRefresh"];
 }
 
 /// The strings a choice field accepts; nil for a Bool field.
 static NSArray<NSString *> *XSChoices(NSString *field) {
-    if ([field isEqualToString:@"level"]) return @[@"all", @"essentials", @"none"];
     if ([field isEqualToString:@"language"]) return @[@"automatic", @"fr", @"en"];
     return nil;
 }
@@ -45,7 +44,6 @@ static NSDictionary *XSField(NSString *field, id value, NSDate *at, NSString *by
 
 NSDictionary *XSSettingsDefaults(BOOL reminder, NSDate *at) {
     return @{
-        @"level": XSField(@"level", @"all", at, @"mac"),
         @"showValidity": XSField(@"showValidity", @YES, at, @"mac"), // on by default (Anthony, 2026-11-08)
         @"alertLate": XSField(@"alertLate", @YES, at, @"mac"),
         @"refreshCard": XSField(@"refreshCard", @YES, at, @"mac"),
@@ -113,22 +111,28 @@ BOOL XSSettingBool(NSDictionary *s, NSString *field) {
     return [v isKindOfClass:NSNumber.class] && [v boolValue];
 }
 
-static BOOL XSLevelIs(NSDictionary *s, NSString *level) { return [XSSettingValue(s, @"level") isEqual:level]; }
+// Port of InAppSettings' level and visibility helpers (Sources/XSideCore/InAppSettings.swift;
+// tests: InAppSettingsTests.visibilityFollowsTheFourSwitches, levelIsDerivedFromTheSwitches).
+// Keep them identical.
 
-// Port of InAppSettings' visibility helpers (Sources/XSideCore/InAppSettings.swift; tests:
-// InAppSettingsTests.visibilityMatrix). Keep them identical.
-
-BOOL XSShowsLatePill(NSDictionary *s, BOOL late) {
-    return late && !XSLevelIs(s, @"none") && XSSettingBool(s, @"alertLate");
+NSString *XSDerivedLevel(NSDictionary *s) {
+    BOOL v = XSSettingBool(s, @"showValidity"), l = XSSettingBool(s, @"alertLate");
+    BOOL c = XSSettingBool(s, @"refreshCard"), r = XSSettingBool(s, @"reminder");
+    if (v && l && c && r) return @"all";
+    if (!v && l && !c && r) return @"essentials";
+    if (!v && !l && !c && !r) return @"none";
+    return @"custom";
 }
+
+BOOL XSShowsLatePill(NSDictionary *s, BOOL late) { return late && XSSettingBool(s, @"alertLate"); }
 
 BOOL XSShowsValidityPill(NSDictionary *s, BOOL late) {
-    return XSLevelIs(s, @"all") && XSSettingBool(s, @"showValidity") && !XSShowsLatePill(s, late);
+    return XSSettingBool(s, @"showValidity") && !XSShowsLatePill(s, late);
 }
 
-BOOL XSShowsRefreshCard(NSDictionary *s) { return XSLevelIs(s, @"all") && XSSettingBool(s, @"refreshCard"); }
-BOOL XSSchedulesReminder(NSDictionary *s) { return !XSLevelIs(s, @"none") && XSSettingBool(s, @"reminder"); }
-BOOL XSShowsInstallSheet(NSDictionary *s) { return XSLevelIs(s, @"all"); }
+BOOL XSShowsRefreshCard(NSDictionary *s) { return XSSettingBool(s, @"refreshCard"); }
+BOOL XSSchedulesReminder(NSDictionary *s) { return XSSettingBool(s, @"reminder"); }
+BOOL XSShowsInstallSheet(NSDictionary *s) { return ![XSDerivedLevel(s) isEqualToString:@"none"]; }
 
 BOOL XSIsLate(NSTimeInterval timeLeft, NSInteger thresholdHours) {
     return timeLeft < (thresholdHours - 6) * 3600.0;
