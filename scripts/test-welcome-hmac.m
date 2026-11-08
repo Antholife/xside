@@ -80,7 +80,7 @@ int main(int argc, const char *argv[]) {
         // Requests: the exact bytes XSide expects.
         requestCase(fx[@"refreshRequest"], secret, XSRefreshBody(), @"refresh");
         NSDictionary *last = @{@"at": ms(1799990000500), @"succeeded": @NO, @"reasonKey": @"refresh.reason.offline"};
-        requestCase(fx[@"checkInRequest"], secret, XSCheckInBody(fixtureSettings(), last, @"2.3.1"), @"checkIn");
+        requestCase(fx[@"checkInRequest"], secret, XSCheckInBody(fixtureSettings(), last, @"2.3.1", 45), @"checkIn");
         check([str(XSJSONData(XSSetAutoRefreshBody(NO))) isEqualToString:@"{\"on\":false,\"type\":\"setAutoRefresh\"}"],
               @"setAutoRefresh body");
 

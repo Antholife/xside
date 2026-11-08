@@ -43,14 +43,15 @@ struct InAppStatusTests {
     }
 
     /// Device feedback 3, E3, tightened in feedback 4: without a watch, an app that checked in
-    /// within the last 20 s is open on the device (it polls every 15 s while in front), so the
-    /// Mac's changes arrive live; 21 s later it flips back by itself. The Mac's memory of the last
+    /// within one 15 s poll and a 10 s margin is open on the device (it polls every 15 s while in
+    /// front; feedback 5 widened the margin from 5 s), so the Mac's changes arrive live; 26 s later
+    /// it flips back by itself. The Mac's memory of the last
     /// check-in (`lastSeen`, quiet check-ins aren't written) counts as well.
     @Test func aCheckInWithinSecondsIsTheAppOpen() {
         let i = installation(installedAt: t0, lastCheckIn: at(100))
         #expect(ReachabilityStatus.of(installation: i, now: at(115)) == .openNow(lastSeen: at(100)))
-        #expect(ReachabilityStatus.of(installation: i, now: at(120)) == .openNow(lastSeen: at(100)))
-        #expect(ReachabilityStatus.of(installation: i, now: at(121)) == .joinable(lastSeen: at(100)))
+        #expect(ReachabilityStatus.of(installation: i, now: at(125)) == .openNow(lastSeen: at(100)))
+        #expect(ReachabilityStatus.of(installation: i, now: at(126)) == .joinable(lastSeen: at(100)))
         #expect(ReachabilityStatus.of(installation: i, now: at(200), lastSeen: at(190)) == .openNow(lastSeen: at(190)))
         #expect(ReachabilityStatus.of(installation: i, now: at(200), lastSeen: at(50)) == .joinable(lastSeen: at(100)))
         let never = installation(installedAt: t0)
@@ -61,18 +62,44 @@ struct InAppStatusTests {
     }
 
     /// Device feedback 4: "live" is true exactly while a watch is open, or (no watch: polling)
-    /// within 20 s of a check-in; it ends on its own once neither holds.
+    /// within 25 s of a check-in (15 s poll + margin); it ends on its own once neither holds.
     @Test func liveFollowsTheWatchOrARecentCheckIn() {
         #expect(ReachabilityStatus.isLive(watching: true, lastSeen: nil, now: at(0)))
         #expect(ReachabilityStatus.isLive(watching: true, lastSeen: at(-3600), now: at(0)))
         // The watch closed (app sent to the background, keep-alive missed): live only if polled lately.
         #expect(!ReachabilityStatus.isLive(watching: false, lastSeen: at(-3600), now: at(0)))
         #expect(!ReachabilityStatus.isLive(watching: false, lastSeen: nil, now: at(0)))
-        #expect(ReachabilityStatus.isLive(watching: false, lastSeen: at(-20), now: at(0)))
-        #expect(!ReachabilityStatus.isLive(watching: false, lastSeen: at(-21), now: at(0)))
+        #expect(ReachabilityStatus.isLive(watching: false, lastSeen: at(-25), now: at(0)))
+        #expect(!ReachabilityStatus.isLive(watching: false, lastSeen: at(-26), now: at(0)))
         let i = installation(installedAt: t0, lastCheckIn: at(100))
         #expect(ReachabilityStatus.of(installation: i, now: at(500), watching: true) == .openNow(lastSeen: at(500)))
         #expect(ReachabilityStatus.of(installation: i, now: at(500), watching: false) == .joinable(lastSeen: at(100)))
+    }
+
+    /// Device feedback 5, G3: a phone in Low Power Mode polls every 45 s and says so in its
+    /// check-in. "Live" then lasts 45 s + the margin, so it no longer flips to "next opening"
+    /// between two polls, and still ends one poll after the app left the screen.
+    @Test func liveFollowsThePhonesPollInterval() {
+        #expect(ReachabilityStatus.openWindow() == 25)
+        #expect(ReachabilityStatus.openWindow(pollEvery: 15) == 25)
+        #expect(ReachabilityStatus.openWindow(pollEvery: 45) == 55)
+        // Polls spaced 45 s apart, each seen up to 5 s late: live all along.
+        for since in stride(from: 0.0, through: 52, by: 1) {
+            #expect(ReachabilityStatus.isLive(watching: false, lastSeen: at(-since), now: at(0), pollEvery: 45))
+            // Without the interval it would have flipped from 26 s on (the bug).
+            if since > 25 { #expect(!ReachabilityStatus.isLive(watching: false, lastSeen: at(-since), now: at(0))) }
+        }
+        #expect(ReachabilityStatus.isLive(watching: false, lastSeen: at(-55), now: at(0), pollEvery: 45))
+        #expect(!ReachabilityStatus.isLive(watching: false, lastSeen: at(-56), now: at(0), pollEvery: 45))
+        // A check-in can't keep the app "open" long: the interval counts as 15 to 120 s.
+        #expect(ReachabilityStatus.openWindow(pollEvery: 3600) == 130)
+        #expect(ReachabilityStatus.openWindow(pollEvery: 1) == 25)
+        #expect(!ReachabilityStatus.isLive(watching: false, lastSeen: at(-131), now: at(0), pollEvery: 3600))
+        // The status line reads the same interval.
+        let i = installation(installedAt: t0, lastCheckIn: at(100))
+        #expect(ReachabilityStatus.of(installation: i, now: at(140), pollEvery: 45) == .openNow(lastSeen: at(100)))
+        #expect(ReachabilityStatus.of(installation: i, now: at(140)) == .joinable(lastSeen: at(100)))
+        #expect(ReachabilityStatus.of(installation: i, now: at(156), pollEvery: 45) == .joinable(lastSeen: at(100)))
     }
 
     // MARK: Delivery of the Mac's changes

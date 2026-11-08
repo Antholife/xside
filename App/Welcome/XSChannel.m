@@ -466,6 +466,13 @@ static XSPillContent *XSMacChangePill(NSArray<NSString *> *byMac) {
     return c;
 }
 
+/// The poll interval a check-in states (device feedback 5, G3): the foreground one while the app is
+/// in front (it polls when no watch is open), none in the background (no poll follows).
+static NSTimeInterval XSPollEveryNow(void) {
+    if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return 0;
+    return XSForegroundPollInterval(NSProcessInfo.processInfo.lowPowerModeEnabled);
+}
+
 /// A check-in exchange; `anyway`: browses even before the local network was allowed (right after
 /// the "Réseau local" page, which says iOS will ask).
 static void XSRunCheckIn(NSTimeInterval find, BOOL anyway, void (^handler)(XSChannelResult result, NSArray *byMac)) {
@@ -474,7 +481,7 @@ static void XSRunCheckIn(NSTimeInterval find, BOOL anyway, void (^handler)(XSCha
         return;
     }
     XSCheckInRunning = YES;
-    NSDictionary *body = XSCheckInBody(XSCurrentSettings(), XSLastRefresh(), XSAppVersion());
+    NSDictionary *body = XSCheckInBody(XSCurrentSettings(), XSLastRefresh(), XSAppVersion(), XSPollEveryNow());
     [[[XSChannelExchange alloc] initWithBody:body findTimeout:find waitsOutcome:NO
                                      handler:^(XSChannelResult result, NSDictionary *reply, BOOL final) {
         XSCheckInEnded();
@@ -934,7 +941,7 @@ static void XSTellAutoRefreshChangeNow(void) {
     if (XSCheckInRunning) { XSTellQueued = YES; return; } // told once it ends (mega review minor 2)
     XSCheckInRunning = YES;
     BOOL on = XSSettingBool(XSCurrentSettings(), @"autoRefresh");
-    NSDictionary *body = XSCheckInBody(XSCurrentSettings(), XSLastRefresh(), XSAppVersion());
+    NSDictionary *body = XSCheckInBody(XSCurrentSettings(), XSLastRefresh(), XSAppVersion(), XSPollEveryNow());
     [XSPatientExchange(body, NO, ^(XSChannelResult result, NSDictionary *reply, BOOL final) {
         BOOL fr = XSFrench();
         if (result == XSChannelWaiting) { XSShowWaitingPill(NO); return; }

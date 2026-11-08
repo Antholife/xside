@@ -5,7 +5,8 @@ import Foundation
 public enum ReachabilityStatus: Equatable, Sendable {
     /// The app is open on the device: it holds a watch, so a Mac change is written to it at once
     /// (device feedback 4), or (no watch: an older dylib, or the watch couldn't open) it checked in
-    /// within `openWindow`, polling every 15 s (45 s in Low Power Mode) (device feedback 3, E3).
+    /// within `openWindow(pollEvery:)`, polling every 15 s (45 s in Low Power Mode) (device feedback 3,
+    /// E3; feedback 5, G3).
     case openNow(lastSeen: Date)
     /// Checked in recently: the app checks in at each launch, a Mac change arrives at its next opening.
     case joinable(lastSeen: Date)
@@ -22,32 +23,48 @@ public enum ReachabilityStatus: Equatable, Sendable {
 
     /// How long a check-in counts as recent: a week, about one refresh cycle of a free account.
     public static let recentWindow: TimeInterval = 7 * 86_400
-    /// How long after a check-in the app counts as open when it holds no watch (it polls every
-    /// 15 s): a little more than one poll, so the status flips back within seconds of the app
-    /// leaving the screen (device feedback 4: it said "open" long after).
-    public static let openWindow: TimeInterval = 20
+    /// The phone's foreground poll interval when its check-in doesn't say (older dylibs): 15 s.
+    public static let defaultPollInterval: TimeInterval = 15
+    /// The longest poll interval a check-in may claim: a bigger one counts as this, so no check-in
+    /// keeps the app "open" for long after it left the screen.
+    public static let maxPollInterval: TimeInterval = 120
+    /// What a poll can lag behind its interval: the phone's 5 s tick and its 2 s tolerance, plus
+    /// the time to find the Mac and connect (device feedback 5, G3).
+    public static let pollMargin: TimeInterval = 10
+
+    /// How long after a check-in the app counts as open when it holds no watch: one poll interval
+    /// (the one the check-in stated, else 15 s; at least 15, at most 120) plus `pollMargin`. So an
+    /// app polling every 45 s in Low Power Mode stays "open" between its polls (device feedback 5,
+    /// G3), and the status still flips back within about one poll of the app leaving the screen
+    /// (device feedback 4: it said "open" long after).
+    public static func openWindow(pollEvery: TimeInterval? = nil) -> TimeInterval {
+        min(max(pollEvery ?? defaultPollInterval, defaultPollInterval), maxPollInterval) + pollMargin
+    }
 
     /// The app is open on the device right now: it holds a watch, or (polling) the Mac saw a check-in
-    /// within `openWindow`. A date ahead of `now` (the Mac's clock moved back) counts only as far.
-    public static func isLive(watching: Bool, lastSeen: Date?, now: Date) -> Bool {
+    /// within `openWindow(pollEvery:)`. A date ahead of `now` (the Mac's clock moved back) counts
+    /// only as far.
+    public static func isLive(watching: Bool, lastSeen: Date?, now: Date, pollEvery: TimeInterval? = nil) -> Bool {
         if watching { return true }
         guard let lastSeen else { return false }
         let since = now.timeIntervalSince(lastSeen)
-        return since <= openWindow && since >= -openWindow
+        let window = openWindow(pollEvery: pollEvery)
+        return since <= window && since >= -window
     }
 
     /// `lastSeen`: the last check-in the Mac saw in this run (those that change nothing aren't
     /// written to the library, so its date can lag by up to a minute).
     /// `watching`: the app holds a watch open now (the Mac writes its changes on it as they happen).
+    /// `pollEvery`: the poll interval the last check-in stated (nil: not said, 15 s).
     public static func of(installation: Installation, now: Date, lastSeen: Date? = nil,
-                          watching: Bool = false) -> ReachabilityStatus {
+                          watching: Bool = false, pollEvery: TimeInterval? = nil) -> ReachabilityStatus {
         if installation.withoutXSideFeatures == true { return .noFeatures }
         if installation.channelSecret == nil { return .channelComing }
         if watching { return .openNow(lastSeen: now) }
         let seen = [installation.lastCheckIn, lastSeen].compactMap { $0 }.max()
         guard let last = seen else { return .neverConnected }
         let since = now.timeIntervalSince(last)
-        if isLive(watching: false, lastSeen: last, now: now) { return .openNow(lastSeen: last) }
+        if isLive(watching: false, lastSeen: last, now: now, pollEvery: pollEvery) { return .openNow(lastSeen: last) }
         return since <= recentWindow ? .joinable(lastSeen: installation.lastCheckIn ?? last) : .notSeenSince(last)
     }
 }

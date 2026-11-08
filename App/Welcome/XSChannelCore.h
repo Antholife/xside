@@ -32,8 +32,10 @@ NSData *_Nullable XSSealRequest(NSDictionary *body, NSString *installationID, NS
 NSDictionary *XSRefreshBody(void);
 NSDictionary *XSSetAutoRefreshBody(BOOL on);
 /// `lastRefresh`: {at (NSDate), succeeded (Bool), reasonKey (optional)}; `appVersion` optional.
+/// `pollEvery`: seconds to the next foreground poll (15, 45 in Low Power Mode), so the Mac says
+/// "open, live" until then (device feedback 5, G3); 0 leaves it out (not polling: in the background).
 NSDictionary *XSCheckInBody(NSDictionary *settings, NSDictionary *_Nullable lastRefresh,
-                            NSString *_Nullable appVersion);
+                            NSString *_Nullable appVersion, NSTimeInterval pollEvery);
 /// A check-in that keeps the connection open while the app is in front (device feedback 4): the
 /// first line is the check-in's `settings` reply, then XSide writes `live`/`alive` lines on it.
 NSDictionary *XSWatchBody(NSDictionary *settings, NSDictionary *_Nullable lastRefresh,

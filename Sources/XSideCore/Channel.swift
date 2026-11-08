@@ -32,7 +32,7 @@ import CryptoKit
 // JSON conventions inside bodies and replies: objects use a "type" discriminator and flat fields;
 // dates are integer epoch milliseconds (1800000000000); nils are omitted.
 //   ChannelRequest: {"type":"refresh"} | {"type":"setAutoRefresh","on":true}
-//                 | {"type":"checkIn","settings":{...},"lastRefresh":{...},"appVersion":"1.2"}
+//                 | {"type":"checkIn","settings":{...},"lastRefresh":{...},"appVersion":"1.2","pollEvery":45}
 //                 | {"type":"watch","settings":{...},"lastRefresh":{...},"appVersion":"1.2"}
 //   ChannelReply:   {"type":"settings","settings":{...},"lastRefresh":{...}} | {"type":"accepted"} | {"type":"refreshed"}
 //                 | {"type":"failed","reasonKey":"..."} | {"type":"busy"} | {"type":"deviceUnreachable"}
@@ -46,6 +46,10 @@ import CryptoKit
 //   lastRefresh (optional, omitted when unknown; same shape as in checkIn) is the newest refresh
 //   outcome XSide knows for the installation, so a phone that was suspended while a refresh it
 //   asked for ended still learns how it went.
+//   pollEvery (optional, whole seconds, inside the signed body like every field): the phone's
+//   foreground poll interval (15, 45 in Low Power Mode), sent while it is in front. The Mac only
+//   uses it to keep "open, live" until the next poll (counted 15 to 120 s, plus a 10 s margin;
+//   ReachabilityStatus.openWindow); it grants nothing, and a missing one counts as 15 s.
 // - setAutoRefresh(on) -> settings(...): the installation's settings with autoRefresh stamped by
 //   the device; the Mac pauses or resumes its refreshes.
 // - refresh -> TWO lines when it starts: `accepted` at once, then `refreshed` or
@@ -84,9 +88,12 @@ public enum ChannelError: Error, Equatable { case invalidNonce, invalidTimestamp
 
 /// A request from the app to XSide.
 public enum ChannelRequest: Codable, Equatable, Sendable {
-    /// Sent at each launch: the phone's settings and last refresh result; the Mac answers with
-    /// the merged settings.
-    case checkIn(settings: InAppSettings, lastRefresh: RefreshOutcome?, appVersion: String?)
+    /// Sent at each launch and, while the app is in front without a watch, every `pollEvery`
+    /// seconds: the phone's settings and last refresh result; the Mac answers with the merged
+    /// settings. `pollEvery` (optional, whole seconds; older dylibs omit it): how long until the
+    /// phone's next poll (15 s, 45 s in Low Power Mode), so the Mac keeps saying "open, live"
+    /// until then (device feedback 5, G3). Only the status line reads it.
+    case checkIn(settings: InAppSettings, lastRefresh: RefreshOutcome?, appVersion: String?, pollEvery: Int? = nil)
     /// "Refresh now" from the phone.
     case refresh
     /// Pause (`false`) or resume (`true`) automatic refresh for this installation.
@@ -95,7 +102,7 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
     /// written on it as they happen (`ChannelReply.live`).
     case watch(settings: InAppSettings, lastRefresh: RefreshOutcome?, appVersion: String?)
 
-    private enum CodingKeys: String, CodingKey { case type, settings, lastRefresh, appVersion, on }
+    private enum CodingKeys: String, CodingKey { case type, settings, lastRefresh, appVersion, pollEvery, on }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -103,7 +110,8 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
         case "checkIn":
             self = .checkIn(settings: try c.decode(InAppSettings.self, forKey: .settings),
                             lastRefresh: try c.decodeIfPresent(RefreshOutcome.self, forKey: .lastRefresh),
-                            appVersion: try c.decodeIfPresent(String.self, forKey: .appVersion))
+                            appVersion: try c.decodeIfPresent(String.self, forKey: .appVersion),
+                            pollEvery: try c.decodeIfPresent(Int.self, forKey: .pollEvery))
         case "watch":
             self = .watch(settings: try c.decode(InAppSettings.self, forKey: .settings),
                           lastRefresh: try c.decodeIfPresent(RefreshOutcome.self, forKey: .lastRefresh),
@@ -118,11 +126,12 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case let .checkIn(settings, lastRefresh, appVersion):
+        case let .checkIn(settings, lastRefresh, appVersion, pollEvery):
             try c.encode("checkIn", forKey: .type)
             try c.encode(settings, forKey: .settings)
             try c.encodeIfPresent(lastRefresh, forKey: .lastRefresh)
             try c.encodeIfPresent(appVersion, forKey: .appVersion)
+            try c.encodeIfPresent(pollEvery, forKey: .pollEvery)
         case let .watch(settings, lastRefresh, appVersion):
             try c.encode("watch", forKey: .type)
             try c.encode(settings, forKey: .settings)
@@ -138,9 +147,16 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
     /// What a check-in or a watch reports (both are check-ins), nil for the other requests.
     public var checkInReport: (settings: InAppSettings, lastRefresh: RefreshOutcome?)? {
         switch self {
-        case let .checkIn(settings, lastRefresh, _), let .watch(settings, lastRefresh, _): (settings, lastRefresh)
+        case let .checkIn(settings, lastRefresh, _, _), let .watch(settings, lastRefresh, _): (settings, lastRefresh)
         case .refresh, .setAutoRefresh: nil
         }
+    }
+
+    /// The phone's poll interval a check-in states (device feedback 5, G3), nil for the other
+    /// requests and for dylibs that don't say it.
+    public var pollEvery: Int? {
+        if case let .checkIn(_, _, _, pollEvery) = self { return pollEvery }
+        return nil
     }
 }
 

@@ -19,6 +19,23 @@ import CryptoKit
         #expect(env.open(secret: secret, now: now, seen: &seen) == req)
     }
 
+    /// Device feedback 5, G3: a check-in may state the phone's poll interval; older dylibs leave
+    /// it out and still decode. It's only read for the status line, and only on a check-in.
+    @Test func checkInPollIntervalIsOptional() throws {
+        let settings = InAppSettings.defaults(reminder: true, at: now)
+        let polled = ChannelRequest.checkIn(settings: settings, lastRefresh: nil, appVersion: "2", pollEvery: 45)
+        let body = try JSONEncoder().encode(polled)
+        #expect(String(decoding: body, as: UTF8.self).contains(#""pollEvery":45"#))
+        #expect(try JSONDecoder().decode(ChannelRequest.self, from: body) == polled)
+        #expect(polled.pollEvery == 45)
+        let old = ChannelRequest.checkIn(settings: settings, lastRefresh: nil, appVersion: "2")
+        let oldBody = try JSONEncoder().encode(old)
+        #expect(!String(decoding: oldBody, as: UTF8.self).contains("pollEvery"))
+        #expect(try JSONDecoder().decode(ChannelRequest.self, from: oldBody).pollEvery == nil)
+        #expect(ChannelRequest.watch(settings: settings, lastRefresh: nil, appVersion: "2").pollEvery == nil)
+        #expect(ChannelRequest.refresh.pollEvery == nil)
+    }
+
     @Test func wrongSecretIsRejected() throws {
         var seen = NonceCache()
         let env = try seal()
@@ -88,7 +105,7 @@ import CryptoKit
     static let fixtureCheckIn = ChannelRequest.checkIn(
         settings: fixtureSettings,
         lastRefresh: RefreshOutcome(at: Date(timeIntervalSince1970: 1_799_990_000.5), succeeded: false, reasonKey: "refresh.reason.offline"),
-        appVersion: "2.3.1")
+        appVersion: "2.3.1", pollEvery: 45) // device feedback 5, G3: a Low Power Mode poll
 
     struct FixtureEntry: Codable, Equatable {
         var installationID: String

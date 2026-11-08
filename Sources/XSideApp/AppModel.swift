@@ -1030,13 +1030,16 @@ final class AppModel {
     /// nothing aren't written to the library): says when the app is open on its device right now
     /// (device feedback 3, E3).
     private(set) var channelSeen: [JobKey: Date] = [:]
+    /// The poll interval each app's last check-in stated (device feedback 5, G3: 45 s in Low
+    /// Power Mode), so "open, live" lasts until its next poll. Absent: not said (15 s).
+    @ObservationIgnored private var channelPollEvery: [JobKey: TimeInterval] = [:]
     /// The open watches (device feedback 4): while an app is in front, the Mac's changes to its
     /// installation are written to it at once (`pushToWatches`, after each library reload).
     @ObservationIgnored private let channelWatches = ChannelWatches<UUID>()
     /// Watches whose connection ended before they were registered (see `holdWatch`).
     @ObservationIgnored private var endedWatchTokens: Set<UUID> = []
     /// The installations whose app is open on its device right now (`ReachabilityStatus.isLive`:
-    /// a watch is open, or a check-in came within 20 s). Observed by Settings > My apps, so the
+    /// a watch is open, or a check-in came within one poll interval and a margin). Observed by Settings > My apps, so the
     /// status line flips on its own when the app leaves the screen; re-evaluated on each watch
     /// change, each request and every 2 s (`channelTicker`).
     private(set) var liveInstallations: Set<JobKey> = []
@@ -1083,7 +1086,8 @@ final class AppModel {
                 let key = JobKey(recordID: record.id, deviceID: installation.deviceID)
                 let id = ChannelEnvelope.installationID(recordID: record.id, deviceID: installation.deviceID)
                 let seen = [installation.lastCheckIn, channelSeen[key]].compactMap { $0 }.max()
-                if ReachabilityStatus.isLive(watching: channelWatches.isWatched(id), lastSeen: seen, now: now) {
+                if ReachabilityStatus.isLive(watching: channelWatches.isWatched(id), lastSeen: seen, now: now,
+                                             pollEvery: channelPollEvery[key]) {
                     live.insert(key)
                 }
             }
@@ -1174,6 +1178,9 @@ final class AppModel {
         let job = RefreshJob(recordID: found.recordID, deviceID: found.installation.deviceID)
         let key = JobKey(recordID: found.recordID, deviceID: found.installation.deviceID)
         channelSeen[key] = now
+        // Each check-in states the interval to its next poll (an older dylib's says nothing: 15 s);
+        // a refresh or a watch keeps what the last check-in said.
+        if case .checkIn = request { channelPollEvery[key] = request.pollEvery.map(TimeInterval.init) }
         updateLiveInstallations(now: now)
         let reply: (ChannelReply) async -> Void = { answer in
             do {
@@ -1316,7 +1323,7 @@ final class AppModel {
 
     private static func describe(_ request: ChannelRequest) -> String {
         switch request {
-        case .checkIn: "check-in"
+        case .checkIn: request.pollEvery.map { "check-in (polls every \($0) s)" } ?? "check-in"
         case .watch: "watch"
         case .refresh: "refresh"
         case .setAutoRefresh(let on): "automatic refresh \(on ? "on" : "off")"

@@ -74,7 +74,8 @@ NSDictionary *XSRefreshBody(void) { return @{@"type": @"refresh"}; }
 
 NSDictionary *XSSetAutoRefreshBody(BOOL on) { return @{@"type": @"setAutoRefresh", @"on": on ? @YES : @NO}; }
 
-NSDictionary *XSCheckInBody(NSDictionary *settings, NSDictionary *lastRefresh, NSString *appVersion) {
+NSDictionary *XSCheckInBody(NSDictionary *settings, NSDictionary *lastRefresh, NSString *appVersion,
+                            NSTimeInterval pollEvery) {
     NSMutableDictionary *body = [@{@"type": @"checkIn", @"settings": XSSettingsJSONObject(settings)} mutableCopy];
     if ([lastRefresh[@"at"] isKindOfClass:NSDate.class]) {
         NSMutableDictionary *last = [@{@"at": @(XSMillis(lastRefresh[@"at"])),
@@ -83,11 +84,13 @@ NSDictionary *XSCheckInBody(NSDictionary *settings, NSDictionary *lastRefresh, N
         body[@"lastRefresh"] = last;
     }
     if ([appVersion isKindOfClass:NSString.class] && appVersion.length) body[@"appVersion"] = appVersion;
+    if (pollEvery >= 1) body[@"pollEvery"] = @((NSInteger)llround(pollEvery));
     return body;
 }
 
 NSDictionary *XSWatchBody(NSDictionary *settings, NSDictionary *lastRefresh, NSString *appVersion) {
-    NSMutableDictionary *body = [XSCheckInBody(settings, lastRefresh, appVersion) mutableCopy];
+    // No poll interval: while the watch is open the Mac knows the app is in front.
+    NSMutableDictionary *body = [XSCheckInBody(settings, lastRefresh, appVersion, 0) mutableCopy];
     body[@"type"] = @"watch";
     return body;
 }
