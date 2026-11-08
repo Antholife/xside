@@ -670,6 +670,7 @@
 "inApp.status.title" = "Sur les appareils";
 "inApp.reach.joinable" = "Joignable : arrive à la prochaine ouverture de l'app";
 "inApp.reach.never" = "Pas encore connecté : touche une fois Rafraîchir dans l'app";
+"inApp.reach.channelComing" = "Installée par une version précédente d'XSide : joignable après son prochain rafraîchissement";
 "inApp.reach.notSeen" = "Pas vu depuis le %@ : arrivera au prochain rafraîchissement";
 "inApp.reach.notInstalled" = "Pas encore installée ici : ces valeurs partent avec l'installation";
 "inApp.delivery.pending" = "En attente : sera envoyé à %@ à la prochaine ouverture de l'app (ou au prochain rafraîchissement)";

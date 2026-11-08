@@ -78,6 +78,9 @@ private struct FakeProvisioner: Provisioning {
 
 private struct FakeResigner: Resigning {
     let log: CallLog
+    /// Whether the signed app holds XSide's library (false: its injection failed).
+    var libraryAdded = true
+    func hasXSideLibrary(_ app: URL) -> Bool { libraryAdded }
     func resign(ipa: URL, workDir: URL, bundleID: String, options: InstallOptions, iconURL: URL?,
                 profileURL: URL, profile: ProvisioningProfile, identitySHA1: String,
                 otherBundleIDs: Set<String>, facts: InstallationFacts?,
@@ -181,10 +184,10 @@ private struct Fixture {
     func pipeline(provisioner: FakeProvisioner? = nil, installer: FakeInstaller? = nil,
                   now: @escaping @Sendable () -> Date = { fixedNow },
                   inAppDefaults: (@Sendable (Date) -> InAppSettings)? = nil,
-                  withoutFeaturesByDefault: Bool = false) -> SideloadPipeline {
+                  withoutFeaturesByDefault: Bool = false, libraryAdded: Bool = true) -> SideloadPipeline {
         SideloadPipeline(library: library,
                          provisioner: provisioner ?? FakeProvisioner(log: log),
-                         resigner: FakeResigner(log: log),
+                         resigner: FakeResigner(log: log, libraryAdded: libraryAdded),
                          installer: installer ?? FakeInstaller(log: log),
                          workRoot: workRoot, now: now,
                          inAppDefaults: inAppDefaults ?? { InAppSettings.defaults(reminder: true, at: $0) },
@@ -1228,6 +1231,17 @@ struct PipelineChainCancellationTests {
         #expect(await f.log.options.last?.withoutXSideFeatures == false)
         _ = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
         #expect(await f.log.options.last?.withoutXSideFeatures == false)
+    }
+
+    /// Final review minor 4: features asked for but the library couldn't be added (patch error):
+    /// the installation records what the app really got, so the Mac offers nothing it can't reach.
+    @Test func libraryNotAddedIsRecordedAsWithoutFeatures() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let result = try await f.pipeline(libraryAdded: false).install(recordID: f.record.id, device: device(), env: env)
+        #expect(await f.log.options.last?.withoutXSideFeatures == false)
+        #expect(result.withoutXSideFeatures == true)
+        let ok = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
+        #expect(ok.withoutXSideFeatures == nil)
     }
 
     /// Reinstalling clears a pause: the setting the app gets says so.

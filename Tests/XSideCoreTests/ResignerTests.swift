@@ -243,6 +243,7 @@ private func plist(_ app: URL) throws -> [String: Any] {
         #expect(info["NSBonjourServices"] as? [String] == ["_xside._tcp"])
         #expect(info["NSLocalNetworkUsageDescription"] as? String == "XSide asks your Mac to refresh this app.")
         #expect(info["UIApplicationShortcutItems"] == nil)
+        #expect(f.resigner.hasXSideLibrary(app))
         let lprojs = try FileManager.default.contentsOfDirectory(atPath: app.path).filter { $0.hasSuffix(".lproj") }
         #expect(lprojs.isEmpty)
     }
@@ -279,6 +280,7 @@ private func plist(_ app: URL) throws -> [String: Any] {
         failedCopy.payload = Self.payload()
         for f in [noLibrary, failedCopy] {
             let app = try await run(f)
+            #expect(!f.resigner.hasXSideLibrary(app)) // recorded as without features (final review minor 4)
             let info = try plist(app)
             for key in ["XSideWelcome", "NSBonjourServices", "NSLocalNetworkUsageDescription", "UIApplicationShortcutItems"] {
                 #expect(info[key] == nil)

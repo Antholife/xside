@@ -8,15 +8,22 @@ struct InAppStatusTests {
     func at(_ s: TimeInterval) -> Date { t0.addingTimeInterval(s) }
     let day: TimeInterval = 86_400
 
-    func installation(installedAt: Date, lastCheckIn: Date? = nil, inApp: InAppSettings? = nil) -> Installation {
+    func installation(installedAt: Date, lastCheckIn: Date? = nil, inApp: InAppSettings? = nil,
+                      secret: Data? = Data([1])) -> Installation {
         Installation(deviceID: "d", installedAt: installedAt, expiresAt: installedAt.addingTimeInterval(7 * 86_400),
-                     inApp: inApp, lastCheckIn: lastCheckIn)
+                     inApp: inApp, channelSecret: secret, lastCheckIn: lastCheckIn)
     }
 
     // MARK: Reachability
 
     @Test func neverCheckedInIsNeverConnected() {
         #expect(ReachabilityStatus.of(installation: installation(installedAt: t0), now: at(10)) == .neverConnected)
+    }
+
+    /// Final review minor 3: signed by an earlier XSide (no channel secret), the app has no Refresh
+    /// to tap yet; the channel comes with its next refresh.
+    @Test func earlierBuildWaitsForTheNextRefresh() {
+        #expect(ReachabilityStatus.of(installation: installation(installedAt: t0, secret: nil), now: at(10)) == .channelComing)
     }
 
     @Test func recentCheckInIsJoinable() {

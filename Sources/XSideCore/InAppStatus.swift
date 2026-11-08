@@ -8,6 +8,9 @@ public enum ReachabilityStatus: Equatable, Sendable {
     /// Never checked in: the phone hasn't allowed the local network yet (a first tap on
     /// "Rafraîchir" in the app asks for it). Mac changes arrive at the next signing.
     case neverConnected
+    /// Signed by an XSide before 1.1 (no channel secret): the app has nothing to talk to XSide
+    /// with, nor a Refresh to tap, until its next refresh brings them (final review minor 3).
+    case channelComing
     /// Its last check-in is old: the app may not have been opened, or isn't on the Mac's network.
     case notSeenSince(Date)
     /// Signed without XSide's features: nothing in the app talks to XSide.
@@ -18,6 +21,7 @@ public enum ReachabilityStatus: Equatable, Sendable {
 
     public static func of(installation: Installation, now: Date) -> ReachabilityStatus {
         if installation.withoutXSideFeatures == true { return .noFeatures }
+        if installation.channelSecret == nil { return .channelComing }
         guard let last = installation.lastCheckIn else { return .neverConnected }
         return now.timeIntervalSince(last) <= recentWindow ? .joinable(lastSeen: last) : .notSeenSince(last)
     }

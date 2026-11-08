@@ -81,6 +81,14 @@ public struct Resigner: Sendable {
         self.textLanguage = textLanguage
     }
 
+    /// Whether the signed `app` holds XSide's library (`addWelcomePopup` copies it there only once
+    /// the executable loads it).
+    public func hasXSideLibrary(_ app: URL) -> Bool {
+        guard welcomeDylib != nil else { return false }
+        let url = app.appendingPathComponent("Frameworks/\(Self.welcomeName)")
+        return (try? FileManager.default.attributesOfItem(atPath: url.path)[.type] as? FileAttributeType) == .typeRegular
+    }
+
     /// Unpacks `ipa` into `workDir`, rewrites it and signs it inside-out. Returns the signed `.app`.
     /// `facts`: the installation's own values, written into the payload and the Settings section.
     public func resign(ipa: URL, workDir: URL, bundleID: String, options: InstallOptions,

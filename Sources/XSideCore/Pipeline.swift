@@ -15,6 +15,9 @@ public protocol Resigning: Sendable {
                 iconURL: URL?, profileURL: URL, profile: ProvisioningProfile,
                 identitySHA1: String, otherBundleIDs: Set<String>, facts: InstallationFacts?,
                 onSigning: @Sendable () async -> Void) async throws -> URL
+    /// Whether the signed `app` holds XSide's library: features asked for can still be missing
+    /// when the library couldn't be added (the app is then installed as it came).
+    func hasXSideLibrary(_ app: URL) -> Bool
 }
 
 public protocol Installing: Sendable {
@@ -412,7 +415,9 @@ public actor SideloadPipeline {
                                       lastRefreshOutcome: facts.lastRefreshOutcome,
                                       channelSecret: facts.channelSecret, lastCheckIn: facts.lastCheckIn,
                                       lastMacEdit: facts.macEdited ? facts.signedAt : nil,
-                                      withoutXSideFeatures: options.withoutXSideFeatures == true ? true : nil)
+                                      // What the app got, not only what was asked (final review minor 4).
+                                      withoutXSideFeatures: options.withoutXSideFeatures == true
+                                          || !resigner.hasXSideLibrary(app) ? true : nil)
             let installation = try await library.recordSigning(signed, for: recordID, requireExisting: previous != nil)
             Self.logger.notice("\(what): done, expires \(installation.expiresAt.formatted(.iso8601))")
             return installation

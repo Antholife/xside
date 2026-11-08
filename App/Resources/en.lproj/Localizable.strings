@@ -670,6 +670,7 @@
 "inApp.status.title" = "On the devices";
 "inApp.reach.joinable" = "Reachable: arrives the next time the app opens";
 "inApp.reach.never" = "Not connected yet: tap Refresh once in the app";
+"inApp.reach.channelComing" = "Installed by an earlier XSide: reachable after its next refresh";
 "inApp.reach.notSeen" = "Not seen since %@: arrives at the next refresh";
 "inApp.reach.notInstalled" = "Not installed here yet: these values go with the install";
 "inApp.delivery.pending" = "Pending: will be sent to %@ the next time the app opens (or at the next refresh)";

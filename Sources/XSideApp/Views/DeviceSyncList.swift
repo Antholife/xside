@@ -75,6 +75,7 @@ private struct DeviceSyncRow: View {
         case nil: return L("inApp.reach.notInstalled")
         case .joinable?: return L("inApp.reach.joinable")
         case .neverConnected?: return L("inApp.reach.never")
+        case .channelComing?: return L("inApp.reach.channelComing")
         case .notSeenSince(let date)?: return L("inApp.reach.notSeen", Self.format(date))
         // Signed without them, turned back on since: they come with the next signing.
         case .noFeatures?: return L("inApp.reach.featuresComing")
