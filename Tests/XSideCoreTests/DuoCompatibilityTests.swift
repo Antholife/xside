@@ -303,6 +303,42 @@ struct DuoCompatibilityTests {
         #expect(classes.contains { $0.name == "FXOtherSceneDelegate" && !$0.conformsToWindowSceneDelegate })
     }
 
+    @Test func theAnswerMustHoldInEverySlice() throws {
+        // A fat file whose arm64 slice has FXBaseSceneDelegate and whose other slice (the Swift
+        // fixture, labelled arm64e) has another one: the device may run either, no common answer.
+        func be32(_ v: UInt32, _ d: inout Data) { withUnsafeBytes(of: v.bigEndian) { d.append(contentsOf: $0) } }
+        let objc = try Data(contentsOf: machO("duo-objc-fat"))
+        let arm64 = try IPAInspector.sliceOffsets(objc).first { MachOPatcher.u32(objc, $0 + 8) & 0xFF == 0 }!
+        // The slice's size: the fat entry's (big-endian) at +12 of its arch record.
+        let n = Int(objc[4..<8].reduce(0) { $0 << 8 | UInt32($1) })
+        let entry = (0..<n).map { 8 + $0 * 20 }.first { e in objc[e + 8..<e + 12].reduce(0) { $0 << 8 | Int($1) } == arm64 }!
+        let size = objc[entry + 12..<entry + 16].reduce(0) { $0 << 8 | Int($1) }
+        let first = objc.subdata(in: arm64..<arm64 + size)
+        var second = try Data(contentsOf: machO("duo-swift-arm64"))
+        second[8] = 2 // its own header says arm64e too
+        let align = 16384
+        let firstAt = align, secondAt = (firstAt + first.count + align - 1) / align * align
+        var fat = Data()
+        be32(0xCAFE_BABE, &fat); be32(2, &fat)
+        for (at, d, subtype) in [(firstAt, first, UInt32(0)), (secondAt, second, UInt32(2))] {
+            be32(0x0100_000C, &fat); be32(subtype, &fat); be32(UInt32(at), &fat); be32(UInt32(d.count), &fat); be32(14, &fat)
+        }
+        fat.append(Data(count: firstAt - fat.count)); fat.append(first)
+        fat.append(Data(count: secondAt - fat.count)); fat.append(second)
+        let url = try write(fat)
+        #expect(try ObjCClassScanner.classes(in: url, arch: "arm64").contains { $0.name == "FXBaseSceneDelegate" })
+        #expect(try ObjCClassScanner.classes(in: url, arch: "arm64e").contains { $0.name == "_TtC4main16AppSceneDelegate" })
+        #expect(ObjCClassScanner.sceneDelegateClass(in: url) == nil)
+        // The same slice twice: one answer.
+        var twice = Data()
+        be32(0xCAFE_BABE, &twice); be32(2, &twice)
+        for subtype in [UInt32(0), 2] {
+            be32(0x0100_000C, &twice); be32(subtype, &twice); be32(UInt32(firstAt), &twice); be32(UInt32(first.count), &twice); be32(14, &twice)
+        }
+        twice.append(Data(count: firstAt - twice.count)); twice.append(first)
+        #expect(ObjCClassScanner.sceneDelegateClass(in: try write(twice)) == "FXBaseSceneDelegate")
+    }
+
     @Test func noSceneDelegateInABinaryWithoutClasses() throws {
         let url = try write(versionedMachO(buildVersion: (2, packed(15, 0), packed(26, 4))))
         #expect(ObjCClassScanner.sceneDelegateClass(in: url) == nil)
