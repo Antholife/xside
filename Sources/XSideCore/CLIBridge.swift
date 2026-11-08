@@ -48,6 +48,18 @@ public enum CLIBridge {
         return overflow || seconds > maxPause ? nil : seconds
     }
 
+    /// The answer to `xside pause <app>`: the installations paused now (`when`: "until …"), and
+    /// those already paused, whose pause is left as it was (review D–G, minor 1).
+    public static func pauseAppSummary(paused: [String], already: [String], when: String) -> String {
+        var lines: [String] = []
+        if !paused.isEmpty { lines.append("Paused \(when): " + paused.joined(separator: ", ")) }
+        if !already.isEmpty {
+            lines.append("Already paused, left as it was: " + already.joined(separator: ", ")
+                         + ". To change it: xside resume <app>, then pause again.")
+        }
+        return lines.joined(separator: "\n")
+    }
+
     /// One request: `id` ties the answer to it.
     public struct Request: Equatable, Sendable {
         public let id: String

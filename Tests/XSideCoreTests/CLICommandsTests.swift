@@ -36,6 +36,19 @@ struct CLICommandsTests {
         #expect(e2.message.contains("maybe"))
         guard case .failure = parse("settings yt level=custom") else { Issue.record("custom is derived, not set"); return }
         guard case .failure = parse("settings") else { Issue.record("no app"); return }
+        // Review D–G minor 3: --json with changes isn't silently dropped.
+        guard case .failure(let e3) = parse("settings yt --json reminder=off") else { Issue.record("--json dropped"); return }
+        #expect(e3.message.contains("--json"))
+    }
+
+    /// Review D–G minor 1: an app already paused keeps its pause, and the answer says so.
+    @Test func pauseOfAnAlreadyPausedAppSaysSo() {
+        #expect(CLIBridge.pauseAppSummary(paused: ["YouTube on Duo"], already: [], when: "until 9 Nov, 14:00")
+                == "Paused until 9 Nov, 14:00: YouTube on Duo")
+        let both = CLIBridge.pauseAppSummary(paused: ["YouTube on Duo"], already: ["YouTube on iPad (until resumed)"],
+                                             when: "until 9 Nov, 14:00")
+        #expect(both == "Paused until 9 Nov, 14:00: YouTube on Duo\nAlready paused, left as it was: YouTube on iPad (until resumed). To change it: xside resume <app>, then pause again.")
+        #expect(!CLIBridge.pauseAppSummary(paused: [], already: ["YouTube on iPad (until resumed)"], when: "until 9 Nov").contains("Paused until"))
     }
 
     /// `pause <duration>` alone stays the global pause (1.0.6); `pause <app> [duration]` is one app.

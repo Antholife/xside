@@ -6,9 +6,10 @@ import XSideCore
 /// that opens a menu of the devices, then the device's apps with version and validity; settings belong to each installation, an app on a
 /// device, so the device is picked first; the per-device tabs on the right are gone). Whether the
 /// app gets XSide's features at all is the app's, the same on every device. The "…" menu of a row
-/// in the panel, and the "Mes apps" heading of the panel's list, open this page on that app and device
-/// (`AppModel.settingsApp`). Changes are stamped by the Mac and reach the app at its next
-/// check-in or signing; "Rafraîchissement automatique" pauses or resumes it right away.
+/// in the panel, and the panel header's "Mes apps" button, open this page on that app and device
+/// (`AppModel.settingsApp`). Changes are stamped by the Mac and reach the app at once while it's
+/// open (its watch), otherwise at its next check-in or signing; "Rafraîchissement automatique"
+/// pauses or resumes it right away.
 struct AppsSettingsPage: View {
     let model: AppModel
 

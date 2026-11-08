@@ -556,7 +556,7 @@
 "whatsNew.110.noFeatures.title" = "Installer sans les fonctionnalités XSide";
 "whatsNew.110.noFeatures.text" = "Pour une app qui refuse de se lancer parce qu'elle détecte une modification : installe-la telle quelle, app par app ou pour toutes, après une confirmation qui liste ce qui est perdu. XSide continue de la rafraîchir.";
 "whatsNew.110.appWindow.title" = "Mes apps, dans les Réglages";
-"whatsNew.110.appWindow.text" = "Réglages > Mes apps : choisis l'appareil, puis l'une de ses apps, pour régler le module XSide dans l'app sur cet appareil, appliqué à son prochain rafraîchissement ou à sa prochaine ouverture. Le menu … d'une app dans le panneau, ou le bouton Mes apps, y mène directement.";
+"whatsNew.110.appWindow.text" = "Réglages > Mes apps : choisis l'appareil, puis l'une de ses apps, pour régler le module XSide dans l'app sur cet appareil, appliqué en direct si elle est ouverte, sinon à sa prochaine ouverture ou à son prochain rafraîchissement. Le menu … d'une app dans le panneau, ou le bouton Mes apps, y mène directement.";
 "whatsNew.110.status.title" = "Où en est chaque changement";
 "whatsNew.110.status.text" = "Appareil par appareil, XSide dit simplement où on en est : app ouverte (les changements arrivent en direct), changements à la prochaine ouverture, ce qui est en attente (nommé), puis « a bien reçu tes réglages ». Il ne prétend jamais qu'un réglage est actif avant.";
 "whatsNew.110.panes.title" = "Réglages réorganisés";

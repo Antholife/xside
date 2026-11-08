@@ -556,7 +556,7 @@
 "whatsNew.110.noFeatures.title" = "Install without XSide features";
 "whatsNew.110.noFeatures.text" = "For an app that refuses to launch because it detects a change, install it as it came, per app or for all, after a confirmation that lists what's lost. XSide still refreshes it.";
 "whatsNew.110.appWindow.title" = "My apps, in Settings";
-"whatsNew.110.appWindow.text" = "Settings > My apps: pick the device, then one of its apps, to set the XSide module in the app on that device, applied at its next refresh or opening. An app's ... menu in the panel, or the My apps button, leads there directly.";
+"whatsNew.110.appWindow.text" = "Settings > My apps: pick the device, then one of its apps, to set the XSide module in the app on that device, applied live if it is open, otherwise at its next opening or refresh. An app's ... menu in the panel, or the My apps button, leads there directly.";
 "whatsNew.110.status.title" = "Where each change stands";
 "whatsNew.110.status.text" = "Per device, XSide says plainly where things stand: app open (changes arrive live), changes at the next opening, what is pending (by name), then \"received your settings\". It never claims a setting is active before that.";
 "whatsNew.110.panes.title" = "Settings, reorganized";

@@ -1748,7 +1748,7 @@ final class AppModel {
                     if on { await resumeRefreshing(entry) } else { await stopRefreshing(entry) }
                 }
                 lines.append("\(describe(entry)): " + changes.map(\.text).joined(separator: ", ")
-                             + " (reaches the app at its next opening or refresh)")
+                             + " (reaches the app at once if it's open, otherwise at its next opening or refresh)")
             }
             Self.logger.notice("command line settings: \(changes.map(\.text).joined(separator: ", "))")
             return (true, lines.joined(separator: "\n"))
@@ -1757,9 +1757,17 @@ final class AppModel {
             guard !found.isEmpty else { return (false, gone) }
             let until = seconds.map { Date().addingTimeInterval(TimeInterval($0)) }
             if let busy = found.first(where: { !canManage($0) }) { return (false, "\(describe(busy)) is busy, try again in a moment.") }
-            for entry in found { await stopRefreshing(entry, until: until) }
-            let when = until.map { "until \($0.formatted(date: .abbreviated, time: .shortened))" } ?? "until resumed (xside resume <app>)"
-            return (true, "Paused \(when): " + found.map(describe).joined(separator: ", "))
+            func untilText(_ date: Date?) -> String {
+                date.map { "until \($0.formatted(date: .abbreviated, time: .shortened))" } ?? "until resumed"
+            }
+            // Already paused: `stopRefreshing` leaves it (and its end) as it was; say so (review D–G m1).
+            let already = found.filter(\.installation.refreshPaused)
+            let toPause = found.filter { !$0.installation.refreshPaused }
+            for entry in toPause { await stopRefreshing(entry, until: until) }
+            return (true, CLIBridge.pauseAppSummary(
+                paused: toPause.map(describe),
+                already: already.map { "\(describe($0)) (\(untilText($0.installation.pausedUntil)))" },
+                when: until == nil ? "until resumed (xside resume <app>)" : untilText(until)))
         case .resumeApp(let record, let devices):
             let found = targets(record, devices)
             guard !found.isEmpty else { return (false, gone) }

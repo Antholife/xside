@@ -156,6 +156,8 @@ public enum CLIInvocation: Equatable, Sendable {
             guard !args.isEmpty else { return .failure(CLIUsageError("which app? (xside settings <app> [field=value…])")) }
             let app = args.removeFirst()
             if args.isEmpty { return .success(.showSettings(app: app, device: device, json: json)) }
+            // Changing prints a sentence, not JSON: say so rather than drop the flag (review D–G m3).
+            if json { return .failure(CLIUsageError("--json only shows settings; leave it out to change them")) }
             var changes: [CLISettingChange] = []
             for text in args {
                 switch CLISettingChange.parse(text) {
