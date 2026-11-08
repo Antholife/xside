@@ -112,7 +112,7 @@ UNUserNotificationCenter *XSCenter(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         NSString *real = XSRealBundleIDIfFaked();
-        NSLog(@"[XSide] bundle id: reported %@, real %@", NSBundle.mainBundle.bundleIdentifier, XSInfo()[@"CFBundleIdentifier"]);
+        NSLog(@"XSide: bundle id: reported %@, real %@", NSBundle.mainBundle.bundleIdentifier, XSInfo()[@"CFBundleIdentifier"]);
         SEL init = NSSelectorFromString(@"initWithBundleIdentifier:");
         if (real && [UNUserNotificationCenter instancesRespondToSelector:init]) {
             UNUserNotificationCenter *own = [UNUserNotificationCenter alloc];
@@ -244,7 +244,7 @@ UIFont *XSScaledFont(CGFloat size, UIFontWeight weight) {
 void XSWhenForeground(NSTimeInterval settle, void (^block)(void)) {
     UIApplication *app = UIApplication.sharedApplication;
     if (app.applicationState == UIApplicationStateActive && XSScene()) { block(); return; }
-    NSLog(@"[XSide] waiting for the foreground (app state %ld, scene %@)", (long)app.applicationState, XSScene() ? @"yes" : @"no");
+    NSLog(@"XSide: waiting for the foreground (app state %ld, scene %@)", (long)app.applicationState, XSScene() ? @"yes" : @"no");
     __block id observer = [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification
                                                                           object:nil queue:NSOperationQueue.mainQueue
                                                                       usingBlock:^(NSNotification *note) {
@@ -257,10 +257,10 @@ void XSWhenForeground(NSTimeInterval settle, void (^block)(void)) {
 
 static void XSOpenSettingsURL(NSURL *url, BOOL retry) {
     UIApplication *app = UIApplication.sharedApplication;
-    NSLog(@"[XSide] opening %@ (app state %ld, scene %@, bundle id reported %@, real %@)", url, (long)app.applicationState,
+    NSLog(@"XSide: opening %@ (app state %ld, scene %@, bundle id reported %@, real %@)", url, (long)app.applicationState,
           XSScene() ? @"active" : @"none", NSBundle.mainBundle.bundleIdentifier, XSInfo()[@"CFBundleIdentifier"]);
     [app openURL:url options:@{} completionHandler:^(BOOL success) {
-        NSLog(@"[XSide] opened %@: %d", url, success);
+        NSLog(@"XSide: opened %@: %d", url, success);
         if (success || !retry) return;
         // Refused (the app was not quite in front yet): once more, a moment later.
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
@@ -307,9 +307,9 @@ void XSOpenAppSettings(void) {
     NSURL *byID = faked ? [NSURL URLWithString:[@"App-prefs:" stringByAppendingString:faked]] : nil;
     XSWhenForeground(0.5, ^{
         if (!byID) { if (standard) XSOpenSettingsURL(standard, YES); return; }
-        NSLog(@"[XSide] bundle id faked: opening the page by the real id first");
+        NSLog(@"XSide: bundle id faked: opening the page by the real id first");
         [UIApplication.sharedApplication openURL:byID options:@{} completionHandler:^(BOOL success) {
-            NSLog(@"[XSide] opened %@: %d", byID, success);
+            NSLog(@"XSide: opened %@: %d", byID, success);
             if (!success && standard) XSOpenSettingsURL(standard, YES);
         }];
     });

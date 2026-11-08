@@ -177,7 +177,15 @@ BOOL XSShowsPills(NSDictionary *s) { return ![XSDerivedLevel(s) isEqualToString:
 
 BOOL XSShowsPill(NSDictionary *s, BOOL answer) { return answer || XSShowsPills(s); }
 
-BOOL XSShowsMacUpdatePill(NSDictionary *s) { return XSShowsRefreshCard(s); }
+BOOL XSShowsMacUpdatePill(NSDictionary *before, NSDictionary *after) {
+    return XSShowsPills(before) || XSShowsPills(after);
+}
+
+BOOL XSPillScreenFree(BOOL hasPill, BOOL onScreenWhenFree, BOOL windowHidden, NSTimeInterval shownFor,
+                      NSTimeInterval duration) {
+    if (!hasPill || onScreenWhenFree || windowHidden) return YES;
+    return duration > 0 && shownFor > duration + 3;
+}
 
 NSArray<NSString *> *XSSheetPages(BOOL channel, BOOL granted, BOOL explained, BOOL askNotifications) {
     NSMutableArray *pages = [NSMutableArray arrayWithObject:@"welcome"];

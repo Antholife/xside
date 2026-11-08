@@ -92,6 +92,13 @@ public enum ChannelHandler {
         }
     }
 
+    /// The fields whose value a `settings` reply changes for a phone that sent `sent`, in the
+    /// settings' order: what the phone will show as changed from the Mac (logged by the Mac for
+    /// each reply, device feedback 3, E2).
+    public static func fieldsChanged(for sent: InAppSettings, by reply: InAppSettings) -> [InAppField] {
+        InAppField.allCases.filter { reply.fields(differingFrom: sent).contains($0) }
+    }
+
     /// Dates from the phone later than the accepted clock difference are brought back to `now`, so
     /// a phone whose clock runs ahead can't make its values win every later merge.
     static func clamped(_ s: InAppSettings, now: Date) -> InAppSettings {

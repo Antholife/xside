@@ -425,9 +425,12 @@ public actor AppLibrary {
         // snapshot keeps its newer fields.
         let merged = installation.inApp.map { InAppSettings.merge($0, settings) } ?? settings
         // The phone checks in every 15 s while the app is in front (device feedback round 2, P3):
-        // one that changes nothing within a minute of the stored check-in writes nothing.
+        // one that changes nothing within a minute of the stored check-in writes nothing. Unless
+        // the Mac edited the settings since: this check-in is the one that delivered the edit, and
+        // its date is what confirms it (device feedback 3, E2: it stayed "pending" up to a minute).
         if merged == installation.inApp, outcome == nil,
            let last = installation.lastCheckIn, checkIn.timeIntervalSince(last) < Self.quietCheckInInterval,
+           (installation.lastMacEdit ?? .distantPast) <= last,
            installation.refreshPaused != merged.autoRefresh.value {
             return nil
         }

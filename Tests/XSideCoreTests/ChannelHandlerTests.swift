@@ -370,6 +370,46 @@ import Foundation
         #expect(await stored(lib, rec.id)?.lastRefreshOutcome == outcome) // nil keeps the stored one
     }
 
+    /// Device feedback 3, E2, the whole sequence: the app is open and polling; the Mac edits a
+    /// setting of that installation; the next poll's signed reply carries the Mac's newer field,
+    /// and the fields it changes for the phone are those the Mac's log names; the check-in stored
+    /// after it keeps the edit, which the Mac then calls confirmed.
+    @Test func aMacEditReachesThePollingPhone() async throws {
+        let (lib, rec, tmp) = try await library(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let secret = Data(repeating: 7, count: 32)
+        let channelID = ChannelEnvelope.installationID(recordID: rec.id, deviceID: "a")
+        // What the phone holds: the settings written at signing (60 s ago).
+        let phone = InAppSettings.defaults(reminder: true, at: now.addingTimeInterval(-60))
+        _ = try await lib.applyCheckIn(phone, checkIn: now.addingTimeInterval(-30), outcome: nil, recordID: rec.id, deviceID: "a")
+        let edit = now.addingTimeInterval(-5)
+        try await lib.editInApp(recordID: rec.id, deviceID: "a", reminder: true, at: edit) {
+            $0.setting(\.refreshCard, to: false, at: edit, by: .mac)
+        }
+        // The poll: the installation the channel id names is the one edited.
+        let found = try #require(await lib.installation(channelID: channelID))
+        #expect(found.recordID == rec.id && found.installation.deviceID == "a")
+        let (reply, update) = ChannelHandler.handle(.checkIn(settings: phone, lastRefresh: nil, appVersion: "1"),
+                                                    installation: found.installation, now: now, reminder: true)
+        guard case let .settings(sent, _) = reply else { Issue.record("no settings reply"); return }
+        #expect(sent.refreshCard == Field(value: false, changedAt: edit, changedBy: .mac))
+        #expect(ChannelHandler.fieldsChanged(for: phone, by: sent) == [.refreshCard])
+        // Over the wire, as the phone opens it.
+        let line = try ChannelHandler.replyLine(reply, installationID: channelID, requestNonce: "n1", secret: secret)
+        let opened = try ChannelReplyEnvelope.decode(line: line.dropLast())
+            .open(secret: secret, expectedInstallationID: channelID, expectedNonce: "n1")
+        guard case let .settings(received, _)? = opened else { Issue.record("reply not opened"); return }
+        #expect(received.refreshCard.value == false && received.refreshCard.changedBy == .mac)
+        #expect(abs(received.refreshCard.changedAt.timeIntervalSince(edit)) < 0.001)
+        // Stored, the edit stays the Mac's and is confirmed by this check-in.
+        guard case let .merged(merged, checkIn, outcome) = update else { Issue.record("no merge"); return }
+        _ = try await lib.applyCheckIn(merged, checkIn: checkIn, outcome: outcome, recordID: rec.id, deviceID: "a")
+        let stored = try #require(await stored(lib, rec.id))
+        #expect(stored.inApp?.refreshCard.value == false)
+        #expect(SettingsDelivery.of(installation: stored) == .confirmed(lastCheckIn: now))
+        // The next poll, from a phone that adopted it, changes nothing.
+        #expect(ChannelHandler.fieldsChanged(for: received, by: merged).isEmpty)
+    }
+
     /// The phone checks in every 15 s while the app is in front (device feedback round 2, P3): a
     /// check-in that changes nothing, within a minute of the stored one, writes nothing.
     @Test func aCheckInThatChangesNothingSoonAfterAnotherIsNotWritten() async throws {

@@ -36,10 +36,10 @@ void XSRemoveLeftoverShortcuts(void) {
         }
         if (own.count == items.count) return;
         UIApplication.sharedApplication.shortcutItems = own;
-        NSLog(@"[XSide] quick actions: %lu dynamic item(s) left by an earlier build removed",
+        NSLog(@"XSide: quick actions: %lu dynamic item(s) left by an earlier build removed",
               (unsigned long)(items.count - own.count));
     } @catch (NSException *e) {
-        NSLog(@"[XSide] quick actions: %@", e);
+        NSLog(@"XSide: quick actions: %@", e);
     }
 }
 
@@ -79,7 +79,7 @@ static BOOL XSHandleShortcut(UIApplicationShortcutItem *item) {
         XSLastHandledType = type;
         XSLastHandledAt = NSDate.date;
         NSString *name = [type substringFromIndex:XSShortcutPrefix.length];
-        NSLog(@"[XSide] quick action %@", name);
+        NSLog(@"XSide: quick action %@", name);
         XSWhenForeground(0.3, ^{
             if ([name isEqualToString:@"refresh"]) XSRequestRefresh();
             else if ([name isEqualToString:@"settings"]) XSOpenAppSettings();
@@ -167,7 +167,7 @@ static void XSHookDelegateSetter(Class cls, void (^patch)(id delegate)) {
     IMP original = method_getImplementation(method);
     IMP wrapped = imp_implementationWithBlock(^(id me, id delegate) {
         if (delegate) {
-            @try { patch(delegate); } @catch (NSException *e) { NSLog(@"[XSide] quick actions: %@", e); }
+            @try { patch(delegate); } @catch (NSException *e) { NSLog(@"XSide: quick actions: %@", e); }
         }
         ((void (*)(id, SEL, id))original)(me, sel, delegate);
     });

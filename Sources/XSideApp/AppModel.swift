@@ -1078,6 +1078,11 @@ final class AppModel {
         case .none:
             await reply(answer)
         case let .merged(settings, checkIn, outcome):
+            // What this reply changes on the phone (device feedback 3, E2): a Mac edit shows here.
+            if case let .checkIn(sent, _, _) = request, case let .settings(replied, _) = answer {
+                let changed = ChannelHandler.fieldsChanged(for: sent, by: replied)
+                Self.channelLogger.notice("channel: settings reply for \(found.recordID) on \(job.deviceID): changed fields \(changed.isEmpty ? "none" : changed.map { "\($0.rawValue)=\(Self.describe(replied, $0))" }.joined(separator: ", "))")
+            }
             do {
                 let change = try await library.applyCheckIn(settings, checkIn: checkIn, outcome: outcome,
                                                              recordID: job.recordID, deviceID: job.deviceID)
@@ -1177,6 +1182,19 @@ final class AppModel {
     /// The pause changed from the phone: reminders and notification state follow, as from the panel.
     private func pauseChanged(_ job: RefreshJob, paused: Bool) {
         if paused { onInstallationRemoved?(job) } else { onRefreshResumed?(job) }
+    }
+
+    /// One setting's value and stamp, for the log ("false (mac 2026-11-08T17:27:03Z)").
+    private static func describe(_ s: InAppSettings, _ field: InAppField) -> String {
+        func d<V>(_ f: Field<V>) -> String { "\(f.value) (\(f.changedBy.rawValue) \(f.changedAt.formatted(.iso8601)))" }
+        switch field {
+        case .showValidity: return d(s.showValidity)
+        case .alertLate: return d(s.alertLate)
+        case .refreshCard: return d(s.refreshCard)
+        case .reminder: return d(s.reminder)
+        case .language: return d(s.language)
+        case .autoRefresh: return d(s.autoRefresh)
+        }
     }
 
     private static func describe(_ request: ChannelRequest) -> String {
@@ -1916,6 +1934,8 @@ final class AppModel {
         do {
             try await library.editInApp(recordID: key.recordID, deviceID: key.deviceID,
                                         reminder: Self.setting(Self.deviceReminderKey), at: Date(), transform)
+            // Which installation got it (device feedback 3, E2): the phone's check-ins name it the same way.
+            Self.channelLogger.notice("channel: Mac edit stored for \(key.recordID) on \(key.deviceID)")
         } catch {
             Self.logger.error("in-app settings edit failed: \(String(describing: error))")
         }

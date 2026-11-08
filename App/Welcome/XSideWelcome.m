@@ -677,7 +677,7 @@ static void XSShowSheet(NSDate *expiry, NSArray<NSString *> *pages, BOOL startsN
             // for the "Réseau local" page (device feedback round 2, P4: it used to run anyway, so
             // iOS asked with no page before). It is dropped; the next access shows the page.
             if (done && ![pages containsObject:@"network"]) done();
-            else if (done) NSLog(@"[XSide] local network: no screen for its page, access dropped");
+            else if (done) NSLog(@"XSide: local network: no screen for its page, access dropped");
             XSSheetEnded();
             return;
         }
@@ -723,7 +723,7 @@ void XSExplainNetworkThen(void (^block)(void)) {
         }
         // The first network access after the first-launch sheet (an app installed before 1.1, or a
         // sheet left before its page): the "Réseau local" page on its own, then the access.
-        NSLog(@"[XSide] local network: its page first, then XSide's first access");
+        NSLog(@"XSide: local network: its page first, then XSide's first access");
         XSSheetUp = YES;
         XSShowSheet(nil, @[@"network"], NO, block, 0);
     });
@@ -756,11 +756,11 @@ void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded) {
     }
     [center getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings *settings) {
         UNAuthorizationStatus status = settings.authorizationStatus;
-        NSLog(@"[XSide] notifications: status %ld, ask %d, reminder in %.0f s", (long)status, askIfNeeded, wait);
+        NSLog(@"XSide: notifications: status %ld, ask %d, reminder in %.0f s", (long)status, askIfNeeded, wait);
         if (status == UNAuthorizationStatusNotDetermined && askIfNeeded) {
             [center requestAuthorizationWithOptions:UNAuthorizationOptionAlert | UNAuthorizationOptionSound
                                   completionHandler:^(BOOL granted, NSError *error) {
-                NSLog(@"[XSide] notifications: asked, granted %d, error %@", granted, error);
+                NSLog(@"XSide: notifications: asked, granted %d, error %@", granted, error);
                 if (granted) dispatch_async(dispatch_get_main_queue(), ^{ XSScheduleReminder(expiry, NO); });
             }];
             return;
@@ -781,7 +781,7 @@ void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded) {
         if (logo) content.attachments = @[logo];
         UNTimeIntervalNotificationTrigger *trigger = [UNTimeIntervalNotificationTrigger triggerWithTimeInterval:wait repeats:NO];
         [center addNotificationRequest:[UNNotificationRequest requestWithIdentifier:XSReminderID content:content trigger:trigger]
-                 withCompletionHandler:^(NSError *error) { NSLog(@"[XSide] reminder scheduled, error %@", error); }];
+                 withCompletionHandler:^(NSError *error) { NSLog(@"XSide: reminder scheduled, error %@", error); }];
     }];
 }
 

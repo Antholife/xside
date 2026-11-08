@@ -129,7 +129,7 @@ BOOL XSLoadSettings(void) {
         // Restamped fields (a new date, even when the value is back to what it was) are told.
         for (NSString *f in XSSettingFields()) {
             if ([noticed[f] isEqual:local[f]]) continue;
-            NSLog(@"[XSide] %@ changed in iOS Settings, dated %@ (file at start %@)", f, when, XSDefaultsModifiedAtStart);
+            NSLog(@"XSide: %@ changed in iOS Settings, dated %@ (file at start %@)", f, when, XSDefaultsModifiedAtStart);
             if ([f isEqualToString:@"autoRefresh"]) {
                 XSAutoRefreshChangedOnPhone = YES;
                 [d setBool:YES forKey:XSAutoRefreshChangedKey];

@@ -73,7 +73,7 @@ BOOL XSHasSettingsSection(void);
 /// the local network, at a moment XSide doesn't choose (device feedback round 2, P4).
 BOOL XSAppUsesLocalNetwork(void);
 /// Opens the app's page in iOS Settings, where XSide's row is, once the app is in the foreground
-/// (logged as [XSide]). iOS has no way to open XSide's page under it directly.
+/// (logged as "XSide:"). iOS has no way to open XSide's page under it directly.
 void XSOpenAppSettings(void);
 
 /// The primary button: XSide's violet-to-pink gradient.

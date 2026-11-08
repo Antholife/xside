@@ -50,6 +50,8 @@ static XSPillContent *XSPillOnScreen;
 /// The pill waiting for the screen to be free (XSShowPillWhenFree), and since when.
 static XSPillContent *XSPillWaiting;
 static NSDate *XSPillWaitingSince;
+/// When the pill on screen was put there.
+static NSDate *XSPillShownAt;
 
 static void XSShowPillAttempt(XSPillContent *content, int attempt);
 
@@ -62,7 +64,10 @@ static void XSHidePillWindow(UIWindow *window, BOOL gone) {
     if (!gone || !XSPillWaiting) return;
     XSPillContent *next = XSPillWaiting;
     XSPillWaiting = nil;
-    if (-XSPillWaitingSince.timeIntervalSinceNow > 30) return; // too late to be news
+    if (-XSPillWaitingSince.timeIntervalSinceNow > 30) { // too late to be news
+        NSLog(@"XSide: pill: dropped, waited over 30 s: %@", next.lead);
+        return;
+    }
     XSShowPillAttempt(next, 0);
 }
 
@@ -284,7 +289,9 @@ static void XSShowPillAttempt(XSPillContent *content, int attempt) {
     window.backgroundColor = UIColor.clearColor;
     XSPillWindow = window;
     XSPillOnScreen = content;
+    XSPillShownAt = NSDate.date;
     window.hidden = NO; // never key: the app keeps its keyboard and focus
+    NSLog(@"XSide: pill: shown: %@%@", content.lead ?: @"", content.strong ?: @"");
 }
 
 void XSShowPill(XSPillContent *content) {
@@ -314,14 +321,21 @@ void XSShowKeptAnswer(void) {
 }
 
 void XSShowPillWhenFree(XSPillContent *content) {
-    if (!XSShowsPill(XSCurrentSettings(), content.answer)) return;
+    if (!XSShowsPill(XSCurrentSettings(), content.answer)) {
+        NSLog(@"XSide: pill: not shown, every XSide message is off: %@", content.lead);
+        return;
+    }
     content.whenFree = YES;
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (!XSPillWindow || XSPillOnScreen.whenFree) {
+        // Device feedback 3, E2: a pill whose dismissal never came (its view never appeared) held
+        // every later one back for good; past its time it no longer does.
+        NSTimeInterval shownFor = XSPillShownAt ? -XSPillShownAt.timeIntervalSinceNow : 0;
+        if (XSPillScreenFree(XSPillWindow != nil, XSPillOnScreen.whenFree, XSPillWindow.hidden, shownFor, XSPillOnScreen.duration)) {
             XSPillWaiting = nil;
             XSShowPillAttempt(content, 0);
             return;
         }
+        NSLog(@"XSide: pill: waiting for the one on screen (%@): %@", XSPillOnScreen.lead, content.lead);
         XSPillWaiting = content;
         XSPillWaitingSince = NSDate.date;
     });
@@ -400,7 +414,7 @@ void XSOfferNotificationsIfNeeded(void (^otherwise)(void)) {
             c.action = ^{
                 [XSCenter() requestAuthorizationWithOptions:UNAuthorizationOptionAlert | UNAuthorizationOptionSound
                                           completionHandler:^(BOOL granted, NSError *error) {
-                    NSLog(@"[XSide] notifications: asked from the pill, granted %d, error %@", granted, error);
+                    NSLog(@"XSide: notifications: asked from the pill, granted %d, error %@", granted, error);
                     dispatch_async(dispatch_get_main_queue(), ^{
                         NSDate *expiry = XSExpirationDate();
                         if (granted && expiry) XSScheduleReminder(expiry, NO);

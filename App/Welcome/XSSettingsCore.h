@@ -97,9 +97,15 @@ BOOL XSShowsPills(NSDictionary *s);
 /// a pill's button) shows even with "Aucun", since silence after a tap looks broken (ledger
 /// ruling after device feedback round 1); any other only when XSShowsPills.
 BOOL XSShowsPill(NSDictionary *s, BOOL answer);
-/// "Réglages mis à jour depuis ton Mac": news of what XSide did from the Mac, like the card after
-/// a refresh, so under the same switch.
-BOOL XSShowsMacUpdatePill(NSDictionary *s);
+/// "… depuis ton Mac": a change made on the Mac, told unless every message is off both before and
+/// after it (device feedback 3, E2: it was under "Carte après rafraîchissement", so turning that
+/// card off from the Mac, or having it off, told nothing and read as the change not arriving).
+BOOL XSShowsMacUpdatePill(NSDictionary *before, NSDictionary *after);
+/// The pill on screen no longer holds a "when free" one back: there is none, it is itself a "when
+/// free" one, its window is hidden, or its time is over (`shownFor` past `duration` + 3 s: its
+/// dismissal never came). One without a duration (work in progress) holds it until replaced.
+BOOL XSPillScreenFree(BOOL hasPill, BOOL onScreenWhenFree, BOOL windowHidden, NSTimeInterval shownFor,
+                      NSTimeInterval duration);
 
 // MARK: First launch (device feedback round 1, B1)
 

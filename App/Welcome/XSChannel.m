@@ -188,7 +188,7 @@ static BOOL XSIsPolicyDenied(nw_error_t error) {
         for (id endpoint in self->_found) {
             if (![self->_refused containsObject:endpoint]) [self->_pending addObject:endpoint];
         }
-        NSLog(@"[XSide] channel: trying again (%lu)", (unsigned long)self->_pending.count);
+        NSLog(@"XSide: channel: trying again (%lu)", (unsigned long)self->_pending.count);
         [self tryNext];
     });
 }
@@ -356,11 +356,28 @@ static XSPillContent *XSChangePill(NSArray<NSString *> *fields, BOOL byMac, NSAr
 
 /// A check-in's answer: the merged settings and the last refresh adopted. Returns the fields whose
 /// value the Mac changed (nil when the reply wasn't a valid `settings`).
+/// The settings just before the last adopted reply (for the pill's decision, XSMacChangePill).
+static NSDictionary *XSSettingsBeforeAdopt;
+
+/// "refreshCard=0 (mac 2026-11-08 17:27:03 +0000)" for each field, for the log.
+static NSString *XSDescribeFields(NSArray<NSString *> *fields, NSDictionary *s) {
+    NSMutableArray *parts = [NSMutableArray array];
+    for (NSString *f in fields) {
+        NSDictionary *field = s[f];
+        [parts addObject:[NSString stringWithFormat:@"%@=%@ (%@ %@)", f, field[@"value"], field[@"changedBy"], field[@"changedAt"]]];
+    }
+    return parts.count ? [parts componentsJoinedByString:@", "] : @"none";
+}
+
 static NSArray<NSString *> *XSAdoptCheckInReply(XSChannelResult result, NSDictionary *reply) {
     NSDictionary *settings = result == XSChannelReplied && [reply[@"type"] isEqual:@"settings"]
         ? XSSettingsFromJSONObject(reply[@"settings"]) : nil;
-    if (!settings) return nil;
+    if (!settings) {
+        NSLog(@"XSide: sync: no settings in the answer (result %ld, reply %@)", (long)result, reply[@"type"] ?: @"none");
+        return nil;
+    }
     NSDictionary *before = XSCurrentSettings();
+    XSSettingsBeforeAdopt = before;
     XSAdoptSettings(settings);
     XSRecordCheckIn(NSDate.date);
     // How the last refresh went, as XSide knows it (it may have ended while the app was away).
@@ -368,7 +385,25 @@ static NSArray<NSString *> *XSAdoptCheckInReply(XSChannelResult result, NSDictio
     if (outcome) XSAdoptRefreshOutcome(outcome);
     NSDate *expiry = XSExpirationDate();
     if (expiry) XSScheduleReminder(expiry, NO); // the reminder switch may have changed
-    return XSFieldsChangedByMac(before, XSCurrentSettings());
+    NSDictionary *after = XSCurrentSettings();
+    NSArray<NSString *> *byMac = XSFieldsChangedByMac(before, after);
+    NSLog(@"XSide: sync: settings reply adopted; changed by the Mac: %@; written to the iOS Settings rows",
+          XSDescribeFields(byMac, after));
+    return byMac;
+}
+
+/// The one pill for what the Mac changed (nil when nothing changed, or every message is off before
+/// and after: XSShowsMacUpdatePill). Told even when the change itself turned every message off.
+static XSPillContent *XSMacChangePill(NSArray<NSString *> *byMac) {
+    if (!byMac.count) return nil;
+    NSDictionary *after = XSCurrentSettings();
+    if (!XSShowsMacUpdatePill(XSSettingsBeforeAdopt ?: after, after)) {
+        NSLog(@"XSide: pill: change from the Mac not shown, every XSide message is off");
+        return nil;
+    }
+    XSPillContent *c = XSChangePill(byMac, YES, nil);
+    c.answer = !XSShowsPills(after); // the last one before "Aucun": said all the same
+    return c;
 }
 
 /// A check-in exchange; `anyway`: browses even before the local network was allowed (right after
@@ -390,16 +425,16 @@ static void XSRunCheckIn(NSTimeInterval find, BOOL anyway, void (^handler)(XSCha
 void XSCheckIn(void (^done)(XSPillContent *news)) {
     // Silent and short (spec: ≤ 3 s): nothing is shown here; the caller shows what the Mac changed.
     XSRunCheckIn(3, NO, ^(XSChannelResult result, NSArray *byMac) {
-        XSPillContent *news = byMac.count && XSShowsMacUpdatePill(XSCurrentSettings()) ? XSChangePill(byMac, YES, nil) : nil;
+        XSPillContent *news = XSMacChangePill(byMac);
         if (done) done(news);
     });
 }
 
 void XSStartLocalNetwork(void) {
     // iOS asks while this browses (up to 30 s to answer); silent whatever happens.
-    NSLog(@"[XSide] local network: first access by XSide, right after its page");
+    NSLog(@"XSide: local network: first access by XSide, right after its page");
     XSRunCheckIn(30, YES, ^(XSChannelResult result, NSArray *byMac) {
-        NSLog(@"[XSide] local network: first check-in, result %ld", (long)result);
+        NSLog(@"XSide: local network: first check-in, result %ld", (long)result);
     });
 }
 
@@ -468,13 +503,15 @@ static void XSPollNow(void) {
     XSLastPoll = now;
     XSRunCheckIn(3, NO, ^(XSChannelResult result, NSArray *byMac) {
         if (result != XSChannelReplied || !byMac) {
+            NSLog(@"XSide: poll: no answer (result %ld), quiet for %.0f s", (long)result, XSPollQuietTime);
             XSPollQuietUntil = [NSDate dateWithTimeIntervalSinceNow:XSPollQuietTime];
             return;
         }
         XSPollQuietUntil = nil;
         if (!byMac.count) return;
-        NSLog(@"[XSide] live update from the Mac: %@", byMac);
-        if (XSShowsMacUpdatePill(XSCurrentSettings())) XSShowPillWhenFree(XSChangePill(byMac, YES, nil));
+        NSLog(@"XSide: poll: live update from the Mac: %@", byMac);
+        XSPillContent *pill = XSMacChangePill(byMac);
+        if (pill) XSShowPillWhenFree(pill);
     });
 }
 
@@ -580,7 +617,7 @@ static void XSTellFailure(NSString *reasonKey) {
         content.sound = UNNotificationSound.defaultSound;
         [center addNotificationRequest:[UNNotificationRequest requestWithIdentifier:@"io.github.xside.welcome.refreshFailed"
                                                                             content:content trigger:nil]
-                 withCompletionHandler:^(NSError *error) { NSLog(@"[XSide] refresh failure notified, error %@", error); }];
+                 withCompletionHandler:^(NSError *error) { NSLog(@"XSide: refresh failure notified, error %@", error); }];
     }];
 }
 
@@ -634,7 +671,7 @@ static void XSRequestRefreshNow(void) {
             XSShowAnswer(why);
             [XSCenter() requestAuthorizationWithOptions:UNAuthorizationOptionAlert | UNAuthorizationOptionSound
                                       completionHandler:^(BOOL granted, NSError *error) {
-                NSLog(@"[XSide] notifications: asked before a refresh, granted %d, error %@", granted, error);
+                NSLog(@"XSide: notifications: asked before a refresh, granted %d, error %@", granted, error);
                 dispatch_async(dispatch_get_main_queue(), ^{
                     NSDate *expiry = XSExpirationDate();
                     if (granted && expiry) XSScheduleReminder(expiry, NO);

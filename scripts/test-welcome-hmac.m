@@ -254,8 +254,28 @@ int main(int argc, const char *argv[]) {
         check(XSShowsPill(S(NO, NO, NO, NO), YES) && !XSShowsPill(S(NO, NO, NO, NO), NO)
               && XSShowsPill(S(NO, NO, NO, YES), NO) && XSShowsPill(S(YES, YES, YES, YES), YES),
               @"pills: answers to the person show even with \"Aucun\"");
-        check(XSShowsMacUpdatePill(S(NO, NO, YES, NO)) && !XSShowsMacUpdatePill(S(YES, YES, NO, YES)),
-              @"\"updated from your Mac\" follows the refresh card switch");
+        // Device feedback 3, E2: a change made on the Mac is told unless every message is off,
+        // before and after it (it no longer depends on "Carte après rafraîchissement", whose own
+        // change from the Mac was never told).
+        check(XSShowsMacUpdatePill(S(YES, YES, YES, YES), S(YES, YES, NO, YES)) && XSShowsMacUpdatePill(S(NO, YES, NO, YES), S(NO, NO, NO, YES))
+              && XSShowsMacUpdatePill(S(NO, YES, NO, NO), S(NO, NO, NO, NO)) && !XSShowsMacUpdatePill(S(NO, NO, NO, NO), S(NO, NO, NO, NO)),
+              @"\"updated from your Mac\": unless every message is off before and after");
+
+        // Device feedback 3, E2, the whole sequence on the phone: it holds the settings of its
+        // signing; a poll's reply (JSON, dates in ms) carries the Mac's newer "Carte après
+        // rafraîchissement"; adopted, it is the one field changed by the Mac, and its pill shows.
+        NSDictionary *signedSettings = XSSettingsDefaults(YES, at(0));
+        NSDictionary *macEdited = XSSettingsSetting(signedSettings, @"refreshCard", @NO, at(30.5), @"mac");
+        NSDictionary *replied = XSSettingsFromJSONObject(XSSettingsJSONObject(macEdited));
+        NSDictionary *adoptedReply = XSSettingsMerge(signedSettings, replied ?: @{});
+        check(replied && [XSFieldsChangedByMac(signedSettings, adoptedReply) isEqual:@[@"refreshCard"]]
+              && XSShowsMacUpdatePill(signedSettings, adoptedReply)
+              && XSFieldsChangedByMac(adoptedReply, XSSettingsMerge(adoptedReply, replied ?: @{})).count == 0,
+              @"sequence: the Mac's change in a poll's reply is adopted, named and told once");
+        // A pill on screen holds the next one back only while it is really there.
+        check(XSPillScreenFree(NO, NO, NO, 0, 0) && XSPillScreenFree(YES, YES, NO, 1, 5) && XSPillScreenFree(YES, NO, YES, 1, 5)
+              && !XSPillScreenFree(YES, NO, NO, 4, 5) && !XSPillScreenFree(YES, NO, NO, 600, 0)
+              && XSPillScreenFree(YES, NO, NO, 9, 5), @"pills: one whose time is over no longer holds the next back");
 
         // B1: the first-launch sheet's pages, and the local network explanation.
         check([XSSheetPages(YES, NO, NO, YES) isEqual:(@[@"welcome", @"network", @"notifications"])], @"sheet: three pages");
