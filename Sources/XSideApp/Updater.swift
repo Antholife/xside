@@ -25,7 +25,7 @@ final class Updater {
         case beta, stable
         var id: String { rawValue }
         static let storageKey = "updateChannel"
-        /// Until 1.0 ships, only betas exist: the stable channel would offer nothing.
+        /// Until the first stable release ships, only betas exist: the stable channel would offer nothing.
         static let stableAvailable = false
     }
 

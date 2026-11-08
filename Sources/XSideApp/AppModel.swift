@@ -1923,10 +1923,12 @@ final class AppModel {
     }
 
     /// The app's own choice of XSide's features (nil: follow the Mac's default). Applies at its
-    /// next install or refresh.
-    func setWithoutXSideFeatures(_ without: Bool?, recordID: UUID) async {
+    /// next install or refresh. `deleteFirst`: the confirmation's opt-in (see
+    /// `InstallOptions.deleteFirstWithoutFeatures`), kept only while the app goes without them.
+    func setWithoutXSideFeatures(_ without: Bool?, deleteFirst: Bool = false, recordID: UUID) async {
         guard var options = records.first(where: { $0.id == recordID })?.options else { return }
         options.withoutXSideFeatures = without
+        options.deleteFirstWithoutFeatures = without == true && deleteFirst
         do { try await library.setOptions(options, for: recordID) } catch {
             Self.logger.error("features choice failed: \(String(describing: error))")
         }

@@ -398,6 +398,18 @@ public actor SideloadPipeline {
                     })
             }
             await progress(.installing)
+            if Self.deletesFirst(options: options, previous: previous) {
+                // After signing, so a failure before here leaves the app as it was. A failed
+                // deletion doesn't stop the install: the app is updated, XSide's items may stay.
+                Self.logger.notice("\(what): deleting the app first, so XSide's quick actions go with the module")
+                do {
+                    try await CommandEnvironment.withDeveloperDir(current.developerDir) { [installer] in
+                        try await installer.uninstall(bundleID: previousBundleID ?? bundleID, deviceID: device.id)
+                    }
+                } catch where !(error is CancellationError) && !Task.isCancelled {
+                    Self.logger.error("\(what): deleting first failed, updating instead: \(error)")
+                }
+            }
             Self.logger.info("\(what): installing")
             try await CommandEnvironment.withDeveloperDir(current.developerDir) { [installer] in
                 try await installer.install(app: app, deviceID: device.id)
@@ -453,6 +465,15 @@ public actor SideloadPipeline {
             }
             throw explained
         }
+    }
+
+    /// The app goes without XSide's module on a device whose installation had it, and the person
+    /// opted in to deleting it first (mega review Important 1). `options` already resolved. Once
+    /// per installation: the next signing sees an installation recorded without features.
+    static func deletesFirst(options: InstallOptions, previous: Installation?) -> Bool {
+        guard options.withoutXSideFeatures == true, options.deleteFirstWithoutFeatures,
+              let previous else { return false }
+        return previous.withoutXSideFeatures != true
     }
 
     /// What this signing writes into the app: a new channel secret (each signing rotates it), the

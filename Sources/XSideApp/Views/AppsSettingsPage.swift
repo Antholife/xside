@@ -119,6 +119,14 @@ private struct AppSettingsContent: View {
     private var hasFeatures: Bool {
         !entry.record.options.resolvedWithoutXSideFeatures(default: AppModel.withoutXSideFeaturesByDefault)
     }
+    /// An installation of the app has XSide's module (see `InAppSettingsSection.setDeleteFirst`).
+    private var hasModule: Bool {
+        entry.record.installations.contains { $0.withoutXSideFeatures != true }
+    }
+    /// The confirmation's "delete first" choice, handed from its callback to the features binding
+    /// set right after it (a box: both run in the same action).
+    @State private var deleteFirst = Box()
+    final class Box { var value = false }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -128,7 +136,9 @@ private struct AppSettingsContent: View {
                     InAppSettingsSection(
                         settings: settings, appName: appName,
                         hasFeatures: Binding(get: { hasFeatures }, set: { on in
-                            Task { await model.setWithoutXSideFeatures(!on, recordID: entry.record.id) }
+                            let deletes = !on && deleteFirst.value
+                            deleteFirst.value = false
+                            Task { await model.setWithoutXSideFeatures(!on, deleteFirst: deletes, recordID: entry.record.id) }
                         }),
                         edit: { change in Task { await model.editInApp(entry.id, change) } },
                         setAutoRefresh: { on in
@@ -143,7 +153,8 @@ private struct AppSettingsContent: View {
                         },
                         statuses: [DeviceSyncLine(deviceID: entry.installation.deviceID, deviceName: deviceName,
                                                   installation: entry.installation)],
-                        isDisabled: !model.canManage(entry))
+                        isDisabled: !model.canManage(entry),
+                        setDeleteFirst: hasModule ? { deleteFirst.value = $0 } : nil)
                     Text(L("appSettings.note"))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)

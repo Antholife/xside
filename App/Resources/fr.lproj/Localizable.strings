@@ -554,7 +554,7 @@
 "whatsNew.110.status.title" = "Où en est chaque changement";
 "whatsNew.110.status.text" = "Appareil par appareil, XSide dit si l'iPhone est joignable et si un changement est en attente, écrit ou confirmé par l'iPhone. Il ne prétend jamais qu'un réglage est actif avant.";
 "whatsNew.110.panes.title" = "Réglages réorganisés";
-"whatsNew.110.panes.text" = "Dix pages : Général, Rafraîchissement, Installation, XSide dans les apps (les valeurs par défaut des nouvelles installations), Mes apps, Notifications, Xcode et signature, Mises à jour, Signalement et journaux, À propos.";
+"whatsNew.110.panes.text" = "Onze pages : Général, Rafraîchissement, Installation, XSide dans les apps (les valeurs par défaut des nouvelles installations), Mes apps, Notifications, Xcode et signature, Mises à jour, Signalement et journaux, Créer & contribuer, À propos.";
 "whatsNew.110.switch.title" = "Un nouvel interrupteur";
 "whatsNew.110.switch.text" = "Les interrupteurs d'XSide prennent le dégradé de la marque, et répondent au clavier (anneau de focus, Espace).";
 "whatsNew.110.inject.title" = "« Injection du module XSide »";
@@ -669,7 +669,7 @@
 "inApp.preview.now" = "maintenant";
 "inApp.status.title" = "Sur les appareils";
 "inApp.reach.joinable" = "Joignable : arrive à la prochaine ouverture de l'app";
-"inApp.reach.never" = "Pas encore connecté : touche une fois Rafraîchir dans l'app";
+"inApp.reach.never" = "Pas encore connecté : ouvre l'app et autorise le réseau local";
 "inApp.reach.channelComing" = "Installée par une version précédente d'XSide : joignable après son prochain rafraîchissement";
 "inApp.reach.notSeen" = "Pas vu depuis le %@ : arrivera au prochain rafraîchissement";
 "inApp.reach.notInstalled" = "Pas encore installée ici : ces valeurs partent avec l'installation";
@@ -690,6 +690,9 @@
 "noFeatures.whenApp" = "S'applique à son installation ou à son prochain rafraîchissement.";
 "noFeatures.whenAll" = "S'applique au prochain rafraîchissement de chaque app, sauf celles qui ont fait leur propre choix.";
 "noFeatures.confirm" = "Installer sans XSide";
+"noFeatures.quickStay" = "iOS peut garder les actions rapides de XSide sur l'icône jusqu'à ce que l'app soit supprimée puis réinstallée (ou qu'elle définisse les siennes). En toucher une ouvre alors simplement l'app.";
+"noFeatures.deleteFirst" = "Supprimer d'abord l'app de l'appareil, pour qu'elles partent aussi";
+"noFeatures.deleteFirst.note" = "Les données de l'app sur l'appareil sont perdues (comptes, téléchargements, réglages). Fait une seule fois, juste avant sa prochaine installation ou son prochain rafraîchissement.";
 "settings.pane.refresh" = "Rafraîchissement";
 "settings.pane.install" = "Installation";
 "settings.pane.inApp" = "XSide dans les apps";
@@ -709,7 +712,6 @@
 "install.feature.quick" = "Appui long sur l'icône : Réglages XSide, Rafraîchir maintenant, Signaler un problème";
 
 "appSettings.subtitle" = "sur %@";
-"appSettings.gone" = "Cette app n'est plus dans XSide sur cet appareil.";
 "appSettings.note" = "Les changements partent vers l'app à sa prochaine connexion à XSide, ou à son prochain rafraîchissement.";
 "inApp.reach.noFeatures" = "Pas de fonctionnalités XSide dans cette app : rien à lui envoyer";
 "inApp.reach.featuresComing" = "Installée sans les fonctionnalités XSide : elles arrivent au prochain rafraîchissement";
@@ -722,7 +724,7 @@
 "build.hero.title" = "Fais de XSide le tien";
 "build.hero.text" = "XSide est open source. Modifie-le pour toi, avec un agent IA ou avec la commande xside dans tes propres scripts, et si tu veux, partage-le pour que tout le monde en profite.";
 "build.agent.title" = "Coder avec un agent IA";
-"build.agent.text" = "Codex, Claude Code, Cursor… Le dépôt fournit un AGENTS.md avec les règles : compilation, tests, textes en anglais et en français, journal des changements, sécurité du canal de mise à jour, et ce qu'il ne faut pas toucher. Ça marche aussi bien pour changer XSide pour toi que pour préparer une pull request.";
+"build.agent.text" = "Codex, Claude Code, Cursor… Le dépôt fournit un AGENTS.md avec les règles : compilation, tests, textes en anglais et en français, journal des changements, sécurité du canal sur le réseau local, et ce qu'il ne faut pas toucher. Ça marche aussi bien pour changer XSide pour toi que pour préparer une pull request.";
 "build.agent.open" = "Ouvrir AGENTS.md";
 "build.agent.copy" = "Copier un prompt de départ";
 "build.agent.copied" = "Copié";

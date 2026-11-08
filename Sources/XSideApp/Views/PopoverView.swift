@@ -482,7 +482,6 @@ private struct PopoverFooter: View {
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
     @Environment(\.closePopover) private var dismiss
-    @Environment(\.reopenPopover) private var reopen
 
     private var version: String { "\(Bundle.main.shortVersion ?? "") β" }
 

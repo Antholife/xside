@@ -232,6 +232,8 @@ struct OptionsDraft: Equatable {
     var minOS = ""
     /// The app's own choice (nil: the Mac's default), see `InstallOptions.withoutXSideFeatures`.
     var withoutXSideFeatures: Bool?
+    /// See `InstallOptions.deleteFirstWithoutFeatures`.
+    var deleteFirstWithoutFeatures = false
 
     init() {}
 
@@ -246,6 +248,7 @@ struct OptionsDraft: Equatable {
         shareKeychain = o.shareKeychain
         minOS = o.minimumOSVersion ?? ""
         withoutXSideFeatures = o.withoutXSideFeatures
+        deleteFirstWithoutFeatures = o.deleteFirstWithoutFeatures
     }
 
     var options: InstallOptions {
@@ -253,10 +256,12 @@ struct OptionsDraft: Equatable {
             let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
             return t.isEmpty ? nil : t
         }
-        return InstallOptions(displayName: clean(name), customBundleID: clean(bundleID), version: clean(version),
-                              iconPath: iconPath, fileSharing: fileSharing, iPadFullScreen: iPadFullScreen,
-                              proMotion: proMotion, minimumOSVersion: clean(minOS), shareKeychain: shareKeychain,
-                              withoutXSideFeatures: withoutXSideFeatures)
+        var o = InstallOptions(displayName: clean(name), customBundleID: clean(bundleID), version: clean(version),
+                               iconPath: iconPath, fileSharing: fileSharing, iPadFullScreen: iPadFullScreen,
+                               proMotion: proMotion, minimumOSVersion: clean(minOS), shareKeychain: shareKeychain,
+                               withoutXSideFeatures: withoutXSideFeatures)
+        o.deleteFirstWithoutFeatures = deleteFirstWithoutFeatures
+        return o
     }
 }
 
