@@ -178,6 +178,35 @@ import Foundation
         #expect(ChannelHandler.receive(line: good, now: now, nonces: &nonces, secret: lookup) == .rejected)
     }
 
+    /// Final review minor 9: the window's edges (120 s either way, inclusive), past and future.
+    @Test func timeWindowEdgesArePinned() throws {
+        var nonces = ChannelNonces()
+        for (offset, nonce) in [(-120.0, "e1"), (120.0, "e2")] {
+            let edge = try line(at: now.addingTimeInterval(offset), nonce: nonce)
+            #expect(ChannelHandler.receive(line: edge, now: now, nonces: &nonces, secret: lookup) != .rejected)
+        }
+        for (offset, nonce) in [(-120.001, "o1"), (120.001, "o2"), (-180.0, "o3"), (180.0, "o4")] {
+            let outside = try line(at: now.addingTimeInterval(offset), nonce: nonce)
+            #expect(ChannelHandler.receive(line: outside, now: now, nonces: &nonces, secret: lookup) == .rejected)
+        }
+    }
+
+    /// Final review minor 9: a request MACed with installation A's secret but naming B is refused,
+    /// and leaves B's nonces untouched.
+    @Test func oneInstallationsMacUnderAnothersIDIsRejected() throws {
+        let otherID = ChannelEnvelope.installationID(recordID: UUID(), deviceID: "dev-2")
+        let otherSecret = Data(repeating: 3, count: 32)
+        let both: (String) -> Data? = { $0 == installationID ? secret : $0 == otherID ? otherSecret : nil }
+        var nonces = ChannelNonces()
+        let forged = try line(id: otherID, secret: secret, nonce: "x")
+        #expect(ChannelHandler.receive(line: forged, now: now, nonces: &nonces, secret: both) == .rejected)
+        #expect(nonces.count(for: otherID) == 0)
+        // The same nonce, properly signed by B, still goes through.
+        let real = try line(id: otherID, secret: otherSecret, nonce: "x")
+        #expect(ChannelHandler.receive(line: real, now: now, nonces: &nonces, secret: both)
+                == .request(installationID: otherID, nonce: "x", .refresh))
+    }
+
     /// One installation filling its nonce cache can't lock the others out.
     @Test func noncesAreKeptPerInstallation() throws {
         let otherID = ChannelEnvelope.installationID(recordID: UUID(), deviceID: "dev-2")
