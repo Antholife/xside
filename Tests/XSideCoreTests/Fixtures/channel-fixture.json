@@ -1,11 +1,32 @@
 {
-  "secretHex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
-  "installationID": "rec|dev",
-  "timestamp": 1800000000000,
-  "nonce": "n1",
-  "bodyJSON": "{\"type\":\"refresh\"}",
-  "body": "eyJ0eXBlIjoicmVmcmVzaCJ9",
-  "signedString": "rec|dev|1800000000000|n1|eyJ0eXBlIjoicmVmcmVzaCJ9",
-  "mac": "4McQUiU/zGGdkAvFuzmmVje88inM1VhBlOgAMVt8ypM=",
-  "line": "{\"body\":\"eyJ0eXBlIjoicmVmcmVzaCJ9\",\"installationID\":\"rec|dev\",\"mac\":\"4McQUiU/zGGdkAvFuzmmVje88inM1VhBlOgAMVt8ypM=\",\"nonce\":\"n1\",\"timestamp\":1800000000000}"
+  "checkInRequest" : {
+    "body" : "eyJhcHBWZXJzaW9uIjoiMi4zLjEiLCJsYXN0UmVmcmVzaCI6eyJhdCI6MTc5OTk5MDAwMDUwMCwicmVhc29uS2V5IjoicmVmcmVzaC5yZWFzb24ub2ZmbGluZSIsInN1Y2NlZWRlZCI6ZmFsc2V9LCJzZXR0aW5ncyI6eyJhbGVydExhdGUiOnsiY2hhbmdlZEF0IjoxNzk5OTk5MDAxMDAwLCJjaGFuZ2VkQnkiOiJkZXZpY2UiLCJ2YWx1ZSI6ZmFsc2V9LCJhdXRvUmVmcmVzaCI6eyJjaGFuZ2VkQXQiOjE3OTk5OTkwMDUwMDcsImNoYW5nZWRCeSI6Im1hYyIsInZhbHVlIjp0cnVlfSwibGFuZ3VhZ2UiOnsiY2hhbmdlZEF0IjoxNzk5OTk5MDA0MDAwLCJjaGFuZ2VkQnkiOiJkZXZpY2UiLCJ2YWx1ZSI6ImZyIn0sImxldmVsIjp7ImNoYW5nZWRBdCI6MTc5OTk5OTAwMDEyMywiY2hhbmdlZEJ5IjoiZGV2aWNlIiwidmFsdWUiOiJlc3NlbnRpYWxzIn0sInJlZnJlc2hDYXJkIjp7ImNoYW5nZWRBdCI6MTc5OTk5OTAwMjAwMCwiY2hhbmdlZEJ5IjoibWFjIiwidmFsdWUiOnRydWV9LCJyZW1pbmRlciI6eyJjaGFuZ2VkQXQiOjE3OTk5OTkwMDMwMDAsImNoYW5nZWRCeSI6Im1hYyIsInZhbHVlIjpmYWxzZX0sInNob3dWYWxpZGl0eSI6eyJjaGFuZ2VkQXQiOjE3OTk5OTkwMDA0NTYsImNoYW5nZWRCeSI6Im1hYyIsInZhbHVlIjp0cnVlfX0sInR5cGUiOiJjaGVja0luIn0=",
+    "bodyJSON" : "{\"appVersion\":\"2.3.1\",\"lastRefresh\":{\"at\":1799990000500,\"reasonKey\":\"refresh.reason.offline\",\"succeeded\":false},\"settings\":{\"alertLate\":{\"changedAt\":1799999001000,\"changedBy\":\"device\",\"value\":false},\"autoRefresh\":{\"changedAt\":1799999005007,\"changedBy\":\"mac\",\"value\":true},\"language\":{\"changedAt\":1799999004000,\"changedBy\":\"device\",\"value\":\"fr\"},\"level\":{\"changedAt\":1799999000123,\"changedBy\":\"device\",\"value\":\"essentials\"},\"refreshCard\":{\"changedAt\":1799999002000,\"changedBy\":\"mac\",\"value\":true},\"reminder\":{\"changedAt\":1799999003000,\"changedBy\":\"mac\",\"value\":false},\"showValidity\":{\"changedAt\":1799999000456,\"changedBy\":\"mac\",\"value\":true}},\"type\":\"checkIn\"}",
+    "installationID" : "rec|dev",
+    "line" : "{\"body\":\"eyJhcHBWZXJzaW9uIjoiMi4zLjEiLCJsYXN0UmVmcmVzaCI6eyJhdCI6MTc5OTk5MDAwMDUwMCwicmVhc29uS2V5IjoicmVmcmVzaC5yZWFzb24ub2ZmbGluZSIsInN1Y2NlZWRlZCI6ZmFsc2V9LCJzZXR0aW5ncyI6eyJhbGVydExhdGUiOnsiY2hhbmdlZEF0IjoxNzk5OTk5MDAxMDAwLCJjaGFuZ2VkQnkiOiJkZXZpY2UiLCJ2YWx1ZSI6ZmFsc2V9LCJhdXRvUmVmcmVzaCI6eyJjaGFuZ2VkQXQiOjE3OTk5OTkwMDUwMDcsImNoYW5nZWRCeSI6Im1hYyIsInZhbHVlIjp0cnVlfSwibGFuZ3VhZ2UiOnsiY2hhbmdlZEF0IjoxNzk5OTk5MDA0MDAwLCJjaGFuZ2VkQnkiOiJkZXZpY2UiLCJ2YWx1ZSI6ImZyIn0sImxldmVsIjp7ImNoYW5nZWRBdCI6MTc5OTk5OTAwMDEyMywiY2hhbmdlZEJ5IjoiZGV2aWNlIiwidmFsdWUiOiJlc3NlbnRpYWxzIn0sInJlZnJlc2hDYXJkIjp7ImNoYW5nZWRBdCI6MTc5OTk5OTAwMjAwMCwiY2hhbmdlZEJ5IjoibWFjIiwidmFsdWUiOnRydWV9LCJyZW1pbmRlciI6eyJjaGFuZ2VkQXQiOjE3OTk5OTkwMDMwMDAsImNoYW5nZWRCeSI6Im1hYyIsInZhbHVlIjpmYWxzZX0sInNob3dWYWxpZGl0eSI6eyJjaGFuZ2VkQXQiOjE3OTk5OTkwMDA0NTYsImNoYW5nZWRCeSI6Im1hYyIsInZhbHVlIjp0cnVlfX0sInR5cGUiOiJjaGVja0luIn0=\",\"installationID\":\"rec|dev\",\"mac\":\"G2lib6voUP5yazKvOr7Wlf7kqblk67H0IZvWLDyG2Ec=\",\"nonce\":\"n2-checkin\",\"timestamp\":1800000000000}",
+    "mac" : "G2lib6voUP5yazKvOr7Wlf7kqblk67H0IZvWLDyG2Ec=",
+    "nonce" : "n2-checkin",
+    "signedString" : "rec|dev|1800000000000|n2-checkin|eyJhcHBWZXJzaW9uIjoiMi4zLjEiLCJsYXN0UmVmcmVzaCI6eyJhdCI6MTc5OTk5MDAwMDUwMCwicmVhc29uS2V5IjoicmVmcmVzaC5yZWFzb24ub2ZmbGluZSIsInN1Y2NlZWRlZCI6ZmFsc2V9LCJzZXR0aW5ncyI6eyJhbGVydExhdGUiOnsiY2hhbmdlZEF0IjoxNzk5OTk5MDAxMDAwLCJjaGFuZ2VkQnkiOiJkZXZpY2UiLCJ2YWx1ZSI6ZmFsc2V9LCJhdXRvUmVmcmVzaCI6eyJjaGFuZ2VkQXQiOjE3OTk5OTkwMDUwMDcsImNoYW5nZWRCeSI6Im1hYyIsInZhbHVlIjp0cnVlfSwibGFuZ3VhZ2UiOnsiY2hhbmdlZEF0IjoxNzk5OTk5MDA0MDAwLCJjaGFuZ2VkQnkiOiJkZXZpY2UiLCJ2YWx1ZSI6ImZyIn0sImxldmVsIjp7ImNoYW5nZWRBdCI6MTc5OTk5OTAwMDEyMywiY2hhbmdlZEJ5IjoiZGV2aWNlIiwidmFsdWUiOiJlc3NlbnRpYWxzIn0sInJlZnJlc2hDYXJkIjp7ImNoYW5nZWRBdCI6MTc5OTk5OTAwMjAwMCwiY2hhbmdlZEJ5IjoibWFjIiwidmFsdWUiOnRydWV9LCJyZW1pbmRlciI6eyJjaGFuZ2VkQXQiOjE3OTk5OTkwMDMwMDAsImNoYW5nZWRCeSI6Im1hYyIsInZhbHVlIjpmYWxzZX0sInNob3dWYWxpZGl0eSI6eyJjaGFuZ2VkQXQiOjE3OTk5OTkwMDA0NTYsImNoYW5nZWRCeSI6Im1hYyIsInZhbHVlIjp0cnVlfX0sInR5cGUiOiJjaGVja0luIn0=",
+    "timestamp" : 1800000000000
+  },
+  "refreshRequest" : {
+    "body" : "eyJ0eXBlIjoicmVmcmVzaCJ9",
+    "bodyJSON" : "{\"type\":\"refresh\"}",
+    "installationID" : "rec|dev",
+    "line" : "{\"body\":\"eyJ0eXBlIjoicmVmcmVzaCJ9\",\"installationID\":\"rec|dev\",\"mac\":\"4McQUiU/zGGdkAvFuzmmVje88inM1VhBlOgAMVt8ypM=\",\"nonce\":\"n1\",\"timestamp\":1800000000000}",
+    "mac" : "4McQUiU/zGGdkAvFuzmmVje88inM1VhBlOgAMVt8ypM=",
+    "nonce" : "n1",
+    "signedString" : "rec|dev|1800000000000|n1|eyJ0eXBlIjoicmVmcmVzaCJ9",
+    "timestamp" : 1800000000000
+  },
+  "secretHex" : "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+  "settingsReply" : {
+    "body" : "eyJzZXR0aW5ncyI6eyJhbGVydExhdGUiOnsiY2hhbmdlZEF0IjoxNzk5OTk5MDAxMDAwLCJjaGFuZ2VkQnkiOiJkZXZpY2UiLCJ2YWx1ZSI6ZmFsc2V9LCJhdXRvUmVmcmVzaCI6eyJjaGFuZ2VkQXQiOjE3OTk5OTkwMDUwMDcsImNoYW5nZWRCeSI6Im1hYyIsInZhbHVlIjp0cnVlfSwibGFuZ3VhZ2UiOnsiY2hhbmdlZEF0IjoxNzk5OTk5MDA0MDAwLCJjaGFuZ2VkQnkiOiJkZXZpY2UiLCJ2YWx1ZSI6ImZyIn0sImxldmVsIjp7ImNoYW5nZWRBdCI6MTc5OTk5OTAwMDEyMywiY2hhbmdlZEJ5IjoiZGV2aWNlIiwidmFsdWUiOiJlc3NlbnRpYWxzIn0sInJlZnJlc2hDYXJkIjp7ImNoYW5nZWRBdCI6MTc5OTk5OTAwMjAwMCwiY2hhbmdlZEJ5IjoibWFjIiwidmFsdWUiOnRydWV9LCJyZW1pbmRlciI6eyJjaGFuZ2VkQXQiOjE3OTk5OTkwMDMwMDAsImNoYW5nZWRCeSI6Im1hYyIsInZhbHVlIjpmYWxzZX0sInNob3dWYWxpZGl0eSI6eyJjaGFuZ2VkQXQiOjE3OTk5OTkwMDA0NTYsImNoYW5nZWRCeSI6Im1hYyIsInZhbHVlIjp0cnVlfX0sInR5cGUiOiJzZXR0aW5ncyJ9",
+    "bodyJSON" : "{\"settings\":{\"alertLate\":{\"changedAt\":1799999001000,\"changedBy\":\"device\",\"value\":false},\"autoRefresh\":{\"changedAt\":1799999005007,\"changedBy\":\"mac\",\"value\":true},\"language\":{\"changedAt\":1799999004000,\"changedBy\":\"device\",\"value\":\"fr\"},\"level\":{\"changedAt\":1799999000123,\"changedBy\":\"device\",\"value\":\"essentials\"},\"refreshCard\":{\"changedAt\":1799999002000,\"changedBy\":\"mac\",\"value\":true},\"reminder\":{\"changedAt\":1799999003000,\"changedBy\":\"mac\",\"value\":false},\"showValidity\":{\"changedAt\":1799999000456,\"changedBy\":\"mac\",\"value\":true}},\"type\":\"settings\"}",
+    "installationID" : "rec|dev",
+    "line" : "{\"body\":\"eyJzZXR0aW5ncyI6eyJhbGVydExhdGUiOnsiY2hhbmdlZEF0IjoxNzk5OTk5MDAxMDAwLCJjaGFuZ2VkQnkiOiJkZXZpY2UiLCJ2YWx1ZSI6ZmFsc2V9LCJhdXRvUmVmcmVzaCI6eyJjaGFuZ2VkQXQiOjE3OTk5OTkwMDUwMDcsImNoYW5nZWRCeSI6Im1hYyIsInZhbHVlIjp0cnVlfSwibGFuZ3VhZ2UiOnsiY2hhbmdlZEF0IjoxNzk5OTk5MDA0MDAwLCJjaGFuZ2VkQnkiOiJkZXZpY2UiLCJ2YWx1ZSI6ImZyIn0sImxldmVsIjp7ImNoYW5nZWRBdCI6MTc5OTk5OTAwMDEyMywiY2hhbmdlZEJ5IjoiZGV2aWNlIiwidmFsdWUiOiJlc3NlbnRpYWxzIn0sInJlZnJlc2hDYXJkIjp7ImNoYW5nZWRBdCI6MTc5OTk5OTAwMjAwMCwiY2hhbmdlZEJ5IjoibWFjIiwidmFsdWUiOnRydWV9LCJyZW1pbmRlciI6eyJjaGFuZ2VkQXQiOjE3OTk5OTkwMDMwMDAsImNoYW5nZWRCeSI6Im1hYyIsInZhbHVlIjpmYWxzZX0sInNob3dWYWxpZGl0eSI6eyJjaGFuZ2VkQXQiOjE3OTk5OTkwMDA0NTYsImNoYW5nZWRCeSI6Im1hYyIsInZhbHVlIjp0cnVlfX0sInR5cGUiOiJzZXR0aW5ncyJ9\",\"installationID\":\"rec|dev\",\"mac\":\"lWv2olfQ1bG2woRbRZz2Tnuk8/Jmkn8JCPH1xGoS4DQ=\",\"nonce\":\"n2-checkin\"}",
+    "mac" : "lWv2olfQ1bG2woRbRZz2Tnuk8/Jmkn8JCPH1xGoS4DQ=",
+    "nonce" : "n2-checkin",
+    "signedString" : "reply|rec|dev|n2-checkin|eyJzZXR0aW5ncyI6eyJhbGVydExhdGUiOnsiY2hhbmdlZEF0IjoxNzk5OTk5MDAxMDAwLCJjaGFuZ2VkQnkiOiJkZXZpY2UiLCJ2YWx1ZSI6ZmFsc2V9LCJhdXRvUmVmcmVzaCI6eyJjaGFuZ2VkQXQiOjE3OTk5OTkwMDUwMDcsImNoYW5nZWRCeSI6Im1hYyIsInZhbHVlIjp0cnVlfSwibGFuZ3VhZ2UiOnsiY2hhbmdlZEF0IjoxNzk5OTk5MDA0MDAwLCJjaGFuZ2VkQnkiOiJkZXZpY2UiLCJ2YWx1ZSI6ImZyIn0sImxldmVsIjp7ImNoYW5nZWRBdCI6MTc5OTk5OTAwMDEyMywiY2hhbmdlZEJ5IjoiZGV2aWNlIiwidmFsdWUiOiJlc3NlbnRpYWxzIn0sInJlZnJlc2hDYXJkIjp7ImNoYW5nZWRBdCI6MTc5OTk5OTAwMjAwMCwiY2hhbmdlZEJ5IjoibWFjIiwidmFsdWUiOnRydWV9LCJyZW1pbmRlciI6eyJjaGFuZ2VkQXQiOjE3OTk5OTkwMDMwMDAsImNoYW5nZWRCeSI6Im1hYyIsInZhbHVlIjpmYWxzZX0sInNob3dWYWxpZGl0eSI6eyJjaGFuZ2VkQXQiOjE3OTk5OTkwMDA0NTYsImNoYW5nZWRCeSI6Im1hYyIsInZhbHVlIjp0cnVlfX0sInR5cGUiOiJzZXR0aW5ncyJ9"
+  }
 }
