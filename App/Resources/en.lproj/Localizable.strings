@@ -557,7 +557,7 @@
 "whatsNew.110.appWindow.title" = "My apps, in Settings";
 "whatsNew.110.appWindow.text" = "Settings > My apps: pick the device, then one of its apps, to set the XSide module in the app on that device, applied at its next refresh or opening. An app's ... menu in the panel, or the My apps button, leads there directly.";
 "whatsNew.110.status.title" = "Where each change stands";
-"whatsNew.110.status.text" = "Per device, XSide says whether the iPhone is reachable and whether a change is pending, written or confirmed by the iPhone. It never claims a setting is active before that.";
+"whatsNew.110.status.text" = "Per device, XSide says plainly where things stand: app open (changes arrive live), changes at the next opening, what is pending (by name), then \"received your settings\". It never claims a setting is active before that.";
 "whatsNew.110.panes.title" = "Settings, reorganized";
 "whatsNew.110.panes.text" = "Eleven pages: General, Refreshing, Installing, XSide module in the apps (defaults for new installs), My apps, Notifications, Xcode and signing, Updates, Reports & Logs, Build & contribute, About.";
 "whatsNew.110.switch.title" = "A new switch";
@@ -756,3 +756,7 @@
 "appSettings.perDevice" = "Installed on %ld devices: each has its own module settings. “XSide features” applies to the app on all of them.";
 "whatsNew.110.live.title" = "Live while the app is open";
 "whatsNew.110.live.text" = "A setting changed on the Mac reaches the open app within seconds, without relaunching it, in a single bar that says what changed (\"automatic refresh turned back on from XSide on your Mac\"). Only while the app is on screen, less often in Low Power Mode.";
+"whatsNew.110.appPause.title" = "Pause one app for a while";
+"whatsNew.110.appPause.text" = "An app's … menu in the panel: Pause for 2 hours, 1 day or until you resume. One app's pause ends by itself.";
+"whatsNew.110.cli.title" = "New xside commands";
+"whatsNew.110.cli.text" = "xside apps, devices, settings <app> (see or change the module's settings), pause and resume <app>, uninstall <app>, logs -f and report. An app is named by its name or bundle id.";

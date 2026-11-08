@@ -21,6 +21,17 @@ public enum CLIBridge {
         /// Pause automatic refreshes for `seconds`, or until resumed (nil).
         case pause(seconds: Int?)
         case resume
+        // Device feedback 3, E7: aimed at installations the tool found in the library
+        // (`CLIMatch`), by record and device ids.
+        /// Settings changed as from Settings > Mes apps, stamped by the Mac.
+        case editSettings(recordID: UUID, deviceIDs: [String], changes: [CLISettingChange])
+        /// One app's refreshes paused for `seconds`, or until resumed (nil).
+        case pauseApp(recordID: UUID, deviceIDs: [String], seconds: Int?)
+        case resumeApp(recordID: UUID, deviceIDs: [String])
+        /// Removed from the devices, as from the panel (the tool asked for confirmation).
+        case uninstall(recordID: UUID, deviceIDs: [String])
+        /// The logs archive written like "Report a problem" does; the answer is its path.
+        case report
     }
 
     /// The longest pause a duration may ask for: "until resumed" is the way past it.
@@ -55,7 +66,18 @@ public enum CLIBridge {
             case .pause(let seconds):
                 ["id": id, "command": "pause"].merging(seconds.map { ["seconds": String($0)] } ?? [:]) { $1 }
             case .resume: ["id": id, "command": "resume"]
+            case .editSettings(let record, let devices, let changes):
+                Self.target("settings", id, record, devices).merging(["changes": changes.map(\.text).joined(separator: "\n")]) { $1 }
+            case .pauseApp(let record, let devices, let seconds):
+                Self.target("pause-app", id, record, devices).merging(seconds.map { ["seconds": String($0)] } ?? [:]) { $1 }
+            case .resumeApp(let record, let devices): Self.target("resume-app", id, record, devices)
+            case .uninstall(let record, let devices): Self.target("uninstall", id, record, devices)
+            case .report: ["id": id, "command": "report"]
             }
+        }
+
+        private static func target(_ command: String, _ id: String, _ record: UUID, _ devices: [String]) -> [String: String] {
+            ["id": id, "command": command, "record": record.uuidString, "devices": devices.joined(separator: "\n")]
         }
 
         public init?(userInfo: [AnyHashable: Any]?) {
@@ -74,6 +96,29 @@ public enum CLIBridge {
                     self.init(id: id, command: .pause(seconds: nil))
                 }
             case "resume": self.init(id: id, command: .resume)
+            case "report": self.init(id: id, command: .report)
+            case "settings", "pause-app", "resume-app", "uninstall":
+                guard let record = info["record"].flatMap(UUID.init(uuidString:)),
+                      let devices = info["devices"]?.split(separator: "\n").map(String.init), !devices.isEmpty else { return nil }
+                switch info["command"] {
+                case "settings":
+                    var changes: [CLISettingChange] = []
+                    for text in (info["changes"] ?? "").split(separator: "\n") {
+                        guard case .success(let change) = CLISettingChange.parse(String(text)) else { return nil }
+                        changes.append(change)
+                    }
+                    guard !changes.isEmpty else { return nil }
+                    self.init(id: id, command: .editSettings(recordID: record, deviceIDs: devices, changes: changes))
+                case "pause-app":
+                    if let text = info["seconds"] {
+                        guard let seconds = Int(text), seconds > 0 else { return nil }
+                        self.init(id: id, command: .pauseApp(recordID: record, deviceIDs: devices, seconds: seconds))
+                    } else {
+                        self.init(id: id, command: .pauseApp(recordID: record, deviceIDs: devices, seconds: nil))
+                    }
+                case "resume-app": self.init(id: id, command: .resumeApp(recordID: record, deviceIDs: devices))
+                default: self.init(id: id, command: .uninstall(recordID: record, deviceIDs: devices))
+                }
             default: return nil
             }
         }

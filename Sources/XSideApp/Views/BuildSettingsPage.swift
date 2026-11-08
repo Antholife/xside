@@ -40,10 +40,14 @@ struct BuildSettingsPage: View {
     /// The real commands of `xside` (Sources/XSideCLI), as its own help prints them.
     private static let commands = [
         "xside status [--json]",
+        "xside apps | devices [--json]",
+        "xside settings <app> [field=value…]",
         "xside refresh <app> | --all",
-        "xside pause [2h]",
-        "xside resume",
+        "xside pause [<app>] [2h]",
+        "xside resume [<app>]",
+        "xside uninstall <app> [--yes]",
         "xside install <file.ipa>",
+        "xside logs [-f] | report",
         "xside open",
     ]
 

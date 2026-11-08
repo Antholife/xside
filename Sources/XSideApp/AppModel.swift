@@ -1517,8 +1517,8 @@ final class AppModel {
         for job in jobs where !refreshNow(job) { Self.logger.notice("queued refresh couldn't start") }
     }
 
-    /// A command line request (`xside refresh`): the answer it prints.
-    func handle(_ command: CLIBridge.Command) -> (ok: Bool, message: String) {
+    /// A command line request (`xside refresh`, `pause`, `settings`…): the answer it prints.
+    func handle(_ command: CLIBridge.Command) async -> (ok: Bool, message: String) {
         let names = cachedNames
         let entries = records.flatMap { r in r.installations.map { AppEntry(record: r, installation: $0) } }
         func appName(_ e: AppEntry) -> String { e.record.options.displayName ?? e.record.displayName }
@@ -1540,6 +1540,8 @@ final class AppModel {
             UserDefaults.standard.set(0.0, forKey: BackgroundEngine.pausedUntilKey)
             onNeedsEvaluation?()
             return (true, "Automatic refreshes resumed.")
+        case .editSettings, .pauseApp, .resumeApp, .uninstall, .report:
+            return await handleAppCommand(command, entries: entries, describe: describe)
         case .refreshAll:
             targets = entries.filter { !$0.installation.refreshPaused }
             guard !targets.isEmpty else { return (false, "No app to refresh (none installed, or all paused).") }
@@ -1583,6 +1585,75 @@ final class AppModel {
             lines.append("Queued, starts as soon as the device is reachable and XSide is ready: " + queued.joined(separator: ", "))
         }
         return (true, lines.joined(separator: "\n"))
+    }
+
+    /// The commands aimed at installations the tool found (device feedback 3, E7), done as the UI
+    /// does them. Each target is checked again: the library may have changed since the tool read it.
+    private func handleAppCommand(_ command: CLIBridge.Command, entries: [AppEntry],
+                                  describe: (AppEntry) -> String) async -> (ok: Bool, message: String) {
+        func targets(_ record: UUID, _ devices: [String]) -> [AppEntry] {
+            entries.filter { $0.record.id == record && devices.contains($0.installation.deviceID) }
+        }
+        let gone = "That app is no longer installed there (see xside apps)."
+        switch command {
+        case .editSettings(let record, let devices, let changes):
+            let found = targets(record, devices)
+            guard !found.isEmpty else { return (false, gone) }
+            var lines: [String] = []
+            for entry in found {
+                guard canManage(entry) else { lines.append("\(describe(entry)): busy, try again in a moment"); continue }
+                let others = changes.filter { if case .autoRefresh = $0 { false } else { true } }
+                if !others.isEmpty {
+                    await editInApp(entry.id) { $0.applying(others, at: Date()) }
+                }
+                for change in changes {
+                    guard case .autoRefresh(let on) = change else { continue }
+                    if on { await resumeRefreshing(entry) } else { await stopRefreshing(entry) }
+                }
+                lines.append("\(describe(entry)): " + changes.map(\.text).joined(separator: ", ")
+                             + " (reaches the app at its next opening or refresh)")
+            }
+            Self.logger.notice("command line settings: \(changes.map(\.text).joined(separator: ", "))")
+            return (true, lines.joined(separator: "\n"))
+        case .pauseApp(let record, let devices, let seconds):
+            let found = targets(record, devices)
+            guard !found.isEmpty else { return (false, gone) }
+            let until = seconds.map { Date().addingTimeInterval(TimeInterval($0)) }
+            if let busy = found.first(where: { !canManage($0) }) { return (false, "\(describe(busy)) is busy, try again in a moment.") }
+            for entry in found { await stopRefreshing(entry, until: until) }
+            let when = until.map { "until \($0.formatted(date: .abbreviated, time: .shortened))" } ?? "until resumed (xside resume <app>)"
+            return (true, "Paused \(when): " + found.map(describe).joined(separator: ", "))
+        case .resumeApp(let record, let devices):
+            let found = targets(record, devices)
+            guard !found.isEmpty else { return (false, gone) }
+            if let busy = found.first(where: { !canManage($0) }) { return (false, "\(describe(busy)) is busy, try again in a moment.") }
+            for entry in found { await resumeRefreshing(entry) }
+            return (true, "Refreshing again: " + found.map(describe).joined(separator: ", "))
+        case .uninstall(let record, let devices):
+            let found = targets(record, devices)
+            guard !found.isEmpty else { return (false, gone) }
+            var done: [String] = [], failed: [String] = []
+            for entry in found {
+                guard canManage(entry) else { failed.append("\(describe(entry)) (busy, try again in a moment)"); continue }
+                do {
+                    try await uninstall(entry)
+                    done.append(describe(entry))
+                } catch {
+                    failed.append("\(describe(entry)) (\((error as? XSideError)?.key ?? String(describing: error)))")
+                }
+            }
+            var lines: [String] = []
+            if !done.isEmpty { lines.append("Uninstalled: " + done.joined(separator: ", ")) }
+            if !failed.isEmpty { lines.append("Not uninstalled: " + failed.joined(separator: ", ")) }
+            return (failed.isEmpty, lines.joined(separator: "\n"))
+        case .report:
+            guard let archive = await Diagnostics.writeReportArchive(model: self) else {
+                return (false, "The report archive couldn't be written (see the logs).")
+            }
+            return (true, archive.path)
+        default:
+            return (false, "unsupported")
+        }
     }
 
     private func unhide(_ deviceID: String) {

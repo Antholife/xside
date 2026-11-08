@@ -557,7 +557,7 @@
 "whatsNew.110.appWindow.title" = "Mes apps, dans les Réglages";
 "whatsNew.110.appWindow.text" = "Réglages > Mes apps : choisis l'appareil, puis l'une de ses apps, pour régler le module XSide dans l'app sur cet appareil, appliqué à son prochain rafraîchissement ou à sa prochaine ouverture. Le menu … d'une app dans le panneau, ou le bouton Mes apps, y mène directement.";
 "whatsNew.110.status.title" = "Où en est chaque changement";
-"whatsNew.110.status.text" = "Appareil par appareil, XSide dit si l'iPhone est joignable et si un changement est en attente, écrit ou confirmé par l'iPhone. Il ne prétend jamais qu'un réglage est actif avant.";
+"whatsNew.110.status.text" = "Appareil par appareil, XSide dit simplement où on en est : app ouverte (les changements arrivent en direct), changements à la prochaine ouverture, ce qui est en attente (nommé), puis « a bien reçu tes réglages ». Il ne prétend jamais qu'un réglage est actif avant.";
 "whatsNew.110.panes.title" = "Réglages réorganisés";
 "whatsNew.110.panes.text" = "Onze pages : Général, Rafraîchissement, Installation, Module XSide dans les apps (les valeurs par défaut des nouvelles installations), Mes apps, Notifications, Xcode et signature, Mises à jour, Signalement et journaux, Créer & contribuer, À propos.";
 "whatsNew.110.switch.title" = "Un nouvel interrupteur";
@@ -756,3 +756,7 @@
 "appSettings.perDevice" = "Installée sur %ld appareils : chacun a ses propres réglages du module. « Fonctionnalités XSide » vaut pour l'app sur tous.";
 "whatsNew.110.live.title" = "En direct, app ouverte";
 "whatsNew.110.live.text" = "Un réglage changé sur le Mac arrive dans l'app ouverte en quelques secondes, sans la relancer, avec une seule bulle qui dit ce qui a changé (« rafraîchissement automatique réactivé depuis XSide sur ton Mac »). Seulement quand l'app est à l'écran, plus rarement en mode Économie d'énergie.";
+"whatsNew.110.appPause.title" = "Mettre une app en pause un moment";
+"whatsNew.110.appPause.text" = "Le menu … d'une app dans le panneau : Mettre en pause pendant 2 heures, 1 jour ou jusqu'à ce que tu reprennes. La pause d'une app reprend toute seule à la fin.";
+"whatsNew.110.cli.title" = "Nouvelles commandes xside";
+"whatsNew.110.cli.text" = "xside apps, devices, settings <app> (voir ou changer les réglages du module), pause et resume <app>, uninstall <app>, logs -f et report. Une app se nomme par son nom ou son identifiant.";

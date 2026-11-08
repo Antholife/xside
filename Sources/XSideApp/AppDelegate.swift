@@ -96,11 +96,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     return
                 }
                 Self.handledRequests.insert(request.id)
-                let answer = model.handle(request.command)
-                let reply = CLIBridge.Reply(id: request.id, ok: answer.ok, message: answer.message).userInfo
-                Self.lastReplies[request.id] = reply
-                center.postNotificationName(CLIBridge.replyName(bundleID: bundleID), object: nil,
-                                            userInfo: reply, deliverImmediately: true)
+                // Some take a moment (an uninstall, the report archive): the tool keeps asking,
+                // and gets the answer once it's there.
+                Task { @MainActor in
+                    let answer = await model.handle(request.command)
+                    let reply = CLIBridge.Reply(id: request.id, ok: answer.ok, message: answer.message).userInfo
+                    Self.lastReplies[request.id] = reply
+                    center.postNotificationName(CLIBridge.replyName(bundleID: bundleID), object: nil,
+                                                userInfo: reply, deliverImmediately: true)
+                }
             }
         }
     }

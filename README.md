@@ -129,8 +129,22 @@ xside refresh youtube            # refresh an app now (name or bundle id, partia
 xside refresh --all              # every app that can be now
 xside pause 2h                   # pause automatic refreshes (2h, 30m, 1d; none: until resumed)
 xside resume                     # resume them
+xside apps                       # the apps XSide installed and their devices (--json too)
+xside devices                    # the devices and their apps (--json too)
+xside settings youtube           # the XSide module's settings of an app (--device, --json)
+xside settings youtube reminder=off level=essentials
+                                 # change them, as in Settings > My apps (showValidity, alertLate,
+                                 # refreshCard, reminder, autoRefresh: on|off; language=auto|fr|en;
+                                 # level=all|essentials|none); --device for one device only
+xside pause youtube 1d           # pause one app (2h, 30m, 1d; none: until resumed); --device too
+xside resume youtube             # resume it
+xside uninstall youtube          # remove it from its devices (asks first; --yes to skip; --device)
 xside install ~/Downloads/a.ipa  # open it in the install window
+xside logs -f                    # XSide's log (-f: follow it)
+xside report                     # write the logs archive for a bug report, print its path
 ```
+
+An app is named by its name or bundle id, in any case; part of it is fine when only one app matches (otherwise `xside` lists the candidates).
 
 If XSide isn't running, `xside` starts it in the background first. XSide always does the signing itself, so the two never sign at once.
 

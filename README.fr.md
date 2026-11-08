@@ -129,8 +129,22 @@ xside refresh youtube            # rafraîchir une app maintenant (nom ou identi
 xside refresh --all              # toutes celles qui peuvent l'être
 xside pause 2h                   # met en pause les rafraîchissements auto (2h, 30m, 1d ; rien : jusqu'à reprise)
 xside resume                     # les reprend
+xside apps                       # les apps installées par XSide et leurs appareils (--json aussi)
+xside devices                    # les appareils et leurs apps (--json aussi)
+xside settings youtube           # les réglages du module XSide d'une app (--device, --json)
+xside settings youtube reminder=off level=essentials
+                                 # les changer, comme dans Réglages > Mes apps (showValidity, alertLate,
+                                 # refreshCard, reminder, autoRefresh : on|off ; language=auto|fr|en ;
+                                 # level=all|essentials|none) ; --device pour un seul appareil
+xside pause youtube 1d           # mettre une app en pause (2h, 30m, 1d ; rien : jusqu'à reprise) ; --device aussi
+xside resume youtube             # la reprendre
+xside uninstall youtube          # la supprimer de ses appareils (demande d'abord ; --yes pour passer ; --device)
 xside install ~/Downloads/a.ipa  # l'ouvrir dans la fenêtre d'installation
+xside logs -f                    # le journal d'XSide (-f : le suivre)
+xside report                     # écrire l'archive des journaux pour un signalement, afficher son chemin
 ```
+
+Une app se nomme par son nom ou son identifiant, sans souci de casse ; une partie suffit quand une seule app correspond (sinon `xside` liste les candidates).
 
 Si XSide n'est pas lancé, `xside` le démarre d'abord en arrière-plan. C'est toujours XSide qui signe, donc les deux ne signent jamais en même temps.
 

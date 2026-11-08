@@ -105,6 +105,10 @@ struct ReleaseNotes {
                      title: L("whatsNew.110.inject.title"), text: L("whatsNew.110.inject.text")),
                 Item(symbol: "hammer.circle.fill",
                      title: L("whatsNew.110.build.title"), text: L("whatsNew.110.build.text")),
+                Item(symbol: "pause.circle",
+                     title: L("whatsNew.110.appPause.title"), text: L("whatsNew.110.appPause.text")),
+                Item(symbol: "terminal.fill",
+                     title: L("whatsNew.110.cli.title"), text: L("whatsNew.110.cli.text")),
             ], thanks: []),
             ReleaseNotes(version: "1.0.6", label: "beta", items: [
                 Item(symbol: "arrow.up.circle.fill",

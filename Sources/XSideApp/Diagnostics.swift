@@ -96,20 +96,26 @@ enum Diagnostics {
     /// "Report a problem": the logs archive goes to the Desktop (shown in the Finder, to drag into
     /// the issue), and a new GitHub issue opens filled in with the summary and the last log
     /// lines, all redacted. Nothing is sent: the person reads it and submits it.
+    /// The logs archive, redacted, on the Desktop: easy to find and drag into an issue. If macOS
+    /// denies it, Downloads, then the temporary folder. Never over an earlier archive. nil when
+    /// none could be written. (`xside report` prints its path.)
+    @MainActor static func writeReportArchive(model: AppModel) async -> URL? {
+        let fm = FileManager.default
+        let folders = [fm.urls(for: .desktopDirectory, in: .userDomainMask).first,
+                       fm.urls(for: .downloadsDirectory, in: .userDomainMask).first,
+                       fm.temporaryDirectory].compactMap { $0 }
+        for folder in folders {
+            let archive = folder.appendingPathComponent(uniqueArchiveName(in: folder))
+            if await writeArchive(model: model, to: archive) { return archive }
+        }
+        return nil
+    }
+
     @MainActor static func reportIssue(model: AppModel) {
         Task {
-            // On the Desktop: easy to find and drag into the form. If macOS denies it, Downloads,
-            // then the temporary folder. Never over an earlier archive.
-            let fm = FileManager.default
-            let folders = [fm.urls(for: .desktopDirectory, in: .userDomainMask).first,
-                           fm.urls(for: .downloadsDirectory, in: .userDomainMask).first,
-                           fm.temporaryDirectory].compactMap { $0 }
-            var archive = folders[0].appendingPathComponent(uniqueArchiveName(in: folders[0]))
-            var archived = false
-            for folder in folders {
-                archive = folder.appendingPathComponent(uniqueArchiveName(in: folder))
-                if await writeArchive(model: model, to: archive) { archived = true; break }
-            }
+            let written = await writeReportArchive(model: model)
+            let archived = written != nil
+            let archive = written ?? FileManager.default.temporaryDirectory
             // Public: apps as <app-N>, as in the summary's "app N".
             let apps = model.records.map { r in [r.originalBundleID, r.signedBundleID] + r.installations.compactMap(\.signedBundleID) }
             let lastLines = LogStore.shared.files().first
