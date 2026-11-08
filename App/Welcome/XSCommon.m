@@ -335,3 +335,23 @@ void XSOpenAppSettings(void) {
     return (hit == self || hit == self.rootViewController.view) ? nil : hit;
 }
 @end
+
+// MARK: - System alerts (device feedback 3, E4)
+
+static BOOL XSResigned, XSAlertSeen;
+
+void XSWatchSystemAlerts(void) {
+    NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
+    [center addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:NSOperationQueue.mainQueue
+                    usingBlock:^(NSNotification *n) { XSResigned = YES; }];
+    [center addObserverForName:UIApplicationDidEnterBackgroundNotification object:nil queue:NSOperationQueue.mainQueue
+                    usingBlock:^(NSNotification *n) { XSResigned = NO; }];
+    [center addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:NSOperationQueue.mainQueue
+                    usingBlock:^(NSNotification *n) {
+        if (XSResigned && !XSAlertSeen) NSLog(@"XSide: a system alert came and went over the app");
+        if (XSResigned) XSAlertSeen = YES;
+        XSResigned = NO;
+    }];
+}
+
+BOOL XSSystemAlertSeen(void) { return XSAlertSeen; }

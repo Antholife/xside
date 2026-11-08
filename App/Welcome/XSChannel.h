@@ -5,6 +5,7 @@
 // network prompt always comes after XSide said why (device feedback round 1, B1).
 
 #import "XSCommon.h"
+#import "XSSettingsCore.h"
 #import "XSPill.h"
 
 NS_ASSUME_NONNULL_BEGIN
@@ -23,6 +24,10 @@ void XSCheckIn(void (^_Nullable done)(XSPillContent *_Nullable news));
 /// Right after the first-launch sheet's "Réseau local" page: a silent check-in that browses even
 /// before the local network was allowed, so iOS asks now, just after the page said why. Main thread.
 void XSStartLocalNetwork(void);
+/// A short silent check-in that tells whether the local network is allowed (the Mac answered),
+/// refused (iOS said so) or unknown (device feedback 3, E4). It may make iOS ask when the question
+/// is still open: only used once a system alert was seen in an app that uses the network itself.
+void XSProbeLocalNetwork(void (^done)(XSNetworkProbe probe));
 
 /// XSide settings other than automatic refresh (`fields`) were changed in iOS Settings: the
 /// check-in sends them. `done` gets the one pill that says so (which, sent or the Mac unreachable),

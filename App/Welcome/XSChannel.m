@@ -438,6 +438,16 @@ void XSStartLocalNetwork(void) {
     });
 }
 
+void XSProbeLocalNetwork(void (^done)(XSNetworkProbe probe)) {
+    // A plain check-in, short (the Mac answers within a second when it is there).
+    XSRunCheckIn(4, YES, ^(XSChannelResult result, NSArray *byMac) {
+        XSNetworkProbe probe = result == XSChannelReplied || result == XSChannelUnknownInstallation ? XSNetworkProbeAllowed
+                             : result == XSChannelDenied ? XSNetworkProbeDenied : XSNetworkProbeUnknown;
+        NSLog(@"XSide: local network: silent check, result %ld", (long)result);
+        done(probe);
+    });
+}
+
 void XSSendSettings(NSArray<NSString *> *fields, void (^done)(XSPillContent *result)) {
     // Not before the local network was allowed: the next connection carries them (nothing to say).
     // No "sending…" pill first: one pill for the change, the one that says how it went (device

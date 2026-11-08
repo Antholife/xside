@@ -198,6 +198,19 @@ BOOL XSNeedsNetworkExplanation(BOOL channel, BOOL granted, BOOL explained) {
     return channel && !granted && !explained;
 }
 
+BOOL XSProbesNetworkFirst(BOOL channel, BOOL granted, BOOL explained, BOOL appUsesNetwork, BOOL systemAlertSeen) {
+    return XSNeedsNetworkExplanation(channel, granted, explained) && appUsesNetwork && systemAlertSeen;
+}
+
+NSString *XSNetworkPageAfterProbe(XSNetworkProbe probe) {
+    switch (probe) {
+        case XSNetworkProbeAllowed: return nil;
+        case XSNetworkProbeDenied: return @"networkDenied";
+        case XSNetworkProbeUnknown: return @"network";
+    }
+    return @"network";
+}
+
 /// The row's title in iOS Settings (XSideSettingsSection.swift writes the same).
 static NSString *XSFieldTitle(NSString *field, BOOL fr) {
     NSDictionary<NSString *, NSArray<NSString *> *> *titles = @{

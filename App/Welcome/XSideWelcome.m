@@ -71,6 +71,9 @@ static void XSHideWindow(void) {
     UIButton *_ok;
     UIButton *_github;
     BOOL _closing;
+    /// The silent local network check before the "network" page is running, or was done
+    /// (device feedback 3, E4).
+    BOOL _probing, _probed;
 }
 
 - (instancetype)initWithExpiry:(NSDate *)expiry pages:(NSArray<NSString *> *)pages
@@ -271,8 +274,10 @@ static void XSHideWindow(void) {
     NSString *device = XSDeviceKind();
     UIView *head = [self head:@"wifi" title:[self t:@"Réseau local" en:@"Local network"]
                      subtitle:[self t:@"Pour parler à XSide sur ton Mac" en:@"To talk to XSide on your Mac"]];
-    UILabel *why = [self label:[NSString stringWithFormat:[self t:@"Depuis cet %@, XSide peut rafraîchir l'app ou mettre en pause son rafraîchissement, et garder ses Réglages XSide en accord avec ton Mac. Pour cela, l'app parle à XSide sur ton Mac par le réseau local (même Wi-Fi)."
-                                                              en:@"From this %@, XSide can refresh the app or pause its refresh, and keep its XSide Settings in step with your Mac. For that, the app talks to XSide on your Mac over the local network (same Wi-Fi)."], device]
+    // The app by its name wherever it is the one using the network (device feedback 3, E4).
+    NSString *app = XSAppName();
+    UILabel *why = [self label:[NSString stringWithFormat:[self t:@"Depuis cet %1$@, XSide peut rafraîchir %2$@ ou mettre en pause son rafraîchissement, et garder ses Réglages XSide en accord avec ton Mac. Pour cela, %2$@ parle à XSide sur ton Mac par le réseau local (même Wi-Fi)."
+                                                              en:@"From this %1$@, XSide can refresh %2$@ or pause its refresh, and keep its XSide Settings in step with your Mac. For that, %2$@ talks to XSide on your Mac over the local network (same Wi-Fi)."], device, app]
                           size:14 weight:UIFontWeightRegular color:UIColor.labelColor];
     UIView *ask = [self callout:@"checkmark.shield.fill"
                           title:[self t:@"iOS va te demander d'autoriser" en:@"iOS will ask you to allow it"]
@@ -287,6 +292,21 @@ static void XSHideWindow(void) {
                                                              en:@"%@ also uses the local network for its own features: iOS may already have asked for it. It's the same permission."], XSAppName()]
                           size:13 weight:UIFontWeightRegular color:UIColor.secondaryLabelColor];
     return @[head, why, ask, own, refused];
+}
+
+/// iOS already asked for the app (it uses the local network itself) and it was refused: no
+/// question to explain, only what that means and how to turn it back on (device feedback 3, E4).
+- (NSArray<UIView *> *)networkDeniedViews {
+    NSString *device = XSDeviceKind(), *app = XSAppName();
+    UIView *head = [self head:@"wifi.slash" title:[self t:@"Réseau local refusé" en:@"Local network not allowed"]
+                     subtitle:[NSString stringWithFormat:[self t:@"Déjà demandé par iOS pour %@" en:@"Already asked by iOS for %@"], app]];
+    UILabel *what = [self label:[NSString stringWithFormat:[self t:@"%1$@ se sert aussi du réseau local pour ses propres fonctions, et iOS l'a déjà demandé pour elle : l'accès a été refusé. XSide continue de rafraîchir %1$@ depuis ton Mac, mais rien ne peut se faire depuis cet %2$@ (Rafraîchir, pause, réglages envoyés au Mac)."
+                                                               en:@"%1$@ also uses the local network for its own features, and iOS already asked for it: access was refused. XSide still refreshes %1$@ from your Mac, but nothing can be done from this %2$@ (Refresh, pause, settings sent to the Mac)."], app, device]
+                           size:14 weight:UIFontWeightRegular color:UIColor.labelColor];
+    UIView *how = [self callout:@"gearshape.fill"
+                          title:[self t:@"Pour l'autoriser" en:@"To allow it"]
+                           body:[NSString stringWithFormat:[self t:@"%@ > Réseau local : active-le." en:@"%@ > Local Network: turn it on."], XSSettingsPath()]];
+    return @[head, what, how];
 }
 
 - (NSArray<UIView *> *)notificationViews {
@@ -414,6 +434,7 @@ static void XSHideWindow(void) {
     for (UIView *v in _body.arrangedSubviews) { [_body removeArrangedSubview:v]; [v removeFromSuperview]; }
     NSString *page = _pages[_page];
     NSArray<UIView *> *views = [page isEqual:@"network"] ? [self networkViews]
+                             : [page isEqual:@"networkDenied"] ? [self networkDeniedViews]
                              : [page isEqual:@"notifications"] ? [self notificationViews] : [self welcomeViews];
     for (UIView *v in views) [_body addArrangedSubview:v];
     BOOL last = _page + 1 >= _pages.count;
@@ -443,12 +464,33 @@ static void XSHideWindow(void) {
 /// The button (or a tap outside): the next page, or closing on the last. Going past "Réseau
 /// local" is what lets XSide reach the network: iOS asks right after that page.
 - (void)next {
-    if (_closing) return;
+    if (_closing || _probing) return;
     if ([_pages[_page] isEqual:@"network"]) {
         XSSetNetworkExplained();
         if (_startsNetwork) XSStartLocalNetwork();
     }
     if (_page + 1 >= _pages.count) { [self close]; return; }
+    // Device feedback 3, E4: the app may have made iOS ask already (its own use of the local
+    // network): checked silently first, the page then fits the answer.
+    if (!_probed && [_pages[_page + 1] isEqual:@"network"]
+        && XSProbesNetworkFirst(XSHasChannel(), XSChannelGranted(), XSNetworkExplained(), XSAppUsesLocalNetwork(), XSSystemAlertSeen())) {
+        _probing = YES;
+        _probed = YES;
+        _ok.enabled = NO;
+        XSProbeLocalNetwork(^(XSNetworkProbe probe) {
+            self->_probing = NO;
+            self->_ok.enabled = YES;
+            NSString *page = XSNetworkPageAfterProbe(probe);
+            NSMutableArray<NSString *> *pages = [self->_pages mutableCopy];
+            if (page) pages[self->_page + 1] = page;
+            else [pages removeObjectAtIndex:self->_page + 1];
+            if (![page isEqual:@"network"]) XSSetNetworkExplained(); // decided: nothing left to explain
+            self->_pages = pages;
+            self->_dots.numberOfPages = (NSInteger)pages.count;
+            [self next];
+        });
+        return;
+    }
     _page++;
     [UIView animateWithDuration:0.15 animations:^{ self->_body.alpha = 0; } completion:^(BOOL finished) {
         [self fillPage];
@@ -721,6 +763,23 @@ void XSExplainNetworkThen(void (^block)(void)) {
             block();
             return;
         }
+        // Device feedback 3, E4: iOS may already have asked for the app itself: checked silently.
+        if (XSProbesNetworkFirst(XSHasChannel(), XSChannelGranted(), XSNetworkExplained(), XSAppUsesLocalNetwork(), XSSystemAlertSeen())) {
+            XSSheetUp = YES;
+            XSProbeLocalNetwork(^(XSNetworkProbe probe) {
+                NSString *page = XSNetworkPageAfterProbe(probe);
+                NSLog(@"XSide: local network: checked before its page: %ld, page %@", (long)probe, page ?: @"none");
+                if (!page) {
+                    XSSetNetworkExplained();
+                    XSSheetEnded();
+                    block();
+                    return;
+                }
+                if ([page isEqual:@"networkDenied"]) XSSetNetworkExplained();
+                XSShowSheet(nil, @[page], NO, block, 0);
+            });
+            return;
+        }
         // The first network access after the first-launch sheet (an app installed before 1.1, or a
         // sheet left before its page): the "Réseau local" page on its own, then the access.
         NSLog(@"XSide: local network: its page first, then XSide's first access");
@@ -906,6 +965,7 @@ static void XSReturn(void) {
 __attribute__((constructor)) static void XSideWelcomeInit(void) {
     XSNoteStartDefaultsDate(); // before the app writes its own preferences at launch
     XSInstallShortcuts(); // before UIApplicationMain sets the app's delegates
+    XSWatchSystemAlerts();
     __block id observer = nil;
     observer = [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification
                                                                object:nil queue:NSOperationQueue.mainQueue

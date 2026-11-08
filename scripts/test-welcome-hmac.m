@@ -285,6 +285,17 @@ int main(int argc, const char *argv[]) {
         check(XSNeedsNetworkExplanation(YES, NO, NO), @"network explained before the first access");
         check(!XSNeedsNetworkExplanation(NO, NO, NO) && !XSNeedsNetworkExplanation(YES, YES, NO)
               && !XSNeedsNetworkExplanation(YES, NO, YES), @"network: no channel, already allowed, or already explained");
+        // Device feedback 3, E4: an app that uses the local network itself (YouTube's Cast) may
+        // have made iOS ask before XSide's page; once a system alert was seen, XSide checks
+        // silently first: allowed, no page; refused, a short page saying how to turn it back on;
+        // unknown (no Mac found in time), the page as before.
+        check(XSProbesNetworkFirst(YES, NO, NO, YES, YES) && !XSProbesNetworkFirst(YES, NO, NO, NO, YES)
+              && !XSProbesNetworkFirst(YES, NO, NO, YES, NO) && !XSProbesNetworkFirst(YES, YES, NO, YES, YES)
+              && !XSProbesNetworkFirst(YES, NO, YES, YES, YES) && !XSProbesNetworkFirst(NO, NO, NO, YES, YES),
+              @"network: checked first only after a system alert, in an app that uses it itself");
+        check(XSNetworkPageAfterProbe(XSNetworkProbeAllowed) == nil
+              && [XSNetworkPageAfterProbe(XSNetworkProbeDenied) isEqual:@"networkDenied"]
+              && [XSNetworkPageAfterProbe(XSNetworkProbeUnknown) isEqual:@"network"], @"network: page after the silent check");
         // Device feedback round 2, P4: the explanation comes before iOS asks whatever the messages
         // (it is not one of XSide's messages but what the iOS prompt is about), so it no longer
         // depends on the settings.

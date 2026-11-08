@@ -119,6 +119,23 @@ NSArray<NSString *> *XSSheetPages(BOOL channel, BOOL granted, BOOL explained, BO
 /// message off, the access used to go ahead with no page).
 BOOL XSNeedsNetworkExplanation(BOOL channel, BOOL granted, BOOL explained);
 
+/// What a silent check of the local network found (device feedback 3, E4).
+typedef NS_ENUM(NSInteger, XSNetworkProbe) {
+    /// XSide on the Mac was found: allowed.
+    XSNetworkProbeAllowed,
+    /// iOS refused it (kDNSServiceErr_PolicyDenied).
+    XSNetworkProbeDenied,
+    /// Nothing found in time: not decided yet, or no Mac around.
+    XSNetworkProbeUnknown,
+};
+/// The app uses the local network itself (a Bonjour service of its own, e.g. YouTube's Cast) and
+/// a system alert came and went since launch: iOS has likely asked already, for the app. XSide
+/// then checks silently before its page instead of explaining a question already answered.
+BOOL XSProbesNetworkFirst(BOOL channel, BOOL granted, BOOL explained, BOOL appUsesNetwork, BOOL systemAlertSeen);
+/// The page to show after that check: nil (allowed: none), "networkDenied" (how to turn it back
+/// on), "network" (the usual page).
+NSString *_Nullable XSNetworkPageAfterProbe(XSNetworkProbe probe);
+
 // MARK: What a change pill says (device feedback round 2, P2)
 
 /// The texts of the one pill for a settings change (`fields`, in XSSettingFields order, with

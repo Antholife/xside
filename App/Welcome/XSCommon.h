@@ -154,6 +154,11 @@ void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
 /// has closed: nothing XSide asks iOS for (local network, notifications) comes up over it, before
 /// its pages said why. Main thread.
 void XSAfterSheet(void (^block)(void));
+/// Starts watching for system alerts over the app (from the library's constructor).
+void XSWatchSystemAlerts(void);
+/// A system alert came and went since launch (the app resigned active without going to the
+/// background), e.g. iOS asking for the local network for the app itself (device feedback 3, E4).
+BOOL XSSystemAlertSeen(void);
 /// Runs `block` (which reaches the network) once the person has read why XSide uses the local
 /// network: the first time, when XSNeedsNetworkExplanation says so, the sheet's "Réseau local"
 /// page is shown on its own first. After any first-launch sheet. Main thread.
