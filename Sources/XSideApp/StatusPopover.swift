@@ -43,9 +43,9 @@ final class StatusPopover: NSObject, NSPopoverDelegate {
         popover.behavior = .transient
         popover.animates = true
         popover.delegate = self
-        let host = NSHostingController(rootView: content.environment(\.closePopover, ClosePopoverAction { [weak self] in
-            self?.close()
-        }))
+        let host = NSHostingController(rootView: content
+            .environment(\.closePopover, ClosePopoverAction { [weak self] in self?.close() })
+            .environment(\.reopenPopover, ClosePopoverAction { [weak self] in self?.show() }))
         host.sizingOptions = [.preferredContentSize]
         popover.contentViewController = host
         Self.log.info("status item installed")
@@ -92,9 +92,19 @@ private struct ClosePopoverKey: EnvironmentKey {
     static let defaultValue = ClosePopoverAction {}
 }
 
+/// Shows the menu-bar popover again (after a row's confirmation alert, which had to close it).
+private struct ReopenPopoverKey: EnvironmentKey {
+    static let defaultValue = ClosePopoverAction {}
+}
+
 extension EnvironmentValues {
     var closePopover: ClosePopoverAction {
         get { self[ClosePopoverKey.self] }
         set { self[ClosePopoverKey.self] = newValue }
+    }
+
+    var reopenPopover: ClosePopoverAction {
+        get { self[ReopenPopoverKey.self] }
+        set { self[ReopenPopoverKey.self] = newValue }
     }
 }

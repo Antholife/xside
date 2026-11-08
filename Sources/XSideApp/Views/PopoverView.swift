@@ -20,6 +20,7 @@ private struct PopoverContent: View {
     @Environment(\.openWindow) private var openWindow
     /// Closes the popover: every action that leads elsewhere (window, web page) does.
     @Environment(\.closePopover) private var dismiss
+    @Environment(\.reopenPopover) private var reopen
     @AppStorage(JourneyStep.completedKey) private var journeyCompleted = false
     @State private var isDropTargeted = false
 
@@ -196,12 +197,17 @@ private struct PopoverContent: View {
     }
 
     /// Closes the popover, then runs `alert` once XSide is active, on a later runloop turn: the
-    /// confirmation shows alone, not over the panel (nor under the row's menu, still closing).
+    /// confirmation shows alone, not over the panel (nor under the row's menu, still closing). A
+    /// transient popover can't stay open under a modal alert, so it opens again once the alert is
+    /// answered: the person stays in the panel, on the row they acted on.
     private func afterClosing(_ alert: @escaping @MainActor () -> Void) {
         dismiss()
         DispatchQueue.main.async {
             NSApp.activate()
-            DispatchQueue.main.async { alert() }
+            DispatchQueue.main.async {
+                alert()
+                reopen()
+            }
         }
     }
 
@@ -234,9 +240,9 @@ private struct PopoverContent: View {
         }
     }
 
-    /// No confirmation: undoing it is just stopping again. The popover closes like for the others.
+    /// No confirmation (undoing it is just stopping again), so the panel stays open: the row
+    /// shows the refresh resumed (device feedback 2026-11-08: closing it read as a bug).
     private func resume(_ entry: AppEntry) {
-        dismiss()
         Task { await model.resumeRefreshing(entry) }
     }
 
@@ -472,6 +478,7 @@ private struct PopoverFooter: View {
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
     @Environment(\.closePopover) private var dismiss
+    @Environment(\.reopenPopover) private var reopen
 
     private var version: String { "\(Bundle.main.shortVersion ?? "") β" }
 
