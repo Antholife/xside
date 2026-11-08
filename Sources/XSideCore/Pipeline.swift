@@ -427,12 +427,10 @@ public actor SideloadPipeline {
                     explains: \(String(describing: error))
                     """)
             }
-            if var failed = previous {
-                let date = now()
-                failed.lastAttempt = date
-                failed.lastErrorKey = (explained as? XSideError)?.key ?? "unknown"
-                failed.lastRefreshOutcome = RefreshOutcome(at: date, succeeded: false, reasonKey: failed.lastErrorKey)
-                try? await library.upsert(failed, for: recordID, requireExisting: true)
+            if previous != nil {
+                // On the installation as stored now: a pause or check-in during the job stays.
+                try? await library.recordFailure(errorKey: (explained as? XSideError)?.key ?? "unknown", at: now(),
+                                                 recordID: recordID, deviceID: device.id)
             }
             throw explained
         }

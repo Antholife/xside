@@ -35,21 +35,29 @@ public enum ChannelHandler {
     /// Opens `line` (without its "\n") with the secret `secret(installationID)` returns, nil for an
     /// installation XSide doesn't know (or has no secret for). The nonce is recorded only for an
     /// authenticated request.
-    public static func receive(line: Data, now: Date, nonces: inout NonceCache,
+    public static func receive(line: Data, now: Date, nonces: inout ChannelNonces,
                                secret: (String) -> Data?) -> ChannelReceived {
         guard line.count <= maxLineLength, let envelope = try? ChannelEnvelope.decode(line: line) else {
             return .malformed
         }
-        guard let key = secret(envelope.installationID),
-              let request = envelope.open(secret: key, now: now, seen: &nonces) else { return .rejected }
+        // The lookup comes first: no cache is ever created for an id XSide doesn't know.
+        guard let key = secret(envelope.installationID) else { return .rejected }
+        let opened = nonces.withCache(for: envelope.installationID) { envelope.open(secret: key, now: now, seen: &$0) }
+        guard let request = opened else { return .rejected }
         return .request(installationID: envelope.installationID, nonce: envelope.nonce, request)
     }
+
+    /// Shortest time between two refreshes asked from the phone for one installation (counted
+    /// from its last attempt, whatever started it): sooner, the request is answered `busy`.
+    public static let refreshInterval: TimeInterval = 10 * 60
 
     /// The reply to an authenticated request and the change it asks for. A `refresh` is answered
     /// `accepted` here; the caller replaces that with `busy` or `deviceUnreachable` when the job
     /// can't start, and sends the outcome (`refreshed` / `failed`) as a second line once it ends.
-    public static func handle(_ request: ChannelRequest, installation: Installation,
-                              now: Date) -> (reply: ChannelReply, update: InstallationUpdate) {
+    /// `reminder`: the Mac's global "Reminder on the device" setting, to seed an installation saved
+    /// without settings.
+    public static func handle(_ request: ChannelRequest, installation: Installation, now: Date,
+                              reminder: Bool) -> (reply: ChannelReply, update: InstallationUpdate) {
         switch request {
         case let .checkIn(settings, lastRefresh, _):
             let remote = clamped(settings, now: now)
@@ -66,9 +74,10 @@ public enum ChannelHandler {
         case .refresh:
             // Paused before XSide recorded who did it: only the Mac could pause then.
             if installation.refreshPaused { return (.paused(by: installation.pausedBy ?? .mac), .none) }
+            if let last = installation.lastAttempt, now.timeIntervalSince(last) < refreshInterval { return (.busy, .none) }
             return (.accepted, .refreshRequested)
         case let .setAutoRefresh(on):
-            let current = installation.seededInApp(reminder: true, at: now)
+            let current = installation.seededInApp(reminder: reminder, at: now)
             let updated = current.setting(\.autoRefresh, to: on, at: now, by: .device)
             return (.settings(updated), .paused(!on, by: .device))
         }
@@ -95,6 +104,23 @@ public enum ChannelHandler {
 
     /// `{"type":"rejected"}` + "\n": the bare, unsigned refusal (see `ChannelReceived.rejected`).
     public static let rejectedLine: Data = Data(#"{"type":"rejected"}"#.utf8) + Data([0x0A])
+}
+
+/// The replay caches, one per installation, so one installation filling its own can't lock the
+/// others out. A cache is created only for an installation XSide knows (see `receive`).
+public struct ChannelNonces: Sendable {
+    private var caches: [String: NonceCache] = [:]
+    private let capacity: Int
+
+    public init(capacityPerInstallation: Int = 512) { capacity = capacityPerInstallation }
+
+    public func count(for installationID: String) -> Int { caches[installationID]?.count ?? 0 }
+
+    mutating func withCache<T>(for installationID: String, _ body: (inout NonceCache) -> T) -> T {
+        var cache = caches[installationID] ?? NonceCache(capacity: capacity)
+        defer { caches[installationID] = cache }
+        return body(&cache)
+    }
 }
 
 /// Accumulates bytes until the first "\n" (the request line), refusing more than `maxLength`

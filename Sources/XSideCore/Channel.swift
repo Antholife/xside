@@ -47,14 +47,17 @@ import CryptoKit
 //   `failed(reasonKey)` when the job ends (the connection stays open up to 2 min; after that it is
 //   closed without the second line, and the success closes the app anyway). One line when it
 //   can't start: `paused(by)` (automatic refresh off for this installation), `busy` (a job is
-//   already running on it), `deviceUnreachable` (the Mac can't see the device), or
-//   `failed(reasonKey)` (e.g. Xcode isn't usable).
+//   already running on it, or its last refresh attempt is under 10 minutes old: the phone can't
+//   make the Mac re-sign in a loop), `deviceUnreachable` (the Mac can't see the device), or
+//   `failed(reasonKey)` (e.g. Xcode isn't usable). reasonKey is an XSideError key, "cancelled"
+//   when the person stopped the job on the Mac, or "unknown".
 // - A request that doesn't authenticate (unknown installation id, wrong MAC, outside the window,
 //   replayed nonce, unreadable body) gets the bare, UNSIGNED line `{"type":"rejected"}` (not an
 //   envelope: nothing is ever signed for an unauthenticated request). The phone must not act on it
 //   beyond "this Mac doesn't know me" (e.g. try another XSide on the network, or report it).
 // - A line that isn't an envelope at all, longer than 64 KB, or not complete within 10 s: the
-//   connection is closed without a reply.
+//   connection is closed without a reply. Connections beyond 4 at once or 20 a minute from one
+//   address (16 in all) are dropped without a reply too.
 
 public enum ChannelError: Error, Equatable { case invalidNonce, invalidTimestamp }
 

@@ -1188,6 +1188,36 @@ struct PipelineChainCancellationTests {
     }
 }
 
+/// Paused from the phone while it installs, then fails.
+private struct PausingInstaller: Installing {
+    let library: AppLibrary
+    let recordID: UUID
+    func install(app: URL, deviceID: String) async throws {
+        try await library.setRefreshPaused(true, recordID: recordID, deviceID: deviceID, by: .device, at: fixedNow)
+        throw XSideError.deviceUnavailable
+    }
+    func uninstall(bundleID: String, deviceID: String) async throws {}
+}
+
+extension PipelineChannelTests {
+    @Test func failureKeepsAPauseMadeDuringTheJob() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let first = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
+        let pipeline = SideloadPipeline(library: f.library, provisioner: FakeProvisioner(log: f.log),
+                                        resigner: FakeResigner(log: f.log),
+                                        installer: PausingInstaller(library: f.library, recordID: f.record.id),
+                                        workRoot: f.workRoot, now: { fixedNow })
+        await #expect(throws: XSideError.self) {
+            _ = try await pipeline.install(recordID: f.record.id, device: device(), env: env, refresh: true)
+        }
+        let stored = try #require(await f.library.records().first?.installations.first)
+        #expect(stored.refreshPaused && stored.pausedBy == .device)
+        #expect(stored.inApp?.autoRefresh.value == false)
+        #expect(stored.channelSecret == first.channelSecret)
+        #expect(stored.lastErrorKey == XSideError.deviceUnavailable.key)
+    }
+}
+
 private final class TestClock: @unchecked Sendable {
     private let lock = NSLock()
     private var value: Date

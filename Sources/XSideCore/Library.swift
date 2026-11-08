@@ -399,20 +399,39 @@ public actor AppLibrary {
         }
         let previous = items
         var installation = items[index].installations[i]
-        installation.inApp = settings
+        // Merged here, with what is stored now: a signing or a pause stored since the caller's
+        // snapshot keeps its newer fields.
+        let merged = installation.inApp.map { InAppSettings.merge($0, settings) } ?? settings
+        installation.inApp = merged
         installation.lastCheckIn = checkIn
         if let outcome { installation.lastRefreshOutcome = outcome }
         var change: Bool?
-        if installation.refreshPaused == settings.autoRefresh.value {
-            let paused = !settings.autoRefresh.value
+        if installation.refreshPaused == merged.autoRefresh.value {
+            let paused = !merged.autoRefresh.value
             installation.refreshPaused = paused
-            installation.pausedBy = paused ? settings.autoRefresh.changedBy : nil
+            installation.pausedBy = paused ? merged.autoRefresh.changedBy : nil
             if !paused { installation.lastAttempt = nil }
             change = paused
         }
         items[index].installations[i] = installation
         do { try save() } catch { items = previous; throw error }
         return change
+    }
+
+    /// Records a failed attempt on the installation as stored now (the attempt date, the error
+    /// and the outcome), leaving everything else as it is: its secret (the app on the device still
+    /// holds it) and whatever reached it through the channel during the job. Throws
+    /// `recordNotFound` when the installation is gone.
+    public func recordFailure(errorKey: String, at date: Date, recordID: UUID, deviceID: String) throws {
+        let index = try indexOf(recordID)
+        guard let i = items[index].installations.firstIndex(where: { $0.deviceID == deviceID }) else {
+            throw XSideError.recordNotFound
+        }
+        let previous = items
+        items[index].installations[i].lastAttempt = date
+        items[index].installations[i].lastErrorKey = errorKey
+        items[index].installations[i].lastRefreshOutcome = RefreshOutcome(at: date, succeeded: false, reasonKey: errorKey)
+        do { try save() } catch { items = previous; throw error }
     }
 
     /// Gives every installation saved without XSide-in-app settings (older state) the Mac

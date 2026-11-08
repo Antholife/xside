@@ -992,8 +992,8 @@ final class AppModel {
     // MARK: - Local network channel (the apps talk to XSide)
 
     @ObservationIgnored private var channelServer: ChannelServer?
-    /// Nonces of the requests accepted lately, so none can be replayed (all installations).
-    @ObservationIgnored private var channelNonces = NonceCache()
+    /// Nonces of the requests accepted lately, so none can be replayed (one cache per installation).
+    @ObservationIgnored private var channelNonces = ChannelNonces()
     private static let channelLogger = Log("channel")
     /// How long a refresh asked from the phone keeps its connection waiting for the outcome.
     private static let refreshOutcomeWait: Duration = .seconds(120)
@@ -1040,7 +1040,8 @@ final class AppModel {
                 Self.channelLogger.error("channel: reply not sealed: \(String(describing: error))")
             }
         }
-        let (answer, update) = ChannelHandler.handle(request, installation: found.installation, now: now)
+        let (answer, update) = ChannelHandler.handle(request, installation: found.installation, now: now,
+                                                     reminder: Self.setting(Self.deviceReminderKey))
         Self.channelLogger.notice("channel: \(Self.describe(request)) from \(job.deviceID) for \(found.recordID)")
         switch update {
         case .none:
@@ -1066,6 +1067,11 @@ final class AppModel {
             }
             await reply(answer)
         case .refreshRequested:
+            // Paused since the snapshot the handler saw: say so, rather than "busy".
+            if let fresh = await library.installation(channelID: installationID)?.installation, fresh.refreshPaused {
+                await reply(.paused(by: fresh.pausedBy ?? .mac))
+                return
+            }
             switch refreshFromDevice(job) {
             case .failure(let refusal):
                 Self.channelLogger.notice("channel: refresh not started: \(Self.describe(refusal.reply))")
@@ -1082,6 +1088,10 @@ final class AppModel {
     /// A refresh asked from the phone: the normal manual refresh, or why it can't start.
     private func refreshFromDevice(_ job: RefreshJob) -> Result<Task<(any Error)?, Never>, Refusal> {
         let key = JobKey(recordID: job.recordID, deviceID: job.deviceID)
+        if let paused = records.first(where: { $0.id == job.recordID })?.installations
+            .first(where: { $0.deviceID == job.deviceID }), paused.refreshPaused {
+            return .failure(Refusal(reply: .paused(by: paused.pausedBy ?? .mac)))
+        }
         if jobs[key] != nil { return .failure(Refusal(reply: .busy)) }
         guard let device = devices.first(where: { $0.id == job.deviceID }), device.isAvailable,
               !removingDevices.contains(job.deviceID) else { return .failure(Refusal(reply: .deviceUnreachable)) }
@@ -1092,11 +1102,15 @@ final class AppModel {
         return .success(task)
     }
 
-    /// The refresh's outcome line, or nil when it takes longer than the phone waits.
+    /// The refresh's outcome line, or nil when it takes longer than the phone waits. A job stopped
+    /// by the user fails with the reason key "cancelled".
     private func waitForOutcome(_ task: Task<(any Error)?, Never>) async -> ChannelReply? {
         final class Once {
             var continuation: CheckedContinuation<ChannelReply?, Never>?
+            var timer: Task<Void, Never>?
             func resume(_ value: ChannelReply?) {
+                timer?.cancel() // no 2-minute sleeper left behind once the outcome is in
+                timer = nil
                 continuation?.resume(returning: value)
                 continuation = nil
             }
@@ -1104,15 +1118,20 @@ final class AppModel {
         let once = Once()
         return await withCheckedContinuation { continuation in
             once.continuation = continuation
+            once.timer = Task { @MainActor in
+                try? await Task.sleep(for: Self.refreshOutcomeWait)
+                if !Task.isCancelled { once.resume(nil) }
+            }
             Task { @MainActor in
                 let error = await task.value
-                once.resume(error.map { .failed(reasonKey: ($0 as? XSideError)?.key ?? "unknown") } ?? .refreshed)
-            }
-            Task { @MainActor in
-                try? await Task.sleep(for: Self.refreshOutcomeWait)
-                once.resume(nil)
+                once.resume(error.map(Self.outcomeReply) ?? .refreshed)
             }
         }
+    }
+
+    private static func outcomeReply(_ error: any Error) -> ChannelReply {
+        if error is CancellationError { return .failed(reasonKey: "cancelled") }
+        return .failed(reasonKey: (error as? XSideError)?.key ?? "unknown")
     }
 
     /// The pause changed from the phone: reminders and notification state follow, as from the panel.

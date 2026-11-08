@@ -19,13 +19,18 @@ final class ChannelServer: @unchecked Sendable {
     /// Longest a connection stays open: a refresh's outcome is awaited up to 2 minutes.
     private static let connectionLifetime: TimeInterval = 150
     private static let maxConnections = 16
+    /// Per peer address: connections open at once, and new ones per minute. Excess is dropped.
+    private static let maxConnectionsPerRemote = 4
+    private static let maxAcceptsPerRemotePerMinute = 20
     private static let logger = Log("channel")
 
     private let handler: Handler
     /// Everything below is only touched on `queue`.
     private let queue = DispatchQueue(label: "io.github.xside.channel")
     private var listener: NWListener?
-    private var connections: [ObjectIdentifier: NWConnection] = [:]
+    private var connections: [ObjectIdentifier: Entry] = [:]
+    private var openPerRemote: [String: Int] = [:]
+    private var recentAccepts: [String: [Date]] = [:]
     private var running = false
 
     init(handler: @escaping Handler) {
@@ -44,8 +49,7 @@ final class ChannelServer: @unchecked Sendable {
             running = false
             listener?.cancel()
             listener = nil
-            for connection in connections.values { connection.cancel() }
-            connections = [:]
+            for entry in connections.values { entry.connection.cancel() }
         }
     }
 
@@ -85,26 +89,50 @@ final class ChannelServer: @unchecked Sendable {
         queue.asyncAfter(deadline: .now() + 30) { [weak self] in self?.listen() }
     }
 
+    /// The peer's address (without the port): the unit of the per-peer limits.
+    private static func remote(of connection: NWConnection) -> String {
+        if case let .hostPort(host, _) = connection.endpoint { return "\(host)" }
+        return "\(connection.endpoint)"
+    }
+
     private func accept(_ connection: NWConnection) {
-        guard connections.count < Self.maxConnections else {
-            connection.cancel()
+        let remote = Self.remote(of: connection)
+        let now = Date()
+        let recent = (recentAccepts[remote] ?? []).filter { now.timeIntervalSince($0) < 60 }
+        recentAccepts[remote] = recent.isEmpty ? nil : recent
+        guard connections.count < Self.maxConnections,
+              openPerRemote[remote, default: 0] < Self.maxConnectionsPerRemote,
+              recent.count < Self.maxAcceptsPerRemotePerMinute else {
+            connection.cancel() // dropped silently
             return
         }
+        recentAccepts[remote] = recent + [now]
+        openPerRemote[remote, default: 0] += 1
         let id = ObjectIdentifier(connection)
-        connections[id] = connection
+        let read = ReadState()
+        // Weak: a timer never keeps a connection that ended alive; both are cancelled when it ends.
+        let readTimer = DispatchWorkItem { [weak connection] in
+            if !read.gotLine { connection?.cancel() }
+        }
+        let lifeTimer = DispatchWorkItem { [weak connection] in connection?.cancel() }
+        connections[id] = Entry(connection: connection, remote: remote, timers: [readTimer, lifeTimer])
         connection.stateUpdateHandler = { [weak self] state in
             switch state {
-            case .failed, .cancelled: self?.connections[id] = nil
+            case .failed, .cancelled: self?.ended(id)
             default: break
             }
         }
         connection.start(queue: queue)
-        let read = ReadState()
-        queue.asyncAfter(deadline: .now() + Self.readTimeout) {
-            if !read.gotLine { connection.cancel() }
-        }
-        queue.asyncAfter(deadline: .now() + Self.connectionLifetime) { connection.cancel() }
+        queue.asyncAfter(deadline: .now() + Self.readTimeout, execute: readTimer)
+        queue.asyncAfter(deadline: .now() + Self.connectionLifetime, execute: lifeTimer)
         receive(on: connection, read: read)
+    }
+
+    private func ended(_ id: ObjectIdentifier) {
+        guard let entry = connections.removeValue(forKey: id) else { return }
+        for timer in entry.timers { timer.cancel() }
+        let left = (openPerRemote[entry.remote] ?? 1) - 1
+        openPerRemote[entry.remote] = left > 0 ? left : nil
     }
 
     /// Reads until the first "\n". Malformed framing (too long, closed early) closes silently.
@@ -146,6 +174,13 @@ final class ChannelServer: @unchecked Sendable {
                             completion: .contentProcessed { _ in connection.cancel() })
         }
     }
+}
+
+/// An open connection, its peer and its timers (only touched on the server's queue).
+private struct Entry {
+    let connection: NWConnection
+    let remote: String
+    let timers: [DispatchWorkItem]
 }
 
 /// One connection's read progress (only touched on the server's queue).
