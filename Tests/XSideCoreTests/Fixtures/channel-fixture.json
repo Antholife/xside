@@ -1,0 +1,11 @@
+{
+  "secretHex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+  "installationID": "rec|dev",
+  "timestamp": 1800000000000,
+  "nonce": "n1",
+  "bodyJSON": "{\"type\":\"refresh\"}",
+  "body": "eyJ0eXBlIjoicmVmcmVzaCJ9",
+  "signedString": "rec|dev|1800000000000|n1|eyJ0eXBlIjoicmVmcmVzaCJ9",
+  "mac": "4McQUiU/zGGdkAvFuzmmVje88inM1VhBlOgAMVt8ypM=",
+  "line": "{\"body\":\"eyJ0eXBlIjoicmVmcmVzaCJ9\",\"installationID\":\"rec|dev\",\"mac\":\"4McQUiU/zGGdkAvFuzmmVje88inM1VhBlOgAMVt8ypM=\",\"nonce\":\"n1\",\"timestamp\":1800000000000}"
+}
