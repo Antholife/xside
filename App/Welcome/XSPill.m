@@ -11,6 +11,11 @@ __attribute__((used)) static const char XSTestLateMarker[] = "XSIDE_TEST_LATE_BU
 
 static const int XSPillMaxAttempts = 20;
 
+@interface XSPillContent ()
+/// Shown by XSShowPillWhenFree: the next such pill may replace it.
+@property (nonatomic) BOOL whenFree;
+@end
+
 @implementation XSPillContent
 @end
 
@@ -40,10 +45,25 @@ static NSString *XSPrefixed(NSString *lead) {
 
 /// The pill's own window: passthrough, never key, under the install sheet's.
 static UIWindow *XSPillWindow;
+/// What it shows.
+static XSPillContent *XSPillOnScreen;
+/// The pill waiting for the screen to be free (XSShowPillWhenFree), and since when.
+static XSPillContent *XSPillWaiting;
+static NSDate *XSPillWaitingSince;
 
-static void XSHidePillWindow(UIWindow *window) {
+static void XSShowPillAttempt(XSPillContent *content, int attempt);
+
+/// `gone`: dismissed (not replaced by a newer one): the pill waiting, if any, comes now.
+static void XSHidePillWindow(UIWindow *window, BOOL gone) {
     window.hidden = YES;
-    if (XSPillWindow == window) XSPillWindow = nil;
+    if (XSPillWindow != window) return;
+    XSPillWindow = nil;
+    XSPillOnScreen = nil;
+    if (!gone || !XSPillWaiting) return;
+    XSPillContent *next = XSPillWaiting;
+    XSPillWaiting = nil;
+    if (-XSPillWaitingSince.timeIntervalSinceNow > 30) return; // too late to be news
+    XSShowPillAttempt(next, 0);
 }
 
 @implementation XSPillController {
@@ -96,8 +116,7 @@ static void XSHidePillWindow(UIWindow *window) {
             NSFontAttributeName: XSScaledFont(14, UIFontWeightBold), NSForegroundColorAttributeName: XSToneColor(c.tone)}]];
     }
     if (c.tail.length) [text appendAttributedString:[[NSAttributedString alloc] initWithString:c.tail]];
-    title.attributedText = text;
-    if (!twoLines) title.numberOfLines = 2;
+    title.attributedText = text; // wraps on as many lines as it needs (device feedback round 1, B2)
 
     NSMutableArray<UIView *> *texts = [NSMutableArray arrayWithObject:title];
     if (c.hint.length) {
@@ -160,8 +179,9 @@ static void XSHidePillWindow(UIWindow *window) {
     ]];
     _holder = holder;
 
-    // A tap (outside the button) or a swipe up dismisses it; the app stays usable around it.
-    [holder addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(dismiss)]];
+    // A tap (outside the button) or a swipe up dismisses it; the app stays usable around it. A
+    // pill with a tap action runs it too.
+    [holder addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(tapPill)]];
     UISwipeGestureRecognizer *up = [[UISwipeGestureRecognizer alloc] initWithTarget:self action:@selector(dismiss)];
     up.direction = UISwipeGestureRecognizerDirectionUp;
     [holder addGestureRecognizer:up];
@@ -196,7 +216,13 @@ static void XSHidePillWindow(UIWindow *window) {
     UIWindow *window = self.view.window;
     [UIView animateWithDuration:0.3 animations:^{
         self->_holder.transform = [self hiddenTransform];
-    } completion:^(BOOL finished) { XSHidePillWindow(window); }];
+    } completion:^(BOOL finished) { XSHidePillWindow(window, YES); }];
+}
+
+- (void)tapPill {
+    void (^action)(void) = _content.tapAction;
+    [self dismiss];
+    if (action) action();
 }
 
 - (void)tapButton {
@@ -215,17 +241,33 @@ static void XSShowPillAttempt(XSPillContent *content, int attempt) {
         });
         return;
     }
-    if (XSPillWindow) XSHidePillWindow(XSPillWindow); // one pill at a time: the newest
+    if (XSPillWindow) XSHidePillWindow(XSPillWindow, NO); // one pill at a time: the newest
     UIWindow *window = [[XSPassthroughWindow alloc] initWithWindowScene:scene];
     window.rootViewController = [[XSPillController alloc] initWithContent:content];
     window.windowLevel = UIWindowLevelAlert + 99;
     window.backgroundColor = UIColor.clearColor;
     XSPillWindow = window;
+    XSPillOnScreen = content;
     window.hidden = NO; // never key: the app keeps its keyboard and focus
 }
 
 void XSShowPill(XSPillContent *content) {
+    if (!XSShowsPills(XSCurrentSettings())) return; // "Aucun": nothing at all, even an answer
     dispatch_async(dispatch_get_main_queue(), ^{ XSShowPillAttempt(content, 0); });
+}
+
+void XSShowPillWhenFree(XSPillContent *content) {
+    if (!XSShowsPills(XSCurrentSettings())) return;
+    content.whenFree = YES;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!XSPillWindow || XSPillOnScreen.whenFree) {
+            XSPillWaiting = nil;
+            XSShowPillAttempt(content, 0);
+            return;
+        }
+        XSPillWaiting = content;
+        XSPillWaitingSince = NSDate.date;
+    });
 }
 
 // MARK: - The launch pill

@@ -122,6 +122,24 @@ BOOL XSShouldCheckInOnReturn(BOOL changed, BOOL pending, NSDate *lastCheckIn, NS
     return since < 0 || since >= XSReturnCheckInInterval;
 }
 
+NSArray<NSString *> *XSChangedFields(NSDictionary *before, NSDictionary *after) {
+    NSMutableArray *fields = [NSMutableArray array];
+    for (NSString *f in XSSettingFields()) {
+        id a = XSSettingValue(before, f), b = XSSettingValue(after, f);
+        if (a != b && ![a isEqual:b]) [fields addObject:f];
+    }
+    return fields;
+}
+
+NSArray<NSString *> *XSFieldsChangedByMac(NSDictionary *before, NSDictionary *after) {
+    NSMutableArray *fields = [NSMutableArray array];
+    for (NSString *f in XSChangedFields(before, after)) {
+        id field = after[f];
+        if ([field isKindOfClass:NSDictionary.class] && [field[@"changedBy"] isEqual:@"mac"]) [fields addObject:f];
+    }
+    return fields;
+}
+
 id XSSettingValue(NSDictionary *s, NSString *field) {
     id f = s[field];
     return [f isKindOfClass:NSDictionary.class] ? f[@"value"] : nil;
@@ -154,6 +172,26 @@ BOOL XSShowsValidityPill(NSDictionary *s, BOOL late) {
 BOOL XSShowsRefreshCard(NSDictionary *s) { return XSSettingBool(s, @"refreshCard"); }
 BOOL XSSchedulesReminder(NSDictionary *s) { return XSSettingBool(s, @"reminder"); }
 BOOL XSShowsInstallSheet(NSDictionary *s) { return ![XSDerivedLevel(s) isEqualToString:@"none"]; }
+
+BOOL XSShowsPills(NSDictionary *s) { return ![XSDerivedLevel(s) isEqualToString:@"none"]; }
+
+BOOL XSShowsMacUpdatePill(NSDictionary *s) { return XSShowsRefreshCard(s); }
+
+NSArray<NSString *> *XSSheetPages(BOOL channel, BOOL granted, BOOL explained, BOOL askNotifications) {
+    NSMutableArray *pages = [NSMutableArray arrayWithObject:@"welcome"];
+    if (channel && !granted && !explained) [pages addObject:@"network"];
+    if (askNotifications) [pages addObject:@"notifications"];
+    return pages;
+}
+
+BOOL XSNeedsNetworkExplanation(BOOL channel, BOOL granted, BOOL explained, NSDictionary *s) {
+    return channel && !granted && !explained && XSShowsInstallSheet(s);
+}
+
+NSString *XSSettingsPaneURLString(NSString *bundleID) {
+    // The row's id is its Key (SettingsBundle writes both): io.github.xside.settings.pane.
+    return [NSString stringWithFormat:@"App-prefs:%@&path=io.github.xside.settings.pane", bundleID];
+}
 
 BOOL XSIsLate(NSTimeInterval timeLeft, NSInteger thresholdHours) {
     return timeLeft < (thresholdHours - 6) * 3600.0;

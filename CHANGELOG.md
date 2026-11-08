@@ -18,6 +18,8 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 - **Settings > My apps**: the installed apps (icon and name); pick one for the same options (the app's ... menu in the panel opens it on that app), applied at the app's next refresh or opening. For each device it shows whether the iPhone is reachable ("Reachable", "Not connected yet: tap Refresh once in the app", "Not seen since ...") and whether the Mac's changes are pending, written or confirmed by the iPhone. Nothing is claimed active before the iPhone confirmed it.
 - **Install without XSide features**, for apps that refuse to launch because they detect a change: for all apps (*Settings > XSide in the apps*) or per app (step 3, and *Settings > My apps*), after a confirmation listing what's lost. XSide keeps refreshing them; the per-app choice wins over the default. Applies at each app's next refresh.
 - The panel shows who paused an app's refreshes (this iPhone, this iPad or the Mac) and uses two-line subtitles.
+- **The first-launch sheet explains before iOS asks.** It now has pages: *Installed with XSide*, then *Local network* (why: refresh or pause from the iPhone, settings kept in step with the Mac; what happens if you refuse) and *Notifications* (the reminder before expiry), each shown only when iOS will ask, with its prompt right after it. Nothing reaches the network before the *Local network* page was read; an app installed earlier shows that page on its own before its first network access.
+- **Settings sync feedback in the app**: settings changed in iOS Settings are sent when the app opens, with a pill ("sending your settings to the Mac...", then sent, or the Mac unreachable: sent at the next connection), and settings changed on the Mac show "settings updated from your Mac", which opens XSide's page in iOS Settings.
 
 ### Changed
 - **Settings reorganized** into General, Refreshing, Installing, XSide in the apps (defaults for new installs), My apps, Notifications, Xcode and signing, Updates, Reports & Logs, About.
@@ -26,6 +28,9 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 - The *Messages XSide* and *Language* choices use XSide's own popup (brand chevron box) instead of the grey system one.
 - Resuming an app's refreshes from the panel keeps the panel open; after a row's confirmation (stop refreshing, uninstall, remove from the list) the panel opens again.
 - The install step "Adding XSide features" is "Injecting the XSide module", and says "skipped (installed as is)" when it was.
+- **Refresh now from the iPhone says what happens next**: "refresh asked of your Mac, the app will close when it's done (about 1 min), open it again then", until the outcome (done, refused and why, or the Mac unreachable and what to do).
+- XSide Settings (touch and hold the icon, or a pill) opens XSide's own page in iOS Settings directly when iOS allows it, else the app's page.
+- In the app, XSide's texts wrap instead of being cut (the sheet's "These details stay in Settings > ..." line, long pills). With every XSide message off, no pill shows at all, not even the answer to a Refresh.
 - Existing apps get their per-app values from today's global settings (the global reminder switch becomes each app's reminder; the others start on).
 
 ## [1.0.6-beta] - 2026-11-06

@@ -299,31 +299,110 @@ static BOOL XSIsPolicyDenied(nw_error_t error) {
 // MARK: - Check-in at launch
 
 static BOOL XSCheckInRunning;
+static XSPillContent *XSUnansweredPill(XSChannelResult result);
 
-void XSCheckIn(void (^done)(void)) {
-    if (XSCheckInRunning || !XSChannelGranted() || !XSInstallationID() || !XSChannelSecret()) {
-        if (done) dispatch_async(dispatch_get_main_queue(), done);
+/// "XSide : réglages mis à jour depuis ton Mac": a tap (or Voir) opens XSide's page in iOS
+/// Settings. Under the refresh card's switch (XSShowsMacUpdatePill).
+static XSPillContent *XSMacUpdatePill(void) {
+    BOOL fr = XSFrench();
+    XSPillContent *c = [XSPillContent new];
+    c.lead = fr ? @"Réglages mis à jour depuis ton Mac" : @"Settings updated from your Mac";
+    c.hint = fr ? @"Touche pour les voir dans Réglages XSide." : @"Tap to see them in XSide Settings.";
+    c.duration = 6;
+    c.buttonTitle = fr ? @"Voir" : @"See";
+    c.action = ^{ XSOpenAppSettings(); };
+    c.tapAction = c.action;
+    return c;
+}
+
+/// A check-in's answer: the merged settings and the last refresh adopted. Returns the fields whose
+/// value the Mac changed (nil when the reply wasn't a valid `settings`).
+static NSArray<NSString *> *XSAdoptCheckInReply(XSChannelResult result, NSDictionary *reply) {
+    NSDictionary *settings = result == XSChannelReplied && [reply[@"type"] isEqual:@"settings"]
+        ? XSSettingsFromJSONObject(reply[@"settings"]) : nil;
+    if (!settings) return nil;
+    NSDictionary *before = XSCurrentSettings();
+    XSAdoptSettings(settings);
+    XSRecordCheckIn(NSDate.date);
+    // How the last refresh went, as XSide knows it (it may have ended while the app was away).
+    NSDictionary *outcome = XSRefreshOutcomeFromJSONObject(reply[@"lastRefresh"]);
+    if (outcome) XSAdoptRefreshOutcome(outcome);
+    NSDate *expiry = XSExpirationDate();
+    if (expiry) XSScheduleReminder(expiry, NO); // the reminder switch may have changed
+    return XSFieldsChangedByMac(before, XSCurrentSettings());
+}
+
+/// A check-in exchange; `anyway`: browses even before the local network was allowed (right after
+/// the "Réseau local" page, which says iOS will ask).
+static void XSRunCheckIn(NSTimeInterval find, BOOL anyway, void (^handler)(XSChannelResult result, NSArray *byMac)) {
+    if (XSCheckInRunning || (!anyway && !XSChannelGranted()) || !XSHasChannel()) {
+        dispatch_async(dispatch_get_main_queue(), ^{ handler(XSChannelNotFound, nil); });
         return;
     }
     XSCheckInRunning = YES;
     NSDictionary *body = XSCheckInBody(XSCurrentSettings(), XSLastRefresh(), XSAppVersion());
-    // Silent and short (spec: ≤ 3 s): nothing is shown, whatever happens.
-    [[[XSChannelExchange alloc] initWithBody:body findTimeout:3 waitsOutcome:NO
+    [[[XSChannelExchange alloc] initWithBody:body findTimeout:find waitsOutcome:NO
                                      handler:^(XSChannelResult result, NSDictionary *reply, BOOL final) {
         XSCheckInRunning = NO;
-        NSDictionary *settings = result == XSChannelReplied && [reply[@"type"] isEqual:@"settings"]
-            ? XSSettingsFromJSONObject(reply[@"settings"]) : nil;
-        if (settings) {
-            XSAdoptSettings(settings);
-            XSRecordCheckIn(NSDate.date);
-            // How the last refresh went, as XSide knows it (it may have ended while the app was away).
-            NSDictionary *outcome = XSRefreshOutcomeFromJSONObject(reply[@"lastRefresh"]);
-            if (outcome) XSAdoptRefreshOutcome(outcome);
-            NSDate *expiry = XSExpirationDate();
-            if (expiry) XSScheduleReminder(expiry, NO); // the reminder switch may have changed
-        }
-        if (done) done();
+        handler(result, XSAdoptCheckInReply(result, reply));
     }] start];
+}
+
+void XSCheckIn(void (^done)(void)) {
+    // Silent and short (spec: ≤ 3 s): nothing is shown, except what the Mac changed meanwhile.
+    XSRunCheckIn(3, NO, ^(XSChannelResult result, NSArray *byMac) {
+        if (done) done();
+        if (byMac.count && XSShowsMacUpdatePill(XSCurrentSettings())) XSShowPillWhenFree(XSMacUpdatePill());
+    });
+}
+
+void XSStartLocalNetwork(void) {
+    // iOS asks while this browses (up to 30 s to answer); silent whatever happens.
+    XSRunCheckIn(30, YES, ^(XSChannelResult result, NSArray *byMac) {
+        NSLog(@"[XSide] local network: first check-in, result %ld", (long)result);
+    });
+}
+
+void XSSendSettings(void (^done)(void)) {
+    // Not before the local network was allowed: the next connection carries them (nothing to say).
+    if (!XSChannelGranted() || !XSHasChannel() || XSCheckInRunning) {
+        if (done) done();
+        return;
+    }
+    BOOL fr = XSFrench();
+    XSPillContent *sending = [XSPillContent new];
+    sending.lead = fr ? @"Envoi de tes réglages au Mac…" : @"Sending your settings to the Mac…";
+    sending.busy = YES;
+    XSShowPillWhenFree(sending);
+    XSRunCheckIn(5, NO, ^(XSChannelResult result, NSArray *byMac) {
+        if (done) done(); // its pill first: the result waits for it
+        BOOL french = XSFrench(); // the language may just have changed
+        XSPillContent *c = [XSPillContent new];
+        if (result == XSChannelReplied && byMac) {
+            c.lead = french ? @"Réglages envoyés à XSide" : @"Settings sent to XSide";
+            c.duration = 4;
+            if (byMac.count) {
+                c.hint = french ? @"D'autres ont été mis à jour depuis ton Mac." : @"Others were updated from your Mac.";
+                c.buttonTitle = french ? @"Voir" : @"See";
+                c.action = ^{ XSOpenAppSettings(); };
+                c.tapAction = c.action;
+                c.duration = 6;
+            }
+        } else if (result == XSChannelDenied) {
+            c = XSUnansweredPill(result); // with Réglages
+            c.hint = [NSString stringWithFormat:french
+                ? @"Tes réglages seront envoyés à la prochaine connexion. Autorise le réseau local dans %@."
+                : @"Your settings will be sent at the next connection. Allow Local Network in %@.", XSSettingsPath()];
+        } else {
+            c.lead = french ? @"Mac injoignable" : @"Mac unreachable";
+            c.hint = [NSString stringWithFormat:french
+                ? @"Tes réglages seront envoyés à la prochaine connexion ; ils s'appliquent déjà sur cet %@."
+                : @"Your settings will be sent at the next connection; they already apply on this %@.", XSDeviceKind()];
+            c.tone = XSPillToneOrange;
+            c.duration = 6;
+        }
+        XSShowPillWhenFree(c);
+    });
 }
 
 // MARK: - Refresh from the phone
@@ -387,7 +466,8 @@ static void XSTellFailure(NSString *reasonKey) {
     NSString *text = [NSString stringWithFormat:fr ? @"Rafraîchissement impossible : %@" : @"Couldn't refresh: %@",
                       XSReasonText(reasonKey, fr)];
     if (UIApplication.sharedApplication.applicationState == UIApplicationStateActive) {
-        XSShowPill(XSPill(text, nil, XSPillToneOrange, 8));
+        XSShowPill(XSPill(text, fr ? @"Rien n'a changé dans l'app. Le détail est dans XSide sur ton Mac."
+                                   : @"Nothing changed in the app. XSide on your Mac has the details.", XSPillToneOrange, 8));
     } else {
         XSSetPendingFailure(reasonKey ?: @"unknown", NSDate.date);
     }
@@ -421,8 +501,17 @@ static void XSEndRefreshTask(void) {
 static NSDate *XSAcceptedAt;
 
 static void XSStartRefresh(void);
+static void XSStartRefreshExchange(void);
+
+static void XSRequestRefreshNow(void);
 
 void XSRequestRefresh(void) {
+    // Never over the first-launch sheet (a quick action at the first launch): after it, the
+    // notification prompt and then the local network one each come after their page.
+    XSAfterSheet(^{ XSRequestRefreshNow(); });
+}
+
+static void XSRequestRefreshNow(void) {
     if (XSRefreshRunning) return;
     BOOL fr = XSFrench();
     if (!XSInstallationID() || !XSChannelSecret()) {
@@ -457,13 +546,34 @@ void XSRequestRefresh(void) {
     }];
 }
 
-static void XSStartRefresh(void) {
+/// "Mac not found" after a Refresh: what to do, and Réessayer.
+static XSPillContent *XSRefreshUnansweredPill(XSChannelResult result) {
     BOOL fr = XSFrench();
-    XSPillContent *asking = XSPill(fr ? @"Demande à XSide sur ton Mac…" : @"Asking XSide on your Mac…",
-                                   fr ? @"L'app va se fermer quelques secondes pendant le rafraîchissement."
-                                      : @"The app will close for a few seconds while it refreshes.", XSPillToneNeutral, 0);
-    asking.busy = YES;
-    XSShowPill(asking);
+    XSPillContent *c = XSUnansweredPill(result);
+    if (result == XSChannelNotFound) {
+        c.hint = [NSString stringWithFormat:fr
+            ? @"Ouvre XSide sur ton Mac, avec cet %@ sur le même Wi-Fi ou branché en USB, puis réessaie."
+            : @"Open XSide on your Mac, with this %@ on the same Wi-Fi or plugged in over USB, then try again.", XSDeviceKind()];
+        c.buttonTitle = fr ? @"Réessayer" : @"Try again";
+        c.action = ^{ XSRequestRefresh(); };
+    }
+    return c;
+}
+
+static void XSStartRefresh(void) {
+    // The first time, the local network page comes first (iOS asks while this browses).
+    XSExplainNetworkThen(^{
+        BOOL fr = XSFrench();
+        XSPillContent *asking = XSPill(fr ? @"Demande de rafraîchissement à ton Mac…" : @"Asking your Mac for a refresh…",
+                                       fr ? @"S'il accepte, l'app se fermera une fois rafraîchie ; rouvre-la ensuite."
+                                          : @"If it accepts, the app will close once refreshed; open it again then.", XSPillToneNeutral, 0);
+        asking.busy = YES;
+        XSShowPill(asking);
+        XSStartRefreshExchange();
+    });
+}
+
+static void XSStartRefreshExchange(void) {
     [XSPatientExchange(XSRefreshBody(), YES, ^(XSChannelResult result, NSDictionary *reply, BOOL final) {
         BOOL french = XSFrench();
         NSString *type = reply[@"type"];
@@ -481,13 +591,19 @@ static void XSStartRefresh(void) {
             return;
         }
         if (result != XSChannelReplied) {
-            XSShowPill(XSUnansweredPill(result));
+            XSShowPill(XSRefreshUnansweredPill(result));
             return;
         }
         if ([type isEqual:@"accepted"]) {
             XSAcceptedAt = NSDate.date;
-            XSShowPill(XSPill(french ? @"Demande envoyée, l'app va se fermer quelques secondes"
-                                     : @"Request sent, the app will close for a few seconds", nil, XSPillToneNeutral, 6));
+            // Stays (with its spinner) until the outcome: the success closes the app, a failure
+            // or silence replaces it (device feedback round 1, B3).
+            XSPillContent *accepted = XSPill(french ? @"Rafraîchissement demandé à ton Mac" : @"Refresh asked of your Mac",
+                                             french ? @"L'app va se fermer quand ce sera fait (≈ 1 min) ; rouvre-la ensuite."
+                                                    : @"The app will close when it's done (about 1 min); open it again then.",
+                                             XSPillToneNeutral, 0);
+            accepted.busy = YES;
+            XSShowPill(accepted);
             // Keeps the connection a little if the person leaves the app, to hear a failure.
             XSEndRefreshTask();
             XSRefreshTask = [UIApplication.sharedApplication beginBackgroundTaskWithName:@"XSide refresh"
@@ -495,6 +611,8 @@ static void XSStartRefresh(void) {
             XSHasRefreshTask = XSRefreshTask != UIBackgroundTaskInvalid;
         } else if ([type isEqual:@"refreshed"]) {
             XSRecordRefresh(YES, nil, NSDate.date); // the new app replaces this one right after
+            XSShowPill(XSPill(french ? @"App rafraîchie, elle va se fermer" : @"App refreshed, it's about to close",
+                              french ? @"Rouvre-la ensuite." : @"Open it again then.", XSPillToneNeutral, 6));
         } else if ([type isEqual:@"failed"]) {
             NSString *reason = [reply[@"reasonKey"] isKindOfClass:NSString.class] ? reply[@"reasonKey"] : @"unknown";
             XSRecordRefresh(NO, reason, NSDate.date);
@@ -530,8 +648,15 @@ static void XSStartRefresh(void) {
     }) start];
 }
 
+static void XSTellAutoRefreshChangeNow(void);
+
 void XSTellAutoRefreshChange(void) {
-    if (!XSInstallationID() || !XSChannelSecret()) return; // no link with XSide yet: the next signing carries it
+    if (!XSHasChannel()) return; // no link with XSide yet: the next signing carries it
+    // The first time, the "Réseau local" page comes first (this browses: iOS asks).
+    XSExplainNetworkThen(^{ XSTellAutoRefreshChangeNow(); });
+}
+
+static void XSTellAutoRefreshChangeNow(void) {
     if (XSCheckInRunning) return; // that check-in already carries the change
     XSCheckInRunning = YES;
     BOOL on = XSSettingBool(XSCurrentSettings(), @"autoRefresh");

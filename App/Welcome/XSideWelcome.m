@@ -3,7 +3,10 @@
 //   install (no earlier signature known to the app), a sheet saying the app was installed with
 //   XSide and until when it works; after a refresh or an update, a card at the bottom with OK;
 // - otherwise the pill at the top (XSPill.m): validity, late or paused alerts;
-// - a local reminder before expiry when the app may notify (asked once, when the sheet closes);
+// - the install sheet has pages: installed with XSide, then (when iOS will ask) why the local
+//   network and why notifications, each prompt coming right after its page; nothing XSide asks
+//   iOS for comes before (XSAfterSheet, XSExplainNetworkThen);
+// - a local reminder before expiry when the app may notify (asked after the sheet's page);
 // - the per-app "Réglages XSide" (XSSettings.m) decide what of this shows, and in which language;
 // - once the person allowed the local network, a silent check-in with XSide (XSChannel.m).
 // The quick actions on the icon are handled by XSShortcuts.m. It never throws, asserts or blocks:
@@ -37,42 +40,46 @@ static __weak UIWindow *XSPreviousKey;
 
 // MARK: - The sheet (design "B": a card rising from the bottom over the dimmed app)
 
-/// XSide added its section to the app's page in the iOS Settings app (keys "io.github.xside.settings.*").
-static BOOL XSHasSettingsSection(void) {
-    NSString *path = [NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"Settings.bundle/Root.plist"];
-    NSDictionary *root = [NSDictionary dictionaryWithContentsOfFile:path];
-    id items = root[@"PreferenceSpecifiers"];
-    if (![items isKindOfClass:NSArray.class]) return NO;
-    for (id item in items) {
-        if (![item isKindOfClass:NSDictionary.class]) continue;
-        id key = item[@"Key"];
-        if ([key isKindOfClass:NSString.class] && [key hasPrefix:@"io.github.xside.settings."]) return YES;
-    }
-    return NO;
-}
-
-
 static void XSHideWindow(void) {
     XSWindow.hidden = YES;
     XSWindow = nil;
     [XSPreviousKey makeKeyWindow];
 }
 
+/// The sheet's pages (device feedback round 1, B1), in this order, those that apply
+/// (XSSheetPages): "welcome" (installed with XSide, until when), "network" (why the local network,
+/// before iOS asks), "notifications" (why the reminder, before iOS asks). The stand-alone version
+/// shows "network" alone, before the first network access when the first-launch sheet is past.
 @interface XSWelcomeController : UIViewController
-- (instancetype)initWithExpiry:(NSDate *)expiry;
+/// `expiry`: nil for the stand-alone network page. `startsNetwork`: going past "network" starts
+/// the first check-in (iOS asks then); the stand-alone page leaves that to `done`.
+- (instancetype)initWithExpiry:(NSDate *)expiry pages:(NSArray<NSString *> *)pages
+                 startsNetwork:(BOOL)startsNetwork done:(void (^)(void))done;
 @end
 
 @implementation XSWelcomeController {
     NSDate *_expiry;
+    NSArray<NSString *> *_pages;
+    NSUInteger _page;
+    BOOL _startsNetwork;
+    void (^_done)(void);
     BOOL _fr;
     UIView *_dim;
     UIView *_sheet;
+    UIStackView *_body;
+    UIPageControl *_dots;
+    UIButton *_ok;
+    UIButton *_github;
     BOOL _closing;
 }
 
-- (instancetype)initWithExpiry:(NSDate *)expiry {
+- (instancetype)initWithExpiry:(NSDate *)expiry pages:(NSArray<NSString *> *)pages
+                 startsNetwork:(BOOL)startsNetwork done:(void (^)(void))done {
     if ((self = [super initWithNibName:nil bundle:nil])) {
         _expiry = expiry;
+        _pages = pages.count ? pages : @[@"welcome"];
+        _startsNetwork = startsNetwork;
+        _done = [done copy];
         _fr = XSFrench();
         self.modalPresentationStyle = UIModalPresentationOverFullScreen;
     }
@@ -91,7 +98,8 @@ static void XSHideWindow(void) {
     return l;
 }
 
-/// "Valable jusqu'au … | jeu. 12 nov., 14:30", with a hairline above.
+/// "Valable jusqu'au … | jeu. 12 nov., 14:30", with a hairline above. Both sides wrap (large
+/// text) and the row grows with them.
 - (UIView *)line:(NSString *)name value:(NSString *)value {
     UIView *row = [UIView new];
     UIView *rule = [UIView new];
@@ -101,6 +109,8 @@ static void XSHideWindow(void) {
     right.textAlignment = NSTextAlignmentRight;
     [left setContentHuggingPriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
     for (UIView *v in @[rule, left, right]) { v.translatesAutoresizingMaskIntoConstraints = NO; [row addSubview:v]; }
+    NSLayoutConstraint *snug = [left.bottomAnchor constraintEqualToAnchor:row.bottomAnchor constant:-12];
+    snug.priority = UILayoutPriorityDefaultLow; // the row is as tall as its taller side
     [NSLayoutConstraint activateConstraints:@[
         [rule.topAnchor constraintEqualToAnchor:row.topAnchor],
         [rule.leadingAnchor constraintEqualToAnchor:row.leadingAnchor],
@@ -108,10 +118,13 @@ static void XSHideWindow(void) {
         [rule.heightAnchor constraintEqualToConstant:1.0 / UIScreen.mainScreen.scale],
         [left.leadingAnchor constraintEqualToAnchor:row.leadingAnchor],
         [left.topAnchor constraintEqualToAnchor:row.topAnchor constant:12],
-        [left.bottomAnchor constraintEqualToAnchor:row.bottomAnchor constant:-12],
+        [left.bottomAnchor constraintLessThanOrEqualToAnchor:row.bottomAnchor constant:-12],
+        [left.widthAnchor constraintLessThanOrEqualToAnchor:row.widthAnchor multiplier:0.5],
         [right.leadingAnchor constraintGreaterThanOrEqualToAnchor:left.trailingAnchor constant:12],
         [right.trailingAnchor constraintEqualToAnchor:row.trailingAnchor],
         [right.firstBaselineAnchor constraintEqualToAnchor:left.firstBaselineAnchor],
+        [right.bottomAnchor constraintLessThanOrEqualToAnchor:row.bottomAnchor constant:-12],
+        snug,
     ]];
     return row;
 }
@@ -124,32 +137,47 @@ static void XSHideWindow(void) {
     return [NSString stringWithFormat:[self t:@"%ld jours" en:@"%ld days"], (long)days];
 }
 
-/// "⚙️ These details stay in Settings > <App>".
+/// "⚙️ These details stay in Settings > Apps > <App> > XSide Settings": one label with the gear
+/// inline, so it wraps like any other (it was cut to one line beside a separate gear: device
+/// feedback round 1, B2).
 - (UIView *)settingsHint {
-    UIImageView *gear = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"gearshape.fill"]];
-    gear.tintColor = XSViolet();
-    gear.contentMode = UIViewContentModeScaleAspectFit;
+    UIFont *font = XSScaledFont(13, UIFontWeightRegular);
     // XSide's page sits under the app's own (one row there opens it).
     NSString *path = [XSSettingsPath() stringByAppendingString:[self t:@" > Réglages XSide" en:@" > XSide Settings"]];
     NSString *text = [NSString stringWithFormat:[self t:@"Ces infos restent dans %@" en:@"These details stay in %@"], path];
-    NSMutableAttributedString *styled = [[NSMutableAttributedString alloc] initWithString:text attributes:@{
-        NSFontAttributeName: XSScaledFont(13, UIFontWeightRegular), NSForegroundColorAttributeName: UIColor.secondaryLabelColor}];
-    [styled addAttributes:@{NSFontAttributeName: XSScaledFont(13, UIFontWeightSemibold),
-                            NSForegroundColorAttributeName: UIColor.labelColor}
-                    range:[text rangeOfString:path]];
+    if (XSHasShortcuts()) {
+        text = [text stringByAppendingString:[self t:@", et à un appui long sur l'icône de l'app."
+                                                  en:@", and a long press on the app's icon away."]];
+    }
+    NSMutableAttributedString *styled = [NSMutableAttributedString new];
+    UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithFont:font scale:UIImageSymbolScaleSmall];
+    UIImage *gear = [[UIImage systemImageNamed:@"gearshape.fill" withConfiguration:config]
+                     imageWithTintColor:XSViolet() renderingMode:UIImageRenderingModeAlwaysOriginal];
+    if (gear) {
+        NSTextAttachment *attachment = [NSTextAttachment new];
+        attachment.image = gear;
+        [styled appendAttributedString:[NSAttributedString attributedStringWithAttachment:attachment]];
+        [styled appendAttributedString:[[NSAttributedString alloc] initWithString:@"  "]];
+    }
+    NSUInteger offset = styled.length;
+    [styled appendAttributedString:[[NSAttributedString alloc] initWithString:text]];
+    [styled addAttributes:@{NSFontAttributeName: font, NSForegroundColorAttributeName: UIColor.secondaryLabelColor}
+                    range:NSMakeRange(0, styled.length)];
+    NSRange strong = [text rangeOfString:path];
+    if (strong.location != NSNotFound) {
+        [styled addAttributes:@{NSFontAttributeName: XSScaledFont(13, UIFontWeightSemibold),
+                                NSForegroundColorAttributeName: UIColor.labelColor}
+                        range:NSMakeRange(offset + strong.location, strong.length)];
+    }
     UILabel *label = [UILabel new];
     label.attributedText = styled;
     label.numberOfLines = 0;
-    UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[gear, label]];
-    row.spacing = 8;
-    row.alignment = UIStackViewAlignmentCenter;
-    [gear.widthAnchor constraintEqualToConstant:16].active = YES;
-    [gear.heightAnchor constraintEqualToConstant:16].active = YES;
-    return row;
+    label.lineBreakMode = NSLineBreakByWordWrapping;
+    return label;
 }
 
-/// "Get a reminder before it expires": a tinted card with a bell in the brand gradient.
-- (UIView *)notificationCard {
+/// A tinted card with a symbol in the brand gradient: what iOS is about to ask.
+- (UIView *)callout:(NSString *)symbol title:(NSString *)titleText body:(NSString *)bodyText {
     UIView *card = [UIView new];
     card.backgroundColor = [XSViolet() colorWithAlphaComponent:0.12];
     card.layer.cornerRadius = 16;
@@ -161,14 +189,11 @@ static void XSHideWindow(void) {
     badge.userInteractionEnabled = NO;
     ((CAGradientLayer *)badge.layer).cornerRadius = 19;
     UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithPointSize:17 weight:UIImageSymbolWeightSemibold];
-    [badge setImage:[UIImage systemImageNamed:@"bell.badge.fill" withConfiguration:config] forState:UIControlStateNormal];
+    [badge setImage:[UIImage systemImageNamed:symbol withConfiguration:config] forState:UIControlStateNormal];
     badge.tintColor = UIColor.whiteColor;
 
-    UILabel *title = [self label:[self t:@"Te prévenir avant l'expiration" en:@"Get a reminder before it expires"]
-                            size:15 weight:UIFontWeightSemibold color:UIColor.labelColor];
-    UILabel *body = [self label:[self t:@"En touchant OK, iOS va te demander d'autoriser les notifications. XSide s'en sert uniquement pour te prévenir la veille de l'expiration."
-                                     en:@"When you tap OK, iOS will ask to allow notifications. XSide only uses them to remind you the day before it expires."]
-                           size:13 weight:UIFontWeightRegular color:UIColor.secondaryLabelColor];
+    UILabel *title = [self label:titleText size:15 weight:UIFontWeightSemibold color:UIColor.labelColor];
+    UILabel *body = [self label:bodyText size:13 weight:UIFontWeightRegular color:UIColor.secondaryLabelColor];
     UIStackView *texts = [[UIStackView alloc] initWithArrangedSubviews:@[title, body]];
     texts.axis = UILayoutConstraintAxisVertical;
     texts.spacing = 3;
@@ -188,17 +213,101 @@ static void XSHideWindow(void) {
     return card;
 }
 
+/// Icon (XSide's, or a symbol in the gradient), title and subtitle.
+- (UIView *)head:(NSString *)symbol title:(NSString *)titleText subtitle:(NSString *)subtitleText {
+    UIView *icon;
+    if (symbol) {
+        XSGradientButton *badge = [XSGradientButton buttonWithType:UIButtonTypeCustom];
+        badge.userInteractionEnabled = NO;
+        ((CAGradientLayer *)badge.layer).cornerRadius = 13;
+        UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithPointSize:24 weight:UIImageSymbolWeightSemibold];
+        [badge setImage:[UIImage systemImageNamed:symbol withConfiguration:config] forState:UIControlStateNormal];
+        badge.tintColor = UIColor.whiteColor;
+        icon = badge;
+    } else {
+        UIImageView *logo = [[UIImageView alloc] initWithImage:XSIcon()];
+        logo.layer.cornerRadius = 13;
+        logo.layer.cornerCurve = kCACornerCurveContinuous;
+        logo.clipsToBounds = YES;
+        icon = logo;
+    }
+    [icon.widthAnchor constraintEqualToConstant:54].active = YES;
+    [icon.heightAnchor constraintEqualToConstant:54].active = YES;
+    UILabel *title = [self label:titleText size:18 weight:UIFontWeightBold color:UIColor.labelColor];
+    title.accessibilityTraits |= UIAccessibilityTraitHeader;
+    UILabel *subtitle = [self label:subtitleText size:13 weight:UIFontWeightRegular color:UIColor.secondaryLabelColor];
+    UIStackView *titles = [[UIStackView alloc] initWithArrangedSubviews:@[title, subtitle]];
+    titles.axis = UILayoutConstraintAxisVertical;
+    titles.spacing = 3;
+    UIStackView *head = [[UIStackView alloc] initWithArrangedSubviews:@[icon, titles]];
+    head.spacing = 14;
+    head.alignment = UIStackViewAlignmentCenter;
+    return head;
+}
+
+- (UIStackView *)stackOf:(NSArray<UIView *> *)views {
+    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:views];
+    stack.axis = UILayoutConstraintAxisVertical;
+    stack.spacing = 14;
+    return stack;
+}
+
+- (NSArray<UIView *> *)welcomeViews {
+    UIView *head = [self head:nil title:[self t:@"Installée avec XSide" en:@"Installed with XSide"]
+                     subtitle:[self t:@"Rafraîchie automatiquement depuis ton Mac" en:@"Refreshed automatically from your Mac"]];
+    NSMutableArray<UIView *> *views = [NSMutableArray arrayWithObject:head];
+    if (_expiry) {
+        UIStackView *lines = [self stackOf:@[[self line:[self t:@"Valable jusqu'au" en:@"Valid until"] value:XSDate(_expiry)],
+                                             [self line:[self t:@"Encore" en:@"Time left"] value:[self daysLeft]]]];
+        lines.spacing = 0;
+        [views addObject:lines];
+    }
+    // Where to find this again later.
+    if (XSHasSettingsSection()) [views addObject:[self settingsHint]];
+    return views;
+}
+
+- (NSArray<UIView *> *)networkViews {
+    NSString *device = XSDeviceKind();
+    UIView *head = [self head:@"wifi" title:[self t:@"Réseau local" en:@"Local network"]
+                     subtitle:[self t:@"Pour parler à XSide sur ton Mac" en:@"To talk to XSide on your Mac"]];
+    UILabel *why = [self label:[NSString stringWithFormat:[self t:@"Depuis cet %@, XSide peut rafraîchir l'app ou mettre en pause son rafraîchissement, et garder ses Réglages XSide en accord avec ton Mac. Pour cela, l'app parle à XSide sur ton Mac par le réseau local (même Wi-Fi)."
+                                                              en:@"From this %@, XSide can refresh the app or pause its refresh, and keep its XSide Settings in step with your Mac. For that, the app talks to XSide on your Mac over the local network (same Wi-Fi)."], device]
+                          size:14 weight:UIFontWeightRegular color:UIColor.labelColor];
+    UIView *ask = [self callout:@"checkmark.shield.fill"
+                          title:[self t:@"iOS va te demander d'autoriser" en:@"iOS will ask you to allow it"]
+                           body:[self t:@"« Trouver des appareils sur le réseau local » : touche Autoriser. XSide ne parle qu'à ton Mac."
+                                    en:@"\"Find devices on local networks\": tap Allow. XSide only talks to your Mac."]];
+    UILabel *refused = [self label:[NSString stringWithFormat:[self t:@"Si tu refuses : XSide continue de rafraîchir l'app depuis le Mac, mais rien ne peut se faire depuis l'%@. Tu pourras l'autoriser plus tard dans %@ > Réseau local."
+                                                                  en:@"If you don't: XSide still refreshes the app from the Mac, but nothing can be done from the %@. You can allow it later in %@ > Local Network."], device, XSSettingsPath()]
+                              size:13 weight:UIFontWeightRegular color:UIColor.secondaryLabelColor];
+    return @[head, why, ask, refused];
+}
+
+- (NSArray<UIView *> *)notificationViews {
+    UIView *head = [self head:@"bell.badge.fill" title:[self t:@"Notifications" en:@"Notifications"]
+                     subtitle:[self t:@"Un rappel avant l'expiration" en:@"A reminder before it expires"]];
+    UILabel *why = [self label:[self t:@"XSide te prévient la veille de l'expiration, au cas où ton Mac n'aurait pas pu rafraîchir l'app à temps. Il te dit aussi si un rafraîchissement demandé d'ici échoue."
+                                    en:@"XSide reminds you the day before it expires, in case your Mac couldn't refresh the app in time. It also tells you if a refresh asked from here fails."]
+                          size:14 weight:UIFontWeightRegular color:UIColor.labelColor];
+    UIView *ask = [self callout:@"bell.fill"
+                          title:[self t:@"iOS va te demander d'autoriser" en:@"iOS will ask you to allow it"]
+                           body:[self t:@"Touche Autoriser pour recevoir ce rappel. Tu pourras changer d'avis dans Réglages > Notifications."
+                                    en:@"Tap Allow to get this reminder. You can change your mind in Settings > Notifications."]];
+    return @[head, why, ask];
+}
+
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = UIColor.clearColor;
 
-    // The app behind, blurred and dimmed; a tap there closes, like OK.
+    // The app behind, blurred and dimmed; a tap there does what the button does.
     UIVisualEffectView *blur = [[UIVisualEffectView alloc] initWithEffect:
                                 [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterialDark]];
     blur.backgroundColor = [UIColor colorWithWhite:0 alpha:0.2];
     _dim = blur;
     _dim.alpha = 0;
-    [_dim addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(close)]];
+    [_dim addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(next)]];
 
     _sheet = [UIView new];
     _sheet.backgroundColor = UIColor.secondarySystemGroupedBackgroundColor;
@@ -214,58 +323,36 @@ static void XSHideWindow(void) {
     grab.backgroundColor = UIColor.tertiaryLabelColor;
     grab.layer.cornerRadius = 2.5;
 
-    UIImageView *icon = [[UIImageView alloc] initWithImage:XSIcon()];
-    icon.layer.cornerRadius = 13;
-    icon.layer.cornerCurve = kCACornerCurveContinuous;
-    icon.clipsToBounds = YES;
-    UILabel *title = [self label:[self t:@"Installée avec XSide" en:@"Installed with XSide"]
-                            size:18 weight:UIFontWeightBold color:UIColor.labelColor];
-    UILabel *subtitle = [self label:[self t:@"Rafraîchie automatiquement depuis ton Mac" en:@"Refreshed automatically from your Mac"]
-                               size:13 weight:UIFontWeightRegular color:UIColor.secondaryLabelColor];
-    UIStackView *titles = [[UIStackView alloc] initWithArrangedSubviews:@[title, subtitle]];
-    titles.axis = UILayoutConstraintAxisVertical;
-    titles.spacing = 3;
-    UIStackView *head = [[UIStackView alloc] initWithArrangedSubviews:@[icon, titles]];
-    head.spacing = 14;
-    head.alignment = UIStackViewAlignmentCenter;
+    _body = [self stackOf:@[]];
+    _body.spacing = 16;
 
-    UIView *until = [self line:[self t:@"Valable jusqu'au" en:@"Valid until"] value:XSDate(_expiry)];
-    UIView *left = [self line:[self t:@"Encore" en:@"Time left"] value:[self daysLeft]];
-    // Where to find this again later.
-    UIView *where = [self settingsHint];
-    where.hidden = !XSHasSettingsSection();
+    _dots = [UIPageControl new];
+    _dots.numberOfPages = (NSInteger)_pages.count;
+    _dots.hidesForSinglePage = YES;
+    _dots.userInteractionEnabled = NO;
+    _dots.pageIndicatorTintColor = [XSViolet() colorWithAlphaComponent:0.25];
+    _dots.currentPageIndicatorTintColor = XSViolet();
 
     XSGradientButton *ok = [XSGradientButton buttonWithType:UIButtonTypeCustom];
-    [ok setTitle:@"OK" forState:UIControlStateNormal];
     [ok setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
     ok.titleLabel.font = XSScaledFont(16, UIFontWeightSemibold);
     ok.titleLabel.adjustsFontForContentSizeCategory = YES;
-    [ok addTarget:self action:@selector(close) forControlEvents:UIControlEventTouchUpInside];
+    ok.titleLabel.numberOfLines = 0;
+    ok.titleLabel.textAlignment = NSTextAlignmentCenter;
+    [ok addTarget:self action:@selector(next) forControlEvents:UIControlEventTouchUpInside];
+    _ok = ok;
     UIButton *github = [UIButton buttonWithType:UIButtonTypeSystem];
     [github setTitle:[self t:@"XSide sur GitHub" en:@"XSide on GitHub"] forState:UIControlStateNormal];
     github.tintColor = XSViolet();
     github.titleLabel.font = XSScaledFont(15, UIFontWeightSemibold);
     github.titleLabel.adjustsFontForContentSizeCategory = YES;
     [github addTarget:self action:@selector(openGitHub) forControlEvents:UIControlEventTouchUpInside];
+    _github = github;
 
-    // Only when iOS will ask on OK (see `close`): its prompt can't say why, so this card does.
-    UIView *notice = [self notificationCard];
-    notice.hidden = YES;
-    __weak UIButton *weakOK = ok;
-    if (XSSchedulesReminder(XSCurrentSettings())) [XSCenter() getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings *settings) {
-        if (settings.authorizationStatus != UNAuthorizationStatusNotDetermined) return;
-        dispatch_async(dispatch_get_main_queue(), ^{
-            notice.hidden = NO;
-            [weakOK setTitle:[self t:@"OK, autoriser les rappels" en:@"OK, allow reminders"] forState:UIControlStateNormal];
-        });
-    }];
-
-    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[head, until, left, where, notice, ok, github]];
+    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[_body, _dots, ok, github]];
     stack.axis = UILayoutConstraintAxisVertical;
-    [stack setCustomSpacing:16 afterView:head];
-    [stack setCustomSpacing:10 afterView:left];
-    [stack setCustomSpacing:12 afterView:where];
-    [stack setCustomSpacing:14 afterView:notice];
+    [stack setCustomSpacing:12 afterView:_body];
+    [stack setCustomSpacing:12 afterView:_dots];
     [stack setCustomSpacing:4 afterView:ok];
 
     // The content scrolls when it doesn't fit (landscape, large text); otherwise the sheet is its height.
@@ -305,11 +392,24 @@ static void XSHideWindow(void) {
         [stack.leadingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.leadingAnchor],
         [stack.trailingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.trailingAnchor],
         [stack.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor],
-        [icon.widthAnchor constraintEqualToConstant:54],
-        [icon.heightAnchor constraintEqualToConstant:54],
-        [ok.heightAnchor constraintEqualToConstant:50],
-        [github.heightAnchor constraintEqualToConstant:44],
+        [ok.heightAnchor constraintGreaterThanOrEqualToConstant:50],
+        [github.heightAnchor constraintGreaterThanOrEqualToConstant:44],
     ]];
+    [self fillPage];
+}
+
+/// Puts the current page's content in the sheet, with its button.
+- (void)fillPage {
+    for (UIView *v in _body.arrangedSubviews) { [_body removeArrangedSubview:v]; [v removeFromSuperview]; }
+    NSString *page = _pages[_page];
+    NSArray<UIView *> *views = [page isEqual:@"network"] ? [self networkViews]
+                             : [page isEqual:@"notifications"] ? [self notificationViews] : [self welcomeViews];
+    for (UIView *v in views) [_body addArrangedSubview:v];
+    BOOL last = _page + 1 >= _pages.count;
+    NSString *title = last && [page isEqual:@"welcome"] ? @"OK" : [self t:@"Continuer" en:@"Continue"];
+    [_ok setTitle:title forState:UIControlStateNormal];
+    _github.hidden = ![page isEqual:@"welcome"];
+    _dots.currentPage = (NSInteger)_page;
 }
 
 - (void)viewDidAppear:(BOOL)animated {
@@ -323,29 +423,49 @@ static void XSHideWindow(void) {
     } completion:nil];
 }
 
-// VoiceOver: the sheet is modal, and the two-finger scrub closes it like OK.
+// VoiceOver: the sheet is modal, and the two-finger scrub does what the button does.
 - (BOOL)accessibilityPerformEscape {
-    [self close];
+    [self next];
     return YES;
 }
 
+/// The button (or a tap outside): the next page, or closing on the last. Going past "Réseau
+/// local" is what lets XSide reach the network: iOS asks right after that page.
+- (void)next {
+    if (_closing) return;
+    if ([_pages[_page] isEqual:@"network"]) {
+        XSSetNetworkExplained();
+        if (_startsNetwork) XSStartLocalNetwork();
+    }
+    if (_page + 1 >= _pages.count) { [self close]; return; }
+    _page++;
+    [UIView animateWithDuration:0.15 animations:^{ self->_body.alpha = 0; } completion:^(BOOL finished) {
+        [self fillPage];
+        [UIView animateWithDuration:0.3 animations:^{
+            self->_body.alpha = 1;
+            [self.view layoutIfNeeded];
+        }];
+        UIAccessibilityPostNotification(UIAccessibilityScreenChangedNotification, self->_body);
+    }];
+}
+
 - (void)close {
-    if (_closing) return; // OK then the dimmed area: one close, one permission request
+    if (_closing) return; // the button then the dimmed area: one close, one permission request
     _closing = YES;
     [UIView animateWithDuration:0.25 animations:^{
         self->_sheet.transform = CGAffineTransformMakeTranslation(0, self->_sheet.bounds.size.height + 40);
         self->_dim.alpha = 0;
     } completion:^(BOOL finished) {
         XSHideWindow();
-        // The moment the reminder makes sense: the person just read until when the app works.
-        XSScheduleReminder(self->_expiry, YES);
+        // The "Notifications" page said iOS would ask: now. Without it, iOS was not to be asked.
+        if (self->_expiry) XSScheduleReminder(self->_expiry, [self->_pages containsObject:@"notifications"]);
+        if (self->_done) self->_done();
     }];
 }
 
 - (void)openGitHub {
     NSURL *url = [NSURL URLWithString:XSRepoURL];
     if (url) [UIApplication.sharedApplication openURL:url options:@{} completionHandler:nil];
-    [self close];
 }
 @end
 
@@ -490,35 +610,103 @@ static void XSMarkAnnounced(NSDate *expiry) {
     if (version) [NSUserDefaults.standardUserDefaults setObject:version forKey:XSAnnouncedVersionKey];
 }
 
-/// `refreshed`: the app already knew an earlier signature (an install over it): the banner.
-/// `previousVersion`: set when that install was another version of the app (an update).
-static void XSShow(NSDate *expiry, BOOL refreshed, NSString *previousVersion, int attempt) {
+/// The refresh/update card. `previousVersion`: set when that install was another version of the
+/// app (an update).
+static void XSShowBanner(NSDate *expiry, NSString *previousVersion, int attempt) {
     UIWindowScene *scene = XSScene();
     if (!scene) {
         if (attempt + 1 >= XSMaxAttempts) return;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            XSShow(expiry, refreshed, previousVersion, attempt + 1);
+            XSShowBanner(expiry, previousVersion, attempt + 1);
         });
         return;
     }
     if (XSWindow) return;
-    UIWindow *window;
-    if (refreshed) {
-        // Never key: the app keeps its keyboard and focus.
-        window = [[XSPassthroughWindow alloc] initWithWindowScene:scene];
-        window.rootViewController = [[XSBannerController alloc] initWithExpiry:expiry previousVersion:previousVersion];
-    } else {
-        for (UIWindow *w in scene.windows) if (w.isKeyWindow) XSPreviousKey = w;
-        window = [[UIWindow alloc] initWithWindowScene:scene];
-        // Hidden at first: the sheet slides up once on screen (see viewDidAppear).
-        window.rootViewController = [[XSWelcomeController alloc] initWithExpiry:expiry];
-    }
+    // Never key: the app keeps its keyboard and focus.
+    UIWindow *window = [[XSPassthroughWindow alloc] initWithWindowScene:scene];
+    window.rootViewController = [[XSBannerController alloc] initWithExpiry:expiry previousVersion:previousVersion];
     window.windowLevel = UIWindowLevelAlert + 100;
     window.backgroundColor = UIColor.clearColor;
     XSWindow = window;
-    if (refreshed) window.hidden = NO; else [window makeKeyAndVisible];
+    window.hidden = NO;
     // Announced once shown: a relaunch before tapping OK doesn't show it again.
     XSMarkAnnounced(expiry);
+}
+
+// MARK: - Nothing iOS asks for over the sheet, nor before its page (device feedback round 1, B1)
+
+/// The first-launch sheet (or the stand-alone network page) is decided or on screen.
+static BOOL XSSheetUp;
+static NSMutableArray<void (^)(void)> *XSAfterSheetBlocks;
+
+static void XSSheetEnded(void) {
+    XSSheetUp = NO;
+    NSArray<void (^)(void)> *blocks = XSAfterSheetBlocks;
+    XSAfterSheetBlocks = nil;
+    for (void (^block)(void) in blocks) block();
+}
+
+void XSAfterSheet(void (^block)(void)) {
+    if (!XSSheetUp) { block(); return; }
+    if (!XSAfterSheetBlocks) XSAfterSheetBlocks = [NSMutableArray array];
+    [XSAfterSheetBlocks addObject:[block copy]];
+}
+
+/// The sheet with `pages` (XSSheetPages); `expiry` nil for the stand-alone network page. Ends the
+/// sheet (XSSheetEnded) once closed, after `done`, or when no scene came.
+static void XSShowSheet(NSDate *expiry, NSArray<NSString *> *pages, BOOL startsNetwork, void (^done)(void), int attempt) {
+    UIWindowScene *scene = XSScene();
+    if (!scene) {
+        if (attempt + 1 >= XSMaxAttempts) {
+            if (done) done();
+            XSSheetEnded();
+            return;
+        }
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            XSShowSheet(expiry, pages, startsNetwork, done, attempt + 1);
+        });
+        return;
+    }
+    if (XSWindow) XSHideWindow(); // the refresh card: the page that must be read wins
+    for (UIWindow *w in scene.windows) if (w.isKeyWindow) XSPreviousKey = w;
+    UIWindow *window = [[UIWindow alloc] initWithWindowScene:scene];
+    // Hidden at first: the sheet slides up once on screen (see viewDidAppear).
+    window.rootViewController = [[XSWelcomeController alloc] initWithExpiry:expiry pages:pages startsNetwork:startsNetwork done:^{
+        if (done) done();
+        XSSheetEnded();
+    }];
+    window.windowLevel = UIWindowLevelAlert + 100;
+    window.backgroundColor = UIColor.clearColor;
+    XSWindow = window;
+    [window makeKeyAndVisible];
+    // Announced once shown: a relaunch before the last page doesn't show it again.
+    if (expiry) XSMarkAnnounced(expiry);
+}
+
+/// The first-launch sheet: its pages depend on whether iOS will be asked for notifications.
+static void XSShowFirstSheet(NSDate *expiry) {
+    XSSheetUp = YES; // from now: what would ask iOS for something waits for the sheet
+    BOOL wantsReminder = XSSchedulesReminder(XSCurrentSettings());
+    [XSCenter() getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings *settings) {
+        BOOL ask = wantsReminder && settings.authorizationStatus == UNAuthorizationStatusNotDetermined;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            NSArray *pages = XSSheetPages(XSHasChannel(), XSChannelGranted(), XSNetworkExplained(), ask);
+            XSShowSheet(expiry, pages, YES, nil, 0);
+        });
+    }];
+}
+
+void XSExplainNetworkThen(void (^block)(void)) {
+    XSAfterSheet(^{
+        if (!XSNeedsNetworkExplanation(XSHasChannel(), XSChannelGranted(), XSNetworkExplained(), XSCurrentSettings())) {
+            block();
+            return;
+        }
+        // The first network access after the first-launch sheet (an app installed before 1.1, or a
+        // sheet left before its page): the "Réseau local" page on its own, then the access.
+        XSSheetUp = YES;
+        XSShowSheet(nil, @[@"network"], NO, block, 0);
+    });
 }
 
 /// XSide's logo as a notification thumbnail. iOS moves the file into its own store, so a fresh
@@ -584,14 +772,15 @@ void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded) {
 static void XSLaunch(void) {
     XSLoadSettings(); // what the person changed in iOS Settings applies from this launch on
     BOOL tellAutoRefresh = XSTakeAutoRefreshChangedOnPhone();
+    BOOL sendSettings = XSTakeSettingsChangedOnPhone();
     // Asked from iOS Settings: the same as the Refresh quick action, once the app is on screen
-    // (its pills replace the launch pill).
-    if (XSTakeRefreshOnLaunch()) XSWhenForeground(1.0, ^{ XSRequestRefresh(); });
+    // (its pills replace the launch pill). After this launch decided on the sheet: it waits for it.
+    if (XSTakeRefreshOnLaunch()) dispatch_async(dispatch_get_main_queue(), ^{ XSWhenForeground(1.0, ^{ XSRequestRefresh(); }); });
     NSDate *expiry = XSExpirationDate();
     if (!expiry) return;
     XSNoteSignature(expiry);
     XSWriteStatusRows(expiry);
-    XSScheduleReminder(expiry, NO); // asked only when the sheet closes, as it says
+    XSScheduleReminder(expiry, NO); // asked only after the sheet's "Notifications" page
     NSDictionary *settings = XSCurrentSettings();
 
     id announced = [NSUserDefaults.standardUserDefaults objectForKey:XSAnnouncedKey];
@@ -604,7 +793,8 @@ static void XSLaunch(void) {
     BOOL isNew = !([announced isKindOfClass:NSDate.class] && [announced isEqualToDate:expiry] && !previous);
     BOOL refreshed = [announced isKindOfClass:NSDate.class];
     if (isNew && (refreshed ? XSShowsRefreshCard(settings) : XSShowsInstallSheet(settings))) {
-        XSShow(expiry, refreshed, previous, 0);
+        if (refreshed) XSShowBanner(expiry, previous, 0);
+        else XSShowFirstSheet(expiry);
     } else {
         // Turned off: counted as announced all the same, so it doesn't come back later.
         if (isNew) XSMarkAnnounced(expiry);
@@ -622,9 +812,11 @@ static void XSLaunch(void) {
         pill();
     }
     // Off the launch's way; silent, and only once the local network was allowed. Automatic refresh
-    // changed in iOS Settings: told now, patiently, even before (the Mac must act on it).
+    // changed in iOS Settings: told now, patiently, even before (the Mac must act on it). Other
+    // settings changed there: sent with a pill, after the launch pill (XSShowPillWhenFree).
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         if (tellAutoRefresh) XSWhenForeground(0, ^{ XSTellAutoRefreshChange(); });
+        else if (sendSettings) XSAfterSheet(^{ XSSendSettings(nil); });
         else XSCheckIn(nil);
     });
 }
@@ -645,8 +837,13 @@ static void XSReturn(void) {
     // A refresh asked from here that failed or went unheard while the app was away: said now,
     // after asking XSide how it went.
     BOOL pending = XSPendingFailure() != nil;
+    BOOL sendSettings = XSTakeSettingsChangedOnPhone();
     if (XSTakeAutoRefreshChangedOnPhone()) {
         XSWhenForeground(0.5, ^{ XSTellAutoRefreshChange(); });
+        return;
+    }
+    if (sendSettings && XSChannelGranted()) {
+        XSWhenForeground(0.5, ^{ XSAfterSheet(^{ XSSendSettings(^{ if (pending) XSShowPendingPill(); }); }); });
         return;
     }
     if (!XSShouldCheckInOnReturn(changed, pending, XSLastCheckIn(), NSDate.date)) return;

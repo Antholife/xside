@@ -205,6 +205,36 @@ int main(int argc, const char *argv[]) {
               && !XSShouldCheckInOnReturn(NO, NO, at(-5), at(0)) && XSShouldCheckInOnReturn(YES, NO, at(-5), at(0))
               && XSShouldCheckInOnReturn(NO, YES, at(-5), at(0)), @"check-in on return from the background");
 
+        // Device feedback round 1, B4: what a check-in reply changed, and who changed it.
+        NSDictionary *fromMac = XSSettingsSetting(XSSettingsSetting(adopted, @"reminder", @NO, at(40), @"mac"),
+                                                  @"showValidity", @YES, at(41), @"mac"); // same value: not a change
+        fromMac = XSSettingsSetting(fromMac, @"language", @"en", at(42), @"device");
+        check([XSChangedFields(adopted, fromMac) isEqual:(@[@"reminder", @"language"])], @"changed fields: values only, in field order");
+        check([XSFieldsChangedByMac(adopted, fromMac) isEqual:@[@"reminder"]], @"fields changed by the Mac");
+        check(XSFieldsChangedByMac(adopted, adopted).count == 0 && XSChangedFields(adopted, again).count == 0,
+              @"nothing changed: no field");
+
+        // Which pills show: none at all with every message off; the Mac's news under the refresh card.
+        check(!XSShowsPills(S(NO, NO, NO, NO)) && XSShowsPills(S(NO, NO, NO, YES)) && XSShowsPills(S(YES, NO, NO, NO)),
+              @"pills: only \"Aucun\" silences them all");
+        check(XSShowsMacUpdatePill(S(NO, NO, YES, NO)) && !XSShowsMacUpdatePill(S(YES, YES, NO, YES)),
+              @"\"updated from your Mac\" follows the refresh card switch");
+
+        // B1: the first-launch sheet's pages, and the local network explanation.
+        check([XSSheetPages(YES, NO, NO, YES) isEqual:(@[@"welcome", @"network", @"notifications"])], @"sheet: three pages");
+        check([XSSheetPages(NO, NO, NO, YES) isEqual:(@[@"welcome", @"notifications"])]
+              && [XSSheetPages(YES, YES, NO, NO) isEqual:@[@"welcome"]]
+              && [XSSheetPages(YES, NO, YES, NO) isEqual:@[@"welcome"]], @"sheet: no page for what needs no asking");
+        NSDictionary *allOn = S(YES, YES, YES, YES);
+        check(XSNeedsNetworkExplanation(YES, NO, NO, allOn), @"network explained before the first access");
+        check(!XSNeedsNetworkExplanation(NO, NO, NO, allOn) && !XSNeedsNetworkExplanation(YES, YES, NO, allOn)
+              && !XSNeedsNetworkExplanation(YES, NO, YES, allOn), @"network: no channel, already allowed, or already explained");
+        check(!XSNeedsNetworkExplanation(YES, NO, NO, S(NO, NO, NO, NO)), @"network: every message off keeps the old behaviour");
+
+        // B5: XSide's own page in iOS Settings, by the app's real bundle id.
+        check([XSSettingsPaneURLString(@"com.example.app") isEqualToString:@"App-prefs:com.example.app&path=io.github.xside.settings.pane"],
+              @"settings pane URL");
+
         // JSON round trip of the settings.
         check(sameSettings(XSSettingsFromJSONObject(XSSettingsJSONObject(fixtureSettings())) ?: @{}, fixtureSettings()),
               @"settings JSON round trip");

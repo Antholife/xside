@@ -17,6 +17,7 @@ static NSString *const XSLastCheckInKey = @"io.github.xside.welcome.lastCheckIn"
 static NSString *const XSPendingFailureKey = @"io.github.xside.welcome.pendingFailure";
 static NSString *const XSLastExpiryKey = @"io.github.xside.welcome.lastExpiry";
 static NSString *const XSChannelGrantedKey = @"io.github.xside.welcome.channelGranted";
+static NSString *const XSNetworkExplainedKey = @"io.github.xside.welcome.networkExplained";
 
 static NSObject *XSLock(void) {
     static NSObject *lock;
@@ -27,6 +28,7 @@ static NSObject *XSLock(void) {
 
 static NSDictionary *XSCached; // guarded by XSLock()
 static BOOL XSAutoRefreshChangedOnPhone; // guarded by XSLock()
+static BOOL XSOtherChangedOnPhone; // guarded by XSLock()
 
 /// The payload's settings; for a payload without them (or with invalid ones), the Mac's defaults
 /// dated 1970, so anything set on the phone wins.
@@ -74,7 +76,12 @@ BOOL XSLoadSettings(void) {
             if (value) rows[f] = value;
         }
         NSDictionary *noticed = XSSettingsNoticingRowChanges(local, rows, shadow, NSDate.date);
-        if (![noticed[@"autoRefresh"] isEqual:local[@"autoRefresh"]]) XSAutoRefreshChangedOnPhone = YES;
+        // Restamped fields (a new date, even when the value is back to what it was) are told.
+        for (NSString *f in XSSettingFields()) {
+            if ([noticed[f] isEqual:local[f]]) continue;
+            if ([f isEqualToString:@"autoRefresh"]) XSAutoRefreshChangedOnPhone = YES;
+            else XSOtherChangedOnPhone = YES;
+        }
         local = noticed;
         NSDictionary *merged = XSSettingsMerge(local, payload);
         NSDictionary *before = XSCached;
@@ -91,6 +98,14 @@ BOOL XSTakeAutoRefreshChangedOnPhone(void) {
     @synchronized (XSLock()) {
         BOOL changed = XSAutoRefreshChangedOnPhone;
         XSAutoRefreshChangedOnPhone = NO;
+        return changed;
+    }
+}
+
+BOOL XSTakeSettingsChangedOnPhone(void) {
+    @synchronized (XSLock()) {
+        BOOL changed = XSOtherChangedOnPhone;
+        XSOtherChangedOnPhone = NO;
         return changed;
     }
 }
@@ -224,6 +239,9 @@ BOOL XSTakeRefreshOnLaunch(void) {
 
 BOOL XSChannelGranted(void) { return [XSDefaults() boolForKey:XSChannelGrantedKey]; }
 void XSSetChannelGranted(void) { [XSDefaults() setBool:YES forKey:XSChannelGrantedKey]; }
+BOOL XSNetworkExplained(void) { return [XSDefaults() boolForKey:XSNetworkExplainedKey]; }
+void XSSetNetworkExplained(void) { [XSDefaults() setBool:YES forKey:XSNetworkExplainedKey]; }
+BOOL XSHasChannel(void) { return XSInstallationID() != nil && XSChannelSecret() != nil; }
 
 // MARK: - Read-only rows
 

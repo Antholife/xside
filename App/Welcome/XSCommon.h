@@ -61,7 +61,9 @@ UIFont *XSScaledFont(CGFloat size, UIFontWeight weight);
 /// Runs `block` now if the app is active with a scene on screen, else once it becomes active,
 /// `settle` seconds later.
 void XSWhenForeground(NSTimeInterval settle, void (^block)(void));
-/// Opens the app's page in iOS Settings, once the app is in the foreground (logged as [XSide]).
+/// XSide added its page to the app's iOS Settings (keys "io.github.xside.settings.*").
+BOOL XSHasSettingsSection(void);
+/// Opens XSide's page of the app in iOS Settings (else the app's page), once the app is in the foreground (logged as [XSide]).
 void XSOpenAppSettings(void);
 
 /// The primary button: XSide's violet-to-pink gradient.
@@ -83,6 +85,9 @@ BOOL XSLoadSettings(void);
 /// YES once after an `XSLoadSettings` that found "Rafraîchissement automatique" changed in iOS
 /// Settings: the one setting the Mac must act on, so it is told at once (see XSTellAutoRefreshChange).
 BOOL XSTakeAutoRefreshChangedOnPhone(void);
+/// YES once after an `XSLoadSettings` that found another XSide setting changed in iOS Settings:
+/// the next check-in sends it, saying so in a pill (see XSSendSettings).
+BOOL XSTakeSettingsChangedOnPhone(void);
 /// Adopts settings XSide sent (merged field by field). Main thread.
 void XSAdoptSettings(NSDictionary *settings);
 /// A change made on the phone by the dylib itself (e.g. turning automatic refresh back on).
@@ -120,9 +125,22 @@ BOOL XSTakeRefreshOnLaunch(void);
 /// The person allowed the local network once (after tapping Refresh): checking in at launch is fine.
 BOOL XSChannelGranted(void);
 void XSSetChannelGranted(void);
+/// The person went past the first-launch sheet's "Réseau local" page (or its stand-alone version).
+BOOL XSNetworkExplained(void);
+void XSSetNetworkExplained(void);
+/// The app can talk to XSide (the payload has the installation id and the channel secret).
+BOOL XSHasChannel(void);
 
-// MARK: Reminder (XSideWelcome.m)
+// MARK: Reminder and first-launch sheet (XSideWelcome.m)
 
 void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
+/// Runs `block` now, or once XSide's first-launch sheet (on screen, or decided and about to show)
+/// has closed: nothing XSide asks iOS for (local network, notifications) comes up over it, before
+/// its pages said why. Main thread.
+void XSAfterSheet(void (^block)(void));
+/// Runs `block` (which reaches the network) once the person has read why XSide uses the local
+/// network: the first time, when XSNeedsNetworkExplanation says so, the sheet's "Réseau local"
+/// page is shown on its own first. After any first-launch sheet. Main thread.
+void XSExplainNetworkThen(void (^block)(void));
 
 NS_ASSUME_NONNULL_END

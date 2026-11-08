@@ -21,10 +21,17 @@ typedef NS_ENUM(NSInteger, XSPillTone) { XSPillToneNeutral, XSPillToneOrange, XS
 @property (nonatomic) BOOL busy;
 @property (nonatomic, copy, nullable) NSString *buttonTitle;
 @property (nonatomic, copy, nullable) void (^action)(void);
+/// A tap on the pill itself (outside the button) runs this instead of only dismissing it.
+@property (nonatomic, copy, nullable) void (^tapAction)(void);
 @end
 
 /// Shows `content`, replacing any pill on screen. Waits a few seconds for a foreground scene.
+/// Nothing with every message off ("Aucun": XSShowsPills).
 void XSShowPill(XSPillContent *content);
+/// The same, without cutting short a pill already on screen (the launch pill, a refresh's): it
+/// waits until that one is gone (30 s at most, then it is dropped). Only one waits, the newest; a
+/// pill shown this way replaces another shown this way at once (sending → sent).
+void XSShowPillWhenFree(XSPillContent *content);
 
 /// The pill for this cold launch (validity, late, paused, last requested refresh failed), or
 /// nil when the settings say nothing should show.

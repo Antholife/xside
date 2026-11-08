@@ -47,6 +47,12 @@ NSDictionary *XSSettingsNoticingRowChanges(NSDictionary *local, NSDictionary *ro
 extern const NSTimeInterval XSReturnCheckInInterval;
 BOOL XSShouldCheckInOnReturn(BOOL changed, BOOL pending, NSDate *_Nullable lastCheckIn, NSDate *now);
 
+/// The fields whose value differs between `before` and `after` (dates and origins ignored), in
+/// XSSettingFields order.
+NSArray<NSString *> *XSChangedFields(NSDictionary *before, NSDictionary *after);
+/// Those of them whose value in `after` was set on the Mac: what a check-in reply brought.
+NSArray<NSString *> *XSFieldsChangedByMac(NSDictionary *before, NSDictionary *after);
+
 id _Nullable XSSettingValue(NSDictionary *s, NSString *field);
 BOOL XSSettingBool(NSDictionary *s, NSString *field);
 
@@ -62,6 +68,28 @@ BOOL XSShowsValidityPill(NSDictionary *s, BOOL late);
 BOOL XSShowsRefreshCard(NSDictionary *s);
 BOOL XSSchedulesReminder(NSDictionary *s);
 BOOL XSShowsInstallSheet(NSDictionary *s);
+
+/// Any pill at all: every message off ("Aucun") silences them all, even the answers to something
+/// the person asked for (device feedback round 1).
+BOOL XSShowsPills(NSDictionary *s);
+/// "Réglages mis à jour depuis ton Mac": news of what XSide did from the Mac, like the card after
+/// a refresh, so under the same switch.
+BOOL XSShowsMacUpdatePill(NSDictionary *s);
+
+// MARK: First launch (device feedback round 1, B1)
+
+/// The pages of the first-launch sheet: "welcome", then "network" when the app talks to XSide
+/// (`channel`) and the local network was neither allowed (`granted`) nor explained yet, then
+/// "notifications" when iOS will be asked for them (`askNotifications`).
+NSArray<NSString *> *XSSheetPages(BOOL channel, BOOL granted, BOOL explained, BOOL askNotifications);
+/// The first network access must wait for the "Réseau local" page: the app talks to XSide, the
+/// local network is neither allowed nor explained yet, and the sheet is allowed by the settings
+/// (with every message off, nothing is shown and the access goes ahead as before).
+BOOL XSNeedsNetworkExplanation(BOOL channel, BOOL granted, BOOL explained, NSDictionary *s);
+
+/// XSide's own page in iOS Settings, asked by the app's real bundle id: Settings' undocumented
+/// "App-prefs:<id>&path=<specifier id>" (the child pane row's id, written by SettingsBundle).
+NSString *XSSettingsPaneURLString(NSString *bundleID);
 
 /// Late (spec §1): less time left than the refresh threshold minus 6 h of margin.
 BOOL XSIsLate(NSTimeInterval timeLeft, NSInteger thresholdHours);

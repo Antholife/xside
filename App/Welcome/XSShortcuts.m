@@ -10,8 +10,7 @@
 static NSString *const XSShortcutPrefix = @"io.github.xside.shortcut.";
 static NSString *const XSIssueURL = @"https://github.com/Antholife/xside/issues/new";
 
-/// XSide added quick actions to this app (none when the app already had 4).
-static BOOL XSHasShortcuts(void) {
+BOOL XSHasShortcuts(void) {
     id items = XSInfo()[@"UIApplicationShortcutItems"];
     if (![items isKindOfClass:NSArray.class]) return NO;
     for (id item in items) {
