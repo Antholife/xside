@@ -50,11 +50,11 @@
 "install.status.skipped" = "skipped";
 "install.step.profile" = "Apple permission";
 "install.step.welcome" = "Injecting the XSide module";
-"install.feature.title" = "Added to the app";
+"install.feature.title" = "Written into the app now";
 "install.feature.sheet" = "An XSide sheet the first time it opens";
 "install.feature.banner" = "A card after each refresh";
-"install.feature.reminder" = "A reminder before expiry";
-"install.feature.settings" = "An “XSide Settings” page in Settings";
+"install.feature.reminder" = "A reminder before expiry, if you allow notifications";
+"install.feature.settings" = "Its “XSide Settings” page, under the app's own in Settings";
 "install.step.signing" = "Signing";
 "install.step.installing" = "Installing";
 "install.cancel" = "Cancel";
@@ -513,7 +513,7 @@
 "cli.installed" = "Installed in %@: type xside in the Terminal.";
 "cli.manual" = "No writable folder in your PATH: run this in the Terminal (asks for your password):";
 "cli.copy" = "Copy";
-"whatsNew.110.inApp.title" = "XSide in the apps";
+"whatsNew.110.inApp.title" = "XSide module in the apps";
 "whatsNew.110.inApp.text" = "Every app XSide installs now has its own XSide settings, per device, kept in step between your Mac and your iPhone. Change a setting on either side: the most recent change wins.";
 "whatsNew.110.page.title" = "XSide Settings on the iPhone";
 "whatsNew.110.page.text" = "Settings > Apps > [app name] > XSide Settings, or faster: touch and hold the app's icon > XSide Settings. A page of its own, translated by iOS, with the validity date, the last refresh, the version and the switches.";
@@ -540,7 +540,7 @@
 "whatsNew.110.onLaunch.title" = "Refresh at next opening";
 "whatsNew.110.onLaunch.text" = "In an app's iOS Settings, \"Refresh at next launch\" asks XSide for a refresh the next time you open the app, without opening it first.";
 "whatsNew.110.steps.title" = "An install window in three steps";
-"whatsNew.110.steps.text" = "Devices, Install, XSide in the app: Next and Back, clickable steps, and Install only at the last one.";
+"whatsNew.110.steps.text" = "Devices, Install, XSide module in the app: Next and Back, clickable steps, and Install only at the last one.";
 "whatsNew.110.review.title" = "Review the options each time, or not";
 "whatsNew.110.review.text" = "\"Review the options at each install\" is on by default. Off, an app already installed shows the full list of what will apply, with Edit, then Install.";
 "whatsNew.110.previews.title" = "Every option explained, with a preview";
@@ -550,11 +550,11 @@
 "whatsNew.110.noFeatures.title" = "Install without XSide features";
 "whatsNew.110.noFeatures.text" = "For an app that refuses to launch because it detects a change, install it as it came, per app or for all, after a confirmation that lists what's lost. XSide still refreshes it.";
 "whatsNew.110.appWindow.title" = "My apps, in Settings";
-"whatsNew.110.appWindow.text" = "Settings > My apps lists your apps; pick one to set XSide in that app, device by device, applied at its next refresh or opening. An app's … menu in the panel leads straight there.";
+"whatsNew.110.appWindow.text" = "Settings > My apps lists your apps; pick one to set the XSide module in that app, device by device, applied at its next refresh or opening. An app's … menu in the panel leads straight there.";
 "whatsNew.110.status.title" = "Where each change stands";
 "whatsNew.110.status.text" = "Per device, XSide says whether the iPhone is reachable and whether a change is pending, written or confirmed by the iPhone. It never claims a setting is active before that.";
 "whatsNew.110.panes.title" = "Settings, reorganized";
-"whatsNew.110.panes.text" = "Eleven pages: General, Refreshing, Installing, XSide in the apps (defaults for new installs), My apps, Notifications, Xcode and signing, Updates, Reports & Logs, Build & contribute, About.";
+"whatsNew.110.panes.text" = "Eleven pages: General, Refreshing, Installing, XSide module in the apps (defaults for new installs), My apps, Notifications, Xcode and signing, Updates, Reports & Logs, Build & contribute, About.";
 "whatsNew.110.switch.title" = "A new switch";
 "whatsNew.110.switch.text" = "XSide's switches now use the brand gradient, and respond to the keyboard (focus ring, Space).";
 "whatsNew.110.inject.title" = "\"Injecting the XSide module\"";
@@ -611,10 +611,10 @@
 "report.summary" = "XSide state";
 "report.lastLines" = "Last log lines";
 
-/* 1.1: install steps, XSide in the apps */
+/* 1.1: install steps, XSide module in the apps */
 "install.steps.devices" = "Devices";
 "install.steps.options" = "Install";
-"install.steps.inApp" = "XSide in the app";
+"install.steps.inApp" = "XSide module in the app";
 "install.steps.a11y" = "Step %d of %d: %@";
 "install.next" = "Next";
 "install.back" = "Back";
@@ -695,7 +695,7 @@
 "noFeatures.deleteFirst.note" = "The app's data on the device is lost (accounts, downloads, settings). Done once, just before its next install or refresh.";
 "settings.pane.refresh" = "Refreshing";
 "settings.pane.install" = "Installing";
-"settings.pane.inApp" = "XSide in the apps";
+"settings.pane.inApp" = "XSide module in the apps";
 "settings.reviewOptions" = "Review the options at each install";
 "settings.reviewOptions.note" = "Off: for an app already installed, the first step lists every option that will apply, with “Edit”, then Install. A new app always goes through the three steps.";
 "settings.firewall" = "Incoming connections";
@@ -709,7 +709,7 @@
 "popover.pausedDevice.expiresToday" = "Stopped from the device · expires today";
 "install.step.welcomeSkipped" = "XSide module: skipped (installed as is)";
 "install.feature.pill" = "The validity at launch, and an alert if it wasn't refreshed";
-"install.feature.quick" = "Touch and hold the icon: XSide Settings, Refresh now, Report a problem";
+"install.feature.quick" = "Touch and hold the icon: XSide Settings, Refresh now, Report a problem, in the places the app leaves free";
 
 "appSettings.subtitle" = "on %@";
 "appSettings.note" = "Changes reach the app at its next connection to XSide, or at its next refresh.";
@@ -738,3 +738,13 @@
 "build.contributing" = "How to contribute";
 "whatsNew.110.build.title" = "Build & contribute";
 "whatsNew.110.build.text" = "A new Settings page: make XSide yours with an AI agent (a starter prompt and the repository's AGENTS.md) or the xside command, and share it back if you want.";
+"install.feature.module" = "The XSide module, loaded by the app each time it opens";
+"install.feature.network" = "What it needs to talk to your Mac over the local network (Bonjour)";
+"install.feature.atLaunch" = "Then, in the app, the module shows";
+"install.step.deleteThenInstall" = "Deleting the app from the device, then installing";
+"build.cli.install" = "Install the command";
+"build.cli.installed" = "Command installed (in %@): type xside in the Terminal.";
+"popover.pausedAll.expired" = "All refreshes paused · expired";
+"popover.pausedAll.expiresToday" = "All refreshes paused · expires today";
+"appSettings.device" = "Device";
+"appSettings.perDevice" = "Installed on %ld devices: each has its own module settings. “XSide features” applies to the app on all of them.";

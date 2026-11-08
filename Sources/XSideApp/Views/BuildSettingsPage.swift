@@ -13,6 +13,7 @@ struct BuildSettingsPage: View {
                     AgentButtons()
                 }
                 BuildCard(symbol: "terminal.fill", title: L("build.cli.title"), text: L("build.cli.text")) {
+                    CommandLineStatus()
                     VStack(alignment: .leading, spacing: 3) {
                         ForEach(Self.commands, id: \.self) { command in
                             Text(command)
@@ -32,6 +33,7 @@ struct BuildSettingsPage: View {
                 footer
             }
             .padding(24)
+            .reportsPaneHeight()
         }
     }
 
@@ -125,5 +127,34 @@ private struct AgentButtons: View {
             }
         }
         .controlSize(.regular)
+    }
+}
+
+/// The terminal card: whether `xside` is installed, else the same Install button as Settings >
+/// General (the same action and state: `CommandLineInstall`), device feedback round 2, M3.
+private struct CommandLineStatus: View {
+    @State private var cli = CommandLineInstall.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let link = cli.link {
+                Label(L("build.cli.installed", link.deletingLastPathComponent().path), systemImage: "checkmark.circle.fill")
+                    .font(.callout)
+                    .foregroundStyle(Color(nsColor: .systemGreen))
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Button(action: cli.install) {
+                    Label(L("build.cli.install"), systemImage: "terminal")
+                }
+                .controlSize(.regular)
+                if cli.needsManual {
+                    Text(L("cli.manual"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    CommandLineManual()
+                }
+            }
+        }
+        .onAppear(perform: cli.refresh)
     }
 }

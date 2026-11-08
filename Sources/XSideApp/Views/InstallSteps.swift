@@ -1,7 +1,7 @@
 import SwiftUI
 import XSideCore
 
-/// ① Appareils · ② Installation · ③ XSide dans l'app: where the install window is; each step
+/// ① Appareils · ② Installation · ③ Module XSide dans l'app: where the install window is; each step
 /// can be clicked.
 struct StepBar: View {
     let flow: InstallFlow
@@ -53,7 +53,7 @@ struct StepBar: View {
     }
 }
 
-/// Step ③: XSide in the app for every checked device, with where each device stands.
+/// Step ③: the XSide module in the app for every checked device, with where each device stands.
 struct InAppStep: View {
     let model: AppModel
     @Bindable var flow: InstallFlow

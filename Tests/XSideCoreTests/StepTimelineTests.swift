@@ -69,6 +69,20 @@ import Testing
         #expect(t.completedCount == 6)
     }
 
+    /// Device feedback round 2, M4: an app installed without XSide's features shows the module
+    /// step as skipped once passed (it was a green tick), during the run and on failure too.
+    @Test func moduleStepSkippedWithoutFeatures() {
+        let running = StepTimeline(steps: firstRun, stage: .step(.signing), skipped: [.welcome])
+        #expect(running.status(of: .welcome) == .skipped)
+        #expect(running.status(of: .profile) == .done && running.status(of: .signing) == .active)
+        #expect(running.completedCount == 3)
+        let atIt = StepTimeline(steps: firstRun, stage: .step(.welcome), skipped: [.welcome])
+        #expect(atIt.status(of: .welcome) == .active)
+        let failed = StepTimeline(steps: firstRun, stage: .step(.installing), failed: true, skipped: [.welcome])
+        #expect(failed.status(of: .welcome) == .skipped && failed.status(of: .installing) == .failed)
+        #expect(StepTimeline(steps: firstRun, stage: nil, skipped: [.welcome]).status(of: .welcome) == .skipped)
+    }
+
     @Test func missingCurrentStepSkipsForward() {
         let t = StepTimeline(steps: run, current: .wifiCheck)
         #expect(t.current == nil)

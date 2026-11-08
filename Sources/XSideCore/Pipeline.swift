@@ -470,7 +470,7 @@ public actor SideloadPipeline {
     /// The app goes without XSide's module on a device whose installation had it, and the person
     /// opted in to deleting it first (mega review Important 1). `options` already resolved. Once
     /// per installation: the next signing sees an installation recorded without features.
-    static func deletesFirst(options: InstallOptions, previous: Installation?) -> Bool {
+    public static func deletesFirst(options: InstallOptions, previous: Installation?) -> Bool {
         guard options.withoutXSideFeatures == true, options.deleteFirstWithoutFeatures,
               let previous else { return false }
         return previous.withoutXSideFeatures != true

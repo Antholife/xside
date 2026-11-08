@@ -29,8 +29,14 @@ struct AppRow: View {
     let onRemoveFromList: () -> Void
     /// Opens Settings > Mes apps on this app and device.
     let onXSideSettings: () -> Void
+    /// Every automatic refresh is paused (the panel's Pause): the row looks paused too, as for
+    /// its own pause (device feedback round 2, M2), but keeps its own actions.
+    var globallyPaused = false
 
+    /// This app's own refreshes are stopped (its actions offer Resume).
     private var isPaused: Bool { entry.installation.refreshPaused }
+    /// The paused look: its own pause, or the global one.
+    private var looksPaused: Bool { isPaused || globallyPaused }
 
     @State private var isHovering = false
 
@@ -85,12 +91,12 @@ struct AppRow: View {
 
     private func row(validity: Validity, now: Date) -> some View {
         HStack(spacing: 10) {
-            AppIconView(icon: icon, isBusy: step != nil || isUninstalling, isPaused: isPaused)
+            AppIconView(icon: icon, isBusy: step != nil || isUninstalling, isPaused: looksPaused)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     Text(appName)
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(isPaused ? .secondary : .primary)
+                        .foregroundStyle(looksPaused ? .secondary : .primary)
                         .lineLimit(1)
                     // The version on that device, once an install or refresh has recorded it (the
                     // record's may be a newer .ipa not installed there yet).
@@ -106,20 +112,20 @@ struct AppRow: View {
                 let subtitle = subtitle(validity: validity, now: now)
                 Text(subtitle)
                     .font(.system(size: 11))
-                    .foregroundStyle(validity.isExpired && step == nil && !isPaused ? Color(nsColor: .systemRed) : .secondary)
+                    .foregroundStyle(validity.isExpired && step == nil && !looksPaused ? Color(nsColor: .systemRed) : .secondary)
                     .lineLimit(2)
                     .truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)
                     .help(subtitle) // the whole text when it's cut
                 // Nothing to plug in nor to fix while paused: no refresh will be attempted.
-                if step == nil, !isPaused, needsUSB,
+                if step == nil, !looksPaused, needsUSB,
                    entry.installation.expiresAt.timeIntervalSince(now) <= RefreshPlanner.threshold {
                     Text(L("popover.plugInUSB"))
                         .font(.system(size: 11))
                         .foregroundStyle(Color(nsColor: .systemOrange))
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                if step == nil, !isPaused, let key = entry.installation.lastErrorKey {
+                if step == nil, !looksPaused, let key = entry.installation.lastErrorKey {
                     Text(localizedRowError(key: key))
                         .font(.system(size: 11))
                         .foregroundStyle(Color(nsColor: .systemRed))
@@ -137,7 +143,7 @@ struct AppRow: View {
                 .accessibilityLabel(L("popover.refreshNow"))
                 .transition(.opacity)
             }
-            RingView(validity: validity, isPaused: isPaused, isBusy: step != nil || isUninstalling, size: 28)
+            RingView(validity: validity, isPaused: looksPaused, isBusy: step != nil || isUninstalling, size: 28)
             Menu { actions } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 12, weight: .semibold))
@@ -157,9 +163,11 @@ struct AppRow: View {
     private func subtitle(validity: Validity, now: Date) -> String {
         if isUninstalling { return L("popover.app.uninstalling") }
         if let step { return percent.map { "\(step.rowText) \(percentText($0))" } ?? step.rowText }
-        if isPaused {
-            // Stopped from the iPhone (its "Rafraîchissement automatique"): said so.
-            let prefix = entry.installation.pausedBy == .device ? "popover.pausedDevice" : "popover.paused"
+        if looksPaused {
+            // Stopped from the iPhone (its "Rafraîchissement automatique"): said so. The global
+            // pause, when the app's own refreshes aren't stopped.
+            let prefix = !isPaused ? "popover.pausedAll"
+                : entry.installation.pausedBy == .device ? "popover.pausedDevice" : "popover.paused"
             if validity.isExpired { return L(prefix + ".expired") }
             if Calendar.current.isDateInToday(validity.expiresAt) { return L(prefix + ".expiresToday") }
             return L(prefix + ".expiresIn", validity.daysLeft)

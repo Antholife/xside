@@ -1,4 +1,5 @@
 import AppKit
+import Observation
 import XSideCore
 
 /// Puts the `xside` tool (Contents/Helpers/xside) in the Terminal's PATH: a link in the first
@@ -49,5 +50,35 @@ enum CommandLineTool {
         guard let link = installedLink else { return }
         try? FileManager.default.removeItem(at: link)
         log.notice("command line tool unlinked")
+    }
+}
+
+/// Whether `xside` is in the Terminal, and the install/uninstall actions, shared by every place
+/// that offers them (Settings > General, Settings > Build & contribute: device feedback round 2,
+/// M3), so installing it in one shows it installed in the other.
+@MainActor @Observable
+final class CommandLineInstall {
+    static let shared = CommandLineInstall()
+
+    /// Where the link is, nil when not installed.
+    private(set) var link: URL? = CommandLineTool.installedLink
+    /// The last install found no writable folder: `CommandLineTool.manualCommand` is shown.
+    private(set) var needsManual = false
+
+    func install() {
+        needsManual = !CommandLineTool.install()
+        refresh()
+    }
+
+    func uninstall() {
+        CommandLineTool.uninstall()
+        needsManual = false
+        refresh()
+    }
+
+    /// Looks again (it may have been installed by hand, or the app moved).
+    func refresh() {
+        link = CommandLineTool.installedLink
+        if link != nil { needsManual = false }
     }
 }

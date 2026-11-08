@@ -14,6 +14,9 @@ struct InstallProgressView: View {
     var activeSince: Date?
     /// The app goes without XSide's features: the module step says it's skipped.
     var withoutXSideFeatures = false
+    /// The app is deleted from the device before it's installed (the module goes, opted in): the
+    /// install step says so.
+    var deletesFirst = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -42,7 +45,7 @@ struct InstallProgressView: View {
             HStack(spacing: 8) {
                 indicator(status)
                     .frame(width: 16, height: 16)
-                Text(step.label(withoutXSideFeatures: withoutXSideFeatures))
+                Text(step.label(withoutXSideFeatures: withoutXSideFeatures, deletesFirst: deletesFirst))
                     .font(.system(size: 13, weight: status == .active || status == .waiting || status == .failed ? .semibold : .regular))
                     .foregroundStyle(titleStyle(status))
                     .lineLimit(2)
@@ -94,7 +97,7 @@ struct InstallProgressView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(L("install.progress.accessibility", index, timeline.total,
-                              step.label(withoutXSideFeatures: withoutXSideFeatures), status.label))
+                              step.label(withoutXSideFeatures: withoutXSideFeatures, deletesFirst: deletesFirst), status.label))
     }
 
     private func titleStyle(_ status: StepStatus) -> HierarchicalShapeStyle {
@@ -124,41 +127,53 @@ struct InstallProgressView: View {
     }
 }
 
-/// What XSide adds to each app, under the "Injecting the XSide module" step.
+/// Under the "Injecting the XSide module" step, what it really does (device feedback round 2,
+/// M4): what this step writes into the app now, then what the module does in the app once it's
+/// opened (quick actions and notifications are set up there, at run time, not at install).
 private struct XSideFeaturesList: View {
-    private static let items: [(symbol: String, key: String)] = [
+    private static let now: [(symbol: String, key: String)] = [
+        ("puzzlepiece.extension.fill", "install.feature.module"),
+        ("gearshape.fill", "install.feature.settings"),
+        ("wifi", "install.feature.network"),
+    ]
+    private static let atLaunch: [(symbol: String, key: String)] = [
         ("rectangle.portrait.bottomhalf.inset.filled", "install.feature.sheet"),
         ("rectangle.topthird.inset.filled", "install.feature.pill"),
         ("rectangle.bottomthird.inset.filled", "install.feature.banner"),
         ("bell.badge.fill", "install.feature.reminder"),
-        ("gearshape.fill", "install.feature.settings"),
         ("hand.tap.fill", "install.feature.quick"),
     ]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(L("install.feature.title"))
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-            ForEach(Self.items, id: \.key) { item in
-                HStack(spacing: 8) {
-                    Image(systemName: item.symbol)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Theme.brand)
-                        .frame(width: 22, height: 22)
-                        .background(Theme.violet.opacity(0.14), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    Text(L(item.key))
-                        .font(.system(size: 12))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
+            group(L("install.feature.title"), Self.now)
+            group(L("install.feature.atLaunch"), Self.atLaunch)
+                .padding(.top, 4)
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.violet.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.violet.opacity(0.18)))
         .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder private func group(_ title: String, _ items: [(symbol: String, key: String)]) -> some View {
+        Text(title)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .textCase(.uppercase)
+        ForEach(items, id: \.key) { item in
+            HStack(spacing: 8) {
+                Image(systemName: item.symbol)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.brand)
+                    .frame(width: 22, height: 22)
+                    .background(Theme.violet.opacity(0.14), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                Text(L(item.key))
+                    .font(.system(size: 12))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 }
 
@@ -189,9 +204,12 @@ extension ProgressStep {
         }
     }
 
-    /// The module step says it's skipped when the app goes without XSide's features.
-    func label(withoutXSideFeatures: Bool) -> String {
-        self == .welcome && withoutXSideFeatures ? L("install.step.welcomeSkipped") : label
+    /// The module step says it's skipped when the app goes without XSide's features; the install
+    /// step says when the app is deleted from the device first.
+    func label(withoutXSideFeatures: Bool, deletesFirst: Bool = false) -> String {
+        if self == .welcome && withoutXSideFeatures { return L("install.step.welcomeSkipped") }
+        if self == .installing && deletesFirst { return L("install.step.deleteThenInstall") }
+        return label
     }
 }
 

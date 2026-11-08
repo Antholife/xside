@@ -38,7 +38,7 @@ final class InstallFlow {
     /// device only: with several, the checks come after every install and aren't a step of each.
     var wifiStepPlanned = false
     var draft = OptionsDraft()
-    /// XSide in the app (step ③): the values every checked device gets. Prefilled from the app's
+    /// The XSide module in the app (step ③): the values every checked device gets. Prefilled from the app's
     /// last-used values, else the Mac defaults; only the values count (see `InAppSettings.adopting`).
     var inApp = AppModel.inAppDefaults(at: Date())
     /// The step ③ fields the user changed: the only ones a device that has the app adopts.
@@ -50,7 +50,7 @@ final class InstallFlow {
         inAppTouched.formUnion(edited.fields(differingFrom: inApp))
         inApp = edited
     }
-    /// The step shown while editing: 0 devices, 1 install options, 2 XSide in the app.
+    /// The step shown while editing: 0 devices, 1 install options, 2 the XSide module in the app.
     var step = 0
     /// Steps ①②③ with Next/Back. False for an app already installed when "Revoir les options à
     /// chaque installation" is off: step ① then lists every option, with Edit, and Install.
@@ -82,6 +82,12 @@ final class InstallFlow {
     var runWithoutXSideFeatures: Bool {
         runOptions.resolvedWithoutXSideFeatures(default: AppModel.withoutXSideFeaturesByDefault)
     }
+    /// The steps the last run passes over: the module step when the app goes without XSide's
+    /// features (shown as skipped, not ticked: device feedback round 2, M4).
+    var skippedRunSteps: Set<ProgressStep> { runWithoutXSideFeatures ? [.welcome] : [] }
+    /// Devices where the last run deletes the app before installing it (the module goes and the
+    /// person chose to delete it first), judged when the run started: the install step says so.
+    var deletesFirst: Set<String> = []
     /// Record this `.ipa` was imported into during this flow: later devices install it as is.
     var importedRecordID: UUID?
 

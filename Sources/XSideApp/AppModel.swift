@@ -265,7 +265,7 @@ final class AppModel {
     }
 
     /// XSide-in-app settings of an installation that has none yet: the Mac defaults (Settings >
-    /// XSide dans les apps), automatic refresh on.
+    /// Module XSide dans les apps), automatic refresh on.
     nonisolated static func inAppDefaults(at date: Date) -> InAppSettings {
         func f<V>(_ v: V) -> Field<V> { Field(value: v, changedAt: date, changedBy: .mac) }
         let language = UserDefaults.standard.string(forKey: inAppLanguageKey).flatMap(MessageLanguage.init) ?? .automatic
@@ -274,7 +274,7 @@ final class AppModel {
                              language: f(language), autoRefresh: f(true))
     }
 
-    /// Writes the Mac defaults of new installs (Settings > XSide dans les apps). Automatic refresh
+    /// Writes the Mac defaults of new installs (Settings > Module XSide dans les apps). Automatic refresh
     /// isn't one: a new install is always refreshed.
     static func setInAppDefaults(_ s: InAppSettings) {
         let defaults = UserDefaults.standard
@@ -1799,6 +1799,12 @@ final class AppModel {
         // Re-install of a known app: claim each device's row now, before any await. Each claim is
         // released when that device is done.
         let recordID = flow.importedRecordID ?? flow.existing?.id
+        var resolved = flow.runOptions
+        resolved.withoutXSideFeatures = resolved.resolvedWithoutXSideFeatures(default: Self.withoutXSideFeaturesByDefault)
+        let installations = records.first { $0.id == recordID }?.installations ?? []
+        flow.deletesFirst = Set(targets.filter { id in
+            SideloadPipeline.deletesFirst(options: resolved, previous: installations.first { $0.deviceID == id })
+        })
         if let recordID {
             for id in targets { claim(JobKey(recordID: recordID, deviceID: id), stage: id == targets[0] ? .preparing : .waiting) }
         }
@@ -2045,7 +2051,7 @@ final class AppModel {
     /// The reminder the installed app shows itself before it expires ("Rappel avant l'expiration",
     /// default of new installs; each installation has its own since 1.1).
     nonisolated static let deviceReminderKey = "deviceReminder"
-    /// The other defaults of new installs for XSide in the app (Settings > XSide dans les apps).
+    /// The other defaults of new installs for XSide in the app (Settings > Module XSide dans les apps).
     nonisolated static let inAppShowValidityKey = "inApp.showValidity"
     nonisolated static let inAppAlertLateKey = "inApp.alertLate"
     nonisolated static let inAppRefreshCardKey = "inApp.refreshCard"

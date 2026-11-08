@@ -124,7 +124,7 @@ extension InAppSettings {
 
 extension InstallOptions {
     /// Whether this app installs without XSide's features: its own choice when it made one, else
-    /// the Mac's default (Settings > XSide dans les apps).
+    /// the Mac's default (Settings > Module XSide dans les apps).
     public func resolvedWithoutXSideFeatures(default fallback: Bool) -> Bool {
         withoutXSideFeatures ?? fallback
     }
@@ -147,7 +147,7 @@ public enum InstallSummary {
         case autoRefresh(Bool)
     }
 
-    /// `install`: the app and what happens after the install; `inApp`: XSide in the app (only
+    /// `install`: the app and what happens after the install; `inApp`: the XSide module in the app (only
     /// "without XSide features" when it has none). `offersKeychain`: the app asks for shared
     /// keychain groups (the option exists only then). The Trust page is listed only when the app
     /// is opened after the install (it can't open otherwise).

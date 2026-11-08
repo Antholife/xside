@@ -162,14 +162,20 @@ struct InstallSheet: View {
     let close: () -> Void
     /// Natural height of the scrolling middle.
     @State private var contentHeight: CGFloat = 120
+    /// Heights of what stays in view around it (header, then queue line and buttons).
+    @State private var headerHeight: CGFloat = 150
+    @State private var footerHeight: CGFloat = 50
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if case .running(let stage) = flow.phase, !flow.isMultiDevice {
-                ProgressHeader(model: model, flow: flow, timeline: StepTimeline(steps: steps, stage: stage))
-            } else {
-                header
+            Group {
+                if case .running(let stage) = flow.phase, !flow.isMultiDevice {
+                    ProgressHeader(model: model, flow: flow, timeline: StepTimeline(steps: steps, stage: stage, skipped: flow.skippedRunSteps))
+                } else {
+                    header
+                }
             }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
             VStack(alignment: .leading, spacing: 16) {
                 // Only the middle scrolls: the app header and the buttons stay in view, and the window
                 // never grows past the screen (the options can be long once unfolded).
@@ -182,10 +188,13 @@ struct InstallSheet: View {
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
                 }
                 .scrollBounceBehavior(.basedOnSize)
-                .frame(height: min(contentHeight, Self.maxContentHeight))
+                .frame(height: min(contentHeight, maxContentHeight))
                 .padding(.horizontal, -20)
-                if !model.queuedIPAs.isEmpty { QueueLine(files: model.queuedIPAs) }
-                buttons
+                VStack(alignment: .leading, spacing: 16) {
+                    if !model.queuedIPAs.isEmpty { QueueLine(files: model.queuedIPAs) }
+                    buttons
+                }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { footerHeight = $0 }
             }
             .padding(20)
         }
@@ -198,9 +207,13 @@ struct InstallSheet: View {
         }
     }
 
-    /// Room left for the scrolling middle on the current screen, minus header, buttons and chrome.
-    private static var maxContentHeight: CGFloat {
-        max(240, (NSScreen.main?.visibleFrame.height ?? 800) - 300)
+    /// Room left for the scrolling middle on the current screen: what's left once the header, the
+    /// buttons, the paddings and the title bar (28) are measured, less a small margin. Device
+    /// feedback round 2, M1: a fixed 300 pt reserve made step ③ scroll on screens where it fits;
+    /// now it only scrolls when the screen really is too short (or the text large).
+    private var maxContentHeight: CGFloat {
+        let screen = NSScreen.main?.visibleFrame.height ?? 800
+        return max(240, screen - headerHeight - footerHeight - 20 * 2 - 16 - 28 - 12)
     }
 
     @ViewBuilder private var content: some View {
@@ -215,17 +228,19 @@ struct InstallSheet: View {
                 ExportLogsLink(model: model)
             case .running(let stage) where !flow.isMultiDevice:
                 // One device: the header shows the ring, the steps follow, nothing else.
-                InstallProgressView(timeline: StepTimeline(steps: steps, stage: stage), showsBar: false,
+                InstallProgressView(timeline: StepTimeline(steps: steps, stage: stage, skipped: flow.skippedRunSteps), showsBar: false,
                                     activePercent: model.runPercent(flow), activeSince: model.runStepStarted(flow),
-                                    withoutXSideFeatures: flow.runWithoutXSideFeatures)
+                                    withoutXSideFeatures: flow.runWithoutXSideFeatures, deletesFirst: deletesFirst)
             case .running:
                 DeviceRunList(model: model, flow: flow, steps: steps)
             case .editing:
                 if flow.reviewsSteps { StepBar(flow: flow) }
                 // The last run's outcome comes first, on whichever step is shown.
                 if let failure = flow.failure {
-                    InstallProgressView(timeline: StepTimeline(steps: steps, stage: failure.stage, failed: true),
-                                        failureMessage: failure.message, withoutXSideFeatures: flow.runWithoutXSideFeatures)
+                    InstallProgressView(timeline: StepTimeline(steps: steps, stage: failure.stage, failed: true,
+                                                               skipped: flow.skippedRunSteps),
+                                        failureMessage: failure.message, withoutXSideFeatures: flow.runWithoutXSideFeatures,
+                                        deletesFirst: deletesFirst)
                     ExportLogsLink(model: model)
                 } else if case .editing(let error?) = flow.phase {
                     ErrorText(error)
@@ -241,7 +256,7 @@ struct InstallSheet: View {
                 } else {
                     InstallProgressView(timeline: StepTimeline(
                         steps: steps, current: flow.wifiCheck != nil ? .wifiCheck : nil, skipped: skippedSteps),
-                        withoutXSideFeatures: flow.runWithoutXSideFeatures)
+                        withoutXSideFeatures: flow.runWithoutXSideFeatures, deletesFirst: deletesFirst)
                     Label(L("install.success", flow.runs.first?.name ?? ""), systemImage: "checkmark.circle.fill")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(Color(nsColor: .systemGreen))
@@ -270,7 +285,7 @@ struct InstallSheet: View {
     }
 
     /// The step being edited: ① devices (and, without the steps, everything that will apply),
-    /// ② install options, ③ XSide in the app.
+    /// ② install options, ③ XSide module in the app.
     @ViewBuilder private var editingStep: some View {
         if !flow.reviewsSteps {
             DevicePicker(model: model, flow: flow)
@@ -302,9 +317,12 @@ struct InstallSheet: View {
     /// The Wi-Fi check ended without success (skipped, USB chosen or window closed).
     private var skippedSteps: Set<ProgressStep> {
         guard flow.wifiStepPlanned, case .finished = flow.phase,
-              flow.wifiCheck == nil, flow.runs.first?.wifiVerified != true else { return [] }
-        return [.wifiCheck]
+              flow.wifiCheck == nil, flow.runs.first?.wifiVerified != true else { return flow.skippedRunSteps }
+        return flow.skippedRunSteps.union([.wifiCheck])
     }
+
+    /// One device: the app is deleted there before it's installed.
+    private var deletesFirst: Bool { flow.runs.first.map { flow.deletesFirst.contains($0.deviceID) } ?? false }
 
     private func name(of deviceID: String?) -> String? {
         flow.runs.first { $0.deviceID == deviceID }?.name
@@ -860,7 +878,9 @@ private struct DeviceRunList: View {
                         DeviceRunRow(run: run, symbolName: symbolName(run.deviceID),
                                      checkingWifi: flow.wifiCheck != nil && flow.wifiDeviceID == run.deviceID)
                         if case .running(let stage) = run.status {
-                            InstallProgressView(timeline: StepTimeline(steps: steps, stage: stage))
+                            InstallProgressView(timeline: StepTimeline(steps: steps, stage: stage, skipped: flow.skippedRunSteps),
+                                                withoutXSideFeatures: flow.runWithoutXSideFeatures,
+                                                deletesFirst: flow.deletesFirst.contains(run.deviceID))
                                 .padding(.leading, 28)
                         }
                     }

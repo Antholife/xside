@@ -98,5 +98,21 @@
 			<string>Stopped from the device · expires in %ld days</string>
 		</dict>
 	</dict>
+	<key>popover.pausedAll.expiresIn</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@days@</string>
+		<key>days</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>ld</string>
+			<key>one</key>
+			<string>All refreshes paused · expires in %ld day</string>
+			<key>other</key>
+			<string>All refreshes paused · expires in %ld days</string>
+		</dict>
+	</dict>
 </dict>
 </plist>

@@ -192,7 +192,8 @@ private struct PopoverContent: View {
                                        dismiss()
                                        NSApp.activate()
                                        openSettings()
-                                   })
+                                   },
+                                   globallyPaused: RefreshPause.until(pausedUntil) != nil)
                         }
                     }
                 }

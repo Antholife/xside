@@ -52,11 +52,73 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     }
 }
 
-/// The Settings window: a sidebar of pages, like System Settings; each page is short enough
-/// not to scroll. Opens on the page `model.settingsPane` names (set by whoever opened it).
+/// How tall a Settings page's content is, reported by the page (`reportsPaneHeight`) so the
+/// window takes that height: no page scrolls at the default text size when the screen has room
+/// (device feedback round 2, M1). `part` tells apart two scrolling parts of one page (Mes apps:
+/// its list and its options); the window fits the taller.
+private struct PaneHeightReporter: EnvironmentKey {
+    static let defaultValue: @MainActor (_ part: String, _ height: CGFloat) -> Void = { _, _ in }
+}
+
+extension EnvironmentValues {
+    fileprivate var reportPaneHeight: @MainActor (_ part: String, _ height: CGFloat) -> Void {
+        get { self[PaneHeightReporter.self] }
+        set { self[PaneHeightReporter.self] = newValue }
+    }
+}
+
+private struct ReportsPaneHeight: ViewModifier {
+    let part: String
+    let extra: CGFloat
+    @Environment(\.reportPaneHeight) private var report
+
+    func body(content: Content) -> some View {
+        content.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { report(part, $0 + extra) }
+    }
+}
+
+private struct ReportsFormHeight: ViewModifier {
+    @Environment(\.reportPaneHeight) private var report
+
+    func body(content: Content) -> some View {
+        // A grouped Form scrolls by itself: its content's height, insets included.
+        content.onScrollGeometryChange(for: CGFloat.self) { geometry in
+            geometry.contentSize.height + geometry.contentInsets.top + geometry.contentInsets.bottom
+        } action: { _, height in
+            report("main", height)
+        }
+    }
+}
+
+extension View {
+    /// Put on a Settings page's content inside its ScrollView (its natural height), with `extra`
+    /// for what sits above the ScrollView. See `PaneHeightReporter`.
+    func reportsPaneHeight(_ part: String = "main", adding extra: CGFloat = 0) -> some View {
+        modifier(ReportsPaneHeight(part: part, extra: extra))
+    }
+}
+
+/// The Settings window: a sidebar of pages, like System Settings. The window is as tall as the
+/// page shown needs (within the screen), so pages don't scroll at the default text size; they
+/// only do on a short screen or with large text. Opens on the page `model.settingsPane` names
+/// (set by whoever opened it).
 struct SettingsView: View {
     let model: AppModel
     @AppStorage(AppLanguage.storageKey) private var language = AppLanguage.system.rawValue
+    /// The pages' reported heights (see `PaneHeightReporter`), by page and part.
+    @State private var paneHeights: [SettingsPane: [String: CGFloat]] = [:]
+
+    /// Shortest window: the sidebar's eleven rows and the version.
+    private static let minHeight: CGFloat = 470
+    /// Before the page reports: the former fixed height.
+    private static let defaultHeight: CGFloat = 560
+
+    /// The page's content height, within the screen (less the title bar and a margin).
+    private var height: CGFloat {
+        let screen = (NSScreen.main?.visibleFrame.height ?? 800) - 28 - 24
+        guard let content = paneHeights[model.settingsPane]?.values.max() else { return min(Self.defaultHeight, screen) }
+        return min(max(Self.minHeight, content.rounded(.up)), screen)
+    }
 
     private var panes: [SettingsPane] {
         SettingsPane.allCases.filter { $0 != .updates || model.updater.isAvailable }
@@ -92,7 +154,11 @@ struct SettingsView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(width: 900, height: 560)
+        .frame(width: 900, height: height)
+        .environment(\.reportPaneHeight) { [pane = model.settingsPane] part, value in
+            // Small moves (a hover, a line wrapping differently) don't resize the window.
+            if abs((paneHeights[pane]?[part] ?? 0) - value) >= 2 { paneHeights[pane, default: [:]][part] = value }
+        }
         .navigationTitle(model.settingsPane.title)
         .id(language)
         // While something fails, re-check every 5 s so a fix in Xcode shows up here by itself.
@@ -190,6 +256,7 @@ private struct SettingsPage: View {
             }
         }
         .formStyle(.grouped)
+        .modifier(ReportsFormHeight())
         .toggleStyle(.xside)
         .onAppear(perform: login.refresh)
         .task { await notifications.refresh() }
@@ -499,47 +566,48 @@ private struct UpdatesSection: View {
 
 /// Settings > General: put `xside` in the Terminal, or say how.
 private struct CommandLineRow: View {
-    @State private var link = CommandLineTool.installedLink
-    @State private var manual = false
+    @State private var cli = CommandLineInstall.shared
 
     var body: some View {
         LabeledContent {
-            if link != nil {
-                Button(L("cli.uninstall")) {
-                    CommandLineTool.uninstall()
-                    link = CommandLineTool.installedLink
-                }
+            if cli.link != nil {
+                Button(L("cli.uninstall"), action: cli.uninstall)
             } else {
-                Button(L("cli.install")) {
-                    manual = !CommandLineTool.install()
-                    link = CommandLineTool.installedLink
-                }
+                Button(L("cli.install"), action: cli.install)
             }
         } label: {
             Text(L("cli.title"))
-            if let link {
+            if let link = cli.link {
                 Text(L("cli.installed", link.deletingLastPathComponent().path))
-            } else if manual {
+            } else if cli.needsManual {
                 Text(L("cli.manual"))
-                HStack(spacing: 6) {
-                    Text(CommandLineTool.manualCommand)
-                        .font(.system(size: 10.5, design: .monospaced))
-                        .textSelection(.enabled)
-                        .lineLimit(2)
-                    Button(L("cli.copy")) {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(CommandLineTool.manualCommand, forType: .string)
-                    }
-                    .controlSize(.small)
-                }
+                CommandLineManual()
             } else {
                 Text(L("cli.detail"))
             }
         }
+        .onAppear(perform: cli.refresh)
     }
 }
 
-/// Settings > XSide dans les apps: what new installs start with (each app then keeps its own),
+/// The command to run by hand when no usual folder is writable, with Copy.
+struct CommandLineManual: View {
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(CommandLineTool.manualCommand)
+                .font(.system(size: 10.5, design: .monospaced))
+                .textSelection(.enabled)
+                .lineLimit(2)
+            Button(L("cli.copy")) {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(CommandLineTool.manualCommand, forType: .string)
+            }
+            .controlSize(.small)
+        }
+    }
+}
+
+/// Settings > Module XSide dans les apps: what new installs start with (each app then keeps its own),
 /// and, apart, installing every app without XSide's features.
 private struct InAppDefaultsPage: View {
     @AppStorage(AppModel.inAppShowValidityKey) private var showValidity = true

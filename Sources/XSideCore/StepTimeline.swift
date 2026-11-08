@@ -56,12 +56,14 @@ public struct StepTimeline: Equatable, Sendable {
     }
 
     /// Timeline for a job stage. `waiting` points at the first pipeline step, marked as waiting.
-    public init(steps: [ProgressStep], stage: JobStage?, failed: Bool = false) {
+    /// `skipped`: steps passed over on purpose (the module step for an app installed without
+    /// XSide's features).
+    public init(steps: [ProgressStep], stage: JobStage?, failed: Bool = false, skipped: Set<ProgressStep> = []) {
         switch stage {
-        case nil: self.init(steps: steps, current: nil)
-        case .preparing?: self.init(steps: steps, current: .preparing, failed: failed)
-        case .waiting?: self.init(steps: steps, current: .profile, failed: failed, waiting: true)
-        case .step(let s)?: self.init(steps: steps, current: ProgressStep(s), failed: failed)
+        case nil: self.init(steps: steps, current: nil, skipped: skipped)
+        case .preparing?: self.init(steps: steps, current: .preparing, failed: failed, skipped: skipped)
+        case .waiting?: self.init(steps: steps, current: .profile, failed: failed, waiting: true, skipped: skipped)
+        case .step(let s)?: self.init(steps: steps, current: ProgressStep(s), failed: failed, skipped: skipped)
         }
     }
 
