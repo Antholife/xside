@@ -166,6 +166,8 @@ final class AppModel {
     /// The developer directory passed as `DEVELOPER_DIR`, nil to inherit XSide's environment.
     private let developerDirOverride = OSAllocatedUnfairLock<String?>(initialState: nil)
     private let paths: Paths
+    /// Where the library lives (the `xside` tool's key is written there, see `CLIBridge.Key`).
+    var libraryRoot: URL { paths.root }
     /// One for the app's lifetime: its per-device ordering and its provisioning lock only hold
     /// within one instance. The signing environment is passed per job.
     private let pipeline: SideloadPipeline

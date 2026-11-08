@@ -60,8 +60,11 @@ let testBundleID = ProcessInfo.processInfo.environment["XSIDE_CLI_TEST_BUNDLE_ID
 let testBundleID: String? = nil
 #endif
 let bundleID = testBundleID ?? (debug ? "io.github.xside.XSide.debug" : "io.github.xside.XSide")
-let libraryRoot = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-    .appendingPathComponent(LibraryLocation.folderName(bundleID: bundleID), isDirectory: true)
+let libraryRoot = testBundleID != nil
+    // The stand-in's own folder (its key), never XSide's library.
+    ? URL(fileURLWithPath: ProcessInfo.processInfo.environment["XSIDE_CLI_TEST_LIBRARY"] ?? "/nonexistent", isDirectory: true)
+    : FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent(LibraryLocation.folderName(bundleID: bundleID), isDirectory: true)
 
 if takeFlag("--version") {
     let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
@@ -167,14 +170,16 @@ var isAppRunning: Bool { !NSRunningApplication.runningApplications(withBundleIde
             fail("XSide isn't installed")
         }
     }
-    let request = CLIBridge.Request(command: command)
+    let id = UUID().uuidString
+    /// Read before each send: XSide writes a new key when it starts (`CLIBridge.Key`).
+    var request: CLIBridge.Request { CLIBridge.Request(id: id, command: command, key: CLIBridge.Key.read(in: libraryRoot)) }
     let center = DistributedNotificationCenter.default()
     nonisolated(unsafe) var wait = CLIBridge.Wait(start: Date())
     nonisolated(unsafe) var workingMessage: String?
     let observer = center.addObserver(forName: CLIBridge.replyName(bundleID: bundleID), object: nil, queue: .main) { note in
         guard let answer = CLIBridge.Reply(userInfo: note.userInfo) else { return }
-        wait.received(answer, at: Date(), requestID: request.id)
-        if answer.id == request.id, answer.working { workingMessage = answer.message }
+        wait.received(answer, at: Date(), requestID: id)
+        if answer.id == id, answer.working { workingMessage = answer.message }
     }
     var lastSent = Date.distantPast
     let askedAt = Date()

@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 /// How the `xside` command line tool asks the running app to do something, and gets its answer:
 /// distributed notifications named after the app's bundle id (the debug app has its own). The
@@ -60,17 +61,65 @@ public enum CLIBridge {
         return lines.joined(separator: "\n")
     }
 
-    /// One request: `id` ties the answer to it.
+    /// The key XSide writes at each launch next to its library, readable by the user only
+    /// (0600), and that every request must carry: distributed notifications are heard and posted
+    /// by any program of the session, and the bridge now uninstalls and changes settings
+    /// (review D–G, minor 9). The tool reads it before each send, so a fresh launch's key is
+    /// picked up while it retries.
+    public enum Key {
+        public static let fileName = "cli-key"
+
+        /// A new random key, written (atomically, 0600) to `folder`; returned.
+        public static func create(in folder: URL) throws -> String {
+            var bytes = [UInt8](repeating: 0, count: 32)
+            guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
+                throw CocoaError(.fileWriteUnknown)
+            }
+            let key = bytes.map { String(format: "%02x", $0) }.joined()
+            let fm = FileManager.default
+            try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            let file = folder.appendingPathComponent(fileName)
+            let temporary = folder.appendingPathComponent(".\(fileName)-\(UUID().uuidString)")
+            guard fm.createFile(atPath: temporary.path, contents: Data(key.utf8), attributes: [.posixPermissions: 0o600]) else {
+                throw CocoaError(.fileWriteUnknown)
+            }
+            if rename(temporary.path, file.path) != 0 {
+                try? fm.removeItem(at: temporary)
+                throw CocoaError(.fileWriteUnknown)
+            }
+            return key
+        }
+
+        public static func read(in folder: URL) -> String? {
+            guard let data = try? Data(contentsOf: folder.appendingPathComponent(fileName)) else { return nil }
+            let key = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            return key.isEmpty ? nil : key
+        }
+    }
+
+    /// One request: `id` ties the answer to it; `key`: XSide's current `Key`.
     public struct Request: Equatable, Sendable {
         public let id: String
         public let command: Command
+        public let key: String?
 
-        public init(id: String = UUID().uuidString, command: Command) {
+        public init(id: String = UUID().uuidString, command: Command, key: String? = nil) {
             self.id = id
             self.command = command
+            self.key = key
+        }
+
+        /// The request, only when it carries `key`.
+        public init?(userInfo: [AnyHashable: Any]?, requiringKey key: String) {
+            guard let info = userInfo as? [String: String], info["key"] == key else { return nil }
+            self.init(userInfo: info)
         }
 
         public var userInfo: [String: String] {
+            commandInfo.merging(key.map { ["key": $0] } ?? [:]) { $1 }
+        }
+
+        private var commandInfo: [String: String] {
             switch command {
             case .refreshAll: ["id": id, "command": "refresh-all"]
             case .refresh(let app, let device):
@@ -88,6 +137,8 @@ public enum CLIBridge {
             }
         }
 
+        private init(id: String, key: String?, command: Command) { self.init(id: id, command: command, key: key) }
+
         private static func target(_ command: String, _ id: String, _ record: UUID, _ devices: [String]) -> [String: String] {
             ["id": id, "command": command, "record": record.uuidString, "devices": devices.joined(separator: "\n")]
         }
@@ -95,20 +146,20 @@ public enum CLIBridge {
         public init?(userInfo: [AnyHashable: Any]?) {
             guard let info = userInfo as? [String: String], let id = info["id"] else { return nil }
             switch info["command"] {
-            case "refresh-all": self.init(id: id, command: .refreshAll)
+            case "refresh-all": self.init(id: id, key: info["key"], command: .refreshAll)
             case "refresh":
                 guard let app = info["app"], !app.isEmpty else { return nil }
-                self.init(id: id, command: .refresh(app: app, device: info["device"]))
+                self.init(id: id, key: info["key"], command: .refresh(app: app, device: info["device"]))
             case "pause":
                 // Present but unreadable: refused, never read as "until resumed".
                 if let text = info["seconds"] {
                     guard let seconds = Int(text), seconds > 0 else { return nil }
-                    self.init(id: id, command: .pause(seconds: seconds))
+                    self.init(id: id, key: info["key"], command: .pause(seconds: seconds))
                 } else {
-                    self.init(id: id, command: .pause(seconds: nil))
+                    self.init(id: id, key: info["key"], command: .pause(seconds: nil))
                 }
-            case "resume": self.init(id: id, command: .resume)
-            case "report": self.init(id: id, command: .report)
+            case "resume": self.init(id: id, key: info["key"], command: .resume)
+            case "report": self.init(id: id, key: info["key"], command: .report)
             case "settings", "pause-app", "resume-app", "uninstall":
                 guard let record = info["record"].flatMap(UUID.init(uuidString:)),
                       let devices = info["devices"]?.split(separator: "\n").map(String.init), !devices.isEmpty else { return nil }
@@ -120,16 +171,16 @@ public enum CLIBridge {
                         changes.append(change)
                     }
                     guard !changes.isEmpty else { return nil }
-                    self.init(id: id, command: .editSettings(recordID: record, deviceIDs: devices, changes: changes))
+                    self.init(id: id, key: info["key"], command: .editSettings(recordID: record, deviceIDs: devices, changes: changes))
                 case "pause-app":
                     if let text = info["seconds"] {
                         guard let seconds = Int(text), seconds > 0 else { return nil }
-                        self.init(id: id, command: .pauseApp(recordID: record, deviceIDs: devices, seconds: seconds))
+                        self.init(id: id, key: info["key"], command: .pauseApp(recordID: record, deviceIDs: devices, seconds: seconds))
                     } else {
-                        self.init(id: id, command: .pauseApp(recordID: record, deviceIDs: devices, seconds: nil))
+                        self.init(id: id, key: info["key"], command: .pauseApp(recordID: record, deviceIDs: devices, seconds: nil))
                     }
-                case "resume-app": self.init(id: id, command: .resumeApp(recordID: record, deviceIDs: devices))
-                default: self.init(id: id, command: .uninstall(recordID: record, deviceIDs: devices))
+                case "resume-app": self.init(id: id, key: info["key"], command: .resumeApp(recordID: record, deviceIDs: devices))
+                default: self.init(id: id, key: info["key"], command: .uninstall(recordID: record, deviceIDs: devices))
                 }
             default: return nil
             }

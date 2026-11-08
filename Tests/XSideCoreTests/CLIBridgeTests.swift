@@ -120,3 +120,28 @@ struct CLIBridgeWaitTests {
         #expect(CLIBridge.Wait.Outcome.stillWorking.exitCode == 2)
     }
 }
+
+/// Review D–G minor 9: requests carry a key XSide writes at each launch to a file only the user
+/// can read; a request without it, or with another, is no request.
+struct CLIBridgeKeyTests {
+    @Test func keyFileIsPrivateAndNewAtEachLaunch() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let first = try CLIBridge.Key.create(in: folder)
+        #expect(first.count == 64)
+        #expect(CLIBridge.Key.read(in: folder) == first)
+        let attributes = try FileManager.default.attributesOfItem(atPath: folder.appendingPathComponent(CLIBridge.Key.fileName).path)
+        #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
+        let second = try CLIBridge.Key.create(in: folder)
+        #expect(second != first)
+        #expect(CLIBridge.Key.read(in: folder) == second)
+        #expect(CLIBridge.Key.read(in: folder.appendingPathComponent("none")) == nil)
+    }
+
+    @Test func requestsWithoutTheKeyAreRefused() {
+        let request = CLIBridge.Request(id: "1", command: .report, key: "k1")
+        #expect(CLIBridge.Request(userInfo: request.userInfo, requiringKey: "k1") == request)
+        #expect(CLIBridge.Request(userInfo: request.userInfo, requiringKey: "k2") == nil)
+        #expect(CLIBridge.Request(userInfo: CLIBridge.Request(id: "1", command: .report).userInfo, requiringKey: "k1") == nil)
+    }
+}

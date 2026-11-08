@@ -83,9 +83,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `xside refresh` from the Terminal: done here, answered to the tool (see `CLIBridge`).
     private func listenToCommandLine(_ model: AppModel) {
         guard let bundleID = Bundle.main.bundleIdentifier else { return }
+        // A new key at each launch, which every request must carry (review D–G, minor 9). Without
+        // one written, the tool can't be answered: logged, the rest of XSide goes on.
+        let key: String
+        do { key = try CLIBridge.Key.create(in: model.libraryRoot) } catch {
+            Self.logger.error("command line key not written: \(String(describing: error))")
+            return
+        }
         let center = DistributedNotificationCenter.default()
         center.addObserver(forName: CLIBridge.requestName(bundleID: bundleID), object: nil, queue: .main) { note in
-            guard let request = CLIBridge.Request(userInfo: note.userInfo) else { return }
+            // Without XSide's current key: not from the `xside` tool of this user, or read just
+            // before this launch wrote a new one (the tool reads it again and resends).
+            guard let request = CLIBridge.Request(userInfo: note.userInfo, requiringKey: key) else { return }
             MainActor.assumeIsolated {
                 // Just launched by the tool: answered once the library is read (it asks again).
                 guard model.hasLoadedRecords else { return }
