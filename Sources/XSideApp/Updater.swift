@@ -20,13 +20,13 @@ final class Updater {
     }
 
     /// Releases offered: betas are tagged `<sparkle:channel>beta</sparkle:channel>` in the feed,
-    /// stable ones have no channel.
+    /// stable ones have no channel. There is no stable release yet.
     enum Channel: String, CaseIterable, Identifiable {
         case beta, stable
         var id: String { rawValue }
         static let storageKey = "updateChannel"
-        /// Selectable from 1.1.0-beta, ahead of the first stable release (it offers nothing until then).
-        static let stableAvailable = true
+        /// Until 1.0 ships, only betas exist: the stable channel would offer nothing.
+        static let stableAvailable = false
     }
 
     @ObservationIgnored private let controller: SPUStandardUpdaterController?

@@ -559,8 +559,6 @@
 "whatsNew.110.switch.text" = "Les interrupteurs d'XSide prennent le dégradé de la marque, et répondent au clavier (anneau de focus, Espace).";
 "whatsNew.110.inject.title" = "« Injection du module XSide »";
 "whatsNew.110.inject.text" = "L'étape d'installation autrefois « Ajout des fonctionnalités XSide » porte ce nom, et dit quand elle a été ignorée.";
-"whatsNew.110.stable.title" = "Le canal Stable";
-"whatsNew.110.stable.text" = "Réglages > Mises à jour permet maintenant de passer au canal Stable, prêt pour la 1.1.0.";
 "whatsNew.106.updated.title" = "Mise à jour, pas juste rafraîchie";
 "whatsNew.106.updated.text" = "Quand tu installes une autre version d'une app par-dessus, la carte dans l'app dit « Mise à jour par XSide » (ou « Version antérieure installée ») avec l'ancienne et la nouvelle version.";
 "whatsNew.106.versions.title" = "La version de chaque app";

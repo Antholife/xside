@@ -559,8 +559,6 @@
 "whatsNew.110.switch.text" = "XSide's switches now use the brand gradient, and respond to the keyboard (focus ring, Space).";
 "whatsNew.110.inject.title" = "\"Injecting the XSide module\"";
 "whatsNew.110.inject.text" = "The install step formerly called \"Adding XSide features\" now has this name, and says when it was skipped.";
-"whatsNew.110.stable.title" = "The Stable channel";
-"whatsNew.110.stable.text" = "Settings > Updates can now switch to the Stable channel, ready for 1.1.0.";
 "whatsNew.106.updated.title" = "Updated, not just refreshed";
 "whatsNew.106.updated.text" = "When you install another version of an app over it, the card in the app says \"Updated by XSide\" (or \"Older version installed\") with the old and the new version.";
 "whatsNew.106.versions.title" = "Each app's version";

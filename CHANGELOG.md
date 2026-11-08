@@ -18,7 +18,6 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 - **A per-app "XSide Settings..." window** (the app's ... menu in the panel), with the same options, applied at the app's next refresh or opening. For each device it shows whether the iPhone is reachable ("Reachable", "Not connected yet: tap Refresh once in the app", "Not seen since ...") and whether the Mac's changes are pending, written or confirmed by the iPhone. Nothing is claimed active before the iPhone confirmed it.
 - **Install without XSide features**, for apps that refuse to launch because they detect a change: for all apps (*Settings > XSide in the apps*) or per app (step 3, and the per-app window), after a confirmation listing what's lost. XSide keeps refreshing them; the per-app choice wins over the default. Applies at each app's next refresh.
 - The panel shows who paused an app's refreshes (this iPhone, this iPad or the Mac) and uses two-line subtitles.
-- The **Stable update channel** can now be chosen in *Settings > Updates* (ahead of the first stable release).
 
 ### Changed
 - **Settings reorganized** into General, Refreshing, Installing, XSide in the apps (defaults for new installs), Notifications, Xcode and signing, Updates, Reports & Logs, About.
