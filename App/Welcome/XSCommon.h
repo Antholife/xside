@@ -69,7 +69,11 @@ UIFont *XSScaledFont(CGFloat size, UIFontWeight weight);
 void XSWhenForeground(NSTimeInterval settle, void (^block)(void));
 /// XSide added its page to the app's iOS Settings (keys "io.github.xside.settings.*").
 BOOL XSHasSettingsSection(void);
-/// Opens XSide's page of the app in iOS Settings (else the app's page), once the app is in the foreground (logged as [XSide]).
+/// The app declares Bonjour services of its own (e.g. Google Cast): it may itself make iOS ask for
+/// the local network, at a moment XSide doesn't choose (device feedback round 2, P4).
+BOOL XSAppUsesLocalNetwork(void);
+/// Opens the app's page in iOS Settings, where XSide's row is, once the app is in the foreground
+/// (logged as [XSide]). iOS has no way to open XSide's page under it directly.
 void XSOpenAppSettings(void);
 
 /// The primary button: XSide's violet-to-pink gradient.
@@ -91,9 +95,10 @@ BOOL XSLoadSettings(void);
 /// YES once after an `XSLoadSettings` that found "Rafraîchissement automatique" changed in iOS
 /// Settings: the one setting the Mac must act on, so it is told at once (see XSTellAutoRefreshChange).
 BOOL XSTakeAutoRefreshChangedOnPhone(void);
-/// YES once after an `XSLoadSettings` that found another XSide setting changed in iOS Settings:
-/// the next check-in sends it, saying so in a pill (see XSSendSettings).
-BOOL XSTakeSettingsChangedOnPhone(void);
+/// Once after an `XSLoadSettings` that found other XSide settings changed in iOS Settings: those
+/// fields (in XSSettingFields order; empty when an earlier build only saved that something
+/// changed), else nil. The next check-in sends them, saying which in a pill (see XSSendSettings).
+NSArray<NSString *> *_Nullable XSTakeSettingsChangedOnPhone(void);
 /// The app goes to the background: a change found in iOS Settings later was made after now.
 void XSNoteLeaving(void);
 /// Captures the app's preferences file date, from the library's constructor: before any of the

@@ -281,7 +281,12 @@ static void XSHideWindow(void) {
     UILabel *refused = [self label:[NSString stringWithFormat:[self t:@"Si tu refuses : XSide continue de rafraîchir l'app depuis le Mac, mais rien ne peut se faire depuis l'%@. Tu pourras l'autoriser plus tard dans %@ > Réseau local."
                                                                   en:@"If you don't: XSide still refreshes the app from the Mac, but nothing can be done from the %@. You can allow it later in %@ > Local Network."], device, XSSettingsPath()]
                               size:13 weight:UIFontWeightRegular color:UIColor.secondaryLabelColor];
-    return @[head, why, ask, refused];
+    if (!XSAppUsesLocalNetwork()) return @[head, why, ask, refused];
+    // The app may already have made iOS ask for itself (e.g. to find a TV): the same permission.
+    UILabel *own = [self label:[NSString stringWithFormat:[self t:@"%@ se sert aussi du réseau local pour ses propres fonctions : iOS a pu déjà le demander pour elle. C'est la même autorisation."
+                                                             en:@"%@ also uses the local network for its own features: iOS may already have asked for it. It's the same permission."], XSAppName()]
+                          size:13 weight:UIFontWeightRegular color:UIColor.secondaryLabelColor];
+    return @[head, why, ask, own, refused];
 }
 
 - (NSArray<UIView *> *)notificationViews {
@@ -366,8 +371,12 @@ static void XSHideWindow(void) {
     NSLayoutConstraint *fitsContent = [scroll.heightAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.heightAnchor];
     // Below the labels' compression resistance (750): too tall, it scrolls rather than squashing them.
     fitsContent.priority = UILayoutPriorityDefaultHigh - 1;
+    // Full width, capped on iPad. Never wider than the screen (required): with the full width at
+    // the labels' own priority (750), Auto Layout could widen the sheet past the screen for a long
+    // line instead of wrapping it, and the content then touched or crossed the edges (device
+    // feedback round 2, P5).
     NSLayoutConstraint *fullWidth = [_sheet.widthAnchor constraintEqualToAnchor:self.view.widthAnchor];
-    fullWidth.priority = UILayoutPriorityDefaultHigh; // capped on iPad
+    fullWidth.priority = UILayoutPriorityRequired - 1;
     [NSLayoutConstraint activateConstraints:@[
         [_dim.topAnchor constraintEqualToAnchor:self.view.topAnchor],
         [_dim.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
@@ -376,6 +385,7 @@ static void XSHideWindow(void) {
         [_sheet.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
         [_sheet.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [_sheet.widthAnchor constraintLessThanOrEqualToConstant:500],
+        [_sheet.widthAnchor constraintLessThanOrEqualToAnchor:self.view.widthAnchor],
         fullWidth,
         [grab.topAnchor constraintEqualToAnchor:_sheet.topAnchor constant:10],
         [grab.centerXAnchor constraintEqualToAnchor:_sheet.centerXAnchor],
@@ -383,8 +393,9 @@ static void XSHideWindow(void) {
         [grab.heightAnchor constraintEqualToConstant:5],
         [_sheet.topAnchor constraintGreaterThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:12],
         [scroll.topAnchor constraintEqualToAnchor:grab.bottomAnchor constant:18],
-        [scroll.leadingAnchor constraintEqualToAnchor:_sheet.leadingAnchor constant:20],
-        [scroll.trailingAnchor constraintEqualToAnchor:_sheet.trailingAnchor constant:-20],
+        // At least 24 pt inside the safe area (landscape, rounded corners), as iOS's own sheets.
+        [scroll.leadingAnchor constraintEqualToAnchor:_sheet.safeAreaLayoutGuide.leadingAnchor constant:24],
+        [scroll.trailingAnchor constraintEqualToAnchor:_sheet.safeAreaLayoutGuide.trailingAnchor constant:-24],
         [scroll.bottomAnchor constraintEqualToAnchor:_sheet.safeAreaLayoutGuide.bottomAnchor constant:-10],
         fitsContent,
         [stack.topAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.topAnchor],
@@ -553,12 +564,16 @@ static void XSHideWindow(void) {
     [self.view addSubview:holder];
     [holder addSubview:card];
     [card.contentView addSubview:stack];
-    NSLayoutConstraint *wide = [holder.widthAnchor constraintEqualToAnchor:self.view.widthAnchor constant:-24];
-    wide.priority = UILayoutPriorityDefaultHigh; // capped on iPad
+    // Capped on iPad; never wider than the screen (see the sheet: device feedback round 2, P5).
+    NSLayoutConstraint *wide = [holder.widthAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.widthAnchor constant:-24];
+    wide.priority = UILayoutPriorityRequired - 1;
+    [title setContentCompressionResistancePriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisHorizontal];
+    [subtitle setContentCompressionResistancePriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisHorizontal];
     [NSLayoutConstraint activateConstraints:@[
         [holder.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-8],
         [holder.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [holder.widthAnchor constraintLessThanOrEqualToConstant:460],
+        [holder.widthAnchor constraintLessThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.widthAnchor constant:-24],
         wide,
         [card.topAnchor constraintEqualToAnchor:holder.topAnchor],
         [card.bottomAnchor constraintEqualToAnchor:holder.bottomAnchor],
@@ -658,7 +673,11 @@ static void XSShowSheet(NSDate *expiry, NSArray<NSString *> *pages, BOOL startsN
     UIWindowScene *scene = XSScene();
     if (!scene) {
         if (attempt + 1 >= XSMaxAttempts) {
-            if (done) done();
+            // Never shown: what waited for it goes ahead, except a network access that was waiting
+            // for the "Réseau local" page (device feedback round 2, P4: it used to run anyway, so
+            // iOS asked with no page before). It is dropped; the next access shows the page.
+            if (done && ![pages containsObject:@"network"]) done();
+            else if (done) NSLog(@"[XSide] local network: no screen for its page, access dropped");
             XSSheetEnded();
             return;
         }
@@ -698,12 +717,13 @@ static void XSShowFirstSheet(NSDate *expiry) {
 
 void XSExplainNetworkThen(void (^block)(void)) {
     XSAfterSheet(^{
-        if (!XSNeedsNetworkExplanation(XSHasChannel(), XSChannelGranted(), XSNetworkExplained(), XSCurrentSettings())) {
+        if (!XSNeedsNetworkExplanation(XSHasChannel(), XSChannelGranted(), XSNetworkExplained())) {
             block();
             return;
         }
         // The first network access after the first-launch sheet (an app installed before 1.1, or a
         // sheet left before its page): the "Réseau local" page on its own, then the access.
+        NSLog(@"[XSide] local network: its page first, then XSide's first access");
         XSSheetUp = YES;
         XSShowSheet(nil, @[@"network"], NO, block, 0);
     });
@@ -767,13 +787,26 @@ void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded) {
 
 // MARK: - Each launch
 
+/// The launch pill, or the one pill of news when there is some (device feedback round 2, P1/P2):
+/// news (a change, from the Mac or sent to it) replaces the plain validity line, which says nothing
+/// urgent; an urgent launch pill (late, paused and close to expiry, a failed Refresh) shows first
+/// and the news after it.
+static void XSShowLaunchPill(NSDate *expiry, XSPillContent *news) {
+    XSPillContent *content = XSLaunchPillContent(expiry);
+    BOOL urgent = content && (content.tone != XSPillToneNeutral || content.answer);
+    if (news && !urgent) { XSShowPill(news); return; }
+    if (content) XSShowPill(content);
+    if (news) XSShowPillWhenFree(news);
+    else if (!content) XSOfferNotificationsIfNeeded(^{});
+}
+
 /// What this cold launch shows: the sheet or the card for a new signature (when the settings
 /// allow it), else the pill; never both (spec §1).
 static void XSLaunch(void) {
     XSLoadSettings(); // what the person changed in iOS Settings applies from this launch on
     XSUpdateShortcuts(); // in the slots the app leaves, in the language just loaded
     BOOL tellAutoRefresh = XSTakeAutoRefreshChangedOnPhone();
-    BOOL sendSettings = XSTakeSettingsChangedOnPhone();
+    NSArray<NSString *> *sendFields = XSTakeSettingsChangedOnPhone();
     // Asked from iOS Settings: the same as the Refresh quick action, once the app is on screen
     // (its pills replace the launch pill). After this launch decided on the sheet: it waits for it.
     if (XSTakeRefreshOnLaunch()) dispatch_async(dispatch_get_main_queue(), ^{ XSWhenForeground(1.0, ^{ XSRequestRefresh(); }); });
@@ -796,30 +829,39 @@ static void XSLaunch(void) {
     if (isNew && (refreshed ? XSShowsRefreshCard(settings) : XSShowsInstallSheet(settings))) {
         if (refreshed) XSShowBanner(expiry, previous, 0);
         else XSShowFirstSheet(expiry);
-    } else {
-        // Turned off: counted as announced all the same, so it doesn't come back later.
-        if (isNew) XSMarkAnnounced(expiry);
-        void (^pill)(void) = ^{
-            XSPillContent *content = XSLaunchPillContent(expiry);
-            if (content) XSShowPill(content);
-            else XSOfferNotificationsIfNeeded(^{});
-        };
-        // A refresh asked from here was never heard of: XSide is asked first (≤ 3 s), so the pill
-        // tells how it really went.
-        if ([XSPendingFailure() isEqual:XSNoOutcomeKey] && XSChannelGranted()) {
-            XSCheckIn(pill);
-            return;
-        }
-        pill();
+        // Off the launch's way; silent, and only once the local network was allowed. Automatic
+        // refresh changed in iOS Settings: told now, patiently (the Mac must act on it).
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            if (tellAutoRefresh) XSWhenForeground(0, ^{ XSTellAutoRefreshChange(); });
+            else if (sendFields) XSAfterSheet(^{ XSSendSettings(sendFields, ^(XSPillContent *result) { if (result) XSShowPillWhenFree(result); }); });
+            else XSCheckIn(^(XSPillContent *news) { if (news) XSShowPillWhenFree(news); });
+        });
+        return;
     }
-    // Off the launch's way; silent, and only once the local network was allowed. Automatic refresh
-    // changed in iOS Settings: told now, patiently, even before (the Mac must act on it). Other
-    // settings changed there: sent with a pill, after the launch pill (XSShowPillWhenFree).
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if (tellAutoRefresh) XSWhenForeground(0, ^{ XSTellAutoRefreshChange(); });
-        else if (sendSettings) XSAfterSheet(^{ XSSendSettings(nil); });
-        else XSCheckIn(nil);
-    });
+    // Turned off: counted as announced all the same, so it doesn't come back later.
+    if (isNew) XSMarkAnnounced(expiry);
+    if (tellAutoRefresh) {
+        // The change's own pill says it (device feedback round 2, P1): the launch pill only when
+        // urgent, not a second "automatic refresh off" line.
+        XSPillContent *content = XSLaunchPillContent(expiry);
+        if (content && (content.tone != XSPillToneNeutral || content.answer)) XSShowPill(content);
+        XSWhenForeground(0, ^{ XSTellAutoRefreshChange(); });
+        return;
+    }
+    if (sendFields) {
+        // Sent first (≤ 5 s), then one pill: the send's, or the launch pill when nothing was sent.
+        XSSendSettings(sendFields, ^(XSPillContent *result) { XSShowLaunchPill(expiry, result); });
+        return;
+    }
+    // XSide is asked first (≤ 3 s, once the local network was allowed), so the pill tells how
+    // things stand now: a change made on the Mac meanwhile (one pill saying which), how a Refresh
+    // asked from here went, the pause as it is now (device feedback round 2, P2: the pill used to
+    // say "automatic refresh off" just before the check-in turned it back on).
+    if (XSChannelGranted() && XSHasChannel()) {
+        XSCheckIn(^(XSPillContent *news) { XSShowLaunchPill(expiry, news); });
+        return;
+    }
+    XSShowLaunchPill(expiry, nil);
 }
 
 /// Back from the background (not a launch: no validity pill): changes made meanwhile in iOS
@@ -841,17 +883,25 @@ static void XSReturn(void) {
     // A refresh asked from here that failed or went unheard while the app was away: said now,
     // after asking XSide how it went.
     BOOL pending = XSPendingFailure() != nil;
-    BOOL sendSettings = XSTakeSettingsChangedOnPhone();
+    NSArray<NSString *> *sendFields = XSTakeSettingsChangedOnPhone();
     if (XSTakeAutoRefreshChangedOnPhone()) {
         XSWhenForeground(0.5, ^{ XSTellAutoRefreshChange(); });
         return;
     }
-    if (sendSettings && XSChannelGranted()) {
-        XSWhenForeground(0.5, ^{ XSAfterSheet(^{ XSSendSettings(^{ if (pending) XSShowPendingPill(); }); }); });
+    if (sendFields && XSChannelGranted()) {
+        XSWhenForeground(0.5, ^{ XSAfterSheet(^{
+            XSSendSettings(sendFields, ^(XSPillContent *result) {
+                if (pending) XSShowPendingPill();
+                if (result) XSShowPillWhenFree(result);
+            });
+        }); });
         return;
     }
     if (!XSShouldCheckInOnReturn(changed, pending, XSLastCheckIn(), NSDate.date)) return;
-    XSCheckIn(^{ if (changed || pending) XSShowPendingPill(); });
+    XSCheckIn(^(XSPillContent *news) {
+        if (changed || pending) XSShowPendingPill();
+        if (news) XSShowPillWhenFree(news);
+    });
 }
 
 __attribute__((constructor)) static void XSideWelcomeInit(void) {
@@ -864,6 +914,14 @@ __attribute__((constructor)) static void XSideWelcomeInit(void) {
         [NSNotificationCenter.defaultCenter removeObserver:observer];
         observer = nil;
         XSLaunch();
+        // In front: XSide is asked every few seconds; not while away (device feedback round 2, P3).
+        XSStartForegroundUpdates();
+        [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification
+                                                        object:nil queue:NSOperationQueue.mainQueue
+                                                    usingBlock:^(NSNotification *n) { XSStartForegroundUpdates(); }];
+        [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillResignActiveNotification
+                                                        object:nil queue:NSOperationQueue.mainQueue
+                                                    usingBlock:^(NSNotification *n) { XSStopForegroundUpdates(); }];
         [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillEnterForegroundNotification
                                                         object:nil queue:NSOperationQueue.mainQueue
                                                     usingBlock:^(NSNotification *n) { XSReturn(); }];

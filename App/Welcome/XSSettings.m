@@ -35,7 +35,9 @@ static NSObject *XSLock(void) {
 
 static NSDictionary *XSCached; // guarded by XSLock()
 static BOOL XSAutoRefreshChangedOnPhone; // guarded by XSLock()
-static BOOL XSOtherChangedOnPhone; // guarded by XSLock()
+/// The other fields changed in iOS Settings, in XSSettingFields order, so the pill that sends them
+/// can say which (device feedback round 2, P2). Guarded by XSLock().
+static NSMutableArray<NSString *> *XSOtherChangedOnPhone;
 static NSDate *XSLookedAt; // guarded by XSLock()
 
 /// The latest time the library looked at the rows: this run's, else the one saved when it left.
@@ -132,8 +134,9 @@ BOOL XSLoadSettings(void) {
                 XSAutoRefreshChangedOnPhone = YES;
                 [d setBool:YES forKey:XSAutoRefreshChangedKey];
             } else {
-                XSOtherChangedOnPhone = YES;
-                [d setBool:YES forKey:XSOtherChangedKey];
+                if (!XSOtherChangedOnPhone) XSOtherChangedOnPhone = [NSMutableArray array];
+                if (![XSOtherChangedOnPhone containsObject:f]) [XSOtherChangedOnPhone addObject:f];
+                [d setObject:[XSOtherChangedOnPhone copy] forKey:XSOtherChangedKey];
             }
         }
         local = noticed;
@@ -158,13 +161,24 @@ BOOL XSTakeAutoRefreshChangedOnPhone(void) {
     }
 }
 
-BOOL XSTakeSettingsChangedOnPhone(void) {
+NSArray<NSString *> *XSTakeSettingsChangedOnPhone(void) {
     @synchronized (XSLock()) {
         NSUserDefaults *d = XSDefaults();
-        BOOL changed = XSOtherChangedOnPhone || [d boolForKey:XSOtherChangedKey];
-        XSOtherChangedOnPhone = NO;
-        if ([d objectForKey:XSOtherChangedKey]) [d removeObjectForKey:XSOtherChangedKey];
-        return changed;
+        id saved = [d objectForKey:XSOtherChangedKey];
+        NSMutableOrderedSet<NSString *> *fields = [NSMutableOrderedSet orderedSet];
+        if ([saved isKindOfClass:NSArray.class]) {
+            for (id f in saved) if ([XSSettingFields() containsObject:f]) [fields addObject:f];
+        }
+        [fields addObjectsFromArray:XSOtherChangedOnPhone ?: @[]];
+        // A flag saved by an earlier build (a plain YES) says something changed, not what.
+        BOOL changed = fields.count > 0 || ([saved isKindOfClass:NSNumber.class] && [saved boolValue]);
+        XSOtherChangedOnPhone = nil;
+        if (saved) [d removeObjectForKey:XSOtherChangedKey];
+        if (!changed) return nil;
+        // In field order, as XSChangeTexts lists them.
+        NSMutableArray<NSString *> *ordered = [NSMutableArray array];
+        for (NSString *f in XSSettingFields()) if ([fields containsObject:f]) [ordered addObject:f];
+        return ordered;
     }
 }
 

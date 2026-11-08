@@ -128,43 +128,62 @@ static void XSHidePillWindow(UIWindow *window, BOOL gone) {
     textStack.axis = UILayoutConstraintAxisVertical;
     textStack.spacing = 2;
 
+    // The text takes the whole width beside the icon (and the spinner) and wraps on as many lines
+    // as it needs; a button goes on its own line under it, at the trailing edge, so it never
+    // squeezes the text (device feedback round 2, P6).
+    for (UIView *label in textStack.arrangedSubviews) {
+        [label setContentCompressionResistancePriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisHorizontal];
+    }
     NSMutableArray<UIView *> *row = [NSMutableArray arrayWithObjects:icon, textStack, nil];
     if (c.busy) {
         UIActivityIndicatorView *spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
         [spinner startAnimating];
+        [spinner setContentCompressionResistancePriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
         [row addObject:spinner];
     }
+    UIStackView *top = [[UIStackView alloc] initWithArrangedSubviews:row];
+    top.spacing = 10;
+    top.alignment = twoLines ? UIStackViewAlignmentTop : UIStackViewAlignmentCenter;
+    NSMutableArray<UIView *> *lines = [NSMutableArray arrayWithObject:top];
     if (c.buttonTitle.length) {
         XSGradientButton *button = [XSGradientButton buttonWithType:UIButtonTypeCustom];
         ((CAGradientLayer *)button.layer).cornerRadius = 15;
         UIButtonConfiguration *config = [UIButtonConfiguration plainButtonConfiguration];
-        config.contentInsets = NSDirectionalEdgeInsetsMake(6, 12, 6, 12);
+        config.contentInsets = NSDirectionalEdgeInsetsMake(6, 14, 6, 14);
         config.baseForegroundColor = UIColor.whiteColor;
         config.attributedTitle = [[NSAttributedString alloc] initWithString:c.buttonTitle attributes:@{
             NSFontAttributeName: XSScaledFont(13, UIFontWeightSemibold)}];
+        config.titleLineBreakMode = NSLineBreakByWordWrapping;
         button.configuration = config;
-        [button setContentCompressionResistancePriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
-        [button setContentHuggingPriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
         [button addTarget:self action:@selector(tapButton) forControlEvents:UIControlEventTouchUpInside];
         [button.heightAnchor constraintGreaterThanOrEqualToConstant:30].active = YES;
-        [row addObject:button];
+        // Trailing, under the text: a spacer on the leading side.
+        UIView *spacer = [UIView new];
+        [spacer setContentHuggingPriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisHorizontal];
+        [button setContentHuggingPriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
+        UIStackView *buttonRow = [[UIStackView alloc] initWithArrangedSubviews:@[spacer, button]];
+        [lines addObject:buttonRow];
     }
-    UIStackView *content = [[UIStackView alloc] initWithArrangedSubviews:row];
-    content.spacing = 10;
-    content.alignment = twoLines ? UIStackViewAlignmentTop : UIStackViewAlignmentCenter;
-    if (c.buttonTitle.length) content.alignment = UIStackViewAlignmentCenter;
+    UIStackView *content = [[UIStackView alloc] initWithArrangedSubviews:lines];
+    content.axis = UILayoutConstraintAxisVertical;
+    content.spacing = 8;
 
     for (UIView *v in @[holder, blur, content]) v.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:holder];
     [holder addSubview:blur];
     [blur.contentView addSubview:content];
-    // Almost full width (10 pt each side), capped on iPad.
-    NSLayoutConstraint *wide = [holder.widthAnchor constraintEqualToAnchor:self.view.widthAnchor constant:-20];
-    wide.priority = UILayoutPriorityDefaultHigh;
+    // Every pill the same width: the screen's less 10 pt each side (in the safe area), capped on
+    // iPad. The cap and the screen are required, so a long text wraps and the pill grows in height
+    // instead of growing past the screen, where it was cut (device feedback round 2, P6): at the
+    // same priority as the labels' resistance, Auto Layout could widen the pill instead.
+    UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
+    NSLayoutConstraint *wide = [holder.widthAnchor constraintEqualToAnchor:safe.widthAnchor constant:-20];
+    wide.priority = UILayoutPriorityRequired - 1;
     [NSLayoutConstraint activateConstraints:@[
-        [holder.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:6],
+        [holder.topAnchor constraintEqualToAnchor:safe.topAnchor constant:6],
         [holder.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [holder.widthAnchor constraintLessThanOrEqualToConstant:500],
+        [holder.widthAnchor constraintLessThanOrEqualToAnchor:safe.widthAnchor constant:-20],
         wide,
         [blur.topAnchor constraintEqualToAnchor:holder.topAnchor],
         [blur.bottomAnchor constraintEqualToAnchor:holder.bottomAnchor],
@@ -419,15 +438,25 @@ XSPillContent *XSLaunchPillContent(NSDate *expiry) {
 
     if (!XSSettingBool(s, @"autoRefresh")) {
         // Spec "Late pill when paused": never "XSide couldn't refresh it", under the same switches.
-        if (!XSShowsLatePill(s, pausedLate) && !XSShowsValidityPill(s, pausedLate)) return nil;
+        // Not news (the change had its own pill when it was made, device feedback round 2, P1):
+        // the state, as part of the launch line ("valable encore 6 jours · rafraîchissement
+        // automatique en pause"), and a warning only when it gets close to expiry.
         BOOL byDevice = [s[@"autoRefresh"][@"changedBy"] isEqual:@"device"];
         NSString *who = byDevice ? [NSString stringWithFormat:fr ? @"cet %@" : @"this %@", device]
                                  : (fr ? @"le Mac" : @"the Mac");
-        c.lead = [NSString stringWithFormat:fr ? @"Rafraîchissement automatique désactivé depuis %@ · expire le "
-                                               : @"Automatic refresh turned off from %@ · expires ", who];
-        c.strong = XSDate(expiry);
-        c.tone = left < 86400 ? XSPillToneRed : pausedLate ? XSPillToneOrange : XSPillToneNeutral;
-        c.duration = c.tone == XSPillToneNeutral ? 3 : 8;
+        if (XSShowsLatePill(s, pausedLate)) {
+            c.lead = fr ? @"Rafraîchissement automatique en pause · expire le " : @"Automatic refresh paused · expires ";
+            c.strong = XSDate(expiry);
+            c.hint = [NSString stringWithFormat:fr ? @"En pause depuis %@. Réactive-le pour que XSide la rafraîchisse."
+                                                   : @"Paused from %@. Turn it back on for XSide to refresh it.", who];
+            c.tone = left < 86400 ? XSPillToneRed : XSPillToneOrange;
+            c.duration = 8;
+            return c;
+        }
+        if (!XSShowsValidityPill(s, pausedLate)) return nil;
+        XSTimeLeft(left, c);
+        c.tail = fr ? @" · rafraîchissement automatique en pause" : @" · automatic refresh paused";
+        c.duration = 4;
         return c;
     }
 

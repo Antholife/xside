@@ -107,14 +107,30 @@ BOOL XSShowsMacUpdatePill(NSDictionary *s);
 /// (`channel`) and the local network was neither allowed (`granted`) nor explained yet, then
 /// "notifications" when iOS will be asked for them (`askNotifications`).
 NSArray<NSString *> *XSSheetPages(BOOL channel, BOOL granted, BOOL explained, BOOL askNotifications);
-/// The first network access must wait for the "Réseau local" page: the app talks to XSide, the
-/// local network is neither allowed nor explained yet, and the sheet is allowed by the settings
-/// (with every message off, nothing is shown and the access goes ahead as before).
-BOOL XSNeedsNetworkExplanation(BOOL channel, BOOL granted, BOOL explained, NSDictionary *s);
+/// The first network access must wait for the "Réseau local" page: the app talks to XSide and the
+/// local network is neither allowed nor explained yet. Whatever the messages: the page is what
+/// the iOS prompt is about, not one of XSide's messages (device feedback round 2, P4: with every
+/// message off, the access used to go ahead with no page).
+BOOL XSNeedsNetworkExplanation(BOOL channel, BOOL granted, BOOL explained);
 
-/// XSide's own page in iOS Settings, asked by the app's real bundle id: Settings' undocumented
-/// "App-prefs:<id>&path=<specifier id>" (the child pane row's id, written by SettingsBundle).
-NSString *XSSettingsPaneURLString(NSString *bundleID);
+// MARK: What a change pill says (device feedback round 2, P2)
+
+/// The texts of the one pill for a settings change (`fields`, in XSSettingFields order, with
+/// their new values in `s`): {lead, list?}. `byMac`: the Mac changed them (a check-in reply
+/// brought them); otherwise the phone did and XSide was told. One field: the lead says which
+/// and how ("Rafraîchissement automatique réactivé depuis XSide sur ton Mac"); several (or none
+/// known): a general lead and, for several, `list` ("Rappel avant l'expiration : désactivé · …").
+/// Names are the rows' titles in iOS Settings.
+NSDictionary<NSString *, NSString *> *XSChangeTexts(NSArray<NSString *> *fields, NSDictionary *s, BOOL byMac, BOOL french);
+
+// MARK: Live updates while the app is in front (device feedback round 2, P3)
+
+/// Seconds between two check-ins while the app is in front: 15, or 45 in Low Power Mode.
+NSTimeInterval XSForegroundPollInterval(BOOL lowPower);
+/// A check-in is due now: the app talks to XSide (`channel`), the local network was allowed
+/// (`granted`: polling never makes iOS ask), and the last check-in (any kind) is at least one
+/// interval old.
+BOOL XSShouldPoll(BOOL channel, BOOL granted, NSDate *_Nullable lastCheckIn, NSDate *now, BOOL lowPower);
 
 /// The title of XSide's row in the app's Settings.bundle page (`root`: its Root.plist), as XSide
 /// wrote it at signing: plain text in the installation's language, the key of the translations

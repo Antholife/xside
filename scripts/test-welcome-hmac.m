@@ -262,15 +262,59 @@ int main(int argc, const char *argv[]) {
         check([XSSheetPages(NO, NO, NO, YES) isEqual:(@[@"welcome", @"notifications"])]
               && [XSSheetPages(YES, YES, NO, NO) isEqual:@[@"welcome"]]
               && [XSSheetPages(YES, NO, YES, NO) isEqual:@[@"welcome"]], @"sheet: no page for what needs no asking");
-        NSDictionary *allOn = S(YES, YES, YES, YES);
-        check(XSNeedsNetworkExplanation(YES, NO, NO, allOn), @"network explained before the first access");
-        check(!XSNeedsNetworkExplanation(NO, NO, NO, allOn) && !XSNeedsNetworkExplanation(YES, YES, NO, allOn)
-              && !XSNeedsNetworkExplanation(YES, NO, YES, allOn), @"network: no channel, already allowed, or already explained");
-        check(!XSNeedsNetworkExplanation(YES, NO, NO, S(NO, NO, NO, NO)), @"network: every message off keeps the old behaviour");
+        check(XSNeedsNetworkExplanation(YES, NO, NO), @"network explained before the first access");
+        check(!XSNeedsNetworkExplanation(NO, NO, NO) && !XSNeedsNetworkExplanation(YES, YES, NO)
+              && !XSNeedsNetworkExplanation(YES, NO, YES), @"network: no channel, already allowed, or already explained");
+        // Device feedback round 2, P4: the explanation comes before iOS asks whatever the messages
+        // (it is not one of XSide's messages but what the iOS prompt is about), so it no longer
+        // depends on the settings.
 
-        // B5: XSide's own page in iOS Settings, by the app's real bundle id.
-        check([XSSettingsPaneURLString(@"com.example.app") isEqualToString:@"App-prefs:com.example.app&path=io.github.xside.settings.pane"],
-              @"settings pane URL");
+        // Device feedback round 2, P2: a change pill says what changed.
+        NSDictionary *one = XSSettingsSetting(adopted, @"autoRefresh", @YES, at(50), @"mac");
+        check([XSChangeTexts(@[@"autoRefresh"], one, YES, YES)[@"lead"]
+                  isEqual:@"Rafraîchissement automatique réactivé depuis XSide sur ton Mac"]
+              && [XSChangeTexts(@[@"autoRefresh"], one, YES, NO)[@"lead"]
+                  isEqual:@"Automatic refresh turned back on from XSide on your Mac"]
+              && XSChangeTexts(@[@"autoRefresh"], one, YES, YES)[@"list"] == nil, @"change pill: one field from the Mac says which");
+        NSDictionary *offed = XSSettingsSetting(adopted, @"autoRefresh", @NO, at(50), @"mac");
+        check([XSChangeTexts(@[@"autoRefresh"], offed, YES, YES)[@"lead"]
+                  isEqual:@"Rafraîchissement automatique désactivé depuis XSide sur ton Mac"], @"change pill: turned off from the Mac");
+        NSDictionary *rem = XSSettingsSetting(adopted, @"reminder", @NO, at(50), @"mac");
+        check([XSChangeTexts(@[@"reminder"], rem, YES, YES)[@"lead"] isEqual:@"« Rappel avant l'expiration » désactivé depuis ton Mac"]
+              && [XSChangeTexts(@[@"reminder"], rem, YES, NO)[@"lead"] isEqual:@"\"Reminder before expiry\" turned off from your Mac"],
+              @"change pill: a switch from the Mac, by its row's name");
+        NSDictionary *lang = XSSettingsSetting(adopted, @"language", @"en", at(50), @"mac");
+        check([XSChangeTexts(@[@"language"], lang, YES, YES)[@"lead"] isEqual:@"« Langue des messages XSide » : English, depuis ton Mac"]
+              && [XSChangeTexts(@[@"language"], lang, YES, NO)[@"lead"] isEqual:@"\"XSide messages language\": English, from your Mac"],
+              @"change pill: the language from the Mac");
+        NSDictionary *two = XSSettingsSetting(rem, @"autoRefresh", @YES, at(51), @"mac");
+        NSDictionary *both = XSChangeTexts(@[@"reminder", @"autoRefresh"], two, YES, YES);
+        check([both[@"lead"] isEqual:@"Réglages mis à jour depuis ton Mac"]
+              && [both[@"list"] isEqual:@"Rappel avant l'expiration : désactivé · Rafraîchissement automatique : activé"],
+              @"change pill: several fields from the Mac, listed");
+        check([XSChangeTexts(@[@"reminder", @"autoRefresh"], two, YES, NO)[@"list"]
+                  isEqual:@"Reminder before expiry: off · Automatic refresh: on"], @"change pill: the list in English");
+        // Phone -> Mac: the confirmation says what XSide now knows.
+        check([XSChangeTexts(@[@"autoRefresh"], offed, NO, YES)[@"lead"]
+                  isEqual:@"Rafraîchissement automatique désactivé : XSide sur ton Mac est au courant"]
+              && [XSChangeTexts(@[@"autoRefresh"], one, NO, NO)[@"lead"]
+                  isEqual:@"Automatic refresh turned back on: XSide on your Mac knows"], @"confirmation: automatic refresh");
+        check([XSChangeTexts(@[@"reminder"], rem, NO, YES)[@"lead"]
+                  isEqual:@"« Rappel avant l'expiration » désactivé : XSide sur ton Mac est au courant"],
+              @"confirmation: one switch");
+        check([XSChangeTexts(@[@"reminder", @"autoRefresh"], two, NO, YES)[@"lead"] isEqual:@"Réglages envoyés à XSide sur ton Mac"]
+              && [XSChangeTexts(@[], two, NO, NO)[@"lead"] isEqual:@"Settings sent to XSide on your Mac"]
+              && XSChangeTexts(@[], two, NO, NO)[@"list"] == nil, @"confirmation: several or unknown fields");
+
+        // Device feedback round 2, P3: while the app is in front, XSide is asked every few seconds
+        // (less often in Low Power Mode), only once the local network is allowed, and not right
+        // after another check-in.
+        check(XSForegroundPollInterval(NO) == 15 && XSForegroundPollInterval(YES) == 45, @"poll: 15 s, 45 s in Low Power Mode");
+        check(XSShouldPoll(YES, YES, nil, at(0), NO) && XSShouldPoll(YES, YES, at(-15), at(0), NO)
+              && !XSShouldPoll(YES, YES, at(-10), at(0), NO) && !XSShouldPoll(YES, YES, at(-30), at(0), YES)
+              && XSShouldPoll(YES, YES, at(-45), at(0), YES), @"poll: not again right after a check-in");
+        check(!XSShouldPoll(NO, YES, nil, at(0), NO) && !XSShouldPoll(YES, NO, nil, at(0), NO),
+              @"poll: never without the channel or before the local network was allowed");
 
         // Final review Important 1: XSide's quick actions are dynamic and only take the slots the
         // app leaves (iOS shows 4: the app's static ones, then its dynamic ones).

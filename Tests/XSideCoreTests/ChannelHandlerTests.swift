@@ -370,6 +370,28 @@ import Foundation
         #expect(await stored(lib, rec.id)?.lastRefreshOutcome == outcome) // nil keeps the stored one
     }
 
+    /// The phone checks in every 15 s while the app is in front (device feedback round 2, P3): a
+    /// check-in that changes nothing, within a minute of the stored one, writes nothing.
+    @Test func aCheckInThatChangesNothingSoonAfterAnotherIsNotWritten() async throws {
+        let (lib, rec, tmp) = try await library(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let merged = InAppSettings.defaults(reminder: true, at: now.addingTimeInterval(-60))
+        _ = try await lib.applyCheckIn(merged, checkIn: now, outcome: nil, recordID: rec.id, deviceID: "a")
+        _ = try await lib.applyCheckIn(merged, checkIn: now.addingTimeInterval(20), outcome: nil, recordID: rec.id, deviceID: "a")
+        #expect(await stored(lib, rec.id)?.lastCheckIn == now)
+        #expect(try await AppLibrary(root: tmp).records().first?.installations.first?.lastCheckIn == now)
+        _ = try await lib.applyCheckIn(merged, checkIn: now.addingTimeInterval(61), outcome: nil, recordID: rec.id, deviceID: "a")
+        #expect(await stored(lib, rec.id)?.lastCheckIn == now.addingTimeInterval(61))
+        // A change is stored at once, with its check-in date.
+        let changed = merged.setting(\.reminder, to: false, at: now.addingTimeInterval(70), by: .device)
+        _ = try await lib.applyCheckIn(changed, checkIn: now.addingTimeInterval(70), outcome: nil, recordID: rec.id, deviceID: "a")
+        let i = await stored(lib, rec.id)
+        #expect(i?.inApp == changed && i?.lastCheckIn == now.addingTimeInterval(70))
+        // So is a newer refresh outcome.
+        let outcome = RefreshOutcome(at: now.addingTimeInterval(75), succeeded: true, reasonKey: nil)
+        _ = try await lib.applyCheckIn(changed, checkIn: now.addingTimeInterval(80), outcome: outcome, recordID: rec.id, deviceID: "a")
+        #expect(await stored(lib, rec.id)?.lastRefreshOutcome == outcome)
+    }
+
     /// A signing stored between the handler's snapshot and the check-in is merged, not overwritten.
     @Test func checkInMergesIntoWhatIsStoredNow() async throws {
         let (lib, rec, tmp) = try await library(); defer { try? FileManager.default.removeItem(at: tmp) }

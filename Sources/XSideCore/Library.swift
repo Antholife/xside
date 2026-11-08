@@ -405,6 +405,9 @@ public actor AppLibrary {
         if !paused { installation.lastAttempt = nil }
     }
 
+    /// Within this time of the stored check-in, one that changes nothing isn't written.
+    public static let quietCheckInInterval: TimeInterval = 60
+
     /// Stores a check-in from the phone: the merged settings, its date and (when given) the
     /// phone's newer refresh outcome. When the merged "automatic refresh" disagrees with the pause,
     /// the pause follows it (a change made on the phone while the Mac couldn't be told). Returns
@@ -421,6 +424,13 @@ public actor AppLibrary {
         // Merged here, with what is stored now: a signing or a pause stored since the caller's
         // snapshot keeps its newer fields.
         let merged = installation.inApp.map { InAppSettings.merge($0, settings) } ?? settings
+        // The phone checks in every 15 s while the app is in front (device feedback round 2, P3):
+        // one that changes nothing within a minute of the stored check-in writes nothing.
+        if merged == installation.inApp, outcome == nil,
+           let last = installation.lastCheckIn, checkIn.timeIntervalSince(last) < Self.quietCheckInInterval,
+           installation.refreshPaused != merged.autoRefresh.value {
+            return nil
+        }
         installation.inApp = merged
         installation.lastCheckIn = checkIn
         if let outcome { installation.lastRefreshOutcome = outcome }

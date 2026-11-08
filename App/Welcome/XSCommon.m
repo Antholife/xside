@@ -282,6 +282,15 @@ BOOL XSHasSettingsSection(void) {
     return NO;
 }
 
+BOOL XSAppUsesLocalNetwork(void) {
+    id services = XSInfo()[@"NSBonjourServices"];
+    if (![services isKindOfClass:NSArray.class]) return NO;
+    for (id service in services) {
+        if ([service isKindOfClass:NSString.class] && ![[service lowercaseString] isEqualToString:@"_xside._tcp"]) return YES;
+    }
+    return NO;
+}
+
 void XSOpenAppSettings(void) {
     // Two reasons iOS can land on Settings > Apps (the list) instead of the app's page:
     // - the request is made before the app is really in front (a cold launch from a quick
@@ -290,30 +299,18 @@ void XSOpenAppSettings(void) {
     //   app report another bundle id (e.g. com.google.ios.youtube) can make Settings look for an app
     //   that isn't installed. There, the app's page is asked for by its real id first
     //   ("App-prefs:<id>", Settings' own deep link, not a documented API), "app-settings:" if refused.
-    // Only there, XSide's own page (the child pane) is asked for first, by the real id and the
-    // row's id ("App-prefs:<id>&path=io.github.xside.settings.pane", undocumented: device feedback
-    // round 1, B5). iOS only says whether Settings opened, not whether it found the page, so an
-    // app whose id isn't faked keeps the documented route (mega review minor 6): if Settings
-    // ignored both the path and the id, it would show its root with no way to fall back.
+    // Either way it lands on the app's page, where XSide's row opens its page: iOS offers third-party
+    // apps no way to open a child pane of their page (device feedback round 2, P7: the undocumented
+    // "&path=" attempt still showed YouTube's page on a tweaked YouTube, so it is gone).
     NSURL *standard = [NSURL URLWithString:UIApplicationOpenSettingsURLString];
     NSString *faked = XSRealBundleIDIfFaked();
-    NSString *real = XSInfo()[@"CFBundleIdentifier"];
     NSURL *byID = faked ? [NSURL URLWithString:[@"App-prefs:" stringByAppendingString:faked]] : nil;
-    NSURL *pane = faked && [real isKindOfClass:NSString.class] && [real length] && XSHasSettingsSection()
-        ? [NSURL URLWithString:XSSettingsPaneURLString(real)] : nil;
-    void (^fallback)(void) = ^{
+    XSWhenForeground(0.5, ^{
         if (!byID) { if (standard) XSOpenSettingsURL(standard, YES); return; }
         NSLog(@"[XSide] bundle id faked: opening the page by the real id first");
         [UIApplication.sharedApplication openURL:byID options:@{} completionHandler:^(BOOL success) {
             NSLog(@"[XSide] opened %@: %d", byID, success);
             if (!success && standard) XSOpenSettingsURL(standard, YES);
-        }];
-    };
-    XSWhenForeground(0.5, ^{
-        if (!pane) { fallback(); return; }
-        [UIApplication.sharedApplication openURL:pane options:@{} completionHandler:^(BOOL success) {
-            NSLog(@"[XSide] opened %@: %d", pane, success);
-            if (!success) fallback();
         }];
     });
 }

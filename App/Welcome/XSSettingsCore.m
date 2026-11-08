@@ -186,13 +186,77 @@ NSArray<NSString *> *XSSheetPages(BOOL channel, BOOL granted, BOOL explained, BO
     return pages;
 }
 
-BOOL XSNeedsNetworkExplanation(BOOL channel, BOOL granted, BOOL explained, NSDictionary *s) {
-    return channel && !granted && !explained && XSShowsInstallSheet(s);
+BOOL XSNeedsNetworkExplanation(BOOL channel, BOOL granted, BOOL explained) {
+    return channel && !granted && !explained;
 }
 
-NSString *XSSettingsPaneURLString(NSString *bundleID) {
-    // The row's id is its Key (SettingsBundle writes both): io.github.xside.settings.pane.
-    return [NSString stringWithFormat:@"App-prefs:%@&path=io.github.xside.settings.pane", bundleID];
+/// The row's title in iOS Settings (XSideSettingsSection.swift writes the same).
+static NSString *XSFieldTitle(NSString *field, BOOL fr) {
+    NSDictionary<NSString *, NSArray<NSString *> *> *titles = @{
+        @"showValidity": @[@"Afficher la validité à l'ouverture", @"Show validity when opening"],
+        @"alertLate": @[@"Alerter si pas rafraîchie", @"Alert if not refreshed"],
+        @"refreshCard": @[@"Carte après un rafraîchissement", @"Card after a refresh"],
+        @"reminder": @[@"Rappel avant l'expiration", @"Reminder before expiry"],
+        @"autoRefresh": @[@"Rafraîchissement automatique", @"Automatic refresh"],
+        @"language": @[@"Langue des messages XSide", @"XSide messages language"],
+    };
+    NSArray<NSString *> *pair = titles[field];
+    return pair ? pair[fr ? 0 : 1] : field;
+}
+
+/// A field's value in words: on/off, or the language's name.
+static NSString *XSFieldValueText(NSString *field, id value, BOOL fr) {
+    if ([field isEqualToString:@"language"]) {
+        if ([value isEqual:@"fr"]) return @"Français";
+        if ([value isEqual:@"en"]) return @"English";
+        return fr ? @"Automatique" : @"Automatic";
+    }
+    BOOL on = [value isKindOfClass:NSNumber.class] && [value boolValue];
+    return fr ? (on ? @"activé" : @"désactivé") : (on ? @"on" : @"off");
+}
+
+NSDictionary<NSString *, NSString *> *XSChangeTexts(NSArray<NSString *> *fields, NSDictionary *s, BOOL byMac, BOOL fr) {
+    if (fields.count == 1) {
+        NSString *f = fields.firstObject;
+        id value = XSSettingValue(s, f);
+        NSString *title = XSFieldTitle(f, fr);
+        NSString *what;
+        if ([f isEqualToString:@"autoRefresh"]) {
+            BOOL on = [value boolValue];
+            what = fr ? [NSString stringWithFormat:@"%@ %@", title, on ? @"réactivé" : @"désactivé"]
+                      : [NSString stringWithFormat:@"%@ %@", title, on ? @"turned back on" : @"turned off"];
+            if (byMac) {
+                return @{@"lead": [what stringByAppendingString:fr ? @" depuis XSide sur ton Mac" : @" from XSide on your Mac"]};
+            }
+        } else if ([f isEqualToString:@"language"]) {
+            what = fr ? [NSString stringWithFormat:@"« %@ » : %@", title, XSFieldValueText(f, value, fr)]
+                      : [NSString stringWithFormat:@"\"%@\": %@", title, XSFieldValueText(f, value, fr)];
+            if (byMac) return @{@"lead": [what stringByAppendingString:fr ? @", depuis ton Mac" : @", from your Mac"]};
+        } else {
+            BOOL on = [value boolValue];
+            what = fr ? [NSString stringWithFormat:@"« %@ » %@", title, on ? @"activé" : @"désactivé"]
+                      : [NSString stringWithFormat:@"\"%@\" %@", title, on ? @"turned on" : @"turned off"];
+            if (byMac) return @{@"lead": [what stringByAppendingString:fr ? @" depuis ton Mac" : @" from your Mac"]};
+        }
+        return @{@"lead": [what stringByAppendingString:fr ? @" : XSide sur ton Mac est au courant" : @": XSide on your Mac knows"]};
+    }
+    NSString *lead = byMac ? (fr ? @"Réglages mis à jour depuis ton Mac" : @"Settings updated from your Mac")
+                           : (fr ? @"Réglages envoyés à XSide sur ton Mac" : @"Settings sent to XSide on your Mac");
+    if (fields.count == 0) return @{@"lead": lead};
+    NSMutableArray<NSString *> *items = [NSMutableArray array];
+    for (NSString *f in fields) {
+        [items addObject:[NSString stringWithFormat:fr ? @"%@ : %@" : @"%@: %@", XSFieldTitle(f, fr),
+                          XSFieldValueText(f, XSSettingValue(s, f), fr)]];
+    }
+    return @{@"lead": lead, @"list": [items componentsJoinedByString:@" · "]};
+}
+
+NSTimeInterval XSForegroundPollInterval(BOOL lowPower) { return lowPower ? 45 : 15; }
+
+BOOL XSShouldPoll(BOOL channel, BOOL granted, NSDate *lastCheckIn, NSDate *now, BOOL lowPower) {
+    if (!channel || !granted) return NO;
+    // A second of slack: the timer fires one interval after the last check-in it made.
+    return !lastCheckIn || [now timeIntervalSinceDate:lastCheckIn] >= XSForegroundPollInterval(lowPower) - 1;
 }
 
 BOOL XSKeepsAnswerForReturn(BOOL onScreen, NSTimeInterval duration) { return !onScreen && duration > 0; }

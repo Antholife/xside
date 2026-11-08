@@ -5,6 +5,7 @@
 // network prompt always comes after XSide said why (device feedback round 1, B1).
 
 #import "XSCommon.h"
+#import "XSPill.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -14,23 +15,30 @@ void XSRequestRefresh(void);
 
 /// The silent check-in (≤ 3 s): sends this phone's settings and last refresh, adopts the merged
 /// settings and the refresh outcome XSide answers. Only once the local network was allowed.
-/// `done` (main queue) runs in every case, after the answer if any. Main thread.
-void XSCheckIn(void (^_Nullable done)(void));
+/// `done` (main queue) runs in every case, after the answer if any, with the one pill saying what
+/// the Mac changed (XSChangeTexts), or nil when it changed nothing or that pill is off. The caller
+/// shows it (or leaves it out). Main thread.
+void XSCheckIn(void (^_Nullable done)(XSPillContent *_Nullable news));
 
 /// Right after the first-launch sheet's "Réseau local" page: a silent check-in that browses even
 /// before the local network was allowed, so iOS asks now, just after the page said why. Main thread.
 void XSStartLocalNetwork(void);
 
-/// XSide settings other than automatic refresh were changed in iOS Settings: the check-in sends
-/// them, with a pill ("envoi de tes réglages au Mac…", then sent, or the Mac unreachable: sent at
-/// the next connection). Only once the local network was allowed (else silent: the next
-/// connection carries them). `done` runs once answered (or at once when nothing is sent). Main thread.
-void XSSendSettings(void (^_Nullable done)(void));
+/// XSide settings other than automatic refresh (`fields`) were changed in iOS Settings: the
+/// check-in sends them. `done` gets the one pill that says so (which, sent or the Mac unreachable),
+/// or nil when nothing was sent: before the local network was allowed the next connection carries
+/// them silently. Main thread.
+void XSSendSettings(NSArray<NSString *> *fields, void (^done)(XSPillContent *_Nullable result));
 
 /// "Rafraîchissement automatique" was just changed in iOS Settings: XSide is told now, patiently
-/// (a check-in carrying the dated change; the first time it browses, iOS asks for the local
-/// network), and the pill says whether the Mac knows or will at the next connection. The one place
-/// that starts the channel for a changed setting. Main thread.
+/// (a check-in carrying the dated change; the first time, the "Réseau local" page comes first),
+/// and one pill says whether the Mac knows or will at the next connection. Main thread.
 void XSTellAutoRefreshChange(void);
+
+/// While the app is in front, XSide is asked again every few seconds (XSForegroundPollInterval),
+/// so a change made on the Mac shows without leaving the app (device feedback round 2, P3). Only
+/// once the local network was allowed; stopped when the app leaves the foreground. Main thread.
+void XSStartForegroundUpdates(void);
+void XSStopForegroundUpdates(void);
 
 NS_ASSUME_NONNULL_END
