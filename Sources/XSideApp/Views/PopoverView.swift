@@ -502,6 +502,14 @@ private struct PopoverFooter: View {
                         NSApp.activate()
                         openSettings()
                     }
+                    // Settings > Mes apps directly (device feedback 3, E9), on the app and device
+                    // last shown there (else the first device's first app).
+                    IconTile(symbol: "square.grid.2x2.fill", help: L("popover.myApps")) {
+                        model.settingsPane = .apps
+                        dismiss()
+                        NSApp.activate()
+                        openSettings()
+                    }
                     IconTile(symbol: "sparkles", help: L("whatsNew.window")) {
                         dismiss()
                         openWindow.presentWhatsNew()

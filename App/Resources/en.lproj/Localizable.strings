@@ -11,6 +11,7 @@
 "popover.installCard.queued" = "+ %ld queued";
 "popover.installCard.accessibility" = "%1$@, %2$@, %3$ld%%";
 "popover.settings" = "Settings";
+"popover.myApps" = "My apps";
 "popover.quit" = "Quit";
 "popover.appIDsRemaining" = "~%d/10 App IDs free this week";
 "popover.unreachableHint" = "Not found on this network: plug it in with USB or join the same Wi-Fi as this Mac.";
