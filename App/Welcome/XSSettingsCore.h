@@ -12,8 +12,8 @@ NS_ASSUME_NONNULL_BEGIN
 /// level, showValidity, alertLate, refreshCard, reminder, language, autoRefresh.
 NSArray<NSString *> *XSSettingFields(void);
 
-/// The Mac's defaults for an installation (InAppSettings.defaults): validity pill off, everything
-/// else on, level "all", language "automatic"; dated `at`, changed by the Mac.
+/// The Mac's defaults for an installation (InAppSettings.defaults): everything on (the reminder
+/// as given), level "all", language "automatic"; dated `at`, changed by the Mac.
 NSDictionary *XSSettingsDefaults(BOOL reminder, NSDate *at);
 
 /// Whether `value` is valid for `field` (a Bool NSNumber, or one of the field's strings).

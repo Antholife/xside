@@ -22,6 +22,17 @@ static UIColor *XSToneColor(XSPillTone tone) {
     }
 }
 
+/// "XSide : valable encore …": every pill says who speaks (Anthony). The first word after the
+/// prefix is lowercased, except names (Mac, iPhone, iPad); a text that already starts with
+/// "XSide" is left as it is.
+static NSString *XSPrefixed(NSString *lead) {
+    if (lead.length == 0 || [lead hasPrefix:@"XSide"]) return lead ?: @"";
+    NSString *first = [lead componentsSeparatedByString:@" "].firstObject;
+    BOOL name = [@[@"Mac", @"iPhone", @"iPad"] containsObject:first];
+    NSString *rest = name ? lead : [[lead substringToIndex:1].lowercaseString stringByAppendingString:[lead substringFromIndex:1]];
+    return [XST(@"XSide : ", @"XSide: ") stringByAppendingString:rest];
+}
+
 @interface XSPillController : UIViewController
 - (instancetype)initWithContent:(XSPillContent *)content;
 - (void)dismiss;
@@ -79,7 +90,7 @@ static void XSHidePillWindow(UIWindow *window) {
     icon.clipsToBounds = YES;
 
     UILabel *title = [self label:14 weight:UIFontWeightSemibold color:UIColor.labelColor];
-    NSMutableAttributedString *text = [[NSMutableAttributedString alloc] initWithString:c.lead ?: @""];
+    NSMutableAttributedString *text = [[NSMutableAttributedString alloc] initWithString:XSPrefixed(c.lead)];
     if (c.strong.length) {
         [text appendAttributedString:[[NSAttributedString alloc] initWithString:c.strong attributes:@{
             NSFontAttributeName: XSScaledFont(14, UIFontWeightBold), NSForegroundColorAttributeName: XSToneColor(c.tone)}]];
@@ -168,7 +179,7 @@ static void XSHidePillWindow(UIWindow *window) {
                         options:UIViewAnimationOptionAllowUserInteraction animations:^{
         self->_holder.transform = CGAffineTransformIdentity;
     } completion:nil];
-    NSString *spoken = [NSString stringWithFormat:@"%@%@%@. %@", _content.lead ?: @"", _content.strong ?: @"",
+    NSString *spoken = [NSString stringWithFormat:@"%@%@%@. %@", XSPrefixed(_content.lead), _content.strong ?: @"",
                         _content.tail ?: @"", _content.hint ?: @""];
     UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, spoken);
     if (_content.duration > 0) {

@@ -9,8 +9,10 @@ public struct SettingsSection: Sendable {
         /// at each launch, `defaultValue` what the Mac wrote at signing.
         case value(titleKey: String, key: String, defaultValue: String)
         case toggle(titleKey: String, key: String, defaultValue: Bool)
-        /// `titleKeys` are shown, `values` are stored (same order).
-        case choice(titleKey: String, key: String, titleKeys: [String], values: [String], defaultValue: String)
+        /// `titleKeys` are shown in the list, `values` are stored (same order); `shortTitleKeys`,
+        /// when given, are what the row shows (the list then can explain each choice).
+        case choice(titleKey: String, key: String, titleKeys: [String], values: [String], defaultValue: String,
+                    shortTitleKeys: [String]? = nil)
     }
 
     public let titleKey: String
@@ -70,7 +72,11 @@ public enum SettingsBundle {
         }
         var items = (root["PreferenceSpecifiers"] as? [[String: Any]] ?? [])
             .filter { ($0["Key"] as? String)?.hasPrefix(keyPrefix) != true }
-        var group: [String: Any] = ["Type": "PSGroupSpecifier", "Title": section.titleKey, "Key": keyPrefix + "group"]
+        // iOS heads every app's page "<App> Settings" already: on a page that holds only XSide's
+        // section, a group title would stack right under it. After the app's own items, it
+        // separates XSide's.
+        var group: [String: Any] = ["Type": "PSGroupSpecifier", "Key": keyPrefix + "group"]
+        if !items.isEmpty { group["Title"] = section.titleKey }
         if let footer = section.footerKey { group["FooterText"] = footer }
         items.append(group)
         for row in section.rows {
@@ -81,9 +87,11 @@ public enum SettingsBundle {
             case let .toggle(titleKey, key, defaultValue):
                 items.append(["Type": "PSToggleSwitchSpecifier", "Title": titleKey,
                               "Key": keyPrefix + key, "DefaultValue": defaultValue])
-            case let .choice(titleKey, key, titleKeys, values, defaultValue):
-                items.append(["Type": "PSMultiValueSpecifier", "Title": titleKey, "Key": keyPrefix + key,
-                              "Titles": titleKeys, "Values": values, "DefaultValue": defaultValue])
+            case let .choice(titleKey, key, titleKeys, values, defaultValue, shortTitleKeys):
+                var item: [String: Any] = ["Type": "PSMultiValueSpecifier", "Title": titleKey, "Key": keyPrefix + key,
+                                           "Titles": titleKeys, "Values": values, "DefaultValue": defaultValue]
+                if let shortTitleKeys { item["ShortTitles"] = shortTitleKeys }
+                items.append(item)
             }
         }
         // The page's own table; with none named iOS reads "Root", so XSide's keys go there when the

@@ -48,7 +48,7 @@ struct InAppSettingsTests {
     @Test func defaultsSeedTheReminderFromTheGlobalSetting() {
         let d = InAppSettings.defaults(reminder: false, at: t0)
         #expect(d.reminder.value == false)
-        #expect(d.showValidity.value == false)
+        #expect(d.showValidity.value == true) // the validity pill is on by default (Anthony, 2026-11-08)
         #expect(d.alertLate.value && d.refreshCard.value && d.autoRefresh.value)
         #expect(d.level.value == .all)
         #expect(d.language.value == .automatic)

@@ -224,9 +224,53 @@ UIFont *XSScaledFont(CGFloat size, UIFontWeight weight) {
                                           maximumPointSize:size * 1.6];
 }
 
+void XSWhenForeground(NSTimeInterval settle, void (^block)(void)) {
+    UIApplication *app = UIApplication.sharedApplication;
+    if (app.applicationState == UIApplicationStateActive && XSScene()) { block(); return; }
+    NSLog(@"[XSide] waiting for the foreground (app state %ld, scene %@)", (long)app.applicationState, XSScene() ? @"yes" : @"no");
+    __block id observer = [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification
+                                                                          object:nil queue:NSOperationQueue.mainQueue
+                                                                      usingBlock:^(NSNotification *note) {
+        [NSNotificationCenter.defaultCenter removeObserver:observer];
+        observer = nil;
+        // Just activated (a cold launch from a quick action): let the launch settle first.
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(settle * NSEC_PER_SEC)), dispatch_get_main_queue(), block);
+    }];
+}
+
+static void XSOpenSettingsURL(NSURL *url, BOOL retry) {
+    UIApplication *app = UIApplication.sharedApplication;
+    NSLog(@"[XSide] opening %@ (app state %ld, scene %@, bundle id reported %@, real %@)", url, (long)app.applicationState,
+          XSScene() ? @"active" : @"none", NSBundle.mainBundle.bundleIdentifier, XSInfo()[@"CFBundleIdentifier"]);
+    [app openURL:url options:@{} completionHandler:^(BOOL success) {
+        NSLog(@"[XSide] opened %@: %d", url, success);
+        if (success || !retry) return;
+        // Refused (the app was not quite in front yet): once more, a moment later.
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            XSWhenForeground(0.5, ^{ XSOpenSettingsURL(url, NO); });
+        });
+    }];
+}
+
 void XSOpenAppSettings(void) {
-    NSURL *url = [NSURL URLWithString:UIApplicationOpenSettingsURLString];
-    if (url) [UIApplication.sharedApplication openURL:url options:@{} completionHandler:nil];
+    // Two reasons iOS can land on Settings > Apps (the list) instead of the app's page:
+    // - the request is made before the app is really in front (a cold launch from a quick
+    //   action): so it waits for the app to be active with a scene on screen, then settles;
+    // - "app-settings:" names no app: iOS takes it from the app asking, and a tweak that makes the
+    //   app report another bundle id (e.g. com.google.ios.youtube) can make Settings look for an app
+    //   that isn't installed. There, the app's page is asked for by its real id first
+    //   ("App-prefs:<id>", Settings' own deep link, not a documented API), "app-settings:" if refused.
+    NSURL *standard = [NSURL URLWithString:UIApplicationOpenSettingsURLString];
+    NSString *faked = XSRealBundleIDIfFaked();
+    NSURL *byID = faked ? [NSURL URLWithString:[@"App-prefs:" stringByAppendingString:faked]] : nil;
+    XSWhenForeground(0.5, ^{
+        if (!byID) { if (standard) XSOpenSettingsURL(standard, YES); return; }
+        NSLog(@"[XSide] bundle id faked: opening the page by the real id first");
+        [UIApplication.sharedApplication openURL:byID options:@{} completionHandler:^(BOOL success) {
+            NSLog(@"[XSide] opened %@: %d", byID, success);
+            if (!success && standard) XSOpenSettingsURL(standard, YES);
+        }];
+    });
 }
 
 @implementation XSGradientButton

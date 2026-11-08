@@ -15,9 +15,11 @@ extension SettingsSection {
         let s = inApp ?? InAppSettings.defaults(reminder: true, at: Date())
         let p = SettingsBundle.keyPrefix
         func title(_ name: String) -> String { p + "title." + name }
-        func choice(_ name: String, _ values: [String], _ current: String) -> Row {
-            .choice(titleKey: title(name), key: name, titleKeys: values.map { p + "\(name).\($0)" },
-                    values: values, defaultValue: current)
+        func choice(_ name: String, _ values: [String], _ current: String, detailed: Bool = false) -> Row {
+            let short = values.map { p + "\(name).\($0)" }
+            // Detailed: the list explains each choice ("<name>.<value>.detail"), the row shows the short name.
+            return .choice(titleKey: title(name), key: name, titleKeys: detailed ? short.map { $0 + ".detail" } : short,
+                           values: values, defaultValue: current, shortTitleKeys: detailed ? short : nil)
         }
         let rows: [Row] = [
             .value(titleKey: title("validUntil"), key: "validUntil", defaultValue: validUntil),
@@ -26,7 +28,7 @@ extension SettingsSection {
             .value(titleKey: title("installedOn"), key: "installedOn", defaultValue: installedOn),
             .value(titleKey: title("connection"), key: "connection", defaultValue: connection),
             .value(titleKey: title("lastRefresh"), key: "lastRefresh", defaultValue: lastRefresh),
-            choice("level", ["all", "essentials", "none"], s.level.value.rawValue),
+            choice("level", ["all", "essentials", "none"], s.level.value.rawValue, detailed: true),
             .toggle(titleKey: title("showValidity"), key: "showValidity", defaultValue: s.showValidity.value),
             .toggle(titleKey: title("alertLate"), key: "alertLate", defaultValue: s.alertLate.value),
             .toggle(titleKey: title("refreshCard"), key: "refreshCard", defaultValue: s.refreshCard.value),
@@ -56,10 +58,16 @@ extension SettingsSection {
             ("title.autoRefresh", "Rafraîchissement automatique"),
             ("title.language", "Langue des messages XSide"),
             ("language.automatic", "Automatique"), ("language.fr", "Français"), ("language.en", "English"),
-            ("footer", "✦ Installée avec XSide · Rafraîchie automatiquement depuis ton Mac. "
-                + "Tes choix s'appliquent tout de suite sur cet iPhone. XSide sur ton Mac en est informé à la "
-                + "prochaine connexion. « Rafraîchissement automatique » ne prend effet qu'à ce moment-là. "
-                + "· github.com/Antholife/xside"),
+            ("level.all.detail", "Tous les messages"),
+            ("level.essentials.detail", "Essentiels : seulement en cas de problème"),
+            ("level.none.detail", "Aucun : rien dans l'app"),
+            // iOS shows the footer as plain grey text: a list made of lines.
+            ("footer", "✦ Installée avec XSide\n"
+                + "• Rafraîchie automatiquement depuis ton Mac\n"
+                + "• Tes choix s'appliquent tout de suite sur cet iPhone\n"
+                + "• XSide sur ton Mac en est informé à la prochaine connexion "
+                + "(« Rafraîchissement automatique » ne change qu'à ce moment-là)\n"
+                + "github.com/Antholife/xside"),
         ])
         let en = table([
             ("title.group", "XSide Settings"),
@@ -75,10 +83,15 @@ extension SettingsSection {
             ("title.autoRefresh", "Automatic refresh"),
             ("title.language", "XSide messages language"),
             ("language.automatic", "Automatic"), ("language.fr", "Français"), ("language.en", "English"),
-            ("footer", "✦ Installed with XSide · Refreshed automatically from your Mac. "
-                + "Your choices apply right away on this iPhone. XSide on your Mac learns of them at the "
-                + "next connection. \"Automatic refresh\" only takes effect then. "
-                + "· github.com/Antholife/xside"),
+            ("level.all.detail", "All messages"),
+            ("level.essentials.detail", "Essentials: only when something's wrong"),
+            ("level.none.detail", "None: nothing in the app"),
+            ("footer", "✦ Installed with XSide\n"
+                + "• Refreshed automatically from your Mac\n"
+                + "• Your choices apply on this iPhone right away\n"
+                + "• XSide on your Mac learns them at the next connection "
+                + "(\"Automatic refresh\" only changes then)\n"
+                + "github.com/Antholife/xside"),
         ])
         return ["fr": fr, "en": en]
     }()

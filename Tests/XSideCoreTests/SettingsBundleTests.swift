@@ -41,7 +41,8 @@ struct SettingsBundleTests {
         let items = try specifiers(app)
         #expect(items.count == 3)
         #expect(items[0]["Type"] as? String == "PSGroupSpecifier")
-        #expect(items[0]["Title"] as? String == "io.github.xside.settings.title.group")
+        // iOS already heads the page "<App> Settings": a second title would stack right under it.
+        #expect(items[0]["Title"] == nil)
         #expect(items[0]["FooterText"] as? String == "io.github.xside.settings.footer")
         #expect(items[1]["Type"] as? String == "PSTitleValueSpecifier")
         #expect(items[1]["Title"] as? String == "io.github.xside.settings.title.validUntil")
@@ -63,8 +64,24 @@ struct SettingsBundleTests {
         let items = try specifiers(app)
         #expect(items.count == 4)
         #expect(items[0]["Key"] as? String == "dark")
+        // After the app's own settings, the title separates XSide's.
         #expect(items[1]["Title"] as? String == "io.github.xside.settings.title.group")
         #expect(try root(app)["StringsTable"] as? String == "Root")
+    }
+
+    /// A page that only holds XSide's section (from an earlier signing) counts as XSide's own.
+    @Test func aPageWithOnlyXSidesSectionHasNoGroupTitle() throws {
+        let app = try makeApp()
+        try SettingsBundle.add(section, to: app)
+        try SettingsBundle.add(section, to: app)
+        #expect(try specifiers(app)[0]["Title"] == nil)
+        let empty = try makeApp()
+        let bundle = empty.appendingPathComponent("Settings.bundle")
+        try FileManager.default.createDirectory(at: bundle, withIntermediateDirectories: true)
+        try PropertyListSerialization.data(fromPropertyList: ["PreferenceSpecifiers": [[String: Any]]()], format: .xml, options: 0)
+            .write(to: bundle.appendingPathComponent("Root.plist"))
+        try SettingsBundle.add(section, to: empty)
+        #expect(try specifiers(empty)[0]["Title"] == nil)
     }
 
     @Test func addingTwiceReplacesTheSection() throws {
@@ -116,13 +133,16 @@ struct SettingsBundleTests {
         for key in ["showValidity", "alertLate", "refreshCard", "reminder", "autoRefresh"] {
             #expect(try item(key)["Type"] as? String == "PSToggleSwitchSpecifier")
         }
-        #expect(try item("showValidity")["DefaultValue"] as? Bool == false)
+        #expect(try item("showValidity")["DefaultValue"] as? Bool == true) // on by default (Anthony)
         #expect(try item("reminder")["DefaultValue"] as? Bool == false) // the installation's value
         #expect(try item("autoRefresh")["DefaultValue"] as? Bool == true)
         let level = try item("level")
         #expect(level["Type"] as? String == "PSMultiValueSpecifier")
         #expect(level["Values"] as? [String] == ["all", "essentials", "none"])
-        #expect(level["Titles"] as? [String] == [p + "level.all", p + "level.essentials", p + "level.none"])
+        // The list explains each choice; the row shows the short name.
+        #expect(level["Titles"] as? [String] == [p + "level.all.detail", p + "level.essentials.detail", p + "level.none.detail"])
+        #expect(level["ShortTitles"] as? [String] == [p + "level.all", p + "level.essentials", p + "level.none"])
+        #expect(try item("language")["ShortTitles"] == nil)
         #expect(level["DefaultValue"] as? String == "all")
         #expect(try item("language")["Values"] as? [String] == ["automatic", "fr", "en"])
     }
@@ -139,7 +159,12 @@ struct SettingsBundleTests {
         #expect(fr[p + "title.connection"] == "Connexion au Mac")
         #expect(fr[p + "title.lastRefresh"] == "Dernier rafraîchissement")
         #expect(fr[p + "level.essentials"] == "Essentiels")
-        #expect(fr[p + "footer"]?.hasPrefix("✦ Installée avec XSide") == true)
+        #expect(fr[p + "level.essentials.detail"] == "Essentiels : seulement en cas de problème")
+        #expect(fr[p + "level.none.detail"] == "Aucun : rien dans l'app")
+        #expect(en[p + "level.all.detail"] == "All messages")
+        #expect(en[p + "level.essentials.detail"] == "Essentials: only when something's wrong")
+        #expect(fr[p + "footer"]?.hasPrefix("✦ Installée avec XSide\n• Rafraîchie automatiquement depuis ton Mac\n• ") == true)
+        #expect(en[p + "footer"]?.contains("\n• Your choices apply on this iPhone right away\n") == true)
         #expect(fr[p + "footer"]?.hasSuffix("github.com/Antholife/xside") == true)
         #expect(en[p + "title.group"] == "XSide Settings")
         #expect(en[p + "footer"]?.hasPrefix("✦ Installed with XSide") == true)

@@ -46,7 +46,7 @@ static NSDictionary *XSField(NSString *field, id value, NSDate *at, NSString *by
 NSDictionary *XSSettingsDefaults(BOOL reminder, NSDate *at) {
     return @{
         @"level": XSField(@"level", @"all", at, @"mac"),
-        @"showValidity": XSField(@"showValidity", @NO, at, @"mac"),
+        @"showValidity": XSField(@"showValidity", @YES, at, @"mac"), // on by default (Anthony, 2026-11-08)
         @"alertLate": XSField(@"alertLate", @YES, at, @"mac"),
         @"refreshCard": XSField(@"refreshCard", @YES, at, @"mac"),
         @"reminder": XSField(@"reminder", @(reminder), at, @"mac"),

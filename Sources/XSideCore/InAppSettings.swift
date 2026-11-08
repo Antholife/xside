@@ -70,10 +70,10 @@ public struct InAppSettings: Codable, Equatable, Sendable {
     }
 
     /// Mac defaults for a new installation: the reminder is seeded from the global Mac setting,
-    /// the validity pill is off, everything else on.
+    /// everything else on (the validity pill too: Anthony, 2026-11-08).
     public static func defaults(reminder: Bool, at: Date) -> InAppSettings {
         func f<V>(_ v: V) -> Field<V> { Field(value: v, changedAt: at, changedBy: .mac) }
-        return InAppSettings(level: f(.all), showValidity: f(false), alertLate: f(true),
+        return InAppSettings(level: f(.all), showValidity: f(true), alertLate: f(true),
                              refreshCard: f(true), reminder: f(reminder), language: f(.automatic),
                              autoRefresh: f(true))
     }

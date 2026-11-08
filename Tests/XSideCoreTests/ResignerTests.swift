@@ -118,7 +118,8 @@ private func plist(_ app: URL) throws -> [String: Any] {
         let data = try Data(contentsOf: app.appendingPathComponent("Settings.bundle/Root.plist"))
         let root = try #require(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
         let items = try #require(root["PreferenceSpecifiers"] as? [[String: Any]])
-        #expect(items.map { $0["Title"] as? String } == ["t", "v"])
+        #expect(items.map { $0["Title"] as? String } == [nil, "v"]) // XSide's own page: iOS titles it
+
         #expect(items[1]["DefaultValue"] as? String == "U-1") // built from the profile it's signed with
     }
 

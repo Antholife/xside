@@ -145,7 +145,7 @@ int main(int argc, const char *argv[]) {
         check([XSSettingValue(XSSettingsMerge(tm, td), @"alertLate") isEqual:@YES]
               && [XSSettingValue(XSSettingsMerge(td, tm), @"alertLate") isEqual:@YES], @"tie goes to the device");
         NSDictionary *d0 = XSSettingsDefaults(NO, t0);
-        check(!XSSettingBool(d0, @"reminder") && !XSSettingBool(d0, @"showValidity") && XSSettingBool(d0, @"alertLate")
+        check(!XSSettingBool(d0, @"reminder") && XSSettingBool(d0, @"showValidity") && XSSettingBool(d0, @"alertLate")
               && XSSettingBool(d0, @"refreshCard") && XSSettingBool(d0, @"autoRefresh")
               && [XSSettingValue(d0, @"level") isEqual:@"all"] && [XSSettingValue(d0, @"language") isEqual:@"automatic"],
               @"defaults");

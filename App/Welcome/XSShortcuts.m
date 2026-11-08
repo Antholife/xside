@@ -21,18 +21,6 @@ static BOOL XSHasShortcuts(void) {
     return NO;
 }
 
-/// Runs `block` once the app is in the foreground (a cold launch delivers the item before).
-static void XSWhenActive(void (^block)(void)) {
-    if (UIApplication.sharedApplication.applicationState == UIApplicationStateActive) { block(); return; }
-    __block id observer = [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification
-                                                                          object:nil queue:NSOperationQueue.mainQueue
-                                                                      usingBlock:^(NSNotification *note) {
-        [NSNotificationCenter.defaultCenter removeObserver:observer];
-        observer = nil;
-        block();
-    }];
-}
-
 /// XSide's bug form, prefilled: app name and version, device model, iOS, expiry. No identifiers.
 static void XSOpenReport(void) {
     NSDate *expiry = XSExpirationDate();
@@ -70,7 +58,7 @@ static BOOL XSHandleShortcut(UIApplicationShortcutItem *item) {
         XSLastHandledAt = NSDate.date;
         NSString *name = [type substringFromIndex:XSShortcutPrefix.length];
         NSLog(@"[XSide] quick action %@", name);
-        XSWhenActive(^{
+        XSWhenForeground(0.3, ^{
             if ([name isEqualToString:@"refresh"]) XSRequestRefresh();
             else if ([name isEqualToString:@"settings"]) XSOpenAppSettings();
             else if ([name isEqualToString:@"report"]) XSOpenReport();

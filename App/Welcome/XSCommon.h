@@ -58,7 +58,10 @@ UIImage *_Nullable XSIcon(void);
 NSData *_Nullable XSIconPNG(void);
 /// A system font that follows the reader's text size (Dynamic Type), up to 1.6 times `size`.
 UIFont *XSScaledFont(CGFloat size, UIFontWeight weight);
-/// Opens the app's page in iOS Settings.
+/// Runs `block` now if the app is active with a scene on screen, else once it becomes active,
+/// `settle` seconds later.
+void XSWhenForeground(NSTimeInterval settle, void (^block)(void));
+/// Opens the app's page in iOS Settings, once the app is in the foreground (logged as [XSide]).
 void XSOpenAppSettings(void);
 
 /// The primary button: XSide's violet-to-pink gradient.
