@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import CryptoKit
 @testable import XSideCore
 
 @Suite struct ChannelTests {
@@ -48,11 +49,11 @@ import Foundation
 
     @Test func nonceIsKeptForTheWholeWindow() {
         var d = NonceCache()
-        let first = d.insert("x", at: now)
+        let first = d.insert("x", installationID: "i", at: now)
         // Still remembered 240 s later (a future-dated request stays acceptable that long).
-        let again = d.insert("x", at: now.addingTimeInterval(240))
+        let again = d.insert("x", installationID: "i", at: now.addingTimeInterval(240))
         // Forgotten once it can no longer pass the window check.
-        let late = d.insert("x", at: now.addingTimeInterval(400))
+        let late = d.insert("x", installationID: "i", at: now.addingTimeInterval(400))
         #expect(first && !again && late)
     }
 
@@ -149,6 +150,8 @@ import Foundation
     @Test func fixtureFileMatchesTheCode() throws {
         let data = try Data(contentsOf: Self.fixtureURL)
         let onDisk = try JSONDecoder().decode(FixtureFile.self, from: data)
+        // The key the MACs are computed with is exactly the one the file documents.
+        #expect(onDisk.secretHex == Self.fixtureSecret.map { String(format: "%02x", $0) }.joined())
         #expect(onDisk == (try Self.currentFixture()))
         // The file's own lines must open / parse the way the dylib will see them.
         var seen = NonceCache()
@@ -187,15 +190,37 @@ import Foundation
         #expect(swapped.open(secret: secret, expectedInstallationID: "rec|dev", expectedNonce: "n1") == nil)
     }
 
-    @Test func requestMACIsNotAcceptedAsAReplyMAC() throws {
-        let req = try seal(.refresh)
+    @Test func replyMACWithoutTheDomainPrefixIsRejected() throws {
         let body = try ChannelReply.accepted.encodedBody()
-        // Even if the request MAC were computed over a reply-shaped body, the prefix differs.
-        let reqMAC = ChannelEnvelope.computeMAC(secret: secret, installationID: "rec|dev", timestamp: req.timestamp, nonce: "n1", body: body)
-        let forged = ChannelReplyEnvelope(installationID: "rec|dev", nonce: "n1", body: body, mac: reqMAC)
+        // Same key, same fields, but signed as `id|nonce|base64(body)`: only the "reply|" prefix differs.
+        let unprefixed = Data("rec|dev|n1|\(body.base64EncodedString())".utf8)
+        let mac = Data(HMAC<SHA256>.authenticationCode(for: unprefixed, using: SymmetricKey(data: secret)))
+        let forged = ChannelReplyEnvelope(installationID: "rec|dev", nonce: "n1", body: body, mac: mac)
         #expect(forged.open(secret: secret, expectedInstallationID: "rec|dev", expectedNonce: "n1") == nil)
+        // Sanity: the same fields with the prefix are accepted.
+        let good = try ChannelReplyEnvelope.seal(.accepted, installationID: "rec|dev", requestNonce: "n1", secret: secret)
+        #expect(good.open(secret: secret, expectedInstallationID: "rec|dev", expectedNonce: "n1") == .accepted)
+        // And a request MAC is not a reply MAC either.
+        let req = try seal(.refresh)
         let forged2 = ChannelReplyEnvelope(installationID: "rec|dev", nonce: "n1", body: body, mac: req.mac)
         #expect(forged2.open(secret: secret, expectedInstallationID: "rec|dev", expectedNonce: "n1") == nil)
+    }
+
+    @Test func hugeOrNonFiniteDatesNeitherTrapNorRoundTrip() throws {
+        for ms in ["9223372036854775807", "-9223372036854775808", "-1", "32503680000001"] {
+            let json = Data(#"{"at":\#(ms),"succeeded":true}"#.utf8)
+            #expect(throws: DecodingError.self) { try JSONDecoder.channel.decode(RefreshOutcome.self, from: json) }
+        }
+        let edge = Data(#"{"at":32503680000000,"succeeded":true}"#.utf8)
+        #expect((try? JSONDecoder.channel.decode(RefreshOutcome.self, from: edge)) != nil)
+        for d in [Date.distantFuture, Date.distantPast, Date(timeIntervalSince1970: .infinity), Date(timeIntervalSince1970: -.infinity),
+                  Date(timeIntervalSince1970: .nan), Date(timeIntervalSince1970: 1e300)] {
+            #expect(throws: EncodingError.self) { try JSONEncoder.channel.encode(RefreshOutcome(at: d, succeeded: true)) }
+        }
+        #expect(throws: ChannelError.self) { try ChannelEnvelope.seal(.refresh, installationID: "i", secret: secret, now: .distantFuture, nonce: "n") }
+        var seen = NonceCache()
+        let env = try seal()
+        #expect(env.open(secret: secret, now: Date(timeIntervalSince1970: .infinity), seen: &seen) == nil)
     }
 
     // MARK: hardening

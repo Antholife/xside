@@ -37,7 +37,7 @@ import CryptoKit
 //                 | {"type":"failed","reasonKey":"..."} | {"type":"busy"} | {"type":"deviceUnreachable"}
 //                 | {"type":"paused","by":"mac"|"device"} | {"type":"rejected"}
 
-public enum ChannelError: Error, Equatable { case invalidNonce }
+public enum ChannelError: Error, Equatable { case invalidNonce, invalidTimestamp }
 
 /// A request from the app to XSide.
 public enum ChannelRequest: Codable, Equatable, Sendable {
@@ -142,6 +142,18 @@ public enum ChannelReply: Codable, Equatable, Sendable {
     }
 }
 
+/// Latest accepted date: year 3000 (UTC), in epoch milliseconds.
+let channelMaxMillis: Int64 = 32_503_680_000_000
+
+/// Epoch milliseconds of `date`, or nil if it is not finite or outside 1970...3000. Encoding
+/// throws (rather than clamps) on nil, and the same range is enforced when decoding, so untrusted
+/// values can never reach a trapping Double-to-Int64 conversion.
+func channelMillis(_ date: Date) -> Int64? {
+    let ms = (date.timeIntervalSince1970 * 1000).rounded()
+    guard ms.isFinite, ms >= 0, ms <= Double(channelMaxMillis) else { return nil }
+    return Int64(ms)
+}
+
 extension JSONEncoder {
     /// Sorted keys and unescaped slashes (stable, compact output); dates as integer epoch
     /// milliseconds (keeps sub-millisecond-free ordering and is trivial in Objective-C). Only the
@@ -151,7 +163,10 @@ extension JSONEncoder {
         e.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         e.dateEncodingStrategy = .custom { date, enc in
             var c = enc.singleValueContainer()
-            try c.encode(Int64((date.timeIntervalSince1970 * 1000).rounded()))
+            guard let ms = channelMillis(date) else {
+                throw EncodingError.invalidValue(date, .init(codingPath: enc.codingPath, debugDescription: "date outside 1970...3000"))
+            }
+            try c.encode(ms)
         }
         return e
     }
@@ -161,7 +176,11 @@ extension JSONDecoder {
     static var channel: JSONDecoder {
         let d = JSONDecoder()
         d.dateDecodingStrategy = .custom { dec in
-            let ms = try dec.singleValueContainer().decode(Int64.self)
+            let c = try dec.singleValueContainer()
+            let ms = try c.decode(Int64.self)
+            guard (0...channelMaxMillis).contains(ms) else {
+                throw DecodingError.dataCorruptedError(in: c, debugDescription: "date outside 1970...3000")
+            }
             return Date(timeIntervalSince1970: TimeInterval(ms) / 1000)
         }
         return d
@@ -185,7 +204,7 @@ public struct NonceCache: Sendable {
 
     /// Records the pair and returns true; false if it was already seen or the cache is full of
     /// live entries. Only called after the MAC verified, so unauthenticated traffic cannot fill it.
-    public mutating func insert(_ nonce: String, installationID: String = "", at now: Date) -> Bool {
+    public mutating func insert(_ nonce: String, installationID: String, at now: Date) -> Bool {
         entries = entries.filter { now.timeIntervalSince($0.value) <= Self.lifetime }
         let key = Key(installationID: installationID, nonce: nonce)
         if entries[key] != nil || entries.count >= capacity { return false }
@@ -239,8 +258,9 @@ public struct ChannelEnvelope: Codable, Equatable, Sendable {
 
     public static func seal(_ request: ChannelRequest, installationID: String, secret: Data,
                             now: Date, nonce: String) throws -> ChannelEnvelope {
-        try seal(request, installationID: installationID, secret: secret,
-                 timestampMillis: Int64((now.timeIntervalSince1970 * 1000).rounded()), nonce: nonce)
+        guard let ms = channelMillis(now) else { throw ChannelError.invalidTimestamp }
+        return try seal(request, installationID: installationID, secret: secret,
+                        timestampMillis: ms, nonce: nonce)
     }
 
     static func seal(_ request: ChannelRequest, installationID: String, secret: Data,
@@ -260,7 +280,7 @@ public struct ChannelEnvelope: Codable, Equatable, Sendable {
         let expected = Self.computeMAC(secret: secret, installationID: installationID, timestamp: timestamp,
                                        nonce: nonce, body: body)
         guard Self.constantTimeEqual(expected, mac) else { return nil }
-        let nowMillis = Int64((now.timeIntervalSince1970 * 1000).rounded())
+        guard let nowMillis = channelMillis(now) else { return nil }
         let (diff, overflow) = nowMillis.subtractingReportingOverflow(timestamp)
         guard !overflow, diff != .min, abs(diff) <= Int64(Self.window * 1000) else { return nil }
         guard let request = try? JSONDecoder.channel.decode(ChannelRequest.self, from: body) else { return nil }
