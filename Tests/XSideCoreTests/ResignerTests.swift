@@ -29,10 +29,11 @@ private struct Fixture {
     var welcomeDylib: URL?
     var settings: (@Sendable (ProvisioningProfile, InstallationFacts?) -> SettingsSection)?
     var payload: WelcomePayload?
+    var language = "en"
     var resigner: Resigner {
-        let payload = payload
+        let payload = payload, language = language
         return Resigner(runner: RoutingRunner(fake: fake), welcomeDylib: welcomeDylib, settingsSection: settings,
-                        welcome: { _ in payload })
+                        welcome: { _ in payload }, textLanguage: { _ in language })
     }
 }
 
@@ -232,17 +233,41 @@ private func plist(_ app: URL) throws -> [String: Any] {
         #expect(info["XSideWelcome"] == nil)
     }
 
-    @Test func infoPlistGetsBonjourUsageAndShortcutsWithTheDylib() async throws {
+    /// Bonjour and the usage text; no static quick action (the library adds them as dynamic items,
+    /// final review Important 1), and no lproj folder created in the app (Important 2).
+    @Test func infoPlistGetsBonjourAndUsageWithTheDylib() async throws {
         var f = try await fixture(executable: FakeIPA.paddedMachO(padding: 256))
         f.welcomeDylib = try welcomeDylib()
         let app = try await run(f)
         let info = try plist(app)
         #expect(info["NSBonjourServices"] as? [String] == ["_xside._tcp"])
         #expect(info["NSLocalNetworkUsageDescription"] as? String == "XSide asks your Mac to refresh this app.")
-        #expect((info["UIApplicationShortcutItems"] as? [[String: Any]])?.count == 3)
-        let fr = try #require(try PropertyListSerialization.propertyList(
-            from: Data(contentsOf: app.appendingPathComponent("fr.lproj/InfoPlist.strings")), format: nil) as? [String: String])
-        #expect(fr["NSLocalNetworkUsageDescription"] == "XSide demande à ton Mac de rafraîchir cette app.")
+        #expect(info["UIApplicationShortcutItems"] == nil)
+        let lprojs = try FileManager.default.contentsOfDirectory(atPath: app.path).filter { $0.hasSuffix(".lproj") }
+        #expect(lprojs.isEmpty)
+    }
+
+    /// Translations go only into the app's own lproj folders, older names included; the plain value
+    /// is in the installation's language.
+    @Test func usageTranslationsGoToTheAppsOwnLprojs() async throws {
+        var f = try await fixture(executable: FakeIPA.paddedMachO(padding: 256)) { app in
+            for name in ["French.lproj", "ja.lproj"] {
+                try FileManager.default.createDirectory(at: app.appendingPathComponent(name), withIntermediateDirectories: true)
+            }
+        }
+        f.welcomeDylib = try welcomeDylib()
+        f.language = "fr"
+        let app = try await run(f)
+        #expect(try plist(app)["NSLocalNetworkUsageDescription"] as? String == "XSide demande à ton Mac de rafraîchir cette app.")
+        let lprojs = Set(try FileManager.default.contentsOfDirectory(atPath: app.path).filter { $0.hasSuffix(".lproj") })
+        #expect(lprojs == ["French.lproj", "ja.lproj"])
+        func usage(_ lproj: String) throws -> String? {
+            let d = try #require(try PropertyListSerialization.propertyList(
+                from: Data(contentsOf: app.appendingPathComponent("\(lproj)/InfoPlist.strings")), format: nil) as? [String: String])
+            return d["NSLocalNetworkUsageDescription"]
+        }
+        #expect(try usage("French.lproj") == "XSide demande à ton Mac de rafraîchir cette app.")
+        #expect(try usage("ja.lproj") == "XSide asks your Mac to refresh this app.")
     }
 
     /// Quick actions nothing handles would be a regression: no library, no additions at all.

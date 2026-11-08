@@ -1,23 +1,97 @@
-// The quick actions XSide adds to the app's icon (spec §3): Refresh now, XSide Settings, Report
-// a problem. iOS delivers them to the app's own delegates, so the library wraps the delegates'
+// The quick actions XSide adds to the app's icon (spec §3): XSide Settings, Refresh now, Report
+// a problem. They are dynamic items (UIApplication.shortcutItems), set by the library and placed
+// only in the slots the app leaves: iOS shows 4 at most, the app's static items first, then its
+// dynamic ones (final review Important 1: static items of XSide's pushed the app's dynamic ones
+// out). The library wraps -[UIApplication setShortcutItems:] so whatever the app sets comes first,
+// XSide's being re-added after it in the slots left. The getter is left alone (UIKit may use it
+// itself): an app reading the items sees XSide's too, and setting them back changes nothing.
+// iOS delivers a pressed item to the app's own delegates, so the library wraps the delegates'
 // entry points: it handles only XSide's types (io.github.xside.shortcut.*) and passes everything
 // else to the app's implementation untouched. A delegate without such a method gets XSide's.
 
 #import "XSShortcuts.h"
 #import "XSChannel.h"
+#import "XSSettingsCore.h"
 #import <objc/runtime.h>
 
 static NSString *const XSShortcutPrefix = @"io.github.xside.shortcut.";
 static NSString *const XSIssueURL = @"https://github.com/Antholife/xside/issues/new";
 
-BOOL XSHasShortcuts(void) {
-    id items = XSInfo()[@"UIApplicationShortcutItems"];
-    if (![items isKindOfClass:NSArray.class]) return NO;
+// MARK: - The items
+
+static IMP XSOriginalSetItems;
+
+/// What iOS holds, XSide's items included.
+static NSArray<UIApplicationShortcutItem *> *XSAllItems(void) {
+    NSArray *items = UIApplication.sharedApplication.shortcutItems;
+    return [items isKindOfClass:NSArray.class] ? items : @[];
+}
+
+static NSArray<UIApplicationShortcutItem *> *XSAppItemsOf(NSArray *items) {
+    NSMutableArray *own = [NSMutableArray array];
     for (id item in items) {
-        id type = [item isKindOfClass:NSDictionary.class] ? item[@"UIApplicationShortcutItemType"] : nil;
-        if ([type isKindOfClass:NSString.class] && [type hasPrefix:XSShortcutPrefix]) return YES;
+        if (![item isKindOfClass:UIApplicationShortcutItem.class]) continue;
+        if (!XSIsXSideShortcutType(((UIApplicationShortcutItem *)item).type)) [own addObject:item];
     }
+    return own;
+}
+
+static UIApplicationShortcutItem *XSItem(NSString *name) {
+    NSString *title = [name isEqualToString:@"settings"] ? XST(@"Réglages XSide", @"XSide Settings")
+        : [name isEqualToString:@"refresh"] ? XST(@"Rafraîchir maintenant", @"Refresh now")
+        : XST(@"Signaler un problème", @"Report a problem");
+    NSString *symbol = [name isEqualToString:@"settings"] ? @"gearshape"
+        : [name isEqualToString:@"refresh"] ? @"arrow.clockwise" : @"ladybug";
+    return [[UIApplicationShortcutItem alloc] initWithType:[XSShortcutPrefix stringByAppendingString:name]
+                                            localizedTitle:title localizedSubtitle:nil
+                                                      icon:[UIApplicationShortcutIcon iconWithSystemImageName:symbol]
+                                                  userInfo:nil];
+}
+
+/// The app's `items` (XSide's dropped), then XSide's in the slots they leave.
+static NSArray<UIApplicationShortcutItem *> *XSWithXSideItems(NSArray *items) {
+    NSArray *own = XSAppItemsOf(items);
+    NSMutableArray *all = [own mutableCopy];
+    for (NSString *name in XSShortcutNamesFitting(XSAppStaticShortcutCount(XSInfo()[@"UIApplicationShortcutItems"]), own.count)) {
+        [all addObject:XSItem(name)];
+    }
+    return all;
+}
+
+static void XSSetAllItems(NSArray *items) {
+    if (XSOriginalSetItems) {
+        ((void (*)(id, SEL, NSArray *))XSOriginalSetItems)(UIApplication.sharedApplication, @selector(setShortcutItems:), items);
+    }
+}
+
+void XSUpdateShortcuts(void) {
+    if (!XSOriginalSetItems) return;
+    if (!NSThread.isMainThread) {
+        dispatch_async(dispatch_get_main_queue(), ^{ XSUpdateShortcuts(); });
+        return;
+    }
+    NSArray *current = XSAllItems();
+    NSArray *wanted = XSWithXSideItems(current);
+    if (![wanted isEqualToArray:current]) XSSetAllItems(wanted);
+}
+
+BOOL XSHasShortcuts(void) {
+    if (!XSOriginalSetItems) return NO;
+    for (UIApplicationShortcutItem *item in XSAllItems()) if (XSIsXSideShortcutType(item.type)) return YES;
     return NO;
+}
+
+/// The app's items first; XSide's follow in the slots left.
+static void XSWrapShortcutItemsSetter(void) {
+    Method set = class_getInstanceMethod(UIApplication.class, @selector(setShortcutItems:));
+    if (!set) return;
+    XSOriginalSetItems = method_getImplementation(set);
+    IMP wrappedSet = imp_implementationWithBlock(^(id me, NSArray *items) {
+        NSArray *all = items;
+        @try { all = XSWithXSideItems(items ?: @[]); } @catch (NSException *e) { NSLog(@"[XSide] quick actions: %@", e); }
+        ((void (*)(id, SEL, NSArray *))XSOriginalSetItems)(me, @selector(setShortcutItems:), all);
+    });
+    method_setImplementation(set, wrappedSet);
 }
 
 /// XSide's bug form, prefilled: app name and version, device model, iOS, expiry. No identifiers.
@@ -152,8 +226,10 @@ static void XSHookDelegateSetter(Class cls, void (^patch)(id delegate)) {
 }
 
 void XSInstallShortcuts(void) {
-    if (!XSHasShortcuts()) return; // nothing of XSide's on the icon: the app is left as it is
+    // Only in an app XSide signed with its features (the payload is there).
+    if (XSPayload().count == 0) return;
     XSPatched = [NSMutableSet set];
+    XSWrapShortcutItemsSetter();
     XSHookDelegateSetter(UIApplication.class, ^(id delegate) { XSPatchAppDelegate(delegate); });
     XSHookDelegateSetter(UIScene.class, ^(id delegate) { XSPatchSceneDelegate(delegate); });
     // Fallbacks when a delegate was set some other way, and the cold launch of an app without

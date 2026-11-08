@@ -12,9 +12,10 @@ extension SettingsSection {
     /// showValidity, alertLate, refreshCard, reminder (booleans; "Messages XSide" is derived from
     /// them, see `InAppSettings.derivedLevel`),
     /// language (automatic|fr|en), autoRefresh (boolean).
+    /// Titles are plain text in `language` ("fr" or "en", see `SettingsSection.plainText(in:)`).
     public static func xside(validUntil: String, refreshedOn: String, version: String, installedOn: String,
                              connection: String = "—", lastRefresh: String = "—",
-                             inApp: InAppSettings? = nil) -> SettingsSection {
+                             inApp: InAppSettings? = nil, language: String = "en") -> SettingsSection {
         let s = inApp ?? InAppSettings.defaults(reminder: true, at: Date())
         let p = SettingsBundle.keyPrefix
         func title(_ name: String) -> String { p + "title." + name }
@@ -40,6 +41,7 @@ extension SettingsSection {
             choice("language", ["automatic", "fr", "en"], s.language.value.rawValue),
         ]
         return SettingsSection(titleKey: title("group"), footerKey: p + "footer", rows: rows, strings: texts)
+            .plainText(in: language)
     }
 
     private static let texts: [String: [String: String]] = {

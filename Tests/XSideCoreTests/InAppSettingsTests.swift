@@ -26,6 +26,17 @@ struct InAppSettingsTests {
         }
     }
 
+    /// Final review Important 2: the plain texts written at signing (Settings titles, local network
+    /// reason) are in the installation's chosen language, else the Mac's.
+    @Test func textLanguageIsTheChosenOneElseTheMacs() {
+        let base = InAppSettings.defaults(reminder: true, at: t0)
+        #expect(base.textLanguage(macPreferences: ["fr-FR", "en"]) == "fr")
+        #expect(base.textLanguage(macPreferences: ["de-DE"]) == "en")
+        #expect(base.textLanguage(macPreferences: []) == "en")
+        #expect(base.setting(\.language, to: .en, at: t0, by: .device).textLanguage(macPreferences: ["fr"]) == "en")
+        #expect(base.setting(\.language, to: .fr, at: t0, by: .mac).textLanguage(macPreferences: ["en"]) == "fr")
+    }
+
     @Test func tieGoesToTheDevice() {
         let base = InAppSettings.defaults(reminder: true, at: t0)
         let mac = base.setting(\.alertLate, to: false, at: at(5), by: .mac)

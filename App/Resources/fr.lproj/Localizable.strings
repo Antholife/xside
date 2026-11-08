@@ -530,7 +530,7 @@
 "whatsNew.110.level.title" = "Tous, Essentiels ou Aucun";
 "whatsNew.110.level.text" = "Sur le Mac, un seul choix règle ce qu'XSide affiche dans une app : tout, seulement les alertes, ou rien (pas même la fenêtre de première installation).";
 "whatsNew.110.quick.title" = "Appui long sur l'icône";
-"whatsNew.110.quick.text" = "Appui long sur l'icône d'une app : Réglages XSide, Rafraîchir maintenant, Signaler un problème. Le plus rapide pour retrouver ses réglages XSide.";
+"whatsNew.110.quick.text" = "Appui long sur l'icône d'une app : Réglages XSide, Rafraîchir maintenant, Signaler un problème, une fois l'app ouverte. Seulement aux places que les actions de l'app laissent libres (iOS en montre 4).";
 "whatsNew.110.phone.title" = "Rafraîchir depuis l'iPhone";
 "whatsNew.110.phone.text" = "Demande à XSide de rafraîchir une app depuis l'app elle-même, sur ton réseau local. Le canal est signé et propre à chaque app : personne d'autre sur le réseau ne peut s'en servir.";
 "whatsNew.110.pause.title" = "Mettre en pause depuis l'iPhone";

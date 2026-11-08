@@ -87,6 +87,20 @@ public struct InAppSettings: Codable, Equatable, Sendable {
                       autoRefresh: .merge(a.autoRefresh, b.autoRefresh))
     }
 
+    /// "fr" or "en": the language of the plain texts XSide writes into the app at signing (Settings
+    /// titles, local network reason), shown when the app has no localization to translate them.
+    /// The installation's chosen language, else the Mac's (`macPreferences`: its preferred
+    /// languages, most preferred first), else English. The person on the Mac is the phone's owner.
+    public func textLanguage(macPreferences: [String]) -> String {
+        switch language.value {
+        case .fr: return "fr"
+        case .en: return "en"
+        case .automatic:
+            let first = macPreferences.first { $0.hasPrefix("fr") || $0.hasPrefix("en") }
+            return first?.hasPrefix("fr") == true ? "fr" : "en"
+        }
+    }
+
     /// Copy with one field set and stamped, e.g. `s.setting(\.reminder, to: false, at: now, by: .mac)`.
     public func setting<V>(_ keyPath: WritableKeyPath<InAppSettings, Field<V>>, to value: V,
                            at date: Date, by origin: ChangeOrigin) -> InAppSettings {

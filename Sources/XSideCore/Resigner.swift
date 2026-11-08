@@ -62,6 +62,9 @@ public struct Resigner: Sendable {
     /// `WelcomePayload`). Nil: no payload. The installation's own values (settings, channel
     /// credentials, first install date) come from the `facts` given to `resign`, not from here.
     private let welcome: @Sendable (ProvisioningProfile) -> WelcomePayload?
+    /// "fr" or "en": the language of the plain texts XSide writes into the Info.plist (shown when
+    /// the app has no localization of its own; XSide adds none).
+    private let textLanguage: @Sendable (InstallationFacts?) -> String
     private static let codesign = "/usr/bin/codesign"
     private static let logger = Log("resign")
     static let welcomeName = "XSideWelcome.dylib"
@@ -69,11 +72,13 @@ public struct Resigner: Sendable {
 
     public init(runner: CommandRunning, welcomeDylib: URL? = nil,
                 settingsSection: (@Sendable (ProvisioningProfile, InstallationFacts?) -> SettingsSection)? = nil,
-                welcome: @escaping @Sendable (ProvisioningProfile) -> WelcomePayload? = { _ in nil }) {
+                welcome: @escaping @Sendable (ProvisioningProfile) -> WelcomePayload? = { _ in nil },
+                textLanguage: @escaping @Sendable (InstallationFacts?) -> String = { _ in "en" }) {
         self.runner = runner
         self.welcomeDylib = welcomeDylib
         self.settingsSection = settingsSection
         self.welcome = welcome
+        self.textLanguage = textLanguage
     }
 
     /// Unpacks `ipa` into `workDir`, rewrites it and signs it inside-out. Returns the signed `.app`.
@@ -115,7 +120,8 @@ public struct Resigner: Sendable {
         // (quick actions nothing handles would be a regression), so they follow its outcome.
         let hasLibrary = features && addWelcomePopup(to: app, executable: executableURL)
         let payload = hasLibrary ? welcome(profile).map { Self.payload($0, with: facts) } : nil
-        try editInfoPlist(app: app, bundleID: bundleID, options: options, payload: payload, features: hasLibrary)
+        try editInfoPlist(app: app, bundleID: bundleID, options: options, payload: payload, features: hasLibrary,
+                          language: textLanguage(facts))
         if let iconURL { try await applyIcon(iconURL, to: app, workDir: workDir) }
         // The section's switches are read by the library: without it they'd do nothing.
         if hasLibrary, let settingsSection {
@@ -356,7 +362,7 @@ public struct Resigner: Sendable {
     // MARK: - Info.plist
 
     private func editInfoPlist(app: URL, bundleID: String, options: InstallOptions,
-                               payload: WelcomePayload?, features: Bool) throws {
+                               payload: WelcomePayload?, features: Bool, language: String) throws {
         let url = app.appendingPathComponent("Info.plist")
         let data = try IPAInspector.infoPlistData(of: app)
         var format = PropertyListSerialization.PropertyListFormat.binary
@@ -382,9 +388,10 @@ public struct Resigner: Sendable {
         // Cleared first: an app signed by XSide before carries the previous payload.
         plist["XSideWelcome"] = nil
         if let payload { plist["XSideWelcome"] = payload.plist }
-        let strings = features ? InfoPlistAdditions.apply(to: &plist) : [:]
+        let strings = features ? InfoPlistAdditions.apply(to: &plist, language: language) : [:]
         try write(plist, format: format, to: url)
-        // Never fails the install: untranslated titles are the worst outcome.
+        // Never fails the install: untranslated texts are the worst outcome. Only the app's own
+        // lprojs get them (no folder created: final review Important 2).
         if !strings.isEmpty {
             LocalizedStrings.merge(strings, into: app, table: "InfoPlist", keepExisting: [InfoPlistAdditions.usageKey],
                                    developmentRegion: plist["CFBundleDevelopmentRegion"] as? String)

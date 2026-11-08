@@ -221,7 +221,8 @@ final class AppModel {
             resigner: Resigner(runner: runner,
                                welcomeDylib: Self.featuresOff ? nil : Bundle.main.url(forResource: "XSideWelcome", withExtension: "dylib"),
                                settingsSection: Self.featuresOff ? nil : Self.settingsSection,
-                               welcome: { _ in AppModel.welcomePayload() }),
+                               welcome: { _ in AppModel.welcomePayload() },
+                               textLanguage: { AppModel.textLanguage($0) }),
             installer: Installer(runner: runner),
             workRoot: paths.jobsWork, now: { Date() }, macIsBeta: XcodeLauncher.macIsBeta,
             inAppDefaults: { AppModel.inAppDefaults(at: $0) },
@@ -241,8 +242,8 @@ final class AppModel {
         #endif
     }
 
-    /// The "Réglages XSide" section of the app's page in the iOS Settings app, translated by iOS
-    /// from the strings XSide writes. Written at each install and refresh, from the installation's
+    /// The "Réglages XSide" section of the app's page in the iOS Settings app: plain text in the
+    /// installation's language, translated by iOS in the languages the app already has. Written at each install and refresh, from the installation's
     /// own values (`facts`, given by the pipeline). The texts are the Mac's; the library rewrites
     /// them in the device's language at launch.
     nonisolated static func settingsSection(_ profile: ProvisioningProfile, _ facts: InstallationFacts?) -> SettingsSection {
@@ -255,7 +256,12 @@ final class AppModel {
             installedOn: (facts?.firstInstalledAt ?? now).formatted(style),
             connection: facts?.lastCheckIn.map { "✓ " + $0.formatted(style) } ?? "—",
             lastRefresh: outcome.map { ($0.succeeded ? "✓ " : "✕ ") + $0.at.formatted(style) } ?? "—",
-            inApp: facts?.inApp ?? inAppDefaults(at: now))
+            inApp: facts?.inApp ?? inAppDefaults(at: now), language: textLanguage(facts))
+    }
+
+    /// The language of the plain texts written into the app (see `InAppSettings.textLanguage`).
+    nonisolated static func textLanguage(_ facts: InstallationFacts?) -> String {
+        (facts?.inApp ?? inAppDefaults(at: Date())).textLanguage(macPreferences: Locale.preferredLanguages)
     }
 
     /// XSide-in-app settings of an installation that has none yet: the Mac defaults (Settings >

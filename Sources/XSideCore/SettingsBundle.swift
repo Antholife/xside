@@ -1,8 +1,10 @@
 import Foundation
 
 /// The section XSide adds to an app's page in the iOS Settings app: a group followed by rows.
-/// Nothing is pre-translated: every title is a key, looked up by iOS in the bundle's strings table
-/// in the device's language, and `strings` carries the texts (language "fr"/"en" -> key -> text).
+/// Every title is a key, looked up by iOS in the bundle's strings table in the device's language,
+/// and `strings` carries the texts (language "fr"/"en" -> key -> text). XSide's own section uses
+/// plain text in the installation's language as keys (`plainText(in:)`), so a title nothing
+/// translates still reads right.
 public struct SettingsSection: Sendable {
     public enum Row: Sendable {
         /// Read-only line; `key` (without the XSide prefix) is where the dylib rewrites the value
@@ -23,6 +25,31 @@ public struct SettingsSection: Sendable {
         self.footerKey = footerKey
         self.rows = rows
         self.strings = strings
+    }
+
+    /// The same section with each key replaced by its text in `language` (the key itself when it
+    /// has none), and `strings` keyed by those texts: iOS shows a key no table defines as it is,
+    /// so an app without localizations gets readable titles and no lproj (final review
+    /// Important 2), and the others get the translations in the folders they already have.
+    public func plainText(in language: String) -> SettingsSection {
+        let source = strings[language] ?? strings["en"] ?? [:]
+        func text(_ key: String) -> String { source[key] ?? key }
+        let rows = rows.map { row -> Row in
+            switch row {
+            case let .value(titleKey, key, defaultValue):
+                return .value(titleKey: text(titleKey), key: key, defaultValue: defaultValue)
+            case let .toggle(titleKey, key, defaultValue):
+                return .toggle(titleKey: text(titleKey), key: key, defaultValue: defaultValue)
+            case let .choice(titleKey, key, titleKeys, values, defaultValue):
+                return .choice(titleKey: text(titleKey), key: key, titleKeys: titleKeys.map(text), values: values,
+                               defaultValue: defaultValue)
+            }
+        }
+        var plain: [String: [String: String]] = [:]
+        for (lang, table) in strings {
+            for (key, translation) in table { plain[lang, default: [:]][text(key)] = translation }
+        }
+        return SettingsSection(titleKey: text(titleKey), footerKey: footerKey.map(text), rows: rows, strings: plain)
     }
 }
 
@@ -123,8 +150,13 @@ public enum SettingsBundle {
         if !table.isEmpty, !table.contains("/"), !table.contains("..") {
             let info = (try? Data(contentsOf: app.appendingPathComponent("Info.plist")))
                 .flatMap { try? PropertyListSerialization.propertyList(from: $0, format: nil) as? [String: Any] }
-            LocalizedStrings.merge(section.strings, into: bundle, table: table,
-                                   developmentRegion: info?["CFBundleDevelopmentRegion"] as? String)
+            // Translations in the languages the app already has, never more (its localization set
+            // stays as it was). In the app's own table, an entry it already has for the same text wins.
+            let appLanguages = ((try? fm.contentsOfDirectory(atPath: app.path)) ?? []).filter { $0.hasSuffix(".lproj") }.sorted()
+            let ownKeys = table == ownTable ? [] : Set(section.strings.values.flatMap(\.keys))
+            LocalizedStrings.merge(section.strings, into: bundle, table: table, keepExisting: ownKeys,
+                                   developmentRegion: info?["CFBundleDevelopmentRegion"] as? String,
+                                   mirroring: appLanguages)
         }
     }
 }

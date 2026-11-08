@@ -193,6 +193,29 @@ NSString *XSSettingsPaneURLString(NSString *bundleID) {
     return [NSString stringWithFormat:@"App-prefs:%@&path=io.github.xside.settings.pane", bundleID];
 }
 
+const NSUInteger XSMaxShortcuts = 4;
+
+NSArray<NSString *> *XSShortcutNamesFitting(NSUInteger staticCount, NSUInteger appDynamicCount) {
+    NSArray *names = @[@"settings", @"refresh", @"report"];
+    NSUInteger taken = staticCount + appDynamicCount;
+    NSUInteger free = taken >= XSMaxShortcuts ? 0 : XSMaxShortcuts - taken;
+    return [names subarrayWithRange:NSMakeRange(0, MIN(free, names.count))];
+}
+
+BOOL XSIsXSideShortcutType(id type) {
+    return [type isKindOfClass:NSString.class] && [type hasPrefix:@"io.github.xside.shortcut."];
+}
+
+NSUInteger XSAppStaticShortcutCount(id infoItems) {
+    if (![infoItems isKindOfClass:NSArray.class]) return 0;
+    NSUInteger count = 0;
+    for (id item in infoItems) {
+        if (![item isKindOfClass:NSDictionary.class]) continue;
+        if (!XSIsXSideShortcutType(item[@"UIApplicationShortcutItemType"])) count++;
+    }
+    return count;
+}
+
 BOOL XSIsLate(NSTimeInterval timeLeft, NSInteger thresholdHours) {
     return timeLeft < (thresholdHours - 6) * 3600.0;
 }

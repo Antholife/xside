@@ -771,6 +771,7 @@ void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded) {
 /// allow it), else the pill; never both (spec §1).
 static void XSLaunch(void) {
     XSLoadSettings(); // what the person changed in iOS Settings applies from this launch on
+    XSUpdateShortcuts(); // in the slots the app leaves, in the language just loaded
     BOOL tellAutoRefresh = XSTakeAutoRefreshChangedOnPhone();
     BOOL sendSettings = XSTakeSettingsChangedOnPhone();
     // Asked from iOS Settings: the same as the Refresh quick action, once the app is on screen
@@ -830,6 +831,7 @@ static void XSReturn(void) {
     // Coming back from iOS Settings right after turning it on is the usual way to use it.
     if (XSTakeRefreshOnLaunch()) XSWhenForeground(0.5, ^{ XSRequestRefresh(); });
     BOOL changed = XSLoadSettings();
+    XSUpdateShortcuts();
     if (changed) {
         NSDate *expiry = XSExpirationDate();
         if (expiry) XSScheduleReminder(expiry, NO);

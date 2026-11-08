@@ -235,6 +235,19 @@ int main(int argc, const char *argv[]) {
         check([XSSettingsPaneURLString(@"com.example.app") isEqualToString:@"App-prefs:com.example.app&path=io.github.xside.settings.pane"],
               @"settings pane URL");
 
+        // Final review Important 1: XSide's quick actions are dynamic and only take the slots the
+        // app leaves (iOS shows 4: the app's static ones, then its dynamic ones).
+        check([XSShortcutNamesFitting(0, 0) isEqual:(@[@"settings", @"refresh", @"report"])], @"quick actions: all three in an empty menu");
+        check([XSShortcutNamesFitting(0, 2) isEqual:@[@"settings"]] && [XSShortcutNamesFitting(1, 1) isEqual:(@[@"settings", @"refresh"])]
+              && XSShortcutNamesFitting(0, 4).count == 0 && XSShortcutNamesFitting(3, 1).count == 0
+              && XSShortcutNamesFitting(4, 3).count == 0, @"quick actions: only the slots the app's static and dynamic items leave");
+        check(XSIsXSideShortcutType(@"io.github.xside.shortcut.refresh") && !XSIsXSideShortcutType(@"com.app.search")
+              && !XSIsXSideShortcutType(nil) && !XSIsXSideShortcutType(@3), @"quick actions: XSide's types");
+        id infoItems = @[@{@"UIApplicationShortcutItemType": @"com.app.new"}, @{@"UIApplicationShortcutItemType": @"io.github.xside.shortcut.settings"},
+                         @"junk", @{@"UIApplicationShortcutItemType": @"com.app.search"}];
+        check(XSAppStaticShortcutCount(infoItems) == 2 && XSAppStaticShortcutCount(nil) == 0 && XSAppStaticShortcutCount(@"x") == 0,
+              @"quick actions: the app's static items counted, XSide's left out");
+
         // JSON round trip of the settings.
         check(sameSettings(XSSettingsFromJSONObject(XSSettingsJSONObject(fixtureSettings())) ?: @{}, fixtureSettings()),
               @"settings JSON round trip");

@@ -146,9 +146,37 @@ struct SettingsBundleTests {
         #expect(!FileManager.default.fileExists(atPath: elsewhere.appendingPathComponent("Root.plist").path))
     }
 
-    private func xsideSection() -> SettingsSection {
+    private func xsideSection(language: String = "en") -> SettingsSection {
         SettingsSection.xside(validUntil: "12 nov.", refreshedOn: "5 nov.", version: "1.2", installedOn: "1 nov.",
-                              inApp: InAppSettings.defaults(reminder: false, at: Date(timeIntervalSince1970: 0)))
+                              inApp: InAppSettings.defaults(reminder: false, at: Date(timeIntervalSince1970: 0)),
+                              language: language)
+    }
+
+    /// The app's own lproj folders (Settings.bundle mirrors only these).
+    private func addAppLprojs(_ app: URL, _ names: [String]) throws {
+        for name in names {
+            try FileManager.default.createDirectory(at: app.appendingPathComponent(name), withIntermediateDirectories: true)
+        }
+    }
+
+    private func lprojs(_ dir: URL) -> Set<String> {
+        Set(((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).filter { $0.hasSuffix(".lproj") })
+    }
+
+    /// Final review Important 2: titles are plain text in the installation's language, shown as they
+    /// are when nothing translates them; an app without localizations gets no lproj at all.
+    @Test func titlesArePlainTextAndNoLanguageIsAdded() throws {
+        let app = try makeApp()
+        try SettingsBundle.add(xsideSection(language: "fr"), to: app)
+        #expect(try specifiers(app)[1]["Title"] as? String == "Réglages XSide")
+        let rows = try childItems(app)
+        #expect(rows.first { $0["Key"] as? String == "io.github.xside.settings.validUntil" }?["Title"] as? String == "Valable jusqu'au")
+        #expect((rows[0]["FooterText"] as? String)?.hasPrefix("✦ Installée avec XSide") == true)
+        #expect(lprojs(app.appendingPathComponent("Settings.bundle")).isEmpty)
+        #expect(lprojs(app).isEmpty)
+        let en = try makeApp()
+        try SettingsBundle.add(xsideSection(language: "en"), to: en)
+        #expect(try specifiers(en)[1]["Title"] as? String == "XSide Settings")
     }
 
     @Test func settingsSectionHasTogglesAndChoices() throws {
@@ -176,28 +204,29 @@ struct SettingsBundleTests {
         let language = try item("language")
         #expect(language["Type"] as? String == "PSMultiValueSpecifier")
         #expect(language["Values"] as? [String] == ["automatic", "fr", "en"])
-        #expect(language["Titles"] as? [String] == [p + "language.automatic", p + "language.fr", p + "language.en"])
+        #expect(language["Titles"] as? [String] == ["Automatic", "Français", "English"])
     }
 
+    /// The app is localized in French and English: Settings.bundle gets those two folders (and
+    /// only those), keyed by the plain English titles.
     @Test func settingsTitlesGetTheirOwnTableOtherwise() throws {
         let app = try makeApp()
+        try addAppLprojs(app, ["fr.lproj", "en.lproj", "Base.lproj"])
         try SettingsBundle.add(xsideSection(), to: app)
         #expect(try root(app)["StringsTable"] as? String == "XSide")
         let bundle = app.appendingPathComponent("Settings.bundle")
+        #expect(lprojs(bundle) == ["fr.lproj", "en.lproj"])
         let fr = try strings(bundle.appendingPathComponent("fr.lproj/XSide.strings"))
         let en = try strings(bundle.appendingPathComponent("en.lproj/XSide.strings"))
-        let p = "io.github.xside.settings."
-        #expect(fr[p + "title.group"] == "Réglages XSide")
-        #expect(fr[p + "title.connection"] == "Connexion au Mac")
-        #expect(fr[p + "title.refreshOnLaunch"] == "Rafraîchir à la prochaine ouverture")
-        #expect(en[p + "title.refreshOnLaunch"] == "Refresh at next launch")
-        #expect(fr[p + "title.lastRefresh"] == "Dernier rafraîchissement")
-        #expect(fr.keys.allSatisfy { !$0.hasPrefix(p + "level") && $0 != p + "title.level" })
-        #expect(fr[p + "footer"]?.hasPrefix("✦ Installée avec XSide\n• Rafraîchie automatiquement depuis ton Mac\n• ") == true)
-        #expect(en[p + "footer"]?.contains("\n• Your choices apply on this iPhone right away\n") == true)
-        #expect(fr[p + "footer"]?.hasSuffix("github.com/Antholife/xside") == true)
-        #expect(en[p + "title.group"] == "XSide Settings")
-        #expect(en[p + "footer"]?.hasPrefix("✦ Installed with XSide") == true)
+        #expect(fr["XSide Settings"] == "Réglages XSide")
+        #expect(fr["Connection to the Mac"] == "Connexion au Mac")
+        #expect(fr["Refresh at next launch"] == "Rafraîchir à la prochaine ouverture")
+        #expect(en["Refresh at next launch"] == "Refresh at next launch")
+        #expect(fr["Last refresh"] == "Dernier rafraîchissement")
+        let footer = try #require(fr.keys.first { $0.hasPrefix("✦ Installed with XSide") })
+        #expect(fr[footer]?.hasPrefix("✦ Installée avec XSide\n• Rafraîchie automatiquement depuis ton Mac\n• ") == true)
+        #expect(en[footer]?.contains("\n• Your choices apply on this iPhone right away\n") == true)
+        #expect(fr[footer]?.hasSuffix("github.com/Antholife/xside") == true)
         #expect(Set(fr.keys) == Set(en.keys))
     }
 
@@ -213,19 +242,20 @@ struct SettingsBundleTests {
             .write(to: bundle.appendingPathComponent("Root.plist"))
         try Data(#""dark.title" = "Mode sombre";"#.utf8).write(to: frDir.appendingPathComponent("Root.strings"))
         try Data(#""dark.title" = "Dunkel";"#.utf8).write(to: deDir.appendingPathComponent("Root.strings"))
-        try SettingsBundle.add(xsideSection(), to: app)
+        try addAppLprojs(app, ["English.lproj", "fr.lproj", "de.lproj"])
+        try SettingsBundle.add(xsideSection(language: "fr"), to: app)
         #expect(try root(app)["StringsTable"] as? String == "Root")
-        let p = "io.github.xside.settings."
         let fr = try strings(frDir.appendingPathComponent("Root.strings"))
         #expect(fr["dark.title"] == "Mode sombre") // the app's own entry kept
-        #expect(fr[p + "title.group"] == "Réglages XSide")
-        // en.lproj created; a language XSide doesn't translate falls back to English, its own entries kept.
-        #expect(try strings(bundle.appendingPathComponent("en.lproj/Root.strings"))[p + "title.group"] == "XSide Settings")
+        #expect(fr["Réglages XSide"] == "Réglages XSide")
+        // English.lproj mirrored (the app has it); a language XSide doesn't translate gets English.
+        #expect(lprojs(bundle) == ["fr.lproj", "de.lproj", "English.lproj"])
+        #expect(try strings(bundle.appendingPathComponent("English.lproj/Root.strings"))["Réglages XSide"] == "XSide Settings")
         let de = try strings(deDir.appendingPathComponent("Root.strings"))
         #expect(de["dark.title"] == "Dunkel")
-        #expect(de[p + "title.group"] == "XSide Settings")
+        #expect(de["Réglages XSide"] == "XSide Settings")
         // The app's title still resolves in every lproj, including the ones XSide created.
-        #expect(try strings(bundle.appendingPathComponent("en.lproj/Root.strings"))["dark.title"] != nil) // seeded from a copy
+        #expect(try strings(bundle.appendingPathComponent("English.lproj/Root.strings"))["dark.title"] != nil) // seeded from a copy
         #expect(!FileManager.default.fileExists(atPath: bundle.appendingPathComponent("fr.lproj/XSide.strings").path))
     }
 
@@ -240,10 +270,11 @@ struct SettingsBundleTests {
         try PropertyListSerialization.data(fromPropertyList: own, format: .binary, options: 0)
             .write(to: bundle.appendingPathComponent("Root.plist"))
         try Data(#""dark.title" = "Dark mode";"#.utf8).write(to: enDir.appendingPathComponent("Root.strings"))
+        try addAppLprojs(app, ["fr.lproj"])
         try SettingsBundle.add(xsideSection(), to: app)
         let fr = try strings(bundle.appendingPathComponent("fr.lproj/Root.strings"))
         #expect(fr["dark.title"] == "Dark mode")
-        #expect(fr["io.github.xside.settings.title.group"] == "Réglages XSide")
+        #expect(fr["XSide Settings"] == "Réglages XSide")
     }
 
     /// No StringsTable key means iOS reads "Root": XSide's keys go there, not to a table the page never names.
@@ -259,7 +290,7 @@ struct SettingsBundleTests {
         try SettingsBundle.add(xsideSection(), to: app)
         let en = try strings(enDir.appendingPathComponent("Root.strings"))
         #expect(en["dark.title"] == "Dark mode")
-        #expect(en["io.github.xside.settings.title.group"] == "XSide Settings")
+        #expect(en["XSide Settings"] == "XSide Settings")
         #expect(!FileManager.default.fileExists(atPath: bundle.appendingPathComponent("en.lproj/XSide.strings").path))
         #expect(try root(app)["StringsTable"] as? String != "XSide")
     }

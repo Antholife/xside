@@ -18,55 +18,87 @@ import Foundation
         #expect(again["fr"]?["NSLocalNetworkUsageDescription"] == nil)
     }
 
-    @Test func shortcutItemsAreAddedKeepingTheAppsOwn() {
+    /// Final review Important 1: XSide's quick actions are dynamic (set by the library in the slots
+    /// the app leaves, after its own dynamic ones), so the Info.plist gets none, and those of an
+    /// earlier signing are taken out. The app's own static items stay as they were.
+    @Test func noStaticShortcutItemsAreAdded() {
         let theirs: [String: Any] = ["UIApplicationShortcutItemType": "com.app.search", "UIApplicationShortcutItemTitle": "Search"]
-        var plist: [String: Any] = ["UIApplicationShortcutItems": [theirs]]
-        InfoPlistAdditions.apply(to: &plist)
-        InfoPlistAdditions.apply(to: &plist) // a re-sign doesn't duplicate
-        let items = plist["UIApplicationShortcutItems"] as? [[String: Any]] ?? []
-        #expect(items.map { $0["UIApplicationShortcutItemType"] as? String } == [
-            "com.app.search", "io.github.xside.shortcut.settings",
-            "io.github.xside.shortcut.refresh", "io.github.xside.shortcut.report"])
-        #expect(items.dropFirst().map { $0["UIApplicationShortcutItemIconSymbolName"] as? String }
-                == ["gearshape", "arrow.clockwise", "ladybug"])
-    }
-
-    /// iOS shows 4 quick actions at most: XSide fills what's left, "Réglages XSide" lasting longest.
-    @Test(arguments: [(0, 3), (1, 3), (2, 2), (3, 1), (4, 0), (6, 0)])
-    func onlyTheFreeSlotsAreUsed(appItems: Int, added: Int) {
-        let theirs = (0..<appItems).map { ["UIApplicationShortcutItemType": "com.app.\($0)", "UIApplicationShortcutItemTitle": "T"] }
-        var plist: [String: Any] = ["UIApplicationShortcutItems": theirs]
+        let earlier: [String: Any] = ["UIApplicationShortcutItemType": "io.github.xside.shortcut.settings",
+                                      "UIApplicationShortcutItemTitle": "io.github.xside.shortcut.settings.title"]
+        var plist: [String: Any] = ["UIApplicationShortcutItems": [theirs, earlier]]
         let strings = InfoPlistAdditions.apply(to: &plist)
         let items = plist["UIApplicationShortcutItems"] as? [[String: Any]] ?? []
-        let ours = items.compactMap { $0["UIApplicationShortcutItemType"] as? String }.filter { $0.hasPrefix("io.github.xside.shortcut.") }
-        #expect(ours == Array(["settings", "refresh", "report"].prefix(added)).map { "io.github.xside.shortcut.\($0)" })
-        #expect(items.count == appItems + added)
-        #expect(strings["fr"]?.filter { $0.key.hasSuffix(".title") }.count ?? 0 == added)
+        #expect(items.map { $0["UIApplicationShortcutItemType"] as? String } == ["com.app.search"])
+        #expect(strings.values.allSatisfy { $0.keys.allSatisfy { !$0.contains("shortcut") } })
+        var empty: [String: Any] = [:]
+        InfoPlistAdditions.apply(to: &empty)
+        #expect(empty["UIApplicationShortcutItems"] == nil)
     }
 
-    @Test func shortcutTitlesAreLocalized() {
+    /// Final review Important 2: the plain value is the text in the installation's language (it is
+    /// what shows when the app has no localization at all), the other languages go to the strings.
+    @Test func usageIsPlainTextInTheGivenLanguage() {
         var plist: [String: Any] = [:]
-        let strings = InfoPlistAdditions.apply(to: &plist)
-        let items = plist["UIApplicationShortcutItems"] as? [[String: Any]] ?? []
-        let keys = items.compactMap { $0["UIApplicationShortcutItemTitle"] as? String }
-        #expect(keys.count == 3)
-        #expect(keys.map { strings["fr"]?[$0] } == ["Réglages XSide", "Rafraîchir maintenant", "Signaler un problème"])
-        #expect(keys.map { strings["en"]?[$0] } == ["XSide Settings", "Refresh now", "Report a problem"])
+        let strings = InfoPlistAdditions.apply(to: &plist, language: "fr")
+        #expect(plist["NSLocalNetworkUsageDescription"] as? String == "XSide demande à ton Mac de rafraîchir cette app.")
+        #expect(strings["en"]?["NSLocalNetworkUsageDescription"] == "XSide asks your Mac to refresh this app.")
     }
 }
 
 @Suite struct LocalizedStringsTests {
-    @Test func createdFilesAreSeededFromTheAppsCopy() throws {
+    private func dir(_ lprojs: [String]) throws -> URL {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let base = dir.appendingPathComponent("Base.lproj")
-        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        try Data(#""CFBundleDisplayName" = "Demo";"#.utf8).write(to: base.appendingPathComponent("InfoPlist.strings"))
-        LocalizedStrings.merge(["fr": ["k": "français"], "en": ["k": "english"]], into: dir, table: "InfoPlist")
-        for (lproj, text) in [("fr.lproj", "français"), ("en.lproj", "english"), ("Base.lproj", "english")] {
-            let d = try #require(try PropertyListSerialization.propertyList(
-                from: Data(contentsOf: dir.appendingPathComponent("\(lproj)/InfoPlist.strings")), format: nil) as? [String: String])
-            #expect(d["CFBundleDisplayName"] == "Demo")
-            #expect(d["k"] == text)
+        for name in lprojs {
+            try FileManager.default.createDirectory(at: dir.appendingPathComponent(name), withIntermediateDirectories: true)
         }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    private func table(_ url: URL) throws -> [String: String] {
+        try #require(try PropertyListSerialization.propertyList(from: Data(contentsOf: url), format: nil) as? [String: String])
+    }
+
+    private func lprojs(_ dir: URL) throws -> Set<String> {
+        Set(try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0.hasSuffix(".lproj") })
+    }
+
+    /// Final review Important 2: a new fr.lproj/en.lproj would make iOS take the app as localized
+    /// in French and English (its own texts then missing). Only the folders already there get texts.
+    @Test func noLprojIsCreated() throws {
+        let app = try dir(["zh-Hans.lproj"])
+        LocalizedStrings.merge(["fr": ["k": "français"], "en": ["k": "english"]], into: app, table: "InfoPlist")
+        #expect(try lprojs(app) == ["zh-Hans.lproj"])
+        #expect(try table(app.appendingPathComponent("zh-Hans.lproj/InfoPlist.strings"))["k"] == "english")
+        let bare = try dir([])
+        LocalizedStrings.merge(["fr": ["k": "français"], "en": ["k": "english"]], into: bare, table: "InfoPlist")
+        #expect(try lprojs(bare).isEmpty)
+    }
+
+    /// Final review minor 7: "French.lproj" and "English.lproj" (older projects) are French and English.
+    @Test func legacyLprojNamesKeepTheirLanguage() throws {
+        let app = try dir(["French.lproj", "English.lproj", "fr_CA.lproj", "fr-BE.lproj", "de.lproj"])
+        LocalizedStrings.merge(["fr": ["k": "français"], "en": ["k": "english"]], into: app, table: "InfoPlist")
+        #expect(try lprojs(app) == ["French.lproj", "English.lproj", "fr_CA.lproj", "fr-BE.lproj", "de.lproj"])
+        for name in ["French", "fr_CA", "fr-BE"] {
+            #expect(try table(app.appendingPathComponent("\(name).lproj/InfoPlist.strings"))["k"] == "français")
+        }
+        #expect(try table(app.appendingPathComponent("English.lproj/InfoPlist.strings"))["k"] == "english")
+        #expect(try table(app.appendingPathComponent("de.lproj/InfoPlist.strings"))["k"] == "english")
+        #expect(LocalizedStrings.language(ofLproj: "French.lproj") == "fr" && LocalizedStrings.language(ofLproj: "fr.lproj") == "fr")
+        #expect(LocalizedStrings.language(ofLproj: "Base.lproj") == nil)
+    }
+
+    /// Inside Settings.bundle (XSide's to manage), folders are added for the app's own languages
+    /// only, one per language (an app's "French.lproj" is not doubled by a "fr.lproj"), each seeded
+    /// with the app's copy of the table.
+    @Test func mirroredLanguagesAreAddedOnce() throws {
+        let bundle = try dir(["fr.lproj", "en.lproj"])
+        try Data(#""dark" = "Dark";"#.utf8).write(to: bundle.appendingPathComponent("en.lproj/Root.strings"))
+        LocalizedStrings.merge(["fr": ["k": "français"], "en": ["k": "english"]], into: bundle, table: "Root",
+                               mirroring: ["French.lproj", "de.lproj", "Base.lproj", "English.lproj"])
+        #expect(try lprojs(bundle) == ["fr.lproj", "en.lproj", "de.lproj"])
+        let de = try table(bundle.appendingPathComponent("de.lproj/Root.strings"))
+        #expect(de["k"] == "english" && de["dark"] == "Dark")
     }
 }

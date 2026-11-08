@@ -91,6 +91,19 @@ BOOL XSNeedsNetworkExplanation(BOOL channel, BOOL granted, BOOL explained, NSDic
 /// "App-prefs:<id>&path=<specifier id>" (the child pane row's id, written by SettingsBundle).
 NSString *XSSettingsPaneURLString(NSString *bundleID);
 
+// MARK: Quick actions (final review Important 1)
+
+/// iOS shows 4 quick actions at most: the app's static ones (Info.plist), then its dynamic ones
+/// (set at runtime), then XSide's, which are dynamic and only take the slots left, in priority
+/// order settings, refresh, report. Installing through XSide never takes an item of the app's.
+extern const NSUInteger XSMaxShortcuts;
+NSArray<NSString *> *XSShortcutNamesFitting(NSUInteger staticCount, NSUInteger appDynamicCount);
+/// io.github.xside.shortcut.<name>.
+BOOL XSIsXSideShortcutType(id _Nullable type);
+/// The app's own items in Info.plist's UIApplicationShortcutItems (XSide's from an earlier
+/// signing, if any, not counted).
+NSUInteger XSAppStaticShortcutCount(id _Nullable infoItems);
+
 /// Late (spec §1): less time left than the refresh threshold minus 6 h of margin.
 BOOL XSIsLate(NSTimeInterval timeLeft, NSInteger thresholdHours);
 

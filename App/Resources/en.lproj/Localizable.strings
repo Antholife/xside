@@ -530,7 +530,7 @@
 "whatsNew.110.level.title" = "All, Essentials or None";
 "whatsNew.110.level.text" = "On the Mac, one choice sets how much XSide shows in an app: everything, only the alerts, or nothing (not even the first-install window).";
 "whatsNew.110.quick.title" = "Touch and hold the icon";
-"whatsNew.110.quick.text" = "Touch and hold an app's icon: XSide Settings, Refresh now, Report a problem. The quickest way to its XSide settings.";
+"whatsNew.110.quick.text" = "Touch and hold an app's icon: XSide Settings, Refresh now, Report a problem, once the app has been opened. They take only the places the app's own actions leave (iOS shows 4).";
 "whatsNew.110.phone.title" = "Refresh from the iPhone";
 "whatsNew.110.phone.text" = "Ask XSide to refresh an app from the app itself, over your local network. The channel is signed and private to each app: nobody else on the network can use it.";
 "whatsNew.110.pause.title" = "Pause from the iPhone";
