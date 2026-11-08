@@ -140,6 +140,20 @@ private struct PopoverContent: View {
                 .menuIndicator(.hidden)
                 .buttonStyle(ActionTileStyle(prominent: false))
             }
+            // Settings > Mes apps directly (device feedback 3, E9), on the app and device last
+            // shown there (else the first device's first app): a tile beside the others, so the
+            // device list starts at once and the footer keeps its buttons on one line.
+            Button {
+                model.settingsPane = .apps
+                dismiss()
+                NSApp.activate()
+                openSettings()
+            } label: {
+                ActionTileLabel(symbol: "square.grid.2x2.fill", title: L("popover.myApps"))
+            }
+            .buttonStyle(ActionTileStyle(prominent: false))
+            .hoverBubble(L("popover.myApps.help"), alignment: .trailing, below: true)
+            .accessibilityLabel(L("popover.myApps.help"))
         }
     }
 
@@ -154,15 +168,6 @@ private struct PopoverContent: View {
                 Placeholder(symbol: "iphone.slash", text: L("popover.noDevice"))
             }
         } else {
-            // Settings > Mes apps directly (device feedback 3, E9), on the app and device last
-            // shown there (else the first device's first app). Heads the list it manages, so the
-            // footer keeps its earlier buttons and the version on one line (feedback 5, G1).
-            MyAppsHeader {
-                model.settingsPane = .apps
-                dismiss()
-                NSApp.activate()
-                openSettings()
-            }
             ForEach(groups) { group in
                 VStack(alignment: .leading, spacing: 2) {
                     DeviceCard(group: group,
@@ -580,39 +585,6 @@ private struct AppIDStrip: View {
     }
 }
 
-/// The device list's heading, "Mes apps ›": opens Settings > Mes apps (device feedback 5, G1).
-private struct MyAppsHeader: View {
-    let action: () -> Void
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 5) {
-                Image(systemName: "square.grid.2x2.fill")
-                    .font(.system(size: 10, weight: .semibold))
-                Text(L("popover.myApps"))
-                    .font(.system(size: 11, weight: .semibold))
-                    .lineLimit(1)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .bold))
-                    .opacity(isHovering ? 1 : 0.6)
-            }
-            .foregroundStyle(isHovering ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(.secondary))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Capsule().fill(isHovering ? AnyShapeStyle(Theme.violet.opacity(0.14)) : AnyShapeStyle(Color.clear)))
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
-        .hoverBubble(L("popover.myApps.help"), alignment: .leading, below: true)
-        .accessibilityLabel(L("popover.myApps.help"))
-        .animation(.easeOut(duration: 0.12), value: isHovering)
-        .padding(.leading, 2)
-        .padding(.bottom, -4)
-    }
-}
-
 /// A thin separator, lighter than `Divider` on the glass.
 private struct PopoverDivider: View {
     var body: some View {
@@ -629,15 +601,23 @@ private struct PopoverTint: View {
     }
 }
 
-/// Big square-ish tile: an icon over its title.
+/// Big square-ish tile: an icon over its title. Four share the row (with "Mes apps"), so a title
+/// wraps to two lines rather than being cut ("Installer / une app"); its box is always two lines
+/// tall, so the icons line up.
 private struct ActionTileLabel: View {
     let symbol: String
     let title: String
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 4) {
             Image(systemName: symbol).font(.system(size: 20, weight: .semibold))
-            Text(title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+            Text(title)
+                .font(.system(size: 11.5, weight: .semibold))
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
+                .frame(height: 30)
+                .padding(.horizontal, 4)
         }
         .frame(maxWidth: .infinity)
         .frame(height: 64)

@@ -635,7 +635,7 @@
 "install.summary.no" = "Off";
 "install.options.customize.note" = "Changes the app before installing it. Nothing changes unless you edit something.";
 "inApp.features" = "XSide features in this app";
-"inApp.features.note" = "Off: the app is installed as it came, with nothing from XSide inside.";
+"inApp.features.note" = "On: the XSide module is injected into the app. Off: the app is installed as it came, with nothing from XSide inside.";
 "inApp.features.off" = "No XSide features in this app.";
 "inApp.where" = "Settings > Apps > %@ > XSide Settings";
 "inApp.where.alt" = "Touch and hold the app's icon: XSide Settings, Refresh now, Report a problem";
@@ -661,7 +661,7 @@
 "inApp.language.note" = "Automatic: the iPhone's language. Otherwise, the one you choose.";
 "inApp.language.automatic" = "Automatic";
 "inApp.autoRefresh" = "Automatic refresh";
-"inApp.autoRefresh.note" = "Off: XSide stops refreshing the app, which expires on its date. Can be turned back on here or from the iPhone.";
+"inApp.autoRefresh.note" = "On: XSide refreshes the app before it expires. Off: it no longer does, and the app expires on its date. Can be turned back on here or from the iPhone.";
 "inApp.preview" = "Preview";
 "inApp.preview.validFor" = "Valid for ";
 "inApp.preview.days5" = "5 more days";
@@ -705,7 +705,7 @@
 "settings.pane.install" = "Installing";
 "settings.pane.inApp" = "XSide module in the apps";
 "settings.reviewOptions" = "Review the options at each install";
-"settings.reviewOptions.note" = "Off: for an app already installed, the first step lists every option that will apply, with “Edit”, then Install. A new app always goes through the three steps.";
+"settings.reviewOptions.note" = "On: an app already installed goes through the three steps too. Off: for an app already installed, the first step lists every option that will apply, with “Edit”, then Install. A new app always goes through the three steps.";
 "settings.firewall" = "Incoming connections";
 "settings.firewall.note" = "If macOS asks whether XSide may accept incoming connections, allow it: that's how the apps reach XSide for “Refresh” and their settings.";
 "settings.inApp.defaults" = "For new installs";

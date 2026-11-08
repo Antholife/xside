@@ -635,7 +635,7 @@
 "install.summary.no" = "Non";
 "install.options.customize.note" = "Modifie l'app avant de l'installer. Rien n'est changé si tu n'y touches pas.";
 "inApp.features" = "Fonctionnalités XSide dans cette app";
-"inApp.features.note" = "Désactivé : l'app est installée telle quelle, sans rien d'XSide à l'intérieur.";
+"inApp.features.note" = "Activé : le module XSide est injecté dans l'app. Désactivé : l'app est installée telle quelle, sans rien d'XSide à l'intérieur.";
 "inApp.features.off" = "Pas de fonctionnalités XSide dans cette app.";
 "inApp.where" = "Réglages > Apps > %@ > Réglages XSide";
 "inApp.where.alt" = "Appui long sur l'icône de l'app : Réglages XSide, Rafraîchir maintenant, Signaler un problème";
@@ -661,7 +661,7 @@
 "inApp.language.note" = "Automatique : la langue de l'iPhone. Sinon, celle que tu choisis.";
 "inApp.language.automatic" = "Automatique";
 "inApp.autoRefresh" = "Rafraîchissement automatique";
-"inApp.autoRefresh.note" = "Désactivé : XSide ne rafraîchit plus l'app, qui expirera à sa date. Réactivable ici ou depuis l'iPhone.";
+"inApp.autoRefresh.note" = "Activé : XSide rafraîchit l'app avant qu'elle expire. Désactivé : il ne la rafraîchit plus, elle expirera à sa date. Réactivable ici ou depuis l'iPhone.";
 "inApp.preview" = "Aperçu";
 "inApp.preview.validFor" = "Valable encore ";
 "inApp.preview.days5" = "5 jours";
@@ -705,7 +705,7 @@
 "settings.pane.install" = "Installation";
 "settings.pane.inApp" = "Module XSide dans les apps";
 "settings.reviewOptions" = "Revoir les options à chaque installation";
-"settings.reviewOptions.note" = "Désactivé : pour une app déjà installée, la première étape liste toutes les options appliquées, avec « Modifier », puis Installer. Une nouvelle app passe toujours par les trois étapes.";
+"settings.reviewOptions.note" = "Activé : une app déjà installée passe aussi par les trois étapes. Désactivé : pour une app déjà installée, la première étape liste toutes les options appliquées, avec « Modifier », puis Installer. Une nouvelle app passe toujours par les trois étapes.";
 "settings.firewall" = "Connexions entrantes";
 "settings.firewall.note" = "Si macOS demande d'autoriser XSide à accepter les connexions entrantes, accepte : c'est comme ça que les apps joignent XSide pour « Rafraîchir » et leurs réglages.";
 "settings.inApp.defaults" = "Pour les nouvelles installations";
