@@ -101,6 +101,8 @@ struct ReleaseNotes {
                      title: L("whatsNew.110.switch.title"), text: L("whatsNew.110.switch.text")),
                 Item(symbol: "puzzlepiece.extension.fill",
                      title: L("whatsNew.110.inject.title"), text: L("whatsNew.110.inject.text")),
+                Item(symbol: "hammer.circle.fill",
+                     title: L("whatsNew.110.build.title"), text: L("whatsNew.110.build.text")),
             ], thanks: []),
             ReleaseNotes(version: "1.0.6", label: "beta", items: [
                 Item(symbol: "arrow.up.circle.fill",

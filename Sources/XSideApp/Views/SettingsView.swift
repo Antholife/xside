@@ -6,12 +6,17 @@ enum AppLinks {
     static let repository = URL(string: "https://github.com/Antholife/xside")!
     static let author = URL(string: "https://github.com/Antholife")!
     /// A new issue on the bug report form (.github/ISSUE_TEMPLATE/bug_report.yml).
+    /// Files on `main`: they exist on GitHub from the release that ships them.
+    static let agentsGuide = URL(string: "https://github.com/Antholife/xside/blob/main/AGENTS.md")!
+    static let contributing = URL(string: "https://github.com/Antholife/xside/blob/main/CONTRIBUTING.md")!
+    static let issues = URL(string: "https://github.com/Antholife/xside/issues")!
+    static let pullRequests = URL(string: "https://github.com/Antholife/xside/pulls")!
     static let newBugReport = URL(string: "https://github.com/Antholife/xside/issues/new?template=bug_report.yml")!
 }
 
 /// The pages of the Settings window.
 enum SettingsPane: String, CaseIterable, Identifiable {
-    case general, refresh, install, inApp, apps, notifications, signing, updates, logs, about
+    case general, refresh, install, inApp, apps, notifications, signing, updates, logs, build, about
     var id: String { rawValue }
 
     var title: String {
@@ -25,6 +30,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .notifications: L("settings.notifications")
         case .updates: L("updates.title")
         case .logs: L("settings.pane.reports")
+        case .build: L("settings.pane.build")
         case .about: L("settings.about")
         }
     }
@@ -40,6 +46,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .notifications: "bell.badge.fill"
         case .updates: "arrow.triangle.2.circlepath"
         case .logs: "doc.text.magnifyingglass"
+        case .build: "hammer.circle.fill"
         case .about: "info.circle.fill"
         }
     }
@@ -80,6 +87,7 @@ struct SettingsView: View {
             Group {
                 // Its own list and scrolling, not a Form.
                 if model.settingsPane == .apps { AppsSettingsPage(model: model) }
+                else if model.settingsPane == .build { BuildSettingsPage() }
                 else { SettingsPage(model: model, pane: model.settingsPane) }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -171,7 +179,7 @@ private struct SettingsPage: View {
             case .refresh: refreshPage
             case .install: installPage
             case .inApp: InAppDefaultsPage()
-            case .apps: EmptyView() // shown by SettingsView (see AppsSettingsPage)
+            case .apps, .build: EmptyView() // shown by SettingsView (AppsSettingsPage, BuildSettingsPage)
             case .signing:
                 Section { SigningHero(model: model) }
                 SigningSettingsSection(model: model)

@@ -5,6 +5,7 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 ## [Unreleased]
 
 ### Added
+- **A "Build & contribute" page in Settings**: make XSide yours (changes of your own with an AI agent, scripts with the `xside` command) and share it back if you want. Opens AGENTS.md and CONTRIBUTING.md on GitHub, copies a starter prompt for an agent, lists the real `xside` commands.
 - **XSide in the apps: settings per device, kept in step between the Mac and the iPhone.** Each installation (app on a device) has its own XSide settings. A change made on the Mac or the iPhone reaches the other side at the next connection; field by field, the most recent change wins (a tie goes to the iPhone). Old state loads as before.
 - **An "XSide Settings" page in the app's iOS Settings** (touch and hold the app's icon > *XSide Settings*, or *Settings > Apps > [app name] > XSide Settings*, behind one row; translated by iOS, English and French): valid until, last refreshed, version, and the switches below. The footer says that choices apply at once on the iPhone and that XSide on the Mac is told at the next connection.
 - **A pill at launch** ("XSide: ...") says how many days the app stays valid, then goes away. On by default, per app.
