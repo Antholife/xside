@@ -183,6 +183,7 @@ private struct PopoverContent: View {
                                    onRefresh: { model.refreshNow(entry.job) },
                                    onUninstall: { uninstall(entry, deviceName: group.name) },
                                    onStopRefreshing: { stopRefreshing(entry, deviceName: group.name) },
+                                   onPause: { until in Task { await model.stopRefreshing(entry, until: until) } },
                                    onResume: { resume(entry) },
                                    onRemoveFromList: { removeFromList(entry, deviceName: group.name) },
                                    onXSideSettings: {

@@ -25,6 +25,8 @@ struct AppRow: View {
     /// Each asks for confirmation first (see `AppRowAlerts`).
     let onUninstall: () -> Void
     let onStopRefreshing: () -> Void
+    /// Pauses this app for a while (device feedback 3, E5), without confirmation: it resumes by itself.
+    let onPause: (Date) -> Void
     let onResume: () -> Void
     let onRemoveFromList: () -> Void
     /// Opens Settings > Mes apps on this app and device.
@@ -84,8 +86,15 @@ struct AppRow: View {
             Button(L("popover.app.uninstallFrom", deviceName), systemImage: "trash", role: .destructive,
                    action: onUninstall)
                 .disabled(!canManage)
-            Button(L("popover.app.stopRefreshing"), systemImage: "stop.circle", action: onStopRefreshing)
-                .disabled(!canManage)
+            // Like the panel's Pause, for this app alone (device feedback 3, E5).
+            Menu {
+                Button(L("popover.app.pause.hours")) { onPause(Date().addingTimeInterval(2 * 3600)) }
+                Button(L("popover.app.pause.day")) { onPause(Date().addingTimeInterval(86_400)) }
+                Button(L("settings.pause.untilResumed"), action: onStopRefreshing)
+            } label: {
+                Label(L("popover.app.pause"), systemImage: "pause.circle")
+            }
+            .disabled(!canManage)
         }
     }
 
@@ -163,6 +172,9 @@ struct AppRow: View {
     private func subtitle(validity: Validity, now: Date) -> String {
         if isUninstalling { return L("popover.app.uninstalling") }
         if let step { return percent.map { "\(step.rowText) \(percentText($0))" } ?? step.rowText }
+        if isPaused, let end = entry.installation.pausedUntil, end > now {
+            return L("popover.app.pausedUntil", end.formatted(.dateTime.weekday(.abbreviated).hour().minute().locale(appLocale)))
+        }
         if looksPaused {
             // Stopped from the iPhone (its "Rafraîchissement automatique"): said so. The global
             // pause, when the app's own refreshes aren't stopped.

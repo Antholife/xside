@@ -171,6 +171,11 @@ final class BackgroundEngine {
     }
 
     private func evaluate(reason: String) {
+        // A pause of one app for a while that is over (device feedback 3, E5): resumed, which
+        // evaluates again through `onRefreshResumed`.
+        if model.records.contains(where: { $0.installations.contains { $0.refreshPaused && ($0.pausedUntil ?? .distantFuture) <= Date() } }) {
+            Task { await model.resumeEndedPauses() }
+        }
         // The first evaluation comes after the library is loaded (see `AppModel.start`).
         if !remindersReconciled {
             remindersReconciled = true

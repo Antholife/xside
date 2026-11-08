@@ -186,6 +186,8 @@ extension Installation {
         if let auto = result.inApp?.autoRefresh {
             result.refreshPaused = !auto.value
             result.pausedBy = auto.value ? nil : auto.changedBy
+            // A pause of a while made meanwhile keeps its end.
+            result.pausedUntil = auto.value ? nil : current.pausedUntil
         }
         return result
     }

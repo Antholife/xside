@@ -17,6 +17,9 @@ public struct Installation: Codable, Equatable, Sendable {
     /// The user stopped XSide refreshing it there: the app stays on the device (and in the
     /// popover) until it expires. A new install of the app on that device clears it.
     public var refreshPaused: Bool
+    /// When a pause of this app alone ends by itself (the panel's "Pause > 2 h / 1 jour", device
+    /// feedback 3, E5): XSide then resumes it. nil: paused until resumed, or not paused.
+    public var pausedUntil: Date?
     /// The app's version installed there (the custom one, else the .ipa's). nil in older state.
     public var appVersion: String?
     /// XSide-in-app settings for this installation. nil in older state (seeded at migration).
@@ -81,6 +84,7 @@ public struct Installation: Codable, Equatable, Sendable {
         signingIdentitySHA1 = try c.decodeIfPresent(String.self, forKey: .signingIdentitySHA1)
         teamID = try c.decodeIfPresent(String.self, forKey: .teamID)
         refreshPaused = (try? c.decodeIfPresent(Bool.self, forKey: .refreshPaused)) ?? false
+        pausedUntil = try? c.decodeIfPresent(Date.self, forKey: .pausedUntil)
         appVersion = try? c.decodeIfPresent(String.self, forKey: .appVersion)
         inApp = try? c.decodeIfPresent(InAppSettings.self, forKey: .inApp)
         pausedBy = try? c.decodeIfPresent(ChangeOrigin.self, forKey: .pausedBy)
@@ -382,21 +386,43 @@ public actor AppLibrary {
     /// `by`: who did it (the Mac panel, or the phone through the channel), recorded with the
     /// installation's "automatic refresh" setting so the app learns of it. Returns false when there
     /// was no such installation, or it was already in that state.
+    /// `until`: the pause ends by itself then (see `resumeEndedPauses`); nil, until resumed.
     @discardableResult
     public func setRefreshPaused(_ paused: Bool, recordID: UUID, deviceID: String,
-                                 by origin: ChangeOrigin = .mac, at date: Date = Date()) throws -> Bool {
+                                 by origin: ChangeOrigin = .mac, at date: Date = Date(),
+                                 until: Date? = nil) throws -> Bool {
         let index = try indexOf(recordID)
         guard let i = items[index].installations.firstIndex(where: { $0.deviceID == deviceID }),
               items[index].installations[i].refreshPaused != paused else { return false }
         let previous = items
         Self.applyPause(paused, by: origin, at: date, to: &items[index].installations[i])
+        items[index].installations[i].pausedUntil = paused ? until : nil
         do { try save() } catch { items = previous; throw error }
         return true
+    }
+
+    /// Resumes the apps whose pause of their own ended at `date` or before, as a resume from the
+    /// Mac at that date (the app is told at its next check-in). Returns them.
+    public func resumeEndedPauses(at date: Date) throws -> [RefreshJob] {
+        let previous = items
+        var resumed: [RefreshJob] = []
+        for r in items.indices {
+            for i in items[r].installations.indices {
+                guard items[r].installations[i].refreshPaused,
+                      let end = items[r].installations[i].pausedUntil, end <= date else { continue }
+                Self.applyPause(false, by: .mac, at: date, to: &items[r].installations[i])
+                resumed.append(RefreshJob(recordID: items[r].id, deviceID: items[r].installations[i].deviceID))
+            }
+        }
+        guard !resumed.isEmpty else { return [] }
+        do { try save() } catch { items = previous; throw error }
+        return resumed
     }
 
     private static func applyPause(_ paused: Bool, by origin: ChangeOrigin, at date: Date,
                                    to installation: inout Installation) {
         installation.refreshPaused = paused
+        installation.pausedUntil = nil
         installation.pausedBy = paused ? origin : nil
         installation.inApp = installation.inApp?.setting(\.autoRefresh, to: !paused, at: date, by: origin)
         // The phone learns of a pause made on the Mac at its next check-in, like any Mac edit.
@@ -442,6 +468,7 @@ public actor AppLibrary {
             let paused = !merged.autoRefresh.value
             installation.refreshPaused = paused
             installation.pausedBy = paused ? merged.autoRefresh.changedBy : nil
+            installation.pausedUntil = nil
             if !paused { installation.lastAttempt = nil }
             change = paused
         }

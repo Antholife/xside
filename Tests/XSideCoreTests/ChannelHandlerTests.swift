@@ -336,6 +336,34 @@ import Foundation
         #expect(i?.lastMacEdit == now.addingTimeInterval(1))
     }
 
+    /// Device feedback 3, E5: a pause of one app for a while (2 h, a day): paused like "Arrêter de
+    /// rafraîchir" (the app is told), with an end; once over, it resumes by itself; a resume from
+    /// anywhere, or a pause until resumed, drops the end.
+    @Test func aTimedPauseOfOneAppEndsByItself() async throws {
+        let (lib, rec, tmp) = try await library(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let end = now.addingTimeInterval(2 * 3600)
+        #expect(try await lib.setRefreshPaused(true, recordID: rec.id, deviceID: "a", by: .mac, at: now, until: end))
+        var i = await stored(lib, rec.id)
+        #expect(i?.refreshPaused == true && i?.pausedUntil == end && i?.inApp?.autoRefresh.value == false)
+        #expect(try await lib.resumeEndedPauses(at: now.addingTimeInterval(3600)).isEmpty)
+        let resumed = try await lib.resumeEndedPauses(at: end)
+        #expect(resumed == [RefreshJob(recordID: rec.id, deviceID: "a")])
+        i = await stored(lib, rec.id)
+        #expect(i?.refreshPaused == false && i?.pausedUntil == nil)
+        #expect(i?.inApp?.autoRefresh == Field(value: true, changedAt: end, changedBy: .mac))
+        // Paused again until resumed: no end; resumed by hand: none either.
+        #expect(try await lib.setRefreshPaused(true, recordID: rec.id, deviceID: "a", by: .mac, at: end, until: end.addingTimeInterval(60)))
+        #expect(try await lib.setRefreshPaused(false, recordID: rec.id, deviceID: "a", by: .device, at: end))
+        #expect(await stored(lib, rec.id)?.pausedUntil == nil)
+        #expect(try await lib.setRefreshPaused(true, recordID: rec.id, deviceID: "a", by: .mac, at: end))
+        #expect(await stored(lib, rec.id)?.pausedUntil == nil)
+        #expect(try await lib.resumeEndedPauses(at: end.addingTimeInterval(86_400 * 30)).isEmpty)
+        // Older state has none.
+        let old = try JSONDecoder().decode(Installation.self, from: Data(
+            #"{"deviceID":"a","installedAt":0,"expiresAt":0,"refreshPaused":true}"#.utf8))
+        #expect(old.pausedUntil == nil)
+    }
+
     @Test func macEditIsStampedAndKeepsThePause() async throws {
         let (lib, rec, tmp) = try await library(); defer { try? FileManager.default.removeItem(at: tmp) }
         try await lib.editInApp(recordID: rec.id, deviceID: "a", reminder: true, at: now) {

@@ -1286,13 +1286,15 @@ final class AppModel {
     /// Pauses the app's refreshes on that device without touching the device (it may be out of
     /// reach): the row stays, the app stays there until it expires. Its reminder and notification
     /// state go (see `onInstallationRemoved`).
-    func stopRefreshing(_ entry: AppEntry) async {
+    /// `until`: a pause of a while (the row's "Pause > 2 h / 1 jour", device feedback 3, E5), which
+    /// ends by itself (`resumeEndedPauses`); nil until resumed.
+    func stopRefreshing(_ entry: AppEntry, until: Date? = nil) async {
         let key = entry.id
         guard canManage(entry) else { return }
         claim(key)
         defer { release(key) }
         do {
-            guard try await library.setRefreshPaused(true, recordID: key.recordID, deviceID: key.deviceID) else {
+            guard try await library.setRefreshPaused(true, recordID: key.recordID, deviceID: key.deviceID, until: until) else {
                 await reloadRecords()
                 return
             }
@@ -1304,6 +1306,20 @@ final class AppModel {
         }
         await reloadRecords()
         onInstallationRemoved?(RefreshJob(recordID: key.recordID, deviceID: key.deviceID))
+    }
+
+    /// The pauses of one app whose time is over end (checked at each evaluation of the engine):
+    /// resumed as from the panel, reminders back, and due ones refreshed.
+    func resumeEndedPauses() async {
+        let resumed: [RefreshJob]
+        do { resumed = try await library.resumeEndedPauses(at: Date()) } catch {
+            Self.logger.error("ending pauses failed: \(String(describing: error))")
+            return
+        }
+        guard !resumed.isEmpty else { return }
+        Self.logger.notice("\(resumed.count) app pause(s) over: refreshing again")
+        await reloadRecords()
+        for job in resumed { onRefreshResumed?(job) }
     }
 
     /// Refreshes a paused installation again: its reminder is scheduled again and, if it's due,

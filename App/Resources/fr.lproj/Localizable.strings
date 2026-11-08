@@ -354,6 +354,10 @@
 "popover.app.menu" = "Actions pour %@";
 "popover.app.uninstallFrom" = "Désinstaller de %@";
 "popover.app.stopRefreshing" = "Arrêter de rafraîchir";
+"popover.app.pause" = "Mettre en pause";
+"popover.app.pause.hours" = "Pendant 2 heures";
+"popover.app.pause.day" = "Pendant 1 jour";
+"popover.app.pausedUntil" = "En pause jusqu'à %@ · reprend toute seule";
 "popover.app.uninstalling" = "Désinstallation…";
 "popover.app.uninstallTitle" = "Désinstaller %1$@ de %2$@ ?";
 "popover.app.uninstallMessage" = "L'app et ses données seront supprimées de l'appareil, et XSide arrêtera de la rafraîchir.";
