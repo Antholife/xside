@@ -58,6 +58,9 @@ struct SettingsBundleTests {
         #expect(items[1]["File"] as? String == "XSide")
         #expect(items[1]["Title"] as? String == "io.github.xside.settings.title.group")
         #expect((items[1]["Key"] as? String)?.hasPrefix("io.github.xside.settings.") == true)
+        // The row's id, so the dylib can open XSide's page directly (App-prefs:<id>&path=<this>).
+        #expect(items[1]["id"] as? String == "io.github.xside.settings.pane")
+        #expect(items[1]["Key"] as? String == "io.github.xside.settings.pane")
         let page = try child(app)
         #expect(page["Title"] as? String == "io.github.xside.settings.title.group")
         #expect(page["StringsTable"] as? String == "XSide")

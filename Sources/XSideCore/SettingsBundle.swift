@@ -81,8 +81,10 @@ public enum SettingsBundle {
         var items = (root["PreferenceSpecifiers"] as? [[String: Any]] ?? [])
             .filter { ($0["Key"] as? String)?.hasPrefix(keyPrefix) != true }
         items.append(["Type": "PSGroupSpecifier", "Key": keyPrefix + "group"])
+        // "id" names the row for Settings' deep links: the dylib opens XSide's page directly with
+        // "App-prefs:<bundle id>&path=<id>" (XSSettingsPaneURLString, undocumented).
         items.append(["Type": "PSChildPaneSpecifier", "Title": section.titleKey, "File": paneFile,
-                      "Key": keyPrefix + "pane"])
+                      "Key": keyPrefix + "pane", "id": keyPrefix + "pane"])
 
         // XSide's page: the section, its footer under the rows.
         var group: [String: Any] = ["Type": "PSGroupSpecifier", "Key": keyPrefix + "section"]
