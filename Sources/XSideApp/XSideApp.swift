@@ -11,6 +11,9 @@ enum EntryPoint {
         if arguments.count > 1, arguments[1] == AppIconExtractor.helperFlag {
             exit(AppIconExtractor.runHelper(arguments: Array(arguments.dropFirst(2))))
         }
+        #if DEBUG
+        if SnapshotRenderer.folder != nil { exit(MainActor.assumeIsolated { SnapshotRenderer.run() }) }
+        #endif
         Diagnostics.start()
         XSideApp.main()
     }

@@ -199,7 +199,9 @@ final class AppModel {
     /// True while the menu-bar popover is on screen (drives the device polling rate).
     private(set) var isPopoverOpen = false
 
-    init() {
+    /// `startsServices`: false only for the debug snapshot harness (`SnapshotRenderer`): nothing is
+    /// cleaned, loaded, probed or published.
+    init(startsServices: Bool = true) {
         let developerDirOverride = developerDirOverride
         runner = ProcessRunner(environment: {
             developerDirOverride.withLock { $0 }.map { ["DEVELOPER_DIR": $0] } ?? [:]
@@ -209,11 +211,13 @@ final class AppModel {
         icons = AppIcons(library: library, runner: runner)
         prefsStore = DevicePrefsStore(libraryRoot: paths.root)
         devicePrefs = prefsStore.load()
-        // Icons pulled out of earlier sessions' `.ipa` files.
-        try? FileManager.default.removeItem(at: Self.iconsDir)
-        // Leftovers of jobs interrupted by a quit or a crash (extracted apps, template builds).
-        // No job can be running yet.
-        try? FileManager.default.removeItem(at: paths.work)
+        if startsServices {
+            // Icons pulled out of earlier sessions' `.ipa` files.
+            try? FileManager.default.removeItem(at: Self.iconsDir)
+            // Leftovers of jobs interrupted by a quit or a crash (extracted apps, template builds).
+            // No job can be running yet.
+            try? FileManager.default.removeItem(at: paths.work)
+        }
         pipeline = SideloadPipeline(
             library: library,
             provisioner: Provisioner(runner: runner, templateDir: paths.template, workDir: paths.provisioningWork,
@@ -229,8 +233,21 @@ final class AppModel {
             withoutXSideFeaturesByDefault: { AppModel.withoutXSideFeaturesByDefault })
         // An update waits while an install or a refresh runs (`release` retries it after).
         updater.isBusy = { [unowned self] in !self.claims.isEmpty || self.install?.isRunning == true }
-        Task { await start() }
+        if startsServices { Task { await start() } }
     }
+
+    #if DEBUG
+    /// Snapshot harness only (`SnapshotRenderer`): shows these apps and devices as if loaded, with
+    /// the apps in `live` open on their device. Nothing is saved.
+    func showSnapshot(records: [AppRecord], devices: [Device], live: Set<JobKey>, now: Date) {
+        self.records = records
+        self.devices = devices
+        for key in live { channelSeen[key] = now }
+        liveInstallations = live
+        appIDsRemaining = 7
+        appIDReleases = [now.addingTimeInterval(2 * 86_400), now.addingTimeInterval(4 * 86_400), now.addingTimeInterval(5 * 86_400)]
+    }
+    #endif
 
     /// Debug-only: XSIDE_NO_FEATURES=1 installs apps without anything XSide adds (no library, no
     /// Settings section), to tell an app's own behavior from XSide's.
@@ -2366,8 +2383,13 @@ private struct Paths {
     init() {
         let fm = FileManager.default
         let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        root = support.appendingPathComponent(LibraryLocation.folderName(bundleID: Bundle.main.bundleIdentifier),
-                                              isDirectory: true)
+        var root = support.appendingPathComponent(LibraryLocation.folderName(bundleID: Bundle.main.bundleIdentifier),
+                                                  isDirectory: true)
+        #if DEBUG
+        // The snapshot harness keeps its made-up library in its output folder.
+        if let folder = SnapshotRenderer.folder { root = URL(fileURLWithPath: folder).appendingPathComponent("library", isDirectory: true) }
+        #endif
+        self.root = root
         work = root.appendingPathComponent("work", isDirectory: true)
         provisioningWork = work.appendingPathComponent("provisioning", isDirectory: true)
         jobsWork = work.appendingPathComponent("jobs", isDirectory: true)
