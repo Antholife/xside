@@ -3,6 +3,9 @@ import Foundation
 /// Whether the app on a device talks to XSide through the local network channel, as the Mac
 /// knows it from the check-ins (shown per device in the install window and Settings > Mes apps).
 public enum ReachabilityStatus: Equatable, Sendable {
+    /// Checked in within `openWindow`: the app is open on the device and polls every 15 s (45 s in
+    /// Low Power Mode), so a Mac change arrives live (device feedback 3, E3).
+    case openNow(lastSeen: Date)
     /// Checked in recently: the app checks in at each launch, a Mac change arrives at its next opening.
     case joinable(lastSeen: Date)
     /// Never checked in: the phone hasn't allowed the local network yet (a first tap on
@@ -18,12 +21,19 @@ public enum ReachabilityStatus: Equatable, Sendable {
 
     /// How long a check-in counts as recent: a week, about one refresh cycle of a free account.
     public static let recentWindow: TimeInterval = 7 * 86_400
+    /// How long after a check-in the app counts as open: three polls at 15 s.
+    public static let openWindow: TimeInterval = 45
 
-    public static func of(installation: Installation, now: Date) -> ReachabilityStatus {
+    /// `lastSeen`: the last check-in the Mac saw in this run (those that change nothing aren't
+    /// written to the library, so its date can lag by up to a minute).
+    public static func of(installation: Installation, now: Date, lastSeen: Date? = nil) -> ReachabilityStatus {
         if installation.withoutXSideFeatures == true { return .noFeatures }
         if installation.channelSecret == nil { return .channelComing }
-        guard let last = installation.lastCheckIn else { return .neverConnected }
-        return now.timeIntervalSince(last) <= recentWindow ? .joinable(lastSeen: last) : .notSeenSince(last)
+        let seen = [installation.lastCheckIn, lastSeen].compactMap { $0 }.max()
+        guard let last = seen else { return .neverConnected }
+        let since = now.timeIntervalSince(last)
+        if since <= openWindow && since >= -ChannelEnvelope.window { return .openNow(lastSeen: last) }
+        return since <= recentWindow ? .joinable(lastSeen: installation.lastCheckIn ?? last) : .notSeenSince(last)
     }
 }
 
@@ -57,6 +67,26 @@ public enum SettingsDelivery: Equatable, Sendable {
         if let checkIn = installation.lastCheckIn, checkIn >= edit { return .confirmed(lastCheckIn: checkIn) }
         if installation.installedAt >= edit { return .sentWithSigning(installation.installedAt) }
         return .pending(since: edit)
+    }
+}
+
+extension SettingsDelivery {
+    /// The fields the Mac changed since the app last got its settings (its last check-in, or the
+    /// signing that wrote them), in the settings' order: what a pending line names.
+    public static func pendingFields(of installation: Installation) -> [InAppField] {
+        guard let s = installation.inApp else { return [] }
+        let delivered = max(installation.lastCheckIn ?? .distantPast, installation.installedAt)
+        func pending<V>(_ f: Field<V>) -> Bool { f.macDate.map { $0 > delivered } ?? false }
+        return InAppField.allCases.filter { field in
+            switch field {
+            case .showValidity: pending(s.showValidity)
+            case .alertLate: pending(s.alertLate)
+            case .refreshCard: pending(s.refreshCard)
+            case .reminder: pending(s.reminder)
+            case .language: pending(s.language)
+            case .autoRefresh: pending(s.autoRefresh)
+            }
+        }
     }
 }
 

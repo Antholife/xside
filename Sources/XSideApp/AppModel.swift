@@ -1025,6 +1025,10 @@ final class AppModel {
     @ObservationIgnored private var channelServer: ChannelServer?
     /// Nonces of the requests accepted lately, so none can be replayed (one cache per installation).
     @ObservationIgnored private var channelNonces = ChannelNonces()
+    /// The last authenticated request from each installation in this run (check-ins that change
+    /// nothing aren't written to the library): says when the app is open on its device right now
+    /// (device feedback 3, E3).
+    private(set) var channelSeen: [JobKey: Date] = [:]
     private static let channelLogger = Log("channel")
     /// How long a refresh asked from the phone keeps its connection waiting for the outcome.
     private static let refreshOutcomeWait: Duration = .seconds(120)
@@ -1064,6 +1068,7 @@ final class AppModel {
             return
         }
         let job = RefreshJob(recordID: found.recordID, deviceID: found.installation.deviceID)
+        channelSeen[JobKey(recordID: found.recordID, deviceID: found.installation.deviceID)] = now
         let reply: (ChannelReply) async -> Void = { answer in
             do {
                 await send(try ChannelHandler.replyLine(answer, installationID: installationID, requestNonce: nonce, secret: secret))

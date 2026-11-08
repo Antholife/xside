@@ -8,6 +8,8 @@ struct DeviceSyncLine: Identifiable {
     let deviceName: String
     /// nil: not installed there yet (the values go with the install).
     let installation: Installation?
+    /// The Mac's last sight of it in this run (see `AppModel.channelSeen`).
+    var lastSeen: Date? = nil
     var id: String { deviceID }
 }
 
@@ -21,7 +23,7 @@ struct DeviceSyncList: View {
             SectionTitle(L("inApp.status.title"))
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(lines) { line in
-                    TimelineView(.periodic(from: .now, by: 60)) { context in
+                    TimelineView(.periodic(from: .now, by: 5)) { context in
                         DeviceSyncRow(line: line, hasFeatures: hasFeatures, now: context.date)
                     }
                 }
@@ -61,18 +63,25 @@ private struct DeviceSyncRow: View {
     }
 
     private var status: ReachabilityStatus? {
-        line.installation.map { ReachabilityStatus.of(installation: $0, now: now) }
+        line.installation.map { ReachabilityStatus.of(installation: $0, now: now, lastSeen: line.lastSeen) }
     }
 
+    /// Green while the app is open (changes arrive live), paler when it is reachable at its next
+    /// opening, grey otherwise.
     private var dotColor: Color {
-        if case .joinable? = status { return Theme.reachable }
-        return Theme.unreachable
+        guard hasFeatures else { return Theme.unreachable }
+        switch status {
+        case .openNow?: return Theme.reachable
+        case .joinable?: return Theme.reachable.opacity(0.45)
+        default: return Theme.unreachable
+        }
     }
 
     private var reachability: String {
         if !hasFeatures { return L("inApp.reach.noFeatures") }
         switch status {
         case nil: return L("inApp.reach.notInstalled")
+        case .openNow?: return L("inApp.reach.openNow", line.deviceName)
         case .joinable?: return L("inApp.reach.joinable")
         case .neverConnected?: return L("inApp.reach.never")
         case .channelComing?: return L("inApp.reach.channelComing")
@@ -86,9 +95,26 @@ private struct DeviceSyncRow: View {
         guard hasFeatures, let installation = line.installation else { return nil }
         switch SettingsDelivery.of(installation: installation) {
         case .nothing: return nil
-        case .pending: return L("inApp.delivery.pending", line.deviceName)
+        case .pending:
+            // What is pending, by name (device feedback 3, E3): "Rafraîchissement automatique : activé — en attente".
+            let fields = SettingsDelivery.pendingFields(of: installation)
+            guard let s = installation.inApp, !fields.isEmpty else { return L("inApp.delivery.pending", line.deviceName) }
+            return L("inApp.delivery.pendingFields", fields.map { Self.describe($0, in: s) }.joined(separator: " · "))
         case .sentWithSigning(let date): return L("inApp.delivery.sent", Self.format(date))
         case .confirmed(let date): return L("inApp.delivery.confirmed", line.deviceName, Self.format(date))
+        }
+    }
+
+    /// "Rappel avant l'expiration : désactivé".
+    static func describe(_ field: InAppField, in s: InAppSettings) -> String {
+        func onOff(_ on: Bool) -> String { L(on ? "inApp.value.on" : "inApp.value.off") }
+        switch field {
+        case .showValidity: return L("inApp.field.value", InAppOption.showValidity.title, onOff(s.showValidity.value))
+        case .alertLate: return L("inApp.field.value", InAppOption.alertLate.title, onOff(s.alertLate.value))
+        case .refreshCard: return L("inApp.field.value", InAppOption.refreshCard.title, onOff(s.refreshCard.value))
+        case .reminder: return L("inApp.field.value", InAppOption.reminder.title, onOff(s.reminder.value))
+        case .language: return L("inApp.field.value", L("inApp.language"), s.language.value.label)
+        case .autoRefresh: return L("inApp.field.value", L("inApp.autoRefresh"), onOff(s.autoRefresh.value))
         }
     }
 

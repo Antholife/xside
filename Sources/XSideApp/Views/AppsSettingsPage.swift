@@ -174,7 +174,7 @@ private struct AppSettingsContent: View {
                             }
                         },
                         statuses: [DeviceSyncLine(deviceID: entry.installation.deviceID, deviceName: deviceName,
-                                                  installation: entry.installation)],
+                                                  installation: entry.installation, lastSeen: model.channelSeen[entry.id])],
                         isDisabled: !model.canManage(entry))
                     Text(L("appSettings.note"))
                         .font(.system(size: 11))

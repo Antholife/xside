@@ -29,8 +29,8 @@ struct InAppStatusTests {
     @Test func recentCheckInIsJoinable() {
         let i = installation(installedAt: t0, lastCheckIn: at(day))
         #expect(ReachabilityStatus.of(installation: i, now: at(3 * day)) == .joinable(lastSeen: at(day)))
-        // A check-in a little in the future (clock skew) is still recent.
-        #expect(ReachabilityStatus.of(installation: i, now: at(day - 30)) == .joinable(lastSeen: at(day)))
+        // A check-in a little in the future (clock skew) is recent: the app is open (E3).
+        #expect(ReachabilityStatus.of(installation: i, now: at(day - 30)) == .openNow(lastSeen: at(day)))
     }
 
     @Test func oldCheckInIsNotSeenSince() {
@@ -38,6 +38,23 @@ struct InAppStatusTests {
         let limit = at(day + ReachabilityStatus.recentWindow)
         #expect(ReachabilityStatus.of(installation: i, now: limit) == .joinable(lastSeen: at(day)))
         #expect(ReachabilityStatus.of(installation: i, now: limit.addingTimeInterval(1)) == .notSeenSince(at(day)))
+    }
+
+    /// Device feedback 3, E3: an app that checked in within the last 45 s is open on the device
+    /// (it polls every 15 s while in front), so the Mac's changes arrive live. The Mac's memory of
+    /// the last check-in (`lastSeen`, quiet check-ins aren't written) counts as well.
+    @Test func aCheckInWithinSecondsIsTheAppOpen() {
+        let i = installation(installedAt: t0, lastCheckIn: at(100))
+        #expect(ReachabilityStatus.of(installation: i, now: at(130)) == .openNow(lastSeen: at(100)))
+        #expect(ReachabilityStatus.of(installation: i, now: at(145)) == .openNow(lastSeen: at(100)))
+        #expect(ReachabilityStatus.of(installation: i, now: at(146)) == .joinable(lastSeen: at(100)))
+        #expect(ReachabilityStatus.of(installation: i, now: at(200), lastSeen: at(190)) == .openNow(lastSeen: at(190)))
+        #expect(ReachabilityStatus.of(installation: i, now: at(200), lastSeen: at(50)) == .joinable(lastSeen: at(100)))
+        let never = installation(installedAt: t0)
+        #expect(ReachabilityStatus.of(installation: never, now: at(200), lastSeen: at(190)) == .openNow(lastSeen: at(190)))
+        var bare = i
+        bare.withoutXSideFeatures = true
+        #expect(ReachabilityStatus.of(installation: bare, now: at(130), lastSeen: at(129)) == .noFeatures)
     }
 
     // MARK: Delivery of the Mac's changes
@@ -67,6 +84,20 @@ struct InAppStatusTests {
         // A check-in before the edit doesn't deliver it.
         #expect(SettingsDelivery.of(installation: edited(s, lastMacEdit: at(100), installedAt: t0, lastCheckIn: at(50)))
                 == .pending(since: at(100)))
+    }
+
+    /// Device feedback 3, E3: a pending line names what is pending: the fields the Mac changed
+    /// since the app last got its settings (check-in or signing), in the settings' order.
+    @Test func pendingFieldsAreTheMacsChangesSinceTheLastDelivery() {
+        let s = InAppSettings.defaults(reminder: true, at: t0)
+            .setting(\.reminder, to: false, at: at(100), by: .mac)
+            .setting(\.autoRefresh, to: false, at: at(110), by: .mac)
+            .setting(\.showValidity, to: false, at: at(120), by: .device)
+        #expect(SettingsDelivery.pendingFields(of: edited(s, lastMacEdit: at(110), installedAt: t0, lastCheckIn: at(50)))
+                == [.reminder, .autoRefresh])
+        #expect(SettingsDelivery.pendingFields(of: edited(s, lastMacEdit: at(110), installedAt: t0, lastCheckIn: at(105)))
+                == [.autoRefresh])
+        #expect(SettingsDelivery.pendingFields(of: edited(s, lastMacEdit: at(110), installedAt: at(300))).isEmpty)
     }
 
     @Test func checkInAfterTheEditConfirmsIt() {
