@@ -33,7 +33,8 @@ public enum MachOPatcher {
               let starts = try? IPAInspector.sliceOffsets(data) else { throw Failure.notMachO }
         let command = dylibCommand(dylibPath)
         var toPatch: [(start: Int, commands: [(cmd: UInt32, pos: Int, size: Int)])] = []
-        for start in starts {
+        var seen = Set<Int>()
+        for start in starts where seen.insert(start).inserted {
             let commands = try loadCommands(data, at: start)
             if commands.contains(where: { [loadDylib, loadWeakDylib].contains($0.cmd) && name(data, $0) == dylibPath }) {
                 continue
@@ -44,6 +45,8 @@ public enum MachOPatcher {
                   start + firstData >= end + command.count,
                   start + firstData <= data.count, end + command.count <= data.count,
                   data[end..<end + command.count].allSatisfy({ $0 == 0 }) else { throw Failure.noRoom }
+            guard !u32(data, start + 16).addingReportingOverflow(1).overflow,
+                  !u32(data, start + 20).addingReportingOverflow(UInt32(command.count)).overflow else { throw Failure.notMachO }
             toPatch.append((start, commands))
         }
         guard !toPatch.isEmpty else { return .alreadyPresent }
@@ -91,23 +94,31 @@ public enum MachOPatcher {
     }
 
     /// Removes the `LC_RPATH` commands whose path matches, in every slice: the commands after
-    /// them move up and the freed bytes become free space. All slices are read before anything
-    /// is written. Returns the paths removed (one per command).
+    /// them move up and the freed bytes become free space. The file keeps its size and every
+    /// byte past each slice's load commands stays where it was. All slices are read before
+    /// anything is written (a slice the fat header lists twice is done once). Returns the paths
+    /// removed (one per command).
     @discardableResult
     public static func removeRpaths(from executable: URL, where matches: (String) -> Bool) throws -> [String] {
         guard var data = try? Data(contentsOf: executable),
               let starts = try? IPAInspector.sliceOffsets(data) else { throw Failure.notMachO }
-        var plans: [(start: Int, commands: [(cmd: UInt32, pos: Int, size: Int)], drop: [Int])] = []
+        var plans: [(start: Int, commands: [(cmd: UInt32, pos: Int, size: Int)], drop: Set<Int>)] = []
         var removed: [String] = []
-        for start in starts {
+        var seen = Set<Int>()
+        for start in starts where seen.insert(start).inserted {
             let commands = try loadCommands(data, at: start)
-            var drop: [Int] = []
+            var drop = Set<Int>()
             for (i, c) in commands.enumerated() where c.cmd == rpath {
-                if let path = rpathName(data, c), matches(path) { drop.append(i); removed.append(path) }
+                if let path = rpathName(data, c), matches(path) { drop.insert(i); removed.append(path) }
             }
             if !drop.isEmpty { plans.append((start, commands, drop)) }
         }
         guard !plans.isEmpty else { return [] }
+        // Two slices whose load commands overlap: not something to rewrite.
+        let spans = plans.map { (begin: $0.start, end: $0.start + headerSize + Int(u32(data, $0.start + 20))) }
+            .sorted { $0.begin < $1.begin }
+        for (a, b) in zip(spans, spans.dropFirst()) where b.begin < a.end { throw Failure.notMachO }
+        var edits: [(start: Int, kept: Data, ncmds: UInt32, sizeofcmds: UInt32)] = []
         for (start, commands, drop) in plans {
             let begin = start + headerSize
             let end = begin + Int(u32(data, start + 20))
@@ -116,11 +127,24 @@ public enum MachOPatcher {
             for (i, c) in commands.enumerated() {
                 if drop.contains(i) { freed += c.size } else { kept.append(data.subdata(in: c.pos..<c.pos + c.size)) }
             }
-            kept.append(Data(count: freed))
-            data.replaceSubrange(begin..<end, with: kept)
-            put(&data, start + 16, u32(data, start + 16) - UInt32(drop.count))
-            put(&data, start + 20, u32(data, start + 20) - UInt32(freed))
+            // Whatever followed the commands inside sizeofcmds (slack) moves up with them; the
+            // freed bytes become zeros at the end: the span keeps its exact length.
+            let lastEnd = commands.last.map { $0.pos + $0.size } ?? begin
+            kept.append(data.subdata(in: lastEnd..<end))
+            kept.append(Data(count: (end - begin) - kept.count))
+            let (ncmds, o1) = u32(data, start + 16).subtractingReportingOverflow(UInt32(drop.count))
+            let (sizeofcmds, o2) = u32(data, start + 20).subtractingReportingOverflow(UInt32(freed))
+            guard !o1, !o2, kept.count == end - begin else { throw Failure.notMachO }
+            edits.append((start, kept, ncmds, sizeofcmds))
         }
+        let size = data.count
+        for edit in edits {
+            let begin = edit.start + headerSize
+            data.replaceSubrange(begin..<begin + edit.kept.count, with: edit.kept)
+            put(&data, edit.start + 16, edit.ncmds)
+            put(&data, edit.start + 20, edit.sizeofcmds)
+        }
+        guard data.count == size else { throw Failure.notMachO }
         do { try data.write(to: executable, options: .atomic) } catch { throw Failure.notMachO }
         return removed
     }

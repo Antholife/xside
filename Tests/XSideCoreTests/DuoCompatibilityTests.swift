@@ -263,6 +263,42 @@ struct DuoCompatibilityTests {
         #expect(try MachOPatcher.removeRpaths(from: url, where: DuoCompatibility.isBuildMacToolchainPath).isEmpty)
     }
 
+    @Test func strippingKeepsTheFileSizeWhenTheHeaderClaimsMoreThanItsCommands() throws {
+        // sizeofcmds larger than the commands it holds (accepted by the parser): the bytes after
+        // the commands must not move, nor the file shrink (duo review, important 3).
+        let toolchain = "/private/var/select/developer_dir/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.5/iphoneos"
+        var d = versionedMachO(buildVersion: (2, packed(15, 0), packed(26, 4)), rpaths: [toolchain], padding: 64)
+        let sizeofcmds = MachOPatcher.u32(d, 20)
+        withUnsafeBytes(of: (sizeofcmds + 32).littleEndian) { d.replaceSubrange(20..<24, with: $0) }
+        let url = try write(d)
+        let removed = try MachOPatcher.removeRpaths(from: url, where: DuoCompatibility.isBuildMacToolchainPath)
+        #expect(removed == [toolchain])
+        let after = try Data(contentsOf: url)
+        #expect(after.count == d.count)
+        #expect(after.suffix(16) == Data(repeating: 0xAB, count: 16)) // the section, where it was
+        #expect(MachOPatcher.u32(after, 20) == sizeofcmds + 32 - 112) // the rpath command's 112 bytes freed
+        #expect(MachOBuildInfo.sdkVersion(of: url) == "26.4")
+    }
+
+    @Test func strippingAppliesOncePerSliceEvenWhenTheFatHeaderRepeatsIt() throws {
+        func be32(_ v: UInt32, _ d: inout Data) { withUnsafeBytes(of: v.bigEndian) { d.append(contentsOf: $0) } }
+        let toolchain = "/private/var/select/developer_dir/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.5/iphoneos"
+        let slice = versionedMachO(buildVersion: (2, packed(15, 0), packed(26, 4)),
+                                   rpaths: [toolchain, "@executable_path/Frameworks"], padding: 64)
+        var fat = Data()
+        be32(0xCAFE_BABE, &fat); be32(2, &fat)
+        for _ in 0..<2 { be32(0x0100_000C, &fat); be32(0, &fat); be32(4096, &fat); be32(UInt32(slice.count), &fat); be32(12, &fat) }
+        fat.append(Data(count: 4096 - fat.count)); fat.append(slice)
+        let url = try write(fat)
+        let removed = try MachOPatcher.removeRpaths(from: url, where: DuoCompatibility.isBuildMacToolchainPath)
+        #expect(removed == [toolchain])
+        let after = try Data(contentsOf: url)
+        #expect(after.count == fat.count)
+        #expect(MachOPatcher.u32(after, 4096 + 16) == MachOPatcher.u32(slice, 16) - 1)
+        #expect(MachOPatcher.u32(after, 4096 + 20) == MachOPatcher.u32(slice, 20) - 112)
+        #expect(try MachOPatcher.rpaths(in: url) == ["@executable_path/Frameworks"])
+    }
+
     @Test func toolchainPathsAreOnlyTheKnownOnes() {
         #expect(DuoCompatibility.isBuildMacToolchainPath("/private/var/select/developer_dir/x"))
         #expect(DuoCompatibility.isBuildMacToolchainPath("/var/db/xcode_select_link/Toolchains/x"))
@@ -273,8 +309,10 @@ struct DuoCompatibilityTests {
 
     @Test func stripsTheRpathOfARealFatBinary() throws {
         let url = try copy("duo-objc-fat")
+        let size = try Data(contentsOf: url).count
         let removed = try MachOPatcher.removeRpaths(from: url, where: DuoCompatibility.isBuildMacToolchainPath)
         #expect(removed.count == 1) // the arm64 slice's; the arm64e one has none
+        #expect(try Data(contentsOf: url).count == size)
         #expect(try MachOPatcher.rpaths(in: url) == ["@executable_path/Frameworks"])
         #expect(try MachOBuildInfo.slices(of: url).count == 2)
     }
