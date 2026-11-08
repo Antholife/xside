@@ -13,10 +13,14 @@ public struct InstallOptions: Codable, Equatable, Sendable {
     /// Grant the keychain groups the app shares with its vendor's other apps. Off by default: the
     /// vendor is read from the IPA itself, so a crafted IPA could claim one to read their logins.
     public var shareKeychain: Bool = false
+    /// Install the app as it came: nothing of XSide inside (no library, payload, Settings section,
+    /// Bonjour keys or quick actions). For apps that refuse to launch once modified.
+    public var withoutXSideFeatures: Bool = false
 
     public init(displayName: String? = nil, customBundleID: String? = nil, version: String? = nil,
                 iconPath: String? = nil, fileSharing: Bool = false, iPadFullScreen: Bool = false,
-                proMotion: Bool = false, minimumOSVersion: String? = nil, shareKeychain: Bool = false) {
+                proMotion: Bool = false, minimumOSVersion: String? = nil, shareKeychain: Bool = false,
+                withoutXSideFeatures: Bool = false) {
         self.displayName = displayName
         self.customBundleID = customBundleID
         self.version = version
@@ -26,6 +30,7 @@ public struct InstallOptions: Codable, Equatable, Sendable {
         self.proMotion = proMotion
         self.minimumOSVersion = minimumOSVersion
         self.shareKeychain = shareKeychain
+        self.withoutXSideFeatures = withoutXSideFeatures
     }
 
     /// Every key is optional: options saved by an older version (or missing a key) still load.
@@ -40,6 +45,7 @@ public struct InstallOptions: Codable, Equatable, Sendable {
         proMotion = try c.decodeIfPresent(Bool.self, forKey: .proMotion) ?? false
         minimumOSVersion = try c.decodeIfPresent(String.self, forKey: .minimumOSVersion)
         shareKeychain = try c.decodeIfPresent(Bool.self, forKey: .shareKeychain) ?? false
+        withoutXSideFeatures = try c.decodeIfPresent(Bool.self, forKey: .withoutXSideFeatures) ?? false
     }
 }
 
@@ -49,9 +55,9 @@ public struct Resigner: Sendable {
     private let welcomeDylib: URL?
     /// The section added to the app's iOS Settings page, built from the profile it's signed with.
     private let settingsSection: (@Sendable (ProvisioningProfile) -> SettingsSection)?
-    /// Read by the welcome library at launch, from the Info.plist key `XSideWelcome` (e.g.
-    /// "reminder": 0 when the on-device reminder is off in XSide's Settings, "reminderLeadHours").
-    private let welcomeOptions: @Sendable () -> [String: Int]
+    /// Written as the Info.plist key `XSideWelcome`, which the library reads at launch (keys in
+    /// `WelcomePayload`). Nil: no payload.
+    private let welcome: @Sendable (ProvisioningProfile) -> WelcomePayload?
     private static let codesign = "/usr/bin/codesign"
     private static let logger = Log("resign")
     static let welcomeName = "XSideWelcome.dylib"
@@ -59,11 +65,11 @@ public struct Resigner: Sendable {
 
     public init(runner: CommandRunning, welcomeDylib: URL? = nil,
                 settingsSection: (@Sendable (ProvisioningProfile) -> SettingsSection)? = nil,
-                welcomeOptions: @escaping @Sendable () -> [String: Int] = { [:] }) {
+                welcome: @escaping @Sendable (ProvisioningProfile) -> WelcomePayload? = { _ in nil }) {
         self.runner = runner
         self.welcomeDylib = welcomeDylib
         self.settingsSection = settingsSection
-        self.welcomeOptions = welcomeOptions
+        self.welcome = welcome
     }
 
     /// Unpacks `ipa` into `workDir`, rewrites it and signs it inside-out. Returns the signed `.app`.
@@ -99,10 +105,12 @@ public struct Resigner: Sendable {
             if exists(url) { try fm.removeItem(at: url) } // removes a link itself, never its target
         }
 
-        try editInfoPlist(app: app, bundleID: bundleID, options: options)
+        let features = !options.withoutXSideFeatures
+        try editInfoPlist(app: app, bundleID: bundleID, options: options,
+                          payload: features ? welcome(profile) : nil, features: features)
         if let iconURL { try await applyIcon(iconURL, to: app, workDir: workDir) }
-        addWelcomePopup(to: app, executable: executableURL)
-        if let settingsSection {
+        if features { addWelcomePopup(to: app, executable: executableURL) }
+        if features, let settingsSection {
             // Never fails the install: the app keeps its page as it was.
             do { try SettingsBundle.add(settingsSection(profile), to: app) } catch {
                 Self.logger.notice("settings section skipped: \(String(describing: error))")
@@ -323,7 +331,8 @@ public struct Resigner: Sendable {
 
     // MARK: - Info.plist
 
-    private func editInfoPlist(app: URL, bundleID: String, options: InstallOptions) throws {
+    private func editInfoPlist(app: URL, bundleID: String, options: InstallOptions,
+                               payload: WelcomePayload?, features: Bool) throws {
         let url = app.appendingPathComponent("Info.plist")
         let data = try IPAInspector.infoPlistData(of: app)
         var format = PropertyListSerialization.PropertyListFormat.binary
@@ -346,9 +355,15 @@ public struct Resigner: Sendable {
         if let min = options.minimumOSVersion { plist["MinimumOSVersion"] = min }
         let executable = plist["CFBundleExecutable"] as? String ?? "App"
         Self.plainBundleName(&plist, executable: executable)
-        let welcome = welcomeOptions()
-        if !welcome.isEmpty { plist["XSideWelcome"] = welcome }
+        // Cleared first: an app signed by XSide before carries the previous payload.
+        plist["XSideWelcome"] = nil
+        if let payload { plist["XSideWelcome"] = payload.plist }
+        let strings = features ? InfoPlistAdditions.apply(to: &plist) : [:]
         try write(plist, format: format, to: url)
+        // Never fails the install: untranslated titles are the worst outcome.
+        if !strings.isEmpty {
+            LocalizedStrings.merge(strings, into: app, table: "InfoPlist", keepExisting: [InfoPlistAdditions.usageKey])
+        }
         plainLocalizedBundleNames(app: app, executable: executable)
     }
 

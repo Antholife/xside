@@ -219,7 +219,7 @@ final class AppModel {
             resigner: Resigner(runner: runner,
                                welcomeDylib: Self.featuresOff ? nil : Bundle.main.url(forResource: "XSideWelcome", withExtension: "dylib"),
                                settingsSection: Self.featuresOff ? nil : Self.settingsSection,
-                               welcomeOptions: { AppModel.welcomeOptions() }),
+                               welcome: { _ in AppModel.welcomePayload() }),
             installer: Installer(runner: runner),
             workRoot: paths.jobsWork, now: { Date() }, macIsBeta: XcodeLauncher.macIsBeta)
         // An update waits while an install or a refresh runs (`release` retries it after).
@@ -237,14 +237,16 @@ final class AppModel {
         #endif
     }
 
-    /// The "Installed with XSide" section of the app's page in the iOS Settings app, in XSide's
-    /// language (the page can't follow the device's): written at each install and refresh.
+    /// The "Réglages XSide" section of the app's page in the iOS Settings app, translated by iOS
+    /// from the strings XSide writes. Written at each install and refresh. (The pipeline will feed
+    /// it the installation's own settings; until then, the defaults.)
     nonisolated static func settingsSection(_ profile: ProvisioningProfile) -> SettingsSection {
         let style = Date.FormatStyle(date: .abbreviated, time: .shortened).locale(appLocale)
-        return SettingsSection(title: L("settings.ios.title"), footer: L("settings.ios.footer"),
-                               rows: [(L("settings.ios.validUntil"), profile.expirationDate.formatted(style)),
-                                      // When it's signed, i.e. now (a cached profile may be older).
-                                      (L("settings.ios.signedOn"), Date().formatted(style))])
+        let now = Date().formatted(style)
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+        return SettingsSection.xside(validUntil: profile.expirationDate.formatted(style), refreshedOn: now,
+                                     version: version, installedOn: now,
+                                     inApp: InAppSettings.defaults(reminder: setting(deviceReminderKey), at: Date()))
     }
 
     // MARK: - Startup
@@ -1758,13 +1760,14 @@ final class AppModel {
     /// The reminder the installed app shows itself, the day before it expires (written into the
     /// app at each install and refresh).
     nonisolated static let deviceReminderKey = "deviceReminder"
-    /// What the welcome library reads in each app (see `Resigner.welcomeOptions`).
-    nonisolated static func welcomeOptions() -> [String: Int] {
+    /// What the welcome library reads in each app (see `WelcomePayload`).
+    nonisolated static func welcomePayload() -> WelcomePayload {
         let defaults = UserDefaults.standard
         let threshold = RefreshPlanner.threshold(daysBefore: defaults.integer(forKey: "refreshDaysBefore"),
                                                  debugDays: defaults.double(forKey: "debugThresholdDays"))
-        return ["reminder": setting(deviceReminderKey) ? 1 : 0,
-                "reminderLeadHours": Int(RefreshPolicy.reminderLead(threshold: threshold) / 3600)]
+        return WelcomePayload(thresholdHours: Int(threshold / 3600),
+                              reminderLeadHours: Int(RefreshPolicy.reminderLead(threshold: threshold) / 3600),
+                              inApp: InAppSettings.defaults(reminder: setting(deviceReminderKey), at: Date()))
     }
 
     /// The notification when XSide forgets an app deleted from its device.

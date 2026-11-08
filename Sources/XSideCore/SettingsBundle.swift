@@ -1,29 +1,46 @@
 import Foundation
 
-/// The section XSide adds to an app's page in the iOS Settings app (Settings > <App>): a group
-/// titled `title` with one read-only line per row. Texts come ready to show, in XSide's language:
-/// a Settings page can't compute anything, and it's rewritten at each refresh.
+/// The section XSide adds to an app's page in the iOS Settings app: a group followed by rows.
+/// Nothing is pre-translated: every title is a key, looked up by iOS in the bundle's strings table
+/// in the device's language, and `strings` carries the texts (language "fr"/"en" -> key -> text).
 public struct SettingsSection: Sendable {
-    public let title: String
-    public let footer: String?
-    public let rows: [(title: String, value: String)]
+    public enum Row: Sendable {
+        /// Read-only line; `key` (without the XSide prefix) is where the dylib rewrites the value
+        /// at each launch, `defaultValue` what the Mac wrote at signing.
+        case value(titleKey: String, key: String, defaultValue: String)
+        case toggle(titleKey: String, key: String, defaultValue: Bool)
+        /// `titleKeys` are shown, `values` are stored (same order).
+        case choice(titleKey: String, key: String, titleKeys: [String], values: [String], defaultValue: String)
+    }
 
-    public init(title: String, footer: String?, rows: [(title: String, value: String)]) {
-        self.title = title
-        self.footer = footer
+    public let titleKey: String
+    public let footerKey: String?
+    public let rows: [Row]
+    public let strings: [String: [String: String]]
+
+    public init(titleKey: String, footerKey: String?, rows: [Row], strings: [String: [String: String]]) {
+        self.titleKey = titleKey
+        self.footerKey = footerKey
         self.rows = rows
+        self.strings = strings
     }
 }
 
 /// Writes `SettingsSection`s into `<App>.app/Settings.bundle/Root.plist`.
 public enum SettingsBundle {
-    /// Every item XSide adds carries a key with this prefix, so a re-sign replaces them.
+    /// Every item XSide adds carries a key with this prefix, so a re-sign replaces them. The
+    /// dylib reads and writes the app's defaults under `keyPrefix + row key`.
     static let keyPrefix = "io.github.xside.settings."
+
+    /// The strings table XSide creates when the app's page has none.
+    static let ownTable = "XSide"
 
     struct NotAPage: Error {}
 
     /// Adds (or replaces) the section at the end of the app's page, creating the page if the app
-    /// has none. The app's own items and keys stay as they were. Throws on a page it can't read,
+    /// has none. The app's own items and keys stay as they were. Titles are keys of the app's own
+    /// `StringsTable` when its page has one (XSide's texts merged into each `<lang>.lproj`, the
+    /// app's entries kept), else of a table of XSide's, `XSide`. Throws on a page it can't read,
     /// or on links (a link could make it write outside the app).
     public static func add(_ section: SettingsSection, to app: URL) throws {
         let fm = FileManager.default
@@ -44,15 +61,31 @@ public enum SettingsBundle {
         }
         var items = (root["PreferenceSpecifiers"] as? [[String: Any]] ?? [])
             .filter { ($0["Key"] as? String)?.hasPrefix(keyPrefix) != true }
-        var group: [String: Any] = ["Type": "PSGroupSpecifier", "Title": section.title, "Key": keyPrefix + "group"]
-        if let footer = section.footer { group["FooterText"] = footer }
+        var group: [String: Any] = ["Type": "PSGroupSpecifier", "Title": section.titleKey, "Key": keyPrefix + "group"]
+        if let footer = section.footerKey { group["FooterText"] = footer }
         items.append(group)
-        for (index, row) in section.rows.enumerated() {
-            items.append(["Type": "PSTitleValueSpecifier", "Title": row.title,
-                          "Key": keyPrefix + "row\(index)", "DefaultValue": row.value])
+        for row in section.rows {
+            switch row {
+            case let .value(titleKey, key, defaultValue):
+                items.append(["Type": "PSTitleValueSpecifier", "Title": titleKey,
+                              "Key": keyPrefix + key, "DefaultValue": defaultValue])
+            case let .toggle(titleKey, key, defaultValue):
+                items.append(["Type": "PSToggleSwitchSpecifier", "Title": titleKey,
+                              "Key": keyPrefix + key, "DefaultValue": defaultValue])
+            case let .choice(titleKey, key, titleKeys, values, defaultValue):
+                items.append(["Type": "PSMultiValueSpecifier", "Title": titleKey, "Key": keyPrefix + key,
+                              "Titles": titleKeys, "Values": values, "DefaultValue": defaultValue])
+            }
         }
+        let table = root["StringsTable"] as? String ?? ownTable
+        if root["StringsTable"] == nil { root["StringsTable"] = table }
         root["PreferenceSpecifiers"] = items
         let data = try PropertyListSerialization.data(fromPropertyList: root, format: .xml, options: 0)
         try data.write(to: rootURL, options: .atomic)
+        // After the page itself: a strings file that can't be merged only leaves keys untranslated.
+        // A table name with a path in it would make us write elsewhere.
+        if !table.isEmpty, !table.contains("/"), !table.contains("..") {
+            LocalizedStrings.merge(section.strings, into: bundle, table: table)
+        }
     }
 }

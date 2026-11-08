@@ -28,11 +28,11 @@ private struct Fixture {
     let fake: FakeRunner
     var welcomeDylib: URL?
     var settings: (@Sendable (ProvisioningProfile) -> SettingsSection)?
-    var welcomeOptions: [String: Int] = [:]
+    var payload: WelcomePayload?
     var resigner: Resigner {
-        let options = welcomeOptions
+        let payload = payload
         return Resigner(runner: RoutingRunner(fake: fake), welcomeDylib: welcomeDylib, settingsSection: settings,
-                        welcomeOptions: { options })
+                        welcome: { _ in payload })
     }
 }
 
@@ -107,14 +107,15 @@ private func plist(_ app: URL) throws -> [String: Any] {
     @Test func addsTheXSideSectionToTheSettingsPage() async throws {
         var f = try await fixture()
         f.settings = { profile in
-            SettingsSection(title: "Installée avec XSide", footer: nil,
-                            rows: [("Valable jusqu'au", profile.uuid)])
+            SettingsSection(titleKey: "t", footerKey: nil,
+                            rows: [.value(titleKey: "v", key: "validUntil", defaultValue: profile.uuid)],
+                            strings: ["fr": ["t": "Installée avec XSide", "v": "Valable jusqu'au"]])
         }
         let app = try await run(f)
         let data = try Data(contentsOf: app.appendingPathComponent("Settings.bundle/Root.plist"))
         let root = try #require(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
         let items = try #require(root["PreferenceSpecifiers"] as? [[String: Any]])
-        #expect(items.map { $0["Title"] as? String } == ["Installée avec XSide", "Valable jusqu'au"])
+        #expect(items.map { $0["Title"] as? String } == ["t", "v"])
         #expect(items[1]["DefaultValue"] as? String == "U-1") // built from the profile it's signed with
     }
 
@@ -144,22 +145,89 @@ private func plist(_ app: URL) throws -> [String: Any] {
         #expect(strings["NSCameraUsageDescription"] == "Caméra")
     }
 
-    /// What the library reads at launch (e.g. the on-device reminder turned off in XSide's Settings).
-    @Test func writesTheWelcomeOptionsForTheLibrary() async throws {
+    private static let when = Date(timeIntervalSince1970: 1_800_000_000)
+    private static func payload() -> WelcomePayload {
+        let inApp = InAppSettings.defaults(reminder: false, at: when)
+            .setting(\.language, to: .fr, at: when.addingTimeInterval(60), by: .device)
+        return WelcomePayload(thresholdHours: 72, reminderLeadHours: 12, inApp: inApp,
+                              installationID: "rec-1|dev-1", channelSecret: Data(repeating: 7, count: 32),
+                              installedAt: when.addingTimeInterval(-86_400))
+    }
+
+    /// What the dylib reads at launch (keys documented on `WelcomePayload`).
+    @Test func payloadIsWrittenForTheDylib() async throws {
         var f = try await fixture(executable: FakeIPA.paddedMachO(padding: 256))
         f.welcomeDylib = try welcomeDylib()
-        f.welcomeOptions = ["reminder": 0, "reminderLeadHours": 12]
+        f.payload = Self.payload()
         let app = try await run(f)
-        let info = try #require(try PropertyListSerialization.propertyList(
-            from: Data(contentsOf: app.appendingPathComponent("Info.plist")), format: nil) as? [String: Any])
-        #expect((info["XSideWelcome"] as? [String: Int]) == ["reminder": 0, "reminderLeadHours": 12])
+        let info = try plist(app)
+        let welcome = try #require(info["XSideWelcome"] as? [String: Any])
+        #expect(welcome["thresholdHours"] as? Int == 72)
+        #expect(welcome["reminderLeadHours"] as? Int == 12)
+        #expect(welcome["reminder"] as? Int == 0)
+        #expect(welcome["installationID"] as? String == "rec-1|dev-1")
+        #expect(welcome["channelSecret"] as? Data == Data(repeating: 7, count: 32))
+        #expect(welcome["installedAt"] as? Date == Self.when.addingTimeInterval(-86_400))
+        let settings = try #require(welcome["settings"] as? [String: [String: Any]])
+        #expect(Set(settings.keys) == ["level", "showValidity", "alertLate", "refreshCard", "reminder", "language", "autoRefresh"])
+        #expect(settings["level"]?["value"] as? String == "all")
+        #expect(settings["reminder"]?["value"] as? Bool == false)
+        #expect(settings["showValidity"]?["changedBy"] as? String == "mac")
+        #expect(settings["language"]?["value"] as? String == "fr")
+        #expect(settings["language"]?["changedBy"] as? String == "device")
+        #expect(settings["language"]?["changedAt"] as? Date == Self.when.addingTimeInterval(60))
+    }
+
+    @Test func noPayloadMeansNoXSideWelcomeKey() async throws {
+        let f = try await fixture()
+        let info = try plist(try await run(f))
+        #expect(info["XSideWelcome"] == nil)
+    }
+
+    @Test func infoPlistGetsBonjourUsageAndShortcuts() async throws {
+        let f = try await fixture()
+        let app = try await run(f)
+        let info = try plist(app)
+        #expect(info["NSBonjourServices"] as? [String] == ["_xside._tcp"])
+        #expect(info["NSLocalNetworkUsageDescription"] as? String == "XSide asks your Mac to refresh this app.")
+        #expect((info["UIApplicationShortcutItems"] as? [[String: Any]])?.count == 3)
+        let fr = try #require(try PropertyListSerialization.propertyList(
+            from: Data(contentsOf: app.appendingPathComponent("fr.lproj/InfoPlist.strings")), format: nil) as? [String: String])
+        #expect(fr["NSLocalNetworkUsageDescription"] == "XSide demande à ton Mac de rafraîchir cette app.")
+    }
+
+    @Test func withoutFeaturesTheAppIsLeftAsItCame() async throws {
+        let original = FakeIPA.paddedMachO(padding: 256)
+        var f = try await fixture(executable: original)
+        f.welcomeDylib = try welcomeDylib()
+        f.payload = Self.payload()
+        f.settings = { _ in SettingsSection.xside(validUntil: "a", refreshedOn: "b", version: "1", installedOn: "c") }
+        let app = try await run(f, options: InstallOptions(withoutXSideFeatures: true))
+        let fm = FileManager.default
+        #expect(!fm.fileExists(atPath: app.appendingPathComponent("Frameworks/XSideWelcome.dylib").path))
+        #expect(!fm.fileExists(atPath: app.appendingPathComponent("Settings.bundle").path))
+        #expect(!fm.fileExists(atPath: app.appendingPathComponent("fr.lproj/InfoPlist.strings").path))
+        #expect(try Data(contentsOf: app.appendingPathComponent("Demo")) == original)
+        let info = try plist(app)
+        for key in ["XSideWelcome", "NSBonjourServices", "NSLocalNetworkUsageDescription", "UIApplicationShortcutItems"] {
+            #expect(info[key] == nil)
+        }
+        #expect(info["CFBundleIdentifier"] as? String == "com.example.new") // still re-signed for the new id
+        #expect(f.fake.calls.last?.last == app.path)
+    }
+
+    @Test func withoutFeaturesDecodesFromOldOptions() throws {
+        let old = try JSONDecoder().decode(InstallOptions.self, from: Data(#"{"fileSharing":true}"#.utf8))
+        #expect(old.withoutXSideFeatures == false)
+        let on = try JSONDecoder().decode(InstallOptions.self, from: Data(#"{"withoutXSideFeatures":true}"#.utf8))
+        #expect(on.withoutXSideFeatures)
     }
 
     @Test func settingsPageProblemsDontFailTheInstall() async throws {
         var f = try await fixture { app in
             try Data("x".utf8).write(to: app.appendingPathComponent("Settings.bundle"))
         }
-        f.settings = { _ in SettingsSection(title: "T", footer: nil, rows: []) }
+        f.settings = { _ in SettingsSection(titleKey: "T", footerKey: nil, rows: [], strings: [:]) }
         let app = try await run(f)
         #expect(try Data(contentsOf: app.appendingPathComponent("Settings.bundle")) == Data("x".utf8))
     }
