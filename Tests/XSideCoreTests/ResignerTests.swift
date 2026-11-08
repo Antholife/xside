@@ -184,8 +184,9 @@ private func plist(_ app: URL) throws -> [String: Any] {
         #expect(info["XSideWelcome"] == nil)
     }
 
-    @Test func infoPlistGetsBonjourUsageAndShortcuts() async throws {
-        let f = try await fixture()
+    @Test func infoPlistGetsBonjourUsageAndShortcutsWithTheDylib() async throws {
+        var f = try await fixture(executable: FakeIPA.paddedMachO(padding: 256))
+        f.welcomeDylib = try welcomeDylib()
         let app = try await run(f)
         let info = try plist(app)
         #expect(info["NSBonjourServices"] as? [String] == ["_xside._tcp"])
@@ -194,6 +195,23 @@ private func plist(_ app: URL) throws -> [String: Any] {
         let fr = try #require(try PropertyListSerialization.propertyList(
             from: Data(contentsOf: app.appendingPathComponent("fr.lproj/InfoPlist.strings")), format: nil) as? [String: String])
         #expect(fr["NSLocalNetworkUsageDescription"] == "XSide demande à ton Mac de rafraîchir cette app.")
+    }
+
+    /// Quick actions nothing handles would be a regression: no library, no additions at all.
+    @Test func nothingIsAddedWithoutTheDylib() async throws {
+        var noLibrary = try await fixture()
+        noLibrary.payload = Self.payload()
+        var failedCopy = try await fixture(executable: FakeIPA.paddedMachO(padding: 8)) // load command doesn't fit
+        failedCopy.welcomeDylib = try welcomeDylib()
+        failedCopy.payload = Self.payload()
+        for f in [noLibrary, failedCopy] {
+            let app = try await run(f)
+            let info = try plist(app)
+            for key in ["XSideWelcome", "NSBonjourServices", "NSLocalNetworkUsageDescription", "UIApplicationShortcutItems"] {
+                #expect(info[key] == nil)
+            }
+            #expect(!FileManager.default.fileExists(atPath: app.appendingPathComponent("fr.lproj/InfoPlist.strings").path))
+        }
     }
 
     @Test func withoutFeaturesTheAppIsLeftAsItCame() async throws {

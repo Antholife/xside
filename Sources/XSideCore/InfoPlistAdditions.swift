@@ -17,9 +17,11 @@ public enum InfoPlistAdditions {
         public var titleKey: String { type + ".title" }
     }
 
-    public static let shortcuts = [Shortcut(name: "refresh", symbol: "arrow.clockwise"),
-                                   Shortcut(name: "settings", symbol: "gearshape"),
+    /// In priority order: iOS shows 4 quick actions at most, and "Réglages XSide" is the one to keep.
+    public static let shortcuts = [Shortcut(name: "settings", symbol: "gearshape"),
+                                   Shortcut(name: "refresh", symbol: "arrow.clockwise"),
                                    Shortcut(name: "report", symbol: "ladybug")]
+    static let maxShortcuts = 4
 
     /// Texts by language ("fr", "en"): the usage reason and the quick action titles (by title key).
     public struct Texts: Sendable, Equatable {
@@ -44,8 +46,8 @@ public enum InfoPlistAdditions {
     }
 
     /// Merges the additions into `plist`, keeping what the app declares: its Bonjour services, its
-    /// own usage text (only set when absent) and its static quick actions (XSide's come after,
-    /// replacing those of an earlier signing). Returns the `InfoPlist.strings` entries to write
+    /// own usage text (only set when absent) and its static quick actions (XSide's come after, as many as
+    /// fit in iOS's 4, replacing those of an earlier signing). Returns the `InfoPlist.strings` entries to write
     /// (language -> key -> text) for the titles and the usage text XSide set.
     @discardableResult
     public static func apply(to plist: inout [String: Any], texts: Texts = .standard) -> [String: [String: String]] {
@@ -64,14 +66,18 @@ public enum InfoPlistAdditions {
         var items = (plist["UIApplicationShortcutItems"] as? [[String: Any]] ?? []).filter {
             ($0["UIApplicationShortcutItemType"] as? String)?.hasPrefix(shortcutTypePrefix) != true
         }
-        for shortcut in shortcuts {
+        // Only the free slots (the app's own come first and keep theirs).
+        let free = max(0, maxShortcuts - items.count)
+        let added = Array(shortcuts.prefix(free))
+        for shortcut in added {
             items.append(["UIApplicationShortcutItemType": shortcut.type,
                           "UIApplicationShortcutItemTitle": shortcut.titleKey,
                           "UIApplicationShortcutItemIconSymbolName": shortcut.symbol])
         }
-        plist["UIApplicationShortcutItems"] = items
+        if !items.isEmpty || plist["UIApplicationShortcutItems"] != nil { plist["UIApplicationShortcutItems"] = items }
+        let titleKeys = Set(added.map(\.titleKey))
         for (language, titles) in texts.shortcutTitles {
-            for (key, text) in titles { strings[language, default: [:]][key] = text }
+            for (key, text) in titles where titleKeys.contains(key) { strings[language, default: [:]][key] = text }
         }
         return strings
     }

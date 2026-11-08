@@ -35,6 +35,15 @@ public enum SettingsBundle {
     /// The strings table XSide creates when the app's page has none.
     static let ownTable = "XSide"
 
+    private static func hasStrings(named table: String, in bundle: URL) -> Bool {
+        let fm = FileManager.default
+        return ((try? fm.contentsOfDirectory(at: bundle, includingPropertiesForKeys: nil)) ?? []).contains {
+            $0.pathExtension == "lproj"
+                && (try? fm.attributesOfItem(atPath: $0.appendingPathComponent("\(table).strings").path)[.type]
+                    as? FileAttributeType) == .typeRegular
+        }
+    }
+
     struct NotAPage: Error {}
 
     /// Adds (or replaces) the section at the end of the app's page, creating the page if the app
@@ -77,15 +86,27 @@ public enum SettingsBundle {
                               "Titles": titleKeys, "Values": values, "DefaultValue": defaultValue])
             }
         }
-        let table = root["StringsTable"] as? String ?? ownTable
-        if root["StringsTable"] == nil { root["StringsTable"] = table }
+        // The page's own table; with none named iOS reads "Root", so XSide's keys go there when the
+        // app ships a Root.strings; only an app with no strings at all gets XSide's table.
+        let table: String
+        if let named = root["StringsTable"] as? String {
+            table = named
+        } else if hasStrings(named: "Root", in: bundle) {
+            table = "Root"
+        } else {
+            table = ownTable
+            root["StringsTable"] = table
+        }
         root["PreferenceSpecifiers"] = items
         let data = try PropertyListSerialization.data(fromPropertyList: root, format: .xml, options: 0)
         try data.write(to: rootURL, options: .atomic)
         // After the page itself: a strings file that can't be merged only leaves keys untranslated.
         // A table name with a path in it would make us write elsewhere.
         if !table.isEmpty, !table.contains("/"), !table.contains("..") {
-            LocalizedStrings.merge(section.strings, into: bundle, table: table)
+            let info = (try? Data(contentsOf: app.appendingPathComponent("Info.plist")))
+                .flatMap { try? PropertyListSerialization.propertyList(from: $0, format: nil) as? [String: Any] }
+            LocalizedStrings.merge(section.strings, into: bundle, table: table,
+                                   developmentRegion: info?["CFBundleDevelopmentRegion"] as? String)
         }
     }
 }

@@ -106,10 +106,12 @@ public struct Resigner: Sendable {
         }
 
         let features = !options.withoutXSideFeatures
+        // The library first: the payload, Bonjour keys and quick actions mean nothing without it
+        // (quick actions nothing handles would be a regression), so they follow its outcome.
+        let hasLibrary = features && addWelcomePopup(to: app, executable: executableURL)
         try editInfoPlist(app: app, bundleID: bundleID, options: options,
-                          payload: features ? welcome(profile) : nil, features: features)
+                          payload: hasLibrary ? welcome(profile) : nil, features: hasLibrary)
         if let iconURL { try await applyIcon(iconURL, to: app, workDir: workDir) }
-        if features { addWelcomePopup(to: app, executable: executableURL) }
         if features, let settingsSection {
             // Never fails the install: the app keeps its page as it was.
             do { try SettingsBundle.add(settingsSection(profile), to: app) } catch {
@@ -145,10 +147,11 @@ public struct Resigner: Sendable {
     /// Every app gets the welcome popup: copies the library into `Frameworks/` and makes the
     /// executable load it (weakly).
     /// Never fails the install: on any problem the app is left as it was, without the popup.
-    private func addWelcomePopup(to app: URL, executable: URL) {
+    /// Returns whether the library is in the app.
+    private func addWelcomePopup(to app: URL, executable: URL) -> Bool {
         guard let welcomeDylib, FileManager.default.fileExists(atPath: welcomeDylib.path) else {
             Self.logger.notice("welcome popup unavailable (no library in this build)")
-            return
+            return false
         }
         let fm = FileManager.default
         let frameworks = app.appendingPathComponent("Frameworks")
@@ -159,9 +162,11 @@ public struct Resigner: Sendable {
             try fm.copyItem(at: welcomeDylib, to: target)
             let outcome = try MachOPatcher.addWeakDylib(Self.welcomeLoadPath, to: executable)
             Self.logger.info("welcome popup added (\(outcome == .added ? "new load command" : "already loaded"))")
+            return true
         } catch {
             try? fm.removeItem(at: target)
             Self.logger.notice("welcome popup skipped: \(String(describing: error))")
+            return false
         }
     }
 
@@ -362,7 +367,8 @@ public struct Resigner: Sendable {
         try write(plist, format: format, to: url)
         // Never fails the install: untranslated titles are the worst outcome.
         if !strings.isEmpty {
-            LocalizedStrings.merge(strings, into: app, table: "InfoPlist", keepExisting: [InfoPlistAdditions.usageKey])
+            LocalizedStrings.merge(strings, into: app, table: "InfoPlist", keepExisting: [InfoPlistAdditions.usageKey],
+                                   developmentRegion: plist["CFBundleDevelopmentRegion"] as? String)
         }
         plainLocalizedBundleNames(app: app, executable: executable)
     }

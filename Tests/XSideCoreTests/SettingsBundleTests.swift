@@ -169,7 +169,44 @@ struct SettingsBundleTests {
         let de = try strings(deDir.appendingPathComponent("Root.strings"))
         #expect(de["dark.title"] == "Dunkel")
         #expect(de[p + "title.group"] == "XSide Settings")
+        // The app's title still resolves in every lproj, including the ones XSide created.
+        #expect(try strings(bundle.appendingPathComponent("en.lproj/Root.strings"))["dark.title"] != nil) // seeded from a copy
         #expect(!FileManager.default.fileExists(atPath: bundle.appendingPathComponent("fr.lproj/XSide.strings").path))
+    }
+
+    /// A new fr.lproj/Root.strings must not hide the app's own titles (iOS reads one table per language).
+    @Test func createdLprojsAreSeededWithTheAppsOwnTitles() throws {
+        let app = try makeApp()
+        let bundle = app.appendingPathComponent("Settings.bundle")
+        let enDir = bundle.appendingPathComponent("en.lproj")
+        try FileManager.default.createDirectory(at: enDir, withIntermediateDirectories: true)
+        let own: [String: Any] = ["StringsTable": "Root",
+                                  "PreferenceSpecifiers": [["Type": "PSToggleSwitchSpecifier", "Key": "dark", "Title": "dark.title"]]]
+        try PropertyListSerialization.data(fromPropertyList: own, format: .binary, options: 0)
+            .write(to: bundle.appendingPathComponent("Root.plist"))
+        try Data(#""dark.title" = "Dark mode";"#.utf8).write(to: enDir.appendingPathComponent("Root.strings"))
+        try SettingsBundle.add(xsideSection(), to: app)
+        let fr = try strings(bundle.appendingPathComponent("fr.lproj/Root.strings"))
+        #expect(fr["dark.title"] == "Dark mode")
+        #expect(fr["io.github.xside.settings.title.group"] == "Réglages XSide")
+    }
+
+    /// No StringsTable key means iOS reads "Root": XSide's keys go there, not to a table the page never names.
+    @Test func rootStringsAreUsedWhenThePageNamesNoTable() throws {
+        let app = try makeApp()
+        let bundle = app.appendingPathComponent("Settings.bundle")
+        let enDir = bundle.appendingPathComponent("en.lproj")
+        try FileManager.default.createDirectory(at: enDir, withIntermediateDirectories: true)
+        let own: [String: Any] = ["PreferenceSpecifiers": [["Type": "PSToggleSwitchSpecifier", "Key": "dark", "Title": "dark.title"]]]
+        try PropertyListSerialization.data(fromPropertyList: own, format: .binary, options: 0)
+            .write(to: bundle.appendingPathComponent("Root.plist"))
+        try Data(#""dark.title" = "Dark mode";"#.utf8).write(to: enDir.appendingPathComponent("Root.strings"))
+        try SettingsBundle.add(xsideSection(), to: app)
+        let en = try strings(enDir.appendingPathComponent("Root.strings"))
+        #expect(en["dark.title"] == "Dark mode")
+        #expect(en["io.github.xside.settings.title.group"] == "XSide Settings")
+        #expect(!FileManager.default.fileExists(atPath: bundle.appendingPathComponent("en.lproj/XSide.strings").path))
+        #expect(try root(app)["StringsTable"] as? String != "XSide")
     }
 
     /// The old page formats (a file, a bad plist, a link) stay refused, with the v2 section too.
