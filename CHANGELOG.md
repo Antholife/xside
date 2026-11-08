@@ -22,6 +22,7 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 ### Changed
 - **Settings reorganized** into General, Refreshing, Installing, XSide in the apps (defaults for new installs), My apps, Notifications, Xcode and signing, Updates, Reports & Logs, About.
 - XSide's switches use the brand gradient and respond to the keyboard (focus ring, Space).
+- The install window is wider, step 3 in two columns: the steps fit without scrolling (it still scrolls on a small screen).
 - The *Messages XSide* and *Language* choices use XSide's own popup (brand chevron box) instead of the grey system one.
 - Resuming an app's refreshes from the panel keeps the panel open; after a row's confirmation (stop refreshing, uninstall, remove from the list) the panel opens again.
 - The install step "Adding XSide features" is "Injecting the XSide module", and says "skipped (installed as is)" when it was.

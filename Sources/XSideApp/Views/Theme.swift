@@ -60,6 +60,7 @@ extension OpenWindowAction {
 
 enum InstallWindow {
     static let id = "install"
+    static let width: CGFloat = 720
 }
 
 /// Open panel filtered on `.ipa`. Returns nil when cancelled.

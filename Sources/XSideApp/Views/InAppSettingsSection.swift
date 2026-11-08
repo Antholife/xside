@@ -21,57 +21,81 @@ struct InAppSettingsSection: View {
     /// Per-device status lines, under the box.
     var statuses: [DeviceSyncLine] = []
     var isDisabled = false
+    /// Two columns (features, status and where to find them | the options): the install window.
+    var columns = false
 
     @State private var confirmingNoFeatures = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            card {
-                InAppRow(symbol: "puzzlepiece.extension.fill", title: L("inApp.features"), note: L("inApp.features.note")) {
-                    Toggle(L("inApp.features"), isOn: Binding(get: { hasFeatures }, set: { on in
-                        if on { hasFeatures = true } else { confirmingNoFeatures = true }
-                    }))
-                    .labelsHidden()
-                    .toggleStyle(.xside)
-                    .controlSize(.small)
+        Group {
+            if columns {
+                // The install window: side by side, so step ③ fits without scrolling.
+                HStack(alignment: .top, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        featuresPart
+                        greyedWithoutFeatures(WhereBox(appName: appName))
+                    }
+                    .frame(maxWidth: .infinity)
+                    greyedWithoutFeatures(InAppOptionsCard(settings: settings, edit: edit, setAutoRefresh: setAutoRefresh))
+                        .frame(maxWidth: .infinity)
                 }
-                // Why one would turn it off, said where it can't be missed (device feedback 2026-11-08).
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Image(systemName: "lightbulb.fill")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color(nsColor: .systemOrange))
-                        .accessibilityHidden(true)
-                    Text(L("inApp.features.tip"))
-                        .font(.system(size: 11.5, weight: .medium))
-                        .fixedSize(horizontal: false, vertical: true)
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    featuresPart
+                    greyedWithoutFeatures(VStack(alignment: .leading, spacing: 10) {
+                        WhereBox(appName: appName)
+                        InAppOptionsCard(settings: settings, edit: edit, setAutoRefresh: setAutoRefresh)
+                    })
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(Color(nsColor: .systemOrange).opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .padding(.horizontal, 10)
-                .padding(.bottom, 10)
             }
-            if !hasFeatures {
-                Label(L("inApp.features.off"), systemImage: "minus.circle")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 4)
-            }
-            // Never greyed: without features it says so instead of what reaches the app.
-            if !statuses.isEmpty { DeviceSyncList(lines: statuses, hasFeatures: hasFeatures) }
-            // Without features the rest stays visible, greyed: the values come back with them.
-            Group {
-                WhereBox(appName: appName)
-                InAppOptionsCard(settings: settings, edit: edit, setAutoRefresh: setAutoRefresh)
-            }
-            .disabled(!hasFeatures)
-            .opacity(hasFeatures ? 1 : 0.45)
         }
         .disabled(isDisabled)
         .sheet(isPresented: $confirmingNoFeatures) {
             NoFeaturesConfirmation(appName: appName) { hasFeatures = false }
         }
+    }
+
+    /// Without features the rest stays visible, greyed: the values come back with them.
+    private func greyedWithoutFeatures<V: View>(_ view: V) -> some View {
+        view.disabled(!hasFeatures).opacity(hasFeatures ? 1 : 0.45)
+    }
+
+    /// The features switch with why one would turn it off, and the per-device status.
+    @ViewBuilder private var featuresPart: some View {
+        card {
+            InAppRow(symbol: "puzzlepiece.extension.fill", title: L("inApp.features"), note: L("inApp.features.note")) {
+                Toggle(L("inApp.features"), isOn: Binding(get: { hasFeatures }, set: { on in
+                    if on { hasFeatures = true } else { confirmingNoFeatures = true }
+                }))
+                .labelsHidden()
+                .toggleStyle(.xside)
+                .controlSize(.small)
+            }
+            // Why one would turn it off, said where it can't be missed (device feedback 2026-11-08).
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: "lightbulb.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color(nsColor: .systemOrange))
+                    .accessibilityHidden(true)
+                Text(L("inApp.features.tip"))
+                    .font(.system(size: 11.5, weight: .medium))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Color(nsColor: .systemOrange).opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .padding(.horizontal, 10)
+            .padding(.bottom, 10)
+        }
+        if !hasFeatures {
+            Label(L("inApp.features.off"), systemImage: "minus.circle")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+                .padding(.leading, 4)
+        }
+        // Never greyed: without features it says so instead of what reaches the app.
+        if !statuses.isEmpty { DeviceSyncList(lines: statuses, hasFeatures: hasFeatures) }
     }
 
     private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {

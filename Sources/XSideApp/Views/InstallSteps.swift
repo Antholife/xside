@@ -79,7 +79,8 @@ struct InAppStep: View {
                 hasFeatures: Binding(get: { !flow.withoutXSideFeatures },
                                      set: { flow.draft.withoutXSideFeatures = !$0 }),
                 edit: { change in flow.editInApp(change) },
-                statuses: flow.existing == nil ? [] : lines)
+                statuses: flow.existing == nil ? [] : lines,
+                columns: true)
         }
     }
 }

@@ -20,7 +20,9 @@ struct InstallWindowRoot: View {
                 InstallDropZone { url in openWindow.presentInstall(url, model: model) }
             }
         }
-        .frame(width: 440)
+        // Wide enough for step ③ in two columns and the other steps without scrolling (device
+        // feedback 2026-11-08); the middle still scrolls past the screen's height (large text).
+        .frame(width: InstallWindow.width)
         .fixedSize(horizontal: false, vertical: true)
         .background(KeepWindowOnScreen())
         .navigationTitle(L("install.title"))
