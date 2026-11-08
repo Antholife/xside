@@ -19,11 +19,31 @@ public struct Installation: Codable, Equatable, Sendable {
     public var refreshPaused: Bool
     /// The app's version installed there (the custom one, else the .ipa's). nil in older state.
     public var appVersion: String?
+    /// XSide-in-app settings for this installation. nil in older state (seeded at migration).
+    public var inApp: InAppSettings?
+    /// Who paused the refresh (`refreshPaused`): the Mac or the device. nil when unknown.
+    public var pausedBy: ChangeOrigin?
+    /// First time the app was installed on this device (kept across refreshes). nil in older state.
+    public var firstInstalledAt: Date?
+    /// Last refresh outcome reported by the phone. nil until a check-in.
+    public var lastRefreshOutcome: RefreshOutcome?
+    /// Secret shared with the dylib for the local network channel. nil until generated.
+    public var channelSecret: Data?
+    /// Last time the phone checked in through the channel. nil if never.
+    public var lastCheckIn: Date?
 
     public init(deviceID: String, installedAt: Date, expiresAt: Date,
                 lastAttempt: Date? = nil, lastErrorKey: String? = nil, signedBundleID: String? = nil,
                 signingIdentitySHA1: String? = nil, teamID: String? = nil, refreshPaused: Bool = false,
-                appVersion: String? = nil) {
+                appVersion: String? = nil, inApp: InAppSettings? = nil, pausedBy: ChangeOrigin? = nil,
+                firstInstalledAt: Date? = nil, lastRefreshOutcome: RefreshOutcome? = nil,
+                channelSecret: Data? = nil, lastCheckIn: Date? = nil) {
+        self.inApp = inApp
+        self.pausedBy = pausedBy
+        self.firstInstalledAt = firstInstalledAt
+        self.lastRefreshOutcome = lastRefreshOutcome
+        self.channelSecret = channelSecret
+        self.lastCheckIn = lastCheckIn
         self.appVersion = appVersion
         self.deviceID = deviceID
         self.installedAt = installedAt
@@ -48,6 +68,12 @@ public struct Installation: Codable, Equatable, Sendable {
         teamID = try c.decodeIfPresent(String.self, forKey: .teamID)
         refreshPaused = (try? c.decodeIfPresent(Bool.self, forKey: .refreshPaused)) ?? false
         appVersion = try? c.decodeIfPresent(String.self, forKey: .appVersion)
+        inApp = try? c.decodeIfPresent(InAppSettings.self, forKey: .inApp)
+        pausedBy = try? c.decodeIfPresent(ChangeOrigin.self, forKey: .pausedBy)
+        firstInstalledAt = try? c.decodeIfPresent(Date.self, forKey: .firstInstalledAt)
+        lastRefreshOutcome = try? c.decodeIfPresent(RefreshOutcome.self, forKey: .lastRefreshOutcome)
+        channelSecret = try? c.decodeIfPresent(Data.self, forKey: .channelSecret)
+        lastCheckIn = try? c.decodeIfPresent(Date.self, forKey: .lastCheckIn)
     }
 }
 
