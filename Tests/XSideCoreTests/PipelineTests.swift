@@ -1179,26 +1179,48 @@ struct PipelineChainCancellationTests {
         #expect(result.firstInstalledAt == old) // the earliest date XSide knows it was there
     }
 
-    /// The install window's settings: adopted by the installation, only changed fields restamped.
+    /// The install window's settings: only the fields touched in step 3 are adopted by an
+    /// existing installation, stamped and recorded as a Mac edit.
     @Test func installWindowSettingsAreAdopted() async throws {
         let f = try await Fixture(); defer { f.cleanup() }
         let clock = TestClock(fixedNow)
         let pipeline = f.pipeline(now: { clock.now })
         let first = try await pipeline.install(recordID: f.record.id, device: device(), env: env)
+        #expect(first.lastMacEdit == nil) // a first install isn't an edit
+        // The phone turned the validity off after the window opened; the user changed the reminder only.
+        try await f.library.editInApp(recordID: f.record.id, deviceID: "dev-1", reminder: true,
+                                      at: fixedNow.addingTimeInterval(10)) { _ in first.inApp! }
+        _ = try await f.library.applyCheckIn(first.inApp!.setting(\.showValidity, to: false,
+                                                                   at: fixedNow.addingTimeInterval(20), by: .device),
+                                             checkIn: fixedNow.addingTimeInterval(20), outcome: nil,
+                                             recordID: f.record.id, deviceID: "dev-1")
         let later = fixedNow.addingTimeInterval(3600)
         clock.now = later
-        let draft = InAppSettings.defaults(reminder: false, at: fixedNow.addingTimeInterval(-50))
-        let result = try await pipeline.install(recordID: f.record.id, device: device(), env: env, inApp: draft)
+        let draft = InAppSettings.defaults(reminder: false, at: fixedNow)
+        let result = try await pipeline.install(recordID: f.record.id, device: device(), env: env,
+                                                inApp: InAppDraft(settings: draft, touched: [.reminder]))
         #expect(result.inApp?.reminder == Field(value: false, changedAt: later, changedBy: .mac))
-        #expect(result.inApp?.showValidity == first.inApp?.showValidity)
+        #expect(result.inApp?.showValidity.value == false) // the phone's, untouched in the window
+        #expect(result.lastMacEdit == later)
         #expect(await f.log.facts.last??.inApp.reminder.value == false)
+    }
+
+    /// A device getting the app for the first time takes every value the window showed.
+    @Test func newInstallationTakesTheWholeDraft() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let draft = InAppSettings.defaults(reminder: false, at: fixedNow).setting(\.language, to: .en, at: fixedNow, by: .mac)
+        let result = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env,
+                                                    inApp: InAppDraft(settings: draft, touched: []))
+        #expect(result.inApp?.reminder.value == false && result.inApp?.language.value == .en)
+        #expect(result.lastMacEdit == nil)
     }
 
     /// An app that made no choice follows the Mac's default; its own choice wins.
     @Test func featuresChoiceIsResolvedBeforeSigning() async throws {
         let f = try await Fixture(); defer { f.cleanup() }
-        _ = try await f.pipeline(withoutFeaturesByDefault: true).install(recordID: f.record.id, device: device(), env: env)
+        let bare = try await f.pipeline(withoutFeaturesByDefault: true).install(recordID: f.record.id, device: device(), env: env)
         #expect(await f.log.options.last?.withoutXSideFeatures == true)
+        #expect(bare.withoutXSideFeatures == true) // the installation knows what it got
         var options = f.record.options
         options.withoutXSideFeatures = false
         try await f.library.setOptions(options, for: f.record.id)

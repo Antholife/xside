@@ -67,7 +67,12 @@ private struct AppSettingsContent: View {
                         edit: { change in Task { await model.editInApp(entry.id, change) } },
                         setAutoRefresh: { on in
                             Task {
-                                if on { await model.resumeRefreshing(entry) } else { await model.stopRefreshing(entry) }
+                                if on {
+                                    await model.resumeRefreshing(entry)
+                                } else if AppRowAlerts.confirmStopRefreshing(app: appName, device: deviceName) {
+                                    // Asked as from the row's "Arrêter de rafraîchir".
+                                    await model.stopRefreshing(entry)
+                                }
                             }
                         },
                         statuses: [DeviceSyncLine(deviceID: entry.installation.deviceID, deviceName: deviceName,

@@ -28,7 +28,6 @@
 /* Install sheet */
 "install.title" = "Installer";
 "install.device" = "Appareil";
-"install.options" = "Options";
 "install.field.name" = "Nom";
 "install.field.bundleID" = "Identifiant";
 "install.field.version" = "Version";
@@ -138,7 +137,6 @@
 "notification.appRemoved.body" = "Elle a été supprimée de %@ : XSide l'a retirée de sa liste. Réinstalle-la pour la retrouver.";
 "notification.refreshed.genericDevice" = "ton appareil";
 "settings.notifications" = "Notifications";
-"settings.afterInstall" = "Installation et appareils";
 "settings.afterInstall.footer" = "« Ouvrir l'app » et « Ouvrir la page Faire confiance » sont les valeurs par défaut : chaque installation peut les changer à son étape Installation.";
 "settings.autoRefresh" = "Rafraîchissements automatiques";
 "settings.autoRefresh.footer" = "Une app qui expire dans moins de 12 h est rafraîchie quand même, pour ne jamais en perdre une. Les rafraîchissements que tu lances toi-même ne sont jamais bloqués.";
@@ -171,8 +169,6 @@
 "settings.newDevicesWifi.note" = "Pour les appareils qu'XSide ne connaît pas encore. Chaque appareil garde son propre réglage dans le panneau.";
 "settings.notifyAppRemoved" = "Me prévenir quand une app supprimée de l'appareil est retirée de la liste";
 "settings.notifyAppRemoved.note" = "XSide la retire quand même ; seule la notification change.";
-"settings.deviceReminder" = "Rappel sur l'appareil la veille de l'expiration";
-"settings.deviceReminder.note" = "Envoyé par l'app elle-même, si elle a le droit de notifier. Pris en compte à la prochaine installation ou au prochain rafraîchissement.";
 "settings.notifyRefreshSuccess" = "Me prévenir quand un rafraîchissement réussit";
 
 /* Welcome journey */
@@ -476,7 +472,6 @@
 "install.device.developerModeOff" = "Mode développeur désactivé";
 "install.device.locked" = "À déverrouiller";
 "install.options.customize" = "Nom, identifiant, version, icône…";
-"install.options.customize.hint" = "Inchangé";
 "install.progress.title" = "Installation de %@";
 "install.progress.subtitle" = "sur %1$@ · étape %2$d sur %3$d";
 "install.progress.subtitlePercent" = "sur %1$@ · %2$@ · %3$@";
@@ -633,7 +628,6 @@
 "inApp.reach.notInstalled" = "Pas encore installée ici : ces valeurs partent avec l'installation";
 "inApp.delivery.pending" = "En attente : sera envoyé à %@ à la prochaine ouverture de l'app (ou au prochain rafraîchissement)";
 "inApp.delivery.sent" = "Écrit dans l'app le %@ (rafraîchissement), confirmé à sa prochaine connexion";
-"inApp.delivery.applied" = "Appliqué sur %@ le %@";
 "noFeatures.titleApp" = "Installer %@ sans les fonctionnalités XSide ?";
 "noFeatures.titleAll" = "Installer les apps sans les fonctionnalités XSide ?";
 "noFeatures.lost" = "Ce qui ne sera plus dans l'app :";
@@ -670,3 +664,6 @@
 "appSettings.subtitle" = "sur %@";
 "appSettings.gone" = "Cette app n'est plus dans XSide sur cet appareil.";
 "appSettings.note" = "Les changements partent vers l'app à sa prochaine connexion à XSide, ou à son prochain rafraîchissement.";
+"inApp.reach.noFeatures" = "Pas de fonctionnalités XSide dans cette app : rien à lui envoyer";
+"inApp.reach.featuresComing" = "Installée sans les fonctionnalités XSide : elles arrivent au prochain rafraîchissement";
+"inApp.delivery.confirmed" = "Confirmé par %@ à sa dernière connexion, le %@";

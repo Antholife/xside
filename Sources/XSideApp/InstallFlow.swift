@@ -41,6 +41,15 @@ final class InstallFlow {
     /// XSide in the app (step ③): the values every checked device gets. Prefilled from the app's
     /// last-used values, else the Mac defaults; only the values count (see `InAppSettings.adopting`).
     var inApp = AppModel.inAppDefaults(at: Date())
+    /// The step ③ fields the user changed: the only ones a device that has the app adopts.
+    var inAppTouched: Set<InAppField> = []
+
+    /// Applies a step ③ change, remembering which fields it touched.
+    func editInApp(_ change: (InAppSettings) -> InAppSettings) {
+        let edited = change(inApp)
+        inAppTouched.formUnion(edited.fields(differingFrom: inApp))
+        inApp = edited
+    }
     /// The step shown while editing: 0 devices, 1 install options, 2 XSide in the app.
     var step = 0
     /// Steps ①②③ with Next/Back. False for an app already installed when "Revoir les options à
@@ -68,7 +77,7 @@ final class InstallFlow {
     /// Options of the last run, reused by "Retry failed".
     var runOptions = InstallOptions()
     /// XSide-in-app settings of the last run, reused by "Retry failed".
-    var runInApp: InAppSettings?
+    var runInApp: InAppDraft?
     /// The last run installs the app without XSide's features (the progress says so).
     var runWithoutXSideFeatures: Bool {
         runOptions.resolvedWithoutXSideFeatures(default: AppModel.withoutXSideFeaturesByDefault)

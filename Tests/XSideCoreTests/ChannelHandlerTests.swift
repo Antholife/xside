@@ -299,10 +299,12 @@ import Foundation
         var i = await stored(lib, rec.id)
         #expect(i?.refreshPaused == true && i?.pausedBy == .device)
         #expect(i?.inApp?.autoRefresh == Field(value: false, changedAt: now, changedBy: .device))
+        #expect(i?.lastMacEdit == nil) // the phone's change, not the Mac's
         #expect(try await lib.setRefreshPaused(false, recordID: rec.id, deviceID: "a", by: .mac, at: now.addingTimeInterval(1)))
         i = await stored(lib, rec.id)
         #expect(i?.refreshPaused == false && i?.pausedBy == nil)
         #expect(i?.inApp?.autoRefresh == Field(value: true, changedAt: now.addingTimeInterval(1), changedBy: .mac))
+        #expect(i?.lastMacEdit == now.addingTimeInterval(1))
     }
 
     @Test func macEditIsStampedAndKeepsThePause() async throws {
@@ -313,6 +315,12 @@ import Foundation
         let i = await stored(lib, rec.id)
         #expect(i?.inApp?.reminder == Field(value: false, changedAt: now, changedBy: .mac))
         #expect(i?.refreshPaused == false)
+        #expect(i?.lastMacEdit == now)
+        // An "edit" that changes nothing isn't one.
+        try await lib.editInApp(recordID: rec.id, deviceID: "a", reminder: true, at: now.addingTimeInterval(5)) {
+            $0.setting(\.reminder, to: false, at: now.addingTimeInterval(5), by: .mac)
+        }
+        #expect(await stored(lib, rec.id)?.lastMacEdit == now)
         await #expect(throws: XSideError.recordNotFound) {
             try await lib.editInApp(recordID: rec.id, deviceID: "zz", reminder: true, at: now) { $0 }
         }

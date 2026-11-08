@@ -28,7 +28,6 @@
 /* Install sheet */
 "install.title" = "Install";
 "install.device" = "Device";
-"install.options" = "Options";
 "install.field.name" = "Name";
 "install.field.bundleID" = "Identifier";
 "install.field.version" = "Version";
@@ -138,7 +137,6 @@
 "notification.appRemoved.body" = "It was deleted from %@, so XSide removed it from its list. Install it again to bring it back.";
 "notification.refreshed.genericDevice" = "your device";
 "settings.notifications" = "Notifications";
-"settings.afterInstall" = "Installs and devices";
 "settings.afterInstall.footer" = "“Open the app” and “Open the Trust page” are defaults: each install can change them in its Install step.";
 "settings.autoRefresh" = "Automatic refreshes";
 "settings.autoRefresh.footer" = "An app expiring within 12 hours is refreshed anyway, so none is ever lost. Refreshes you start yourself are never held back.";
@@ -171,8 +169,6 @@
 "settings.newDevicesWifi.note" = "For devices XSide doesn't know yet. Each device keeps its own setting in the panel.";
 "settings.notifyAppRemoved" = "Tell me when an app deleted from its device leaves the list";
 "settings.notifyAppRemoved.note" = "XSide removes it anyway; only the notification changes.";
-"settings.deviceReminder" = "Reminder on the device the day before it expires";
-"settings.deviceReminder.note" = "Sent by the app itself, if it may notify. Applies from the next install or refresh.";
 "settings.notifyRefreshSuccess" = "Notify me when a refresh succeeds";
 
 /* Welcome journey */
@@ -476,7 +472,6 @@
 "install.device.developerModeOff" = "Developer Mode off";
 "install.device.locked" = "Unlock it";
 "install.options.customize" = "Name, bundle ID, version, icon…";
-"install.options.customize.hint" = "Unchanged";
 "install.progress.title" = "Installing %@";
 "install.progress.subtitle" = "on %1$@ · step %2$d of %3$d";
 "install.progress.subtitlePercent" = "on %1$@ · %2$@ · %3$@";
@@ -633,7 +628,6 @@
 "inApp.reach.notInstalled" = "Not installed here yet: these values go with the install";
 "inApp.delivery.pending" = "Pending: will be sent to %@ the next time the app opens (or at the next refresh)";
 "inApp.delivery.sent" = "Written into the app on %@ (refresh), confirmed at its next connection";
-"inApp.delivery.applied" = "Applied on %@ on %@";
 "noFeatures.titleApp" = "Install %@ without XSide features?";
 "noFeatures.titleAll" = "Install apps without XSide features?";
 "noFeatures.lost" = "What the app won't have any more:";
@@ -670,3 +664,6 @@
 "appSettings.subtitle" = "on %@";
 "appSettings.gone" = "This app is no longer in XSide on this device.";
 "appSettings.note" = "Changes reach the app at its next connection to XSide, or at its next refresh.";
+"inApp.reach.noFeatures" = "No XSide features in this app: nothing to send it";
+"inApp.reach.featuresComing" = "Installed without XSide features: they come with the next refresh";
+"inApp.delivery.confirmed" = "Confirmed by %@ at its last connection, on %@";

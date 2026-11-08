@@ -282,9 +282,14 @@ struct InstallSheet: View {
                 PreflightNotes(warnings: model.preflightWarnings(for: flow), model: model, flow: flow)
             case 1:
                 InstallOptionsSection(model: model, flow: flow)
+                // What this step's fields cause (minimum iOS, a new App ID, an older version).
+                PreflightNotes(warnings: model.preflightWarnings(for: flow).filter(\.followsInstallOptions),
+                               model: model, flow: flow)
             default:
                 InAppStep(model: model, flow: flow)
+                // Everything that may fail, where Install is pressed (Developer Mode off disables it).
                 BlockedNotice(model: model, flow: flow)
+                PreflightNotes(warnings: model.preflightWarnings(for: flow), model: model, flow: flow)
             }
         }
     }
@@ -447,6 +452,16 @@ struct InstallSheet: View {
 
 /// Why "Install" (or "Retry failed") can't be pressed: the first check still running, the
 /// environment failing (with its fix), or the chosen devices gone.
+extension InstallPreflight.Warning {
+    /// Caused or changed by step ② (minimum iOS, custom identifier, version).
+    var followsInstallOptions: Bool {
+        switch self {
+        case .iOSTooOld, .noAppIDLeft, .lastAppID, .olderVersion: true
+        case .developerModeOff, .deviceFull, .notBuiltForDevice: false
+        }
+    }
+}
+
 /// Before the install: what is likely to fail (Developer Mode off, old iOS, full device, no App ID left).
 private struct PreflightNotes: View {
     let warnings: [InstallPreflight.Warning]

@@ -175,6 +175,7 @@ extension Installation {
         if let asked = current.lastDeviceRefreshRequest, asked > (lastDeviceRefreshRequest ?? .distantPast) {
             result.lastDeviceRefreshRequest = asked
         }
+        if let edit = current.lastMacEdit, edit > (lastMacEdit ?? .distantPast) { result.lastMacEdit = edit }
         if let auto = result.inApp?.autoRefresh {
             result.refreshPaused = !auto.value
             result.pausedBy = auto.value ? nil : auto.changedBy
@@ -196,6 +197,9 @@ public struct InstallationFacts: Sendable, Equatable {
     public var lastCheckIn: Date?
     /// When this signing happened ("Rafraîchie le" on the phone).
     public var signedAt: Date?
+    /// This signing changes fields the Mac's user touched in the install window (a Mac edit,
+    /// dated `signedAt`). Not written into the app.
+    public var macEdited = false
 
     public init(installationID: String, channelSecret: Data, inApp: InAppSettings, firstInstalledAt: Date,
                 appVersion: String?, lastRefreshOutcome: RefreshOutcome?, lastCheckIn: Date?, signedAt: Date? = nil) {

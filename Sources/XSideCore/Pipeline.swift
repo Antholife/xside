@@ -209,11 +209,12 @@ public actor SideloadPipeline {
     /// is stopped, and a wait for the provisioning lock or for the device's previous job ends
     /// (that job goes on, and jobs queued later still wait for it). It throws `CancellationError`
     /// and records nothing, so an existing installation is left exactly as it was.
-    /// `inApp`: the in-app settings chosen in the install window, adopted by this installation
-    /// (see `InAppSettings.adopting`); nil keeps its own (or the Mac defaults for a new one).
+    /// `inApp`: step ③ of the install window. A new installation takes all its values; an
+    /// existing one only the fields the user touched (see `InAppSettings.adopting`), recorded as
+    /// a Mac edit when that changes something. nil keeps its own (or the Mac defaults).
     public func install(recordID: UUID, device: Device,
                         environment: @escaping @Sendable () async throws -> SigningEnvironment,
-                        refresh: Bool = false, inApp: InAppSettings? = nil,
+                        refresh: Bool = false, inApp: InAppDraft? = nil,
                         progress: @escaping @Sendable (InstallStep) async -> Void = { _ in }) async throws -> Installation {
         let previous = tails[device.id]?.task
         let token = UUID()
@@ -296,7 +297,7 @@ public actor SideloadPipeline {
 
     /// A fixed environment (tests, callers that just probed).
     public func install(recordID: UUID, device: Device, env: SigningEnvironment, refresh: Bool = false,
-                        inApp: InAppSettings? = nil,
+                        inApp: InAppDraft? = nil,
                         progress: @escaping @Sendable (InstallStep) async -> Void = { _ in }) async throws -> Installation {
         try await install(recordID: recordID, device: device, environment: { env }, refresh: refresh, inApp: inApp,
                           progress: progress)
@@ -307,7 +308,7 @@ public actor SideloadPipeline {
 
     private nonisolated func perform(recordID: UUID, device: Device,
                                      environment: @escaping @Sendable () async throws -> SigningEnvironment,
-                                     refresh: Bool, inApp draft: InAppSettings?,
+                                     refresh: Bool, inApp draft: InAppDraft?,
                                      progress: @Sendable (InstallStep) async -> Void) async throws -> Installation {
         guard let record = await library.records().first(where: { $0.id == recordID }) else {
             throw XSideError.recordNotFound
@@ -409,7 +410,9 @@ public actor SideloadPipeline {
                                       appVersion: facts.appVersion, inApp: facts.inApp,
                                       firstInstalledAt: facts.firstInstalledAt,
                                       lastRefreshOutcome: facts.lastRefreshOutcome,
-                                      channelSecret: facts.channelSecret, lastCheckIn: facts.lastCheckIn)
+                                      channelSecret: facts.channelSecret, lastCheckIn: facts.lastCheckIn,
+                                      lastMacEdit: facts.macEdited ? facts.signedAt : nil,
+                                      withoutXSideFeatures: options.withoutXSideFeatures == true ? true : nil)
             let installation = try await library.recordSigning(signed, for: recordID, requireExisting: previous != nil)
             Self.logger.notice("\(what): done, expires \(installation.expiresAt.formatted(.iso8601))")
             return installation
@@ -452,11 +455,18 @@ public actor SideloadPipeline {
     /// since the result is never paused), its first install date (set once) and this signing's
     /// outcome.
     private nonisolated func signingFacts(recordID: UUID, deviceID: String, previous: Installation?,
-                                          draft: InAppSettings?, appVersion: String?, at date: Date) -> InstallationFacts {
+                                          draft: InAppDraft?, appVersion: String?, at date: Date) -> InstallationFacts {
         var inApp = previous?.inApp ?? inAppDefaults(date)
-        if let draft { inApp = inApp.adopting(draft, at: date, by: .mac) }
+        var macEdited = false
+        if let draft {
+            let base = inApp
+            // A device getting the app takes what the window showed; one that has it, what was changed.
+            let fields = previous?.inApp == nil ? Set(InAppField.allCases) : draft.touched
+            inApp = inApp.adopting(draft.settings, fields: fields, at: date, by: .mac)
+            macEdited = previous?.inApp != nil && inApp != base
+        }
         if !inApp.autoRefresh.value { inApp = inApp.setting(\.autoRefresh, to: true, at: date, by: .mac) }
-        return InstallationFacts(
+        var facts = InstallationFacts(
             installationID: ChannelEnvelope.installationID(recordID: recordID, deviceID: deviceID),
             channelSecret: ChannelEnvelope.newSecret(), inApp: inApp,
             // Saved by an older XSide: the earliest date it is known to have been there.
@@ -464,6 +474,8 @@ public actor SideloadPipeline {
             appVersion: appVersion,
             lastRefreshOutcome: RefreshOutcome(at: date, succeeded: true),
             lastCheckIn: previous?.lastCheckIn, signedAt: date)
+        facts.macEdited = macEdited
+        return facts
     }
 
     /// Resolves a library-relative path, refusing anything that escapes the library root.

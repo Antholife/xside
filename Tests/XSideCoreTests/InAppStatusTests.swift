@@ -35,57 +35,56 @@ struct InAppStatusTests {
 
     // MARK: Delivery of the Mac's changes
 
+    func edited(_ s: InAppSettings, lastMacEdit: Date?, installedAt: Date, lastCheckIn: Date? = nil,
+                withoutFeatures: Bool? = nil) -> Installation {
+        var i = installation(installedAt: installedAt, lastCheckIn: lastCheckIn, inApp: s)
+        i.lastMacEdit = lastMacEdit
+        i.withoutXSideFeatures = withoutFeatures
+        return i
+    }
+
     @Test func noSettingsMeansNothingToTell() {
         #expect(SettingsDelivery.of(installation: installation(installedAt: t0)) == .nothing)
     }
 
-    @Test func onlyPhoneChangesMeanNothingToTell() {
-        var s = InAppSettings.defaults(reminder: true, at: t0)
-        for kp in [\InAppSettings.showValidity, \.alertLate, \.refreshCard, \.reminder, \.autoRefresh] {
-            s = s.setting(kp, to: true, at: at(5), by: .device)
-        }
-        s = s.setting(\.language, to: .fr, at: at(5), by: .device)
+    /// Seeded or defaulted values are stamped by the Mac but nobody changed them: nothing pending.
+    @Test func untouchedInstallationsHaveNothingToTell() {
+        let s = InAppSettings.defaults(reminder: true, at: at(100))
         #expect(SettingsDelivery.of(installation: installation(installedAt: t0, inApp: s)) == .nothing)
+        #expect(SettingsDelivery.of(installation: installation(installedAt: t0, lastCheckIn: at(50), inApp: s)) == .nothing)
     }
 
     @Test func macEditAfterTheSigningWithoutCheckInIsPending() {
         let s = InAppSettings.defaults(reminder: true, at: t0).setting(\.reminder, to: false, at: at(100), by: .mac)
-        #expect(SettingsDelivery.of(installation: installation(installedAt: t0, inApp: s)) == .pending(since: at(100)))
+        #expect(SettingsDelivery.of(installation: edited(s, lastMacEdit: at(100), installedAt: t0)) == .pending(since: at(100)))
         // A check-in before the edit doesn't deliver it.
-        let i = installation(installedAt: t0, lastCheckIn: at(50), inApp: s)
-        #expect(SettingsDelivery.of(installation: i) == .pending(since: at(100)))
+        #expect(SettingsDelivery.of(installation: edited(s, lastMacEdit: at(100), installedAt: t0, lastCheckIn: at(50)))
+                == .pending(since: at(100)))
     }
 
-    @Test func checkInAfterTheEditAppliesIt() {
+    @Test func checkInAfterTheEditConfirmsIt() {
         let s = InAppSettings.defaults(reminder: true, at: t0).setting(\.reminder, to: false, at: at(100), by: .mac)
-        let i = installation(installedAt: t0, lastCheckIn: at(200), inApp: s)
-        #expect(SettingsDelivery.of(installation: i) == .applied(at(200)))
+        #expect(SettingsDelivery.of(installation: edited(s, lastMacEdit: at(100), installedAt: t0, lastCheckIn: at(200)))
+                == .confirmed(lastCheckIn: at(200)))
     }
 
     @Test func signingAfterTheEditWritesItButDoesntConfirmIt() {
         let s = InAppSettings.defaults(reminder: true, at: t0).setting(\.reminder, to: false, at: at(100), by: .mac)
-        let i = installation(installedAt: at(300), lastCheckIn: at(50), inApp: s)
-        #expect(SettingsDelivery.of(installation: i) == .sentWithSigning(at(300)))
-        // A fresh install: its Mac values went with it.
-        let fresh = installation(installedAt: t0, inApp: InAppSettings.defaults(reminder: true, at: t0))
-        #expect(SettingsDelivery.of(installation: fresh) == .sentWithSigning(t0))
+        #expect(SettingsDelivery.of(installation: edited(s, lastMacEdit: at(100), installedAt: at(300), lastCheckIn: at(50)))
+                == .sentWithSigning(at(300)))
     }
 
-    @Test func theNewestMacEditDecides() {
-        let s = InAppSettings.defaults(reminder: true, at: t0)
-            .setting(\.reminder, to: false, at: at(100), by: .mac)
-            .setting(\.language, to: .en, at: at(400), by: .mac)
-        #expect(SettingsDelivery.of(installation: installation(installedAt: t0, lastCheckIn: at(200), inApp: s))
-                == .pending(since: at(400)))
+    @Test func aPhoneChangeOverridingTheEditLeavesNothingToTell() {
+        // The Mac turned the reminder off, the phone turned it back on later: the phone's stands.
+        let s = InAppSettings.defaults(reminder: true, at: t0).setting(\.reminder, to: true, at: at(150), by: .device)
+        #expect(SettingsDelivery.of(installation: edited(s, lastMacEdit: at(100), installedAt: t0)) == .nothing)
     }
 
-    @Test func aPhoneChangeOverridingTheEditLeavesNothingPending() {
-        // The Mac turned the reminder off, the phone turned it back on later: the merge kept the
-        // phone's, and the Mac's other fields were delivered by the check-in that brought it.
-        let s = InAppSettings.defaults(reminder: true, at: t0)
-            .setting(\.reminder, to: true, at: at(150), by: .device)
-        let i = installation(installedAt: t0, lastCheckIn: at(150), inApp: s)
-        #expect(SettingsDelivery.of(installation: i) == .applied(at(150)))
+    @Test func withoutFeaturesThereIsNothingToTellNorToReach() {
+        let s = InAppSettings.defaults(reminder: true, at: t0).setting(\.reminder, to: false, at: at(100), by: .mac)
+        let i = edited(s, lastMacEdit: at(100), installedAt: t0, lastCheckIn: at(50), withoutFeatures: true)
+        #expect(SettingsDelivery.of(installation: i) == .nothing)
+        #expect(ReachabilityStatus.of(installation: i, now: at(60)) == .noFeatures)
     }
 
     // MARK: Draft adopted by every device of a run
@@ -95,11 +94,31 @@ struct InAppStatusTests {
             .setting(\.refreshCard, to: false, at: at(10), by: .device)
         let draft = InAppSettings.defaults(reminder: false, at: t0)
             .setting(\.refreshCard, to: false, at: at(5), by: .device)
-        let result = device.adopting(draft, at: at(100), by: .mac)
+        let result = device.adopting(draft, fields: Set(InAppField.allCases), at: at(100), by: .mac)
         #expect(result.reminder == Field(value: false, changedAt: at(100), changedBy: .mac))
         #expect(result.refreshCard == device.refreshCard) // same value: untouched
         #expect(result.showValidity == device.showValidity)
         #expect(result.language == device.language)
+    }
+
+    /// A field the phone changed after the window opened, and the user didn't touch, keeps the phone's value.
+    @Test func adoptingOnlyTheTouchedFieldsKeepsTheNewerPhoneChanges() {
+        let prefill = InAppSettings.defaults(reminder: true, at: t0)
+        var draft = prefill.setting(\.language, to: .en, at: at(20), by: .mac) // touched in step 3
+        draft = draft.setting(\.refreshCard, to: true, at: at(20), by: .mac)  // unchanged value
+        let phone = prefill.setting(\.showValidity, to: false, at: at(30), by: .device) // after the window opened
+        let result = phone.adopting(draft, fields: [.language], at: at(100), by: .mac)
+        #expect(result.language == Field(value: .en, changedAt: at(100), changedBy: .mac))
+        #expect(result.showValidity == phone.showValidity)
+        #expect(phone.adopting(draft, fields: [], at: at(100), by: .mac) == phone)
+    }
+
+    @Test func fieldsWhoseValueDiffers() {
+        let a = InAppSettings.defaults(reminder: true, at: t0)
+        let b = a.setting(\.reminder, to: false, at: at(1), by: .mac).setting(\.language, to: .fr, at: at(1), by: .mac)
+            .setting(\.alertLate, to: true, at: at(1), by: .mac) // restamped, same value
+        #expect(b.fields(differingFrom: a) == [.reminder, .language])
+        #expect(a.fields(differingFrom: a).isEmpty)
     }
 
     @Test func lastUsedMergesEveryDevice() {
@@ -111,6 +130,15 @@ struct InAppStatusTests {
         #expect(used?.language.value == .fr)
         #expect(used?.reminder.value == false)
         #expect(InAppSettings.lastUsed(in: [installation(installedAt: t0)]) == nil)
+    }
+
+    @Test func newerMacEditIsKeptThroughASigning() {
+        var current = installation(installedAt: t0)
+        current.lastMacEdit = at(100)
+        var signed = installation(installedAt: at(200))
+        #expect(signed.keepingChannelState(of: current).lastMacEdit == at(100))
+        signed.lastMacEdit = at(150)
+        #expect(signed.keepingChannelState(of: current).lastMacEdit == at(150))
     }
 
     // MARK: Features choice

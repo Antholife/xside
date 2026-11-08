@@ -64,6 +64,10 @@ struct InstallOptionsSection: View {
             .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .disabled(flow.isRunning)
         }
+        // Sent back here by an invalid custom identifier: its field is shown.
+        .onAppear {
+            if case .editing(_?) = flow.phase, !flow.draft.bundleID.isEmpty { isExpanded = true }
+        }
     }
 
     private func switchToggle(_ title: String, isOn: Binding<Bool>) -> some View {

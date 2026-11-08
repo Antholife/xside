@@ -110,7 +110,7 @@ struct AppRow: View {
                     .lineLimit(2)
                     .truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)
-                    .help(subtitle.count > 60 ? subtitle : "") // the whole text when it may be cut
+                    .help(subtitle) // the whole text when it's cut
                 // Nothing to plug in nor to fix while paused: no refresh will be attempted.
                 if step == nil, !isPaused, needsUSB,
                    entry.installation.expiresAt.timeIntervalSince(now) <= RefreshPlanner.threshold {

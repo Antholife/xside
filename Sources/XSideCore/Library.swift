@@ -34,13 +34,23 @@ public struct Installation: Codable, Equatable, Sendable {
     /// Last refresh the phone itself asked for and XSide started: the phone's refresh limit counts
     /// from it. Set only by XSide; nothing the phone sends resets it. nil if never.
     public var lastDeviceRefreshRequest: Date?
+    /// Last time the Mac's user changed this installation's in-app settings (the per-app window,
+    /// a pause from the panel, a field changed in the install window). Seeded or default values
+    /// aren't edits. nil if never. Drives `SettingsDelivery`.
+    public var lastMacEdit: Date?
+    /// Signed without XSide's features at its last signing (nothing in the app to talk to XSide).
+    /// nil in older state, or when signed with them.
+    public var withoutXSideFeatures: Bool?
 
     public init(deviceID: String, installedAt: Date, expiresAt: Date,
                 lastAttempt: Date? = nil, lastErrorKey: String? = nil, signedBundleID: String? = nil,
                 signingIdentitySHA1: String? = nil, teamID: String? = nil, refreshPaused: Bool = false,
                 appVersion: String? = nil, inApp: InAppSettings? = nil, pausedBy: ChangeOrigin? = nil,
                 firstInstalledAt: Date? = nil, lastRefreshOutcome: RefreshOutcome? = nil,
-                channelSecret: Data? = nil, lastCheckIn: Date? = nil, lastDeviceRefreshRequest: Date? = nil) {
+                channelSecret: Data? = nil, lastCheckIn: Date? = nil, lastDeviceRefreshRequest: Date? = nil,
+                lastMacEdit: Date? = nil, withoutXSideFeatures: Bool? = nil) {
+        self.lastMacEdit = lastMacEdit
+        self.withoutXSideFeatures = withoutXSideFeatures
         self.lastDeviceRefreshRequest = lastDeviceRefreshRequest
         self.inApp = inApp
         self.pausedBy = pausedBy
@@ -79,6 +89,8 @@ public struct Installation: Codable, Equatable, Sendable {
         channelSecret = try? c.decodeIfPresent(Data.self, forKey: .channelSecret)
         lastCheckIn = try? c.decodeIfPresent(Date.self, forKey: .lastCheckIn)
         lastDeviceRefreshRequest = try? c.decodeIfPresent(Date.self, forKey: .lastDeviceRefreshRequest)
+        lastMacEdit = try? c.decodeIfPresent(Date.self, forKey: .lastMacEdit)
+        withoutXSideFeatures = try? c.decodeIfPresent(Bool.self, forKey: .withoutXSideFeatures)
     }
 }
 
@@ -387,6 +399,8 @@ public actor AppLibrary {
         installation.refreshPaused = paused
         installation.pausedBy = paused ? origin : nil
         installation.inApp = installation.inApp?.setting(\.autoRefresh, to: !paused, at: date, by: origin)
+        // The phone learns of a pause made on the Mac at its next check-in, like any Mac edit.
+        if origin == .mac { installation.lastMacEdit = date }
         // Resuming: no retry delay left over from before the pause, a due app goes at once.
         if !paused { installation.lastAttempt = nil }
     }
@@ -437,7 +451,9 @@ public actor AppLibrary {
         let current = items[index].installations[i].seededInApp(reminder: reminder, at: date)
         var edited = transform(current)
         edited.autoRefresh = current.autoRefresh
+        guard !edited.fields(differingFrom: current).isEmpty else { return } // restamped only: no edit
         items[index].installations[i].inApp = edited
+        items[index].installations[i].lastMacEdit = date
         do { try save() } catch { items = previous; throw error }
     }
 

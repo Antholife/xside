@@ -10,11 +10,14 @@ public enum ReachabilityStatus: Equatable, Sendable {
     case neverConnected
     /// Its last check-in is old: the app may not have been opened, or isn't on the Mac's network.
     case notSeenSince(Date)
+    /// Signed without XSide's features: nothing in the app talks to XSide.
+    case noFeatures
 
     /// How long a check-in counts as recent: a week, about one refresh cycle of a free account.
     public static let recentWindow: TimeInterval = 7 * 86_400
 
     public static func of(installation: Installation, now: Date) -> ReachabilityStatus {
+        if installation.withoutXSideFeatures == true { return .noFeatures }
         guard let last = installation.lastCheckIn else { return .neverConnected }
         return now.timeIntervalSince(last) <= recentWindow ? .joinable(lastSeen: last) : .notSeenSince(last)
     }
@@ -23,29 +26,33 @@ public enum ReachabilityStatus: Equatable, Sendable {
 /// Where the Mac's changes to an installation's in-app settings stand. The Mac never claims a
 /// setting is active on the phone before a check-in confirmed it.
 ///
-/// The Mac's latest change is the newest `changedAt` among the fields last changed by the Mac
-/// (a field the phone changed since belongs to the phone and is no longer the Mac's to deliver).
-/// A check-in at or after that date delivered it: the phone reports its values, the merge keeps
-/// the Mac's newer fields and the reply hands them to the phone, which applies them at once.
+/// Only the Mac user's edits count (`Installation.lastMacEdit`): values seeded or defaulted by
+/// XSide are stamped by the Mac but nobody changed them. An edit the phone has since overridden
+/// on every field it touched (no field still stamped by the Mac at or after it) is the phone's
+/// now: nothing to tell. A check-in at or after the edit delivered it: the phone reports its
+/// values, the merge keeps the Mac's newer fields and the reply hands them to the phone, which
+/// applies them at once.
 public enum SettingsDelivery: Equatable, Sendable {
-    /// No field holds a Mac change (no settings yet, or the phone changed every one since).
+    /// No Mac edit waiting or to confirm (none made, superseded, or no XSide features).
     case nothing
-    /// Changed on the Mac after the last signing and the last check-in: goes at the app's next
-    /// opening (check-in) or its next refresh (signing). `since`: the latest Mac change.
+    /// Edited on the Mac after the last signing and the last check-in: goes at the app's next
+    /// opening (check-in) or its next refresh (signing). `since`: the edit.
     case pending(since: Date)
     /// Written into the app by the signing of that date, not confirmed by a check-in since.
     case sentWithSigning(Date)
-    /// Confirmed by the check-in of that date.
-    case applied(Date)
+    /// Delivered: the latest check-in (at or after the edit) is of that date. Only the latest one
+    /// is known, so it's worded as "confirmed at the last connection".
+    case confirmed(lastCheckIn: Date)
 
     public static func of(installation: Installation) -> SettingsDelivery {
-        guard let s = installation.inApp else { return .nothing }
+        guard installation.withoutXSideFeatures != true, let s = installation.inApp,
+              let edit = installation.lastMacEdit else { return .nothing }
         let macDates = [s.showValidity.macDate, s.alertLate.macDate, s.refreshCard.macDate, s.reminder.macDate,
                         s.language.macDate, s.autoRefresh.macDate].compactMap { $0 }
-        guard let latest = macDates.max() else { return .nothing }
-        if let checkIn = installation.lastCheckIn, checkIn >= latest { return .applied(checkIn) }
-        if installation.installedAt >= latest { return .sentWithSigning(installation.installedAt) }
-        return .pending(since: latest)
+        guard macDates.contains(where: { $0 >= edit }) else { return .nothing }
+        if let checkIn = installation.lastCheckIn, checkIn >= edit { return .confirmed(lastCheckIn: checkIn) }
+        if installation.installedAt >= edit { return .sentWithSigning(installation.installedAt) }
+        return .pending(since: edit)
     }
 }
 
@@ -54,25 +61,54 @@ private extension Field {
     var macDate: Date? { changedBy == .mac ? changedAt : nil }
 }
 
+/// One of the in-app settings, to say which ones the install window's user touched.
+public enum InAppField: String, CaseIterable, Sendable {
+    case showValidity, alertLate, refreshCard, reminder, language, autoRefresh
+}
+
+/// The install window's step ③: the values shown and the fields the user changed there.
+public struct InAppDraft: Equatable, Sendable {
+    public var settings: InAppSettings
+    public var touched: Set<InAppField>
+
+    public init(settings: InAppSettings, touched: Set<InAppField>) {
+        self.settings = settings
+        self.touched = touched
+    }
+}
+
 extension InAppSettings {
-    /// Copy holding `draft`'s values: each field whose value differs is set and stamped
-    /// (`date`, `origin`); a field already at the draft's value keeps its own stamp. This is how
-    /// the install window gives every device of a run the same values without restamping what
-    /// didn't change there.
-    public func adopting(_ draft: InAppSettings, at date: Date, by origin: ChangeOrigin) -> InAppSettings {
+    /// Copy holding `draft`'s values for `fields`: each of those whose value differs is set and
+    /// stamped (`date`, `origin`); one already at the draft's value keeps its own stamp, and the
+    /// other fields are left alone. The install window passes the fields its user touched, so a
+    /// newer change made on the phone meanwhile is never overwritten by a value merely shown.
+    public func adopting(_ draft: InAppSettings, fields: Set<InAppField>, at date: Date,
+                         by origin: ChangeOrigin) -> InAppSettings {
         var copy = self
-        func adopt<V>(_ keyPath: WritableKeyPath<InAppSettings, Field<V>>) {
-            if copy[keyPath: keyPath].value != draft[keyPath: keyPath].value {
+        func adopt<V>(_ field: InAppField, _ keyPath: WritableKeyPath<InAppSettings, Field<V>>) {
+            if fields.contains(field), copy[keyPath: keyPath].value != draft[keyPath: keyPath].value {
                 copy = copy.setting(keyPath, to: draft[keyPath: keyPath].value, at: date, by: origin)
             }
         }
-        adopt(\.showValidity)
-        adopt(\.alertLate)
-        adopt(\.refreshCard)
-        adopt(\.reminder)
-        adopt(\.language)
-        adopt(\.autoRefresh)
+        adopt(.showValidity, \.showValidity)
+        adopt(.alertLate, \.alertLate)
+        adopt(.refreshCard, \.refreshCard)
+        adopt(.reminder, \.reminder)
+        adopt(.language, \.language)
+        adopt(.autoRefresh, \.autoRefresh)
         return copy
+    }
+
+    /// The fields whose value differs from `other`'s (stamps aside): what an edit changed.
+    public func fields(differingFrom other: InAppSettings) -> Set<InAppField> {
+        var result: Set<InAppField> = []
+        if showValidity.value != other.showValidity.value { result.insert(.showValidity) }
+        if alertLate.value != other.alertLate.value { result.insert(.alertLate) }
+        if refreshCard.value != other.refreshCard.value { result.insert(.refreshCard) }
+        if reminder.value != other.reminder.value { result.insert(.reminder) }
+        if language.value != other.language.value { result.insert(.language) }
+        if autoRefresh.value != other.autoRefresh.value { result.insert(.autoRefresh) }
+        return result
     }
 
     /// The app's last-used values: every device's settings merged field by field (newest change

@@ -103,12 +103,16 @@ struct PausedRefreshTests {
         #expect(try await lib.setRefreshPaused(true, recordID: rec.id, deviceID: "a") == false) // already paused
         var stored = try #require(await AppLibrary(root: root).records().first?.installations.first) // persisted
         #expect(stored.refreshPaused && stored.pausedBy == .mac)
+        #expect(stored.lastMacEdit != nil) // a Mac change the phone learns of
         stored.refreshPaused = false
         stored.pausedBy = nil
+        stored.lastMacEdit = nil
         #expect(stored == installation) // nothing else changed
 
         #expect(try await lib.setRefreshPaused(false, recordID: rec.id, deviceID: "a"))
-        #expect(try #require(await lib.records().first?.installations.first) == installation)
+        var resumed = try #require(await lib.records().first?.installations.first)
+        resumed.lastMacEdit = nil
+        #expect(resumed == installation)
         #expect(try await lib.setRefreshPaused(true, recordID: rec.id, deviceID: "other") == false)
         await #expect(throws: XSideError.recordNotFound) {
             try await lib.setRefreshPaused(true, recordID: UUID(), deviceID: "a")

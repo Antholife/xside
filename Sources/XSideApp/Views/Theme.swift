@@ -97,9 +97,11 @@ extension ToggleStyle where Self == XSideSwitchStyle {
     static var xside: XSideSwitchStyle { XSideSwitchStyle() }
 }
 
-/// The switch itself: a button, so Space toggles it once focused.
+/// The switch itself: focusable with Tab (keyboard navigation), Space toggles it, and a focus
+/// ring in the system's accent color shows where the focus is.
 private struct XSideSwitch: View {
     @Binding var isOn: Bool
+    @FocusState private var isFocused: Bool
     @Environment(\.controlSize) private var controlSize
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -113,10 +115,12 @@ private struct XSideSwitch: View {
         }
     }
 
+    private func toggle() {
+        withAnimation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.8)) { isOn.toggle() }
+    }
+
     var body: some View {
-        Button {
-            withAnimation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.8)) { isOn.toggle() }
-        } label: {
+        Button(action: toggle) {
             ZStack(alignment: isOn ? .trailing : .leading) {
                 Capsule()
                     .fill(isOn ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(Color.primary.opacity(0.16)))
@@ -131,5 +135,20 @@ private struct XSideSwitch: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .focusable(isEnabled)
+        .focused($isFocused)
+        .focusEffectDisabled() // the ring below follows the capsule, not a rectangle
+        .overlay {
+            if isFocused {
+                Capsule()
+                    .strokeBorder(Color.accentColor.opacity(0.6), lineWidth: 3)
+                    .padding(-3)
+                    .allowsHitTesting(false)
+            }
+        }
+        .onKeyPress(.space) {
+            toggle()
+            return .handled
+        }
     }
 }

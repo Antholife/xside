@@ -951,7 +951,7 @@ final class AppModel {
     /// `imported` reports the record once imported with its options, even if the install then fails.
     @discardableResult
     func importAndInstall(_ ipa: URL, on device: Device, options: InstallOptions? = nil,
-                          inApp: InAppSettings? = nil,
+                          inApp: InAppDraft? = nil,
                           importedInto recordID: UUID? = nil,
                           imported: @MainActor (UUID) -> Void = { _ in },
                           progress: @escaping @MainActor @Sendable (JobStage) -> Void = { _ in }) async throws -> AppRecord {
@@ -1601,7 +1601,7 @@ final class AppModel {
 
     /// The caller must hold a claim on `key`. `refresh`: see `SideloadPipeline.install`.
     private func run(key: JobKey, device: Device, refresh: Bool = false,
-                     automatic: Bool = false, inApp: InAppSettings? = nil,
+                     automatic: Bool = false, inApp: InAppDraft? = nil,
                      progress: @escaping @MainActor @Sendable (JobStage) -> Void = { _ in }) async throws {
         let job = RefreshJob(recordID: key.recordID, deviceID: key.deviceID)
         // A refresh renews an existing installation; a first install is shown by the install window.
@@ -1748,11 +1748,12 @@ final class AppModel {
         if let custom = flow.draft.options.customBundleID, !BundleIdentifier.isValid(custom) {
             flow.failure = nil
             flow.phase = .editing(error: XSideError.invalidBundleID(custom).localizedMessage)
+            flow.go(to: 1) // where the identifier field is
             return
         }
         flow.runs = targets.map { id in DeviceRun(deviceID: id, name: devices.first { $0.id == id }?.name ?? id) }
         flow.runOptions = flow.draft.options
-        flow.runInApp = flow.inApp
+        flow.runInApp = InAppDraft(settings: flow.inApp, touched: flow.inAppTouched)
         // A new run imports again (the options may have changed); only its later devices reuse it.
         flow.importedRecordID = nil
         flow.guides = []
@@ -1850,7 +1851,7 @@ final class AppModel {
             flow.setStatus(.succeeded, for: deviceID)
             // "Rafraîchissement automatique" off in step ③: installed, then paused (a signing
             // always leaves it on).
-            if flow.runInApp?.autoRefresh.value == false { await pauseAfterInstall(recordID: installed.id, deviceID: deviceID) }
+            if flow.runInApp?.settings.autoRefresh.value == false { await pauseAfterInstall(recordID: installed.id, deviceID: deviceID) }
             // Asked to the device itself; the remembered rule only when it can't tell.
             let signedID = installed.installations.first { $0.deviceID == deviceID }?.signedBundleID ?? installed.signedBundleID
             // Opening the app is how the device tells; when off, the remembered rule decides.
