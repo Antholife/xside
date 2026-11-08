@@ -80,6 +80,9 @@ NSDictionary *XSCurrentSettings(void);
 /// by the device), merges, writes the result back. Returns YES if a value changed since the last
 /// call. Main thread.
 BOOL XSLoadSettings(void);
+/// YES once after an `XSLoadSettings` that found "Rafraîchissement automatique" changed in iOS
+/// Settings: the one setting the Mac must act on, so it is told at once (see XSTellAutoRefreshChange).
+BOOL XSTakeAutoRefreshChangedOnPhone(void);
 /// Adopts settings XSide sent (merged field by field). Main thread.
 void XSAdoptSettings(NSDictionary *settings);
 /// A change made on the phone by the dylib itself (e.g. turning automatic refresh back on).

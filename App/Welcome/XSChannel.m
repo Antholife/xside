@@ -530,6 +530,42 @@ static void XSStartRefresh(void) {
     }) start];
 }
 
+void XSTellAutoRefreshChange(void) {
+    if (!XSInstallationID() || !XSChannelSecret()) return; // no link with XSide yet: the next signing carries it
+    if (XSCheckInRunning) return; // that check-in already carries the change
+    XSCheckInRunning = YES;
+    BOOL on = XSSettingBool(XSCurrentSettings(), @"autoRefresh");
+    NSDictionary *body = XSCheckInBody(XSCurrentSettings(), XSLastRefresh(), XSAppVersion());
+    [XSPatientExchange(body, NO, ^(XSChannelResult result, NSDictionary *reply, BOOL final) {
+        BOOL fr = XSFrench();
+        if (result == XSChannelWaiting) { XSShowWaitingPill(); return; }
+        XSCheckInRunning = NO;
+        NSDictionary *settings = result == XSChannelReplied && [reply[@"type"] isEqual:@"settings"]
+            ? XSSettingsFromJSONObject(reply[@"settings"]) : nil;
+        if (!settings) {
+            XSPillContent *c = result == XSChannelReplied
+                ? XSPill(fr ? @"XSide n'a pas pu enregistrer le changement" : @"XSide couldn't record the change", nil, XSPillToneOrange, 8)
+                : XSUnansweredPill(result);
+            c.hint = c.hint ?: (fr ? @"Changé sur l'iPhone : XSide l'appliquera à la prochaine connexion."
+                                   : @"Changed on this iPhone: XSide will apply it at the next connection.");
+            XSShowPill(c);
+            return;
+        }
+        XSAdoptSettings(settings);
+        XSRecordCheckIn(NSDate.date);
+        NSDictionary *outcome = XSRefreshOutcomeFromJSONObject(reply[@"lastRefresh"]);
+        if (outcome) XSAdoptRefreshOutcome(outcome);
+        // The Mac may hold a newer change of its own: the pill says what now applies.
+        BOOL now = XSSettingBool(XSCurrentSettings(), @"autoRefresh");
+        NSString *lead = now == on
+            ? (now ? (fr ? @"Rafraîchissement automatique réactivé sur XSide" : @"Automatic refresh turned back on in XSide")
+                   : (fr ? @"Rafraîchissement automatique désactivé sur XSide" : @"Automatic refresh turned off in XSide"))
+            : (now ? (fr ? @"Réactivé entre-temps depuis le Mac" : @"Turned back on from the Mac meanwhile")
+                   : (fr ? @"Désactivé entre-temps depuis le Mac" : @"Turned off from the Mac meanwhile"));
+        XSShowPill(XSPill(lead, nil, XSPillToneNeutral, 6));
+    }) start];
+}
+
 /// "Réactiver" after a refresh refused as paused: on at once on the phone, then told to XSide.
 static void XSResumeAutoRefresh(void) {
     XSSetDeviceSetting(@"autoRefresh", @YES);

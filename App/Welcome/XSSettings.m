@@ -26,6 +26,7 @@ static NSObject *XSLock(void) {
 }
 
 static NSDictionary *XSCached; // guarded by XSLock()
+static BOOL XSAutoRefreshChangedOnPhone; // guarded by XSLock()
 
 /// The payload's settings; for a payload without them (or with invalid ones), the Mac's defaults
 /// dated 1970, so anything set on the phone wins.
@@ -72,7 +73,9 @@ BOOL XSLoadSettings(void) {
             id value = [d objectForKey:[XSRowPrefix stringByAppendingString:f]];
             if (value) rows[f] = value;
         }
-        local = XSSettingsNoticingRowChanges(local, rows, shadow, NSDate.date);
+        NSDictionary *noticed = XSSettingsNoticingRowChanges(local, rows, shadow, NSDate.date);
+        if (![noticed[@"autoRefresh"] isEqual:local[@"autoRefresh"]]) XSAutoRefreshChangedOnPhone = YES;
+        local = noticed;
         NSDictionary *merged = XSSettingsMerge(local, payload);
         NSDictionary *before = XSCached;
         XSStore(merged);
@@ -80,6 +83,14 @@ BOOL XSLoadSettings(void) {
         for (NSString *f in XSSettingFields()) {
             if (before && ![XSSettingValue(before, f) isEqual:XSSettingValue(merged, f)]) changed = YES;
         }
+        return changed;
+    }
+}
+
+BOOL XSTakeAutoRefreshChangedOnPhone(void) {
+    @synchronized (XSLock()) {
+        BOOL changed = XSAutoRefreshChangedOnPhone;
+        XSAutoRefreshChangedOnPhone = NO;
         return changed;
     }
 }

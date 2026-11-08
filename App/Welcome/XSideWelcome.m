@@ -583,6 +583,7 @@ void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded) {
 /// allow it), else the pill; never both (spec §1).
 static void XSLaunch(void) {
     XSLoadSettings(); // what the person changed in iOS Settings applies from this launch on
+    BOOL tellAutoRefresh = XSTakeAutoRefreshChangedOnPhone();
     // Asked from iOS Settings: the same as the Refresh quick action, once the app is on screen
     // (its pills replace the launch pill).
     if (XSTakeRefreshOnLaunch()) XSWhenForeground(1.0, ^{ XSRequestRefresh(); });
@@ -620,8 +621,12 @@ static void XSLaunch(void) {
         }
         pill();
     }
-    // Off the launch's way; silent, and only once the local network was allowed.
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ XSCheckIn(nil); });
+    // Off the launch's way; silent, and only once the local network was allowed. Automatic refresh
+    // changed in iOS Settings: told now, patiently, even before (the Mac must act on it).
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (tellAutoRefresh) XSWhenForeground(0, ^{ XSTellAutoRefreshChange(); });
+        else XSCheckIn(nil);
+    });
 }
 
 /// Back from the background (not a launch: no validity pill): changes made meanwhile in iOS
@@ -640,6 +645,10 @@ static void XSReturn(void) {
     // A refresh asked from here that failed or went unheard while the app was away: said now,
     // after asking XSide how it went.
     BOOL pending = XSPendingFailure() != nil;
+    if (XSTakeAutoRefreshChangedOnPhone()) {
+        XSWhenForeground(0.5, ^{ XSTellAutoRefreshChange(); });
+        return;
+    }
     if (!XSShouldCheckInOnReturn(changed, pending, XSLastCheckIn(), NSDate.date)) return;
     XSCheckIn(^{ if (changed || pending) XSShowPendingPill(); });
 }
