@@ -18,10 +18,6 @@ final class ChannelServer: @unchecked Sendable {
     private static let readTimeout: TimeInterval = 10
     /// Longest a connection stays open: a refresh's outcome is awaited up to 2 minutes.
     private static let connectionLifetime: TimeInterval = 150
-    private static let maxConnections = 16
-    /// Per peer address: connections open at once, and new ones per minute. Excess is dropped.
-    private static let maxConnectionsPerRemote = 4
-    private static let maxAcceptsPerRemotePerMinute = 20
     private static let logger = Log("channel")
 
     private let handler: Handler
@@ -29,8 +25,8 @@ final class ChannelServer: @unchecked Sendable {
     private let queue = DispatchQueue(label: "io.github.xside.channel")
     private var listener: NWListener?
     private var connections: [ObjectIdentifier: Entry] = [:]
-    private var openPerRemote: [String: Int] = [:]
-    private var recentAccepts: [String: [Date]] = [:]
+    /// Who gets a slot: per-peer limits, and idle connections make room (ChannelAdmission).
+    private var admission = ChannelAdmission<ObjectIdentifier>()
     private var running = false
 
     init(handler: @escaping Handler) {
@@ -59,7 +55,10 @@ final class ChannelServer: @unchecked Sendable {
             let parameters = NWParameters.tcp
             parameters.includePeerToPeer = false
             let listener = try NWListener(using: parameters)
-            listener.service = NWListener.Service(type: Self.serviceType)
+            // A plain name rather than the Mac's own (the default): the service is seen on every
+            // network the Mac joins, a café's included (final review minor 8). Phones look for the
+            // type only; Bonjour renames it ("XSide (2)") if several Macs run XSide.
+            listener.service = NWListener.Service(name: "XSide", type: Self.serviceType)
             listener.stateUpdateHandler = { [weak self] state in self?.listenerChanged(state) }
             listener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }
             listener.start(queue: queue)
@@ -97,18 +96,17 @@ final class ChannelServer: @unchecked Sendable {
 
     private func accept(_ connection: NWConnection) {
         let remote = Self.remote(of: connection)
-        let now = Date()
-        let recent = (recentAccepts[remote] ?? []).filter { now.timeIntervalSince($0) < 60 }
-        recentAccepts[remote] = recent.isEmpty ? nil : recent
-        guard connections.count < Self.maxConnections,
-              openPerRemote[remote, default: 0] < Self.maxConnectionsPerRemote,
-              recent.count < Self.maxAcceptsPerRemotePerMinute else {
+        let id = ObjectIdentifier(connection)
+        switch admission.admit(id, remote: remote, now: Date()) {
+        case .drop:
             connection.cancel() // dropped silently
             return
+        case .acceptEvicting(let idle):
+            // Ends through its state handler (`ended`).
+            connections[idle]?.connection.cancel()
+        case .accept:
+            break
         }
-        recentAccepts[remote] = recent + [now]
-        openPerRemote[remote, default: 0] += 1
-        let id = ObjectIdentifier(connection)
         let read = ReadState()
         // Weak: a timer never keeps a connection that ended alive; both are cancelled when it ends.
         let readTimer = DispatchWorkItem { [weak connection] in
@@ -125,24 +123,24 @@ final class ChannelServer: @unchecked Sendable {
         connection.start(queue: queue)
         queue.asyncAfter(deadline: .now() + Self.readTimeout, execute: readTimer)
         queue.asyncAfter(deadline: .now() + Self.connectionLifetime, execute: lifeTimer)
-        receive(on: connection, read: read)
+        receive(on: connection, read: read, id: id)
     }
 
     private func ended(_ id: ObjectIdentifier) {
         guard let entry = connections.removeValue(forKey: id) else { return }
         for timer in entry.timers { timer.cancel() }
-        let left = (openPerRemote[entry.remote] ?? 1) - 1
-        openPerRemote[entry.remote] = left > 0 ? left : nil
+        admission.ended(id)
     }
 
     /// Reads until the first "\n". Malformed framing (too long, closed early) closes silently.
-    private func receive(on connection: NWConnection, read: ReadState) {
+    private func receive(on connection: NWConnection, read: ReadState, id: ObjectIdentifier) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 16 * 1024) { [weak self] data, _, isComplete, error in
             guard let self else { return }
             if let data, !data.isEmpty {
                 switch read.reader.append(data) {
                 case .line(let line):
                     read.gotLine = true
+                    self.admission.gotLine(id)
                     self.dispatch(line, on: connection)
                     return
                 case .tooLong:
@@ -156,7 +154,7 @@ final class ChannelServer: @unchecked Sendable {
                 connection.cancel()
                 return
             }
-            self.receive(on: connection, read: read)
+            self.receive(on: connection, read: read, id: id)
         }
     }
 
