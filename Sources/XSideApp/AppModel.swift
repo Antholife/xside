@@ -1053,8 +1053,9 @@ final class AppModel {
     /// The open watches (device feedback 4): while an app is in front, the Mac's changes to its
     /// installation are written to it at once (`pushToWatches`, after each library reload).
     @ObservationIgnored private let channelWatches = ChannelWatches<UUID>()
-    /// Watches whose connection ended before they were registered (see `holdWatch`).
-    @ObservationIgnored private var endedWatchTokens: Set<UUID> = []
+    /// Watches whose connection ended before they were registered (see `holdWatch`), each kept a
+    /// minute (review D–G, minor 5).
+    @ObservationIgnored private var endedWatchTokens = EndedWatchTokens<UUID>()
     /// The installations whose app is open on its device right now (`ReachabilityStatus.isLive`:
     /// a watch is open, or a check-in came within one poll interval and a margin). Observed by Settings > My apps, so the
     /// status line flips on its own when the app leaves the screen; re-evaluated on each watch
@@ -1095,8 +1096,25 @@ final class AppModel {
     /// Whether the app is open on that device now (see `liveInstallations`).
     func isLive(_ key: JobKey) -> Bool { liveInstallations.contains(key) }
 
+    /// Held while an app keeps a watch open: no App Nap, so the 2 s ticker (keep-alives every 25 s,
+    /// the phone gives up after 60 s of silence) isn't stretched while XSide has no window. Idle
+    /// sleep stays allowed (review D–G, minor 6).
+    @ObservationIgnored private var watchActivity: (any NSObjectProtocol)?
+
+    private func updateWatchActivity() {
+        let watching = !channelWatches.installationIDs.isEmpty
+        if watching, watchActivity == nil {
+            watchActivity = ProcessInfo.processInfo.beginActivity(
+                options: .userInitiatedAllowingIdleSystemSleep, reason: "An app keeps a live connection to XSide")
+        } else if !watching, let activity = watchActivity {
+            ProcessInfo.processInfo.endActivity(activity)
+            watchActivity = nil
+        }
+    }
+
     /// `liveInstallations` from the watches and the last check-ins; assigned only when it changes.
     private func updateLiveInstallations(now: Date = Date()) {
+        updateWatchActivity()
         var live: Set<JobKey> = []
         for record in records {
             for installation in record.installations {
@@ -1149,14 +1167,14 @@ final class AppModel {
         do {
             if let replaced = try channelWatches.open(token, installationID: installationID, nonce: nonce, secret: secret,
                                                       first: first, now: Date(), send: push) {
-                endedWatchTokens.remove(replaced)
+                endedWatchTokens.take(replaced)
             }
         } catch {
             Self.channelLogger.error("channel: watch not opened: \(String(describing: error))")
             return true // held: its connection closes at its lifetime, or when the phone gives up
         }
         // Its connection may have ended while this waited for the server.
-        if endedWatchTokens.remove(token) != nil { channelWatches.close(token) }
+        if endedWatchTokens.take(token) { channelWatches.close(token) }
         Self.channelLogger.notice("channel: watch open for \(key.recordID) on \(key.deviceID)")
         pushToWatches() // a change stored while the watch was being set up
         updateLiveInstallations()
@@ -1166,7 +1184,6 @@ final class AppModel {
     private func watchEnded(_ token: UUID, key: JobKey) {
         if channelWatches.close(token) == nil {
             endedWatchTokens.insert(token) // not registered yet (see `holdWatch`), or already replaced
-            if endedWatchTokens.count > 64 { endedWatchTokens.removeAll() }
         } else {
             Self.channelLogger.notice("channel: watch closed for \(key.recordID) on \(key.deviceID)")
         }
@@ -1449,7 +1466,9 @@ final class AppModel {
     /// resumed as from the panel, reminders back, and due ones refreshed.
     func resumeEndedPauses() async {
         let resumed: [RefreshJob]
-        do { resumed = try await library.resumeEndedPauses(at: Date()) } catch {
+        // Not one XSide is working on (an uninstall): the next evaluation gets it (review D–G m10).
+        let busy = Set(claims.keys.map { RefreshJob(recordID: $0.recordID, deviceID: $0.deviceID) })
+        do { resumed = try await library.resumeEndedPauses(at: Date(), skipping: busy) } catch {
             Self.logger.error("ending pauses failed: \(String(describing: error))")
             return
         }

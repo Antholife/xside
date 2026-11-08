@@ -402,14 +402,17 @@ public actor AppLibrary {
     }
 
     /// Resumes the apps whose pause of their own ended at `date` or before, as a resume from the
-    /// Mac at that date (the app is told at its next check-in). Returns them.
-    public func resumeEndedPauses(at date: Date) throws -> [RefreshJob] {
+    /// Mac at that date (the app is told at its next check-in). Returns them. `skipping`: the
+    /// installations XSide is working on (an uninstall in progress), left for the next check.
+    public func resumeEndedPauses(at date: Date, skipping: Set<RefreshJob> = []) throws -> [RefreshJob] {
         let previous = items
         var resumed: [RefreshJob] = []
         for r in items.indices {
             for i in items[r].installations.indices {
                 guard items[r].installations[i].refreshPaused,
-                      let end = items[r].installations[i].pausedUntil, end <= date else { continue }
+                      let end = items[r].installations[i].pausedUntil, end <= date,
+                      !skipping.contains(RefreshJob(recordID: items[r].id, deviceID: items[r].installations[i].deviceID))
+                else { continue }
                 Self.applyPause(false, by: .mac, at: date, to: &items[r].installations[i])
                 resumed.append(RefreshJob(recordID: items[r].id, deviceID: items[r].installations[i].deviceID))
             }

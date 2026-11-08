@@ -99,3 +99,25 @@ public final class ChannelWatches<Token: Hashable> {
         return true
     }
 }
+
+/// The watches whose connection ended before they were registered (the Mac's `holdWatch` awaits
+/// the server meanwhile), each remembered for `lifetime`: a replaced watch's late end lands here
+/// too and must not stay forever, and a pending one is never dropped with the others (review
+/// D–G, minor 5).
+public struct EndedWatchTokens<Token: Hashable> {
+    public static var lifetime: TimeInterval { 60 }
+    private var ended: [Token: Date] = [:]
+
+    public init() {}
+
+    public var count: Int { ended.count }
+
+    public mutating func insert(_ token: Token, at date: Date = Date()) {
+        ended = ended.filter { date.timeIntervalSince($0.value) < Self.lifetime }
+        ended[token] = date
+    }
+
+    /// True (and forgotten) when `token` had ended.
+    @discardableResult
+    public mutating func take(_ token: Token) -> Bool { ended.removeValue(forKey: token) != nil }
+}

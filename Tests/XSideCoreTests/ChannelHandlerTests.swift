@@ -358,6 +358,14 @@ import Foundation
         #expect(try await lib.setRefreshPaused(true, recordID: rec.id, deviceID: "a", by: .mac, at: end))
         #expect(await stored(lib, rec.id)?.pausedUntil == nil)
         #expect(try await lib.resumeEndedPauses(at: end.addingTimeInterval(86_400 * 30)).isEmpty)
+        // Review D–G minor 10: an installation XSide is working on (an uninstall) is left for later.
+        #expect(try await lib.setRefreshPaused(false, recordID: rec.id, deviceID: "a", by: .mac, at: end))
+        let later = end.addingTimeInterval(60)
+        #expect(try await lib.setRefreshPaused(true, recordID: rec.id, deviceID: "a", by: .mac, at: end, until: later))
+        let busy: Set<RefreshJob> = [RefreshJob(recordID: rec.id, deviceID: "a")]
+        #expect(try await lib.resumeEndedPauses(at: later, skipping: busy).isEmpty)
+        #expect(await stored(lib, rec.id)?.refreshPaused == true)
+        #expect(try await lib.resumeEndedPauses(at: later, skipping: []) == [RefreshJob(recordID: rec.id, deviceID: "a")])
         // Older state has none.
         let old = try JSONDecoder().decode(Installation.self, from: Data(
             #"{"deviceID":"a","installedAt":0,"expiresAt":0,"refreshPaused":true}"#.utf8))

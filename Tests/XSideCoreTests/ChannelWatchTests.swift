@@ -256,3 +256,21 @@ import Foundation
         #expect(ReachabilityStatus.of(installation: installation, now: now) == .joinable(lastSeen: now.addingTimeInterval(-600)))
     }
 }
+
+/// Review D–G minor 5: watches that ended before they were registered are remembered a minute,
+/// each for itself: never a wholesale clear that could drop one still pending.
+@Suite struct EndedWatchTokensTests {
+    @Test func remembersEachForAMinute() {
+        let t0 = Date(timeIntervalSince1970: 1000)
+        var ended = EndedWatchTokens<Int>()
+        ended.insert(1, at: t0)
+        for n in 2...200 { ended.insert(n, at: t0.addingTimeInterval(50)) } // many, never cleared at once
+        let first = ended.take(1), second = ended.take(1)
+        #expect(first) // still pending: taken once
+        #expect(!second)
+        ended.insert(300, at: t0.addingTimeInterval(120)) // the others are over a minute old now
+        #expect(ended.count == 1)
+        let last = ended.take(300)
+        #expect(last)
+    }
+}
