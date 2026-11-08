@@ -96,10 +96,13 @@ struct InstallSummaryView: View {
 
     var body: some View {
         let info = flow.info
+        let duoOn = flow.deviceIDs.filter { flow.duoDevices.contains($0) && model.duoState(for: $0, app: info?.duo).canTurnOn }
         let lines = InstallSummary.lines(options: flow.draft.options, inApp: flow.inApp,
                                          withoutXSideFeatures: flow.withoutXSideFeatures,
                                          openAppAfter: flow.openAppAfter, openTrustPage: flow.openTrustPage,
-                                         offersKeychain: info?.sharedKeychainGroups.isEmpty == false)
+                                         offersKeychain: info?.sharedKeychainGroups.isEmpty == false,
+                                         duoDevices: duoOn.map(deviceName),
+                                         offersDuo: flow.deviceIDs.contains { id in model.devices.first { $0.id == id }?.isDuo == true })
         VStack(alignment: .leading, spacing: 10) {
             SectionTitle(L("install.summary.title"))
             group(L("install.optionsTitle"), lines.install, step: 1)
@@ -147,6 +150,10 @@ struct InstallSummaryView: View {
 
     private func yesNo(_ on: Bool) -> String { L(on ? "install.summary.yes" : "install.summary.no") }
 
+    private func deviceName(_ id: String) -> String {
+        model.devices.first { $0.id == id }?.name ?? L("popover.unknownDevice")
+    }
+
     private func text(_ line: InstallSummary.Line) -> (String, String) {
         switch line {
         case .appUnchanged: (L("install.summary.app"), L("install.summary.asInIPA"))
@@ -160,6 +167,8 @@ struct InstallSummaryView: View {
         case .minimumOS(let v): (L("install.field.minOS"), v)
         case .shareKeychain(let on):
             (L("install.field.shareKeychain", flow.info.map(InstallOptionsSection.vendor(of:)) ?? ""), yesNo(on))
+        case .duoCompatibility(let devices):
+            (L("duo.option"), devices.isEmpty ? yesNo(false) : devices.joined(separator: ", "))
         case .openAppAfter(let on): (L("settings.openAppAfterInstall"), yesNo(on))
         case .openTrustPage(let on): (L("settings.openTrustSettings"), yesNo(on))
         case .xsideFeatures(let on): (L("inApp.features"), yesNo(on))

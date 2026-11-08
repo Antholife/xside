@@ -18,10 +18,15 @@ public struct InstallOptions: Codable, Equatable, Sendable {
     /// made no choice and follows the Mac's default (see `resolvedWithoutXSideFeatures`), which
     /// the pipeline resolves before signing.
     public var withoutXSideFeatures: Bool?
+    /// Add iPhone Duo compatibility (see `DuoCompatibility`) to this signing. Chosen per device:
+    /// the pipeline sets it for each job from `Installation.duoCompatibility` (the app's options
+    /// themselves leave it nil).
+    public var duoCompatibility: Bool?
     public init(displayName: String? = nil, customBundleID: String? = nil, version: String? = nil,
                 iconPath: String? = nil, fileSharing: Bool = false, iPadFullScreen: Bool = false,
                 proMotion: Bool = false, minimumOSVersion: String? = nil, shareKeychain: Bool = false,
-                withoutXSideFeatures: Bool? = nil) {
+                withoutXSideFeatures: Bool? = nil, duoCompatibility: Bool? = nil) {
+        self.duoCompatibility = duoCompatibility
         self.displayName = displayName
         self.customBundleID = customBundleID
         self.version = version
@@ -47,6 +52,7 @@ public struct InstallOptions: Codable, Equatable, Sendable {
         minimumOSVersion = try c.decodeIfPresent(String.self, forKey: .minimumOSVersion)
         shareKeychain = try c.decodeIfPresent(Bool.self, forKey: .shareKeychain) ?? false
         withoutXSideFeatures = try c.decodeIfPresent(Bool.self, forKey: .withoutXSideFeatures)
+        duoCompatibility = try c.decodeIfPresent(Bool.self, forKey: .duoCompatibility)
     }
 }
 
@@ -123,12 +129,18 @@ public struct Resigner: Sendable {
         }
 
         let features = options.withoutXSideFeatures != true
+        // Asked for this device: what the app needs, and room in its header for it (before
+        // XSide's own load command takes what is left).
+        let duo = options.duoCompatibility == true ? duoPlan(app: app, executable: executableURL) : nil
+        if let duo { makeRoom(in: executableURL, needing: duo.growth + (features ? Self.welcomeCommandSize : 0)) }
         // The library first: the payload, Bonjour keys and quick actions mean nothing without it
         // (quick actions nothing handles would be a regression), so they follow its outcome.
         let hasLibrary = features && addWelcomePopup(to: app, executable: executableURL)
         let payload = hasLibrary ? welcome(profile).map { Self.payload($0, with: facts) } : nil
+        // The Info.plist keys only once the executable declares the new SDK.
+        let duoApplied = if let duo { await raiseSDK(of: executableURL, workDir: workDir) ? duo : nil } else { DuoPlan?.none }
         try editInfoPlist(app: app, bundleID: bundleID, options: options, payload: payload, features: hasLibrary,
-                          language: textLanguage(facts))
+                          language: textLanguage(facts), duo: duoApplied)
         if let iconURL { try await applyIcon(iconURL, to: app, workDir: workDir) }
         // The section's switches are read by the library: without it they'd do nothing.
         if hasLibrary, let settingsSection {
@@ -187,6 +199,105 @@ public struct Resigner: Sendable {
             Self.logger.notice("welcome popup skipped: \(String(describing: error))")
             return false
         }
+    }
+
+    // MARK: - iPhone Duo compatibility
+
+    /// What the Duo option does to an app: the bytes its version command grows by, and the scene
+    /// delegate a new manifest names (nil when the app has a manifest of its own).
+    struct DuoPlan {
+        let growth: Int
+        let sceneDelegate: String?
+    }
+
+    static let welcomeCommandSize = MachOPatcher.dylibCommand(welcomeLoadPath).count
+
+    /// Nil when there's nothing to do (already built for the Duo) or nothing possible (no scenes).
+    private func duoPlan(app: URL, executable: URL) -> DuoPlan? {
+        guard let data = try? IPAInspector.infoPlistData(of: app),
+              let plist = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any] else {
+            Self.logger.notice("duo compatibility skipped: unreadable Info.plist")
+            return nil
+        }
+        let info = DuoAppInfo.read(executable: executable, plist: plist)
+        switch DuoCompatibility.optionState(isDuo: true, app: info) {
+        case .alreadySupported:
+            Self.logger.info("duo compatibility: built with SDK \(info.sdkVersion ?? "?"), nothing to do")
+            return nil
+        case .noSceneSupport:
+            Self.logger.notice("duo compatibility skipped: no scene manifest nor scene delegate")
+            return nil
+        case .recommended, .notADuo, .unknown:
+            guard let growth = try? MachOBuildInfo.versionCommandGrowth(of: executable) else {
+                Self.logger.notice("duo compatibility skipped: unreadable executable")
+                return nil
+            }
+            Self.logger.info("duo compatibility: SDK \(info.sdkVersion ?? "?"), scene delegate \(info.adoptsScenes ? "(own manifest)" : info.sceneDelegateClass ?? "?")")
+            return DuoPlan(growth: growth, sceneDelegate: info.adoptsScenes ? nil : info.sceneDelegateClass)
+        }
+    }
+
+    /// Frees header space by removing the build Mac's toolchain run paths, only when the new
+    /// commands wouldn't fit otherwise.
+    private func makeRoom(in executable: URL, needing bytes: Int) {
+        guard bytes > 0, let free = try? MachOPatcher.freeSpace(in: executable), free < bytes else { return }
+        do {
+            let removed = try MachOPatcher.removeRpaths(from: executable, where: DuoCompatibility.isBuildMacToolchainPath)
+            Self.logger.info("duo compatibility: \(free) bytes free for \(bytes), removed \(removed.count) toolchain rpath(s)")
+        } catch {
+            Self.logger.notice("duo compatibility: couldn't make room: \(String(describing: error))")
+        }
+    }
+
+    /// Gives every slice of the executable SDK 27.1 with `xcrun vtool` (the job's Xcode),
+    /// keeping its minimum iOS. Never fails the install: on any problem the executable is left
+    /// as it was. Returns whether it now declares 27.1.
+    private func raiseSDK(of executable: URL, workDir: URL) async -> Bool {
+        let fm = FileManager.default
+        let tag = UUID().uuidString
+        let output = workDir.appendingPathComponent("duo-\(tag)")
+        var temps: [URL] = []
+        defer {
+            try? fm.removeItem(at: output)
+            for t in temps { try? fm.removeItem(at: t) }
+        }
+        do {
+            let slices = try MachOBuildInfo.slices(of: executable)
+            guard let calls = DuoCompatibility.vtoolCalls(input: executable.path, output: output.path, slices: slices, temp: { i in
+                let url = workDir.appendingPathComponent("duo-\(tag)-\(i)")
+                temps.append(url)
+                return url.path
+            }) else {
+                Self.logger.notice("duo compatibility skipped: not an iOS executable with a known minimum")
+                return false
+            }
+            for call in calls {
+                let r = try await runner.run("/usr/bin/xcrun", call, cwd: nil)
+                guard r.status == 0 else {
+                    Self.logger.notice("duo compatibility skipped: vtool failed (\(r.status)): \(r.stderr.prefix(300))")
+                    return false
+                }
+            }
+            guard (try? MachOBuildInfo.slices(of: output))?.allSatisfy({ DuoCompatibility.supportsDuo(sdk: $0.sdk) }) == true else {
+                Self.logger.notice("duo compatibility skipped: vtool's output doesn't declare SDK \(DuoCompatibility.sdk)")
+                return false
+            }
+            let mode = try fm.attributesOfItem(atPath: executable.path)[.posixPermissions]
+            _ = try fm.replaceItemAt(executable, withItemAt: output)
+            if let mode { try fm.setAttributes([.posixPermissions: mode], ofItemAtPath: executable.path) }
+            Self.logger.info("duo compatibility: SDK \(DuoCompatibility.sdk) declared")
+            return true
+        } catch {
+            Self.logger.notice("duo compatibility skipped: \(String(describing: error))")
+            return false
+        }
+    }
+
+    /// Whether the signed `app` fills an iPhone Duo's screens: its executable declares SDK 27.1 or
+    /// later (patched, or built so).
+    public func hasDuoCompatibility(_ app: URL) -> Bool {
+        guard let info = try? IPAInspector.info(of: app) else { return false }
+        return DuoCompatibility.supportsDuo(sdk: MachOBuildInfo.sdkVersion(of: app.appendingPathComponent(info.executable)))
     }
 
     // MARK: - Entitlements
@@ -312,7 +423,7 @@ public struct Resigner: Sendable {
         if exists(payload) { try fm.removeItem(at: payload) }
         for item in (try? fm.contentsOfDirectory(atPath: workDir.path)) ?? []
         where (item.hasPrefix("entitlements-") && item.hasSuffix(".plist"))
-            || (item.hasPrefix("xside-icon-") && item.hasSuffix(".png")) {
+            || (item.hasPrefix("xside-icon-") && item.hasSuffix(".png")) || item.hasPrefix("duo-") {
             try? fm.removeItem(at: workDir.appendingPathComponent(item))
         }
     }
@@ -369,7 +480,7 @@ public struct Resigner: Sendable {
     // MARK: - Info.plist
 
     private func editInfoPlist(app: URL, bundleID: String, options: InstallOptions,
-                               payload: WelcomePayload?, features: Bool, language: String) throws {
+                               payload: WelcomePayload?, features: Bool, language: String, duo: DuoPlan?) throws {
         let url = app.appendingPathComponent("Info.plist")
         let data = try IPAInspector.infoPlistData(of: app)
         var format = PropertyListSerialization.PropertyListFormat.binary
@@ -390,6 +501,7 @@ public struct Resigner: Sendable {
         if options.iPadFullScreen { plist["UIRequiresFullScreen"] = true }
         if options.proMotion { plist["CADisableMinimumFrameDurationOnPhone"] = true }
         if let min = options.minimumOSVersion { plist["MinimumOSVersion"] = min }
+        if let duo { DuoCompatibility.applyInfoPlist(&plist, sceneDelegateClass: duo.sceneDelegate) }
         let executable = plist["CFBundleExecutable"] as? String ?? "App"
         Self.plainBundleName(&plist, executable: executable)
         // Cleared first: an app signed by XSide before carries the previous payload.

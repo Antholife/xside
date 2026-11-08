@@ -201,6 +201,8 @@ public enum InstallSummary {
         case displayName(String), bundleID(String), version(String), customIcon
         case fileSharing, iPadFullScreen, proMotion, minimumOS(String)
         case shareKeychain(Bool)
+        /// iPhone Duo compatibility: the devices getting it (empty: none).
+        case duoCompatibility([String])
         case openAppAfter(Bool), openTrustPage(Bool)
         case xsideFeatures(Bool)
         case messages(MessageLevel)
@@ -212,10 +214,13 @@ public enum InstallSummary {
     /// `install`: the app and what happens after the install; `inApp`: the XSide module in the app (only
     /// "without XSide features" when it has none). `offersKeychain`: the app asks for shared
     /// keychain groups (the option exists only then). The Trust page is listed only when the app
-    /// is opened after the install (it can't open otherwise).
+    /// is opened after the install (it can't open otherwise). `duoDevices`: the names of the
+    /// devices getting iPhone Duo compatibility; `offersDuo`: a Duo is among the targets (the line
+    /// then shows even when none gets it).
     public static func lines(options o: InstallOptions, inApp s: InAppSettings, withoutXSideFeatures: Bool,
                              openAppAfter: Bool, openTrustPage: Bool,
-                             offersKeychain: Bool) -> (install: [Line], inApp: [Line]) {
+                             offersKeychain: Bool, duoDevices: [String] = [],
+                             offersDuo: Bool = false) -> (install: [Line], inApp: [Line]) {
         var install: [Line] = []
         if let v = o.displayName { install.append(.displayName(v)) }
         if let v = o.customBundleID { install.append(.bundleID(v)) }
@@ -227,6 +232,7 @@ public enum InstallSummary {
         if let v = o.minimumOSVersion { install.append(.minimumOS(v)) }
         if install.isEmpty { install.append(.appUnchanged) }
         if offersKeychain { install.append(.shareKeychain(o.shareKeychain)) }
+        if offersDuo || !duoDevices.isEmpty { install.append(.duoCompatibility(duoDevices)) }
         install.append(.openAppAfter(openAppAfter))
         if openAppAfter { install.append(.openTrustPage(openTrustPage)) }
 

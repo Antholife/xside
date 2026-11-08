@@ -769,3 +769,24 @@
 "whatsNew.110.appPause.text" = "Le menu … d'une app dans le panneau : Mettre en pause pendant 2 heures, 1 jour ou jusqu'à ce que tu reprennes. La pause d'une app reprend toute seule à la fin.";
 "whatsNew.110.cli.title" = "Nouvelles commandes xside";
 "whatsNew.110.cli.text" = "xside apps, devices, settings <app> (voir ou changer les réglages du module), pause et resume <app>, uninstall <app>, logs -f et report. Une app se nomme par son nom ou son identifiant.";
+
+/* iPhone Duo compatibility (install option, 1.2) */
+"duo.section" = "iPhone Duo";
+"duo.option" = "Ajouter la compatibilité iPhone Duo";
+"duo.recommended" = "Recommandé";
+"duo.caption" = "L'app utilisera tous les écrans de l'iPhone Duo (intérieur et extérieur) en mode Duo. Elle n'a pas été faite pour ça : on ne sait pas comment elle se comportera ni s'affichera, des défauts sont possibles (menu ou barre d'onglets étranges, éléments mal placés), mais le mode Duo lui-même fonctionnera.";
+"duo.caption.recommended" = "%@ n'est pas faite pour l'écran de ton iPhone Duo.";
+"duo.caption.notADuo" = "Pas recommandé : cet appareil n'est pas un iPhone Duo.";
+"duo.caption.alreadySupported" = "%@ prend déjà en charge l'iPhone Duo.";
+"duo.caption.noScenes" = "Cette app ne gère pas les scènes iOS : la compatibilité iPhone Duo n'est pas possible.";
+"duo.confirm.title" = "Ajouter la compatibilité iPhone Duo à %@ ?";
+"duo.confirm.message" = "%@ utilisera tous les écrans de l'iPhone Duo, intérieur et extérieur, en mode Duo. On ne sait pas comment elle se comportera ni s'affichera : elle n'a pas été faite pour ça, des défauts sont possibles (menu ou barre d'onglets étranges, éléments mal placés). Le mode Duo lui-même fonctionnera. Tu peux la retirer à tout moment dans Réglages > Mes apps.";
+"duo.confirm.turnOn" = "Ajouter";
+"duo.missing" = "La dernière installation n'a pas pu l'ajouter : %@ a été installée sans. Les journaux disent pourquoi.";
+"duo.missing.install" = "%1$@ : la compatibilité iPhone Duo n'a pas pu être ajoutée, %2$@ a été installée sans.";
+"duo.missing.row" = "Compatibilité iPhone Duo non ajoutée (installée sans)";
+"duo.nextSigning" = "Pris en compte au prochain rafraîchissement de l'app sur cet appareil.";
+"duo.refreshNow" = "Rafraîchir maintenant";
+"preflight.notMadeForDuo" = "%1$@ n'est pas faite pour l'écran de ton iPhone Duo (%2$@) : elle n'en utilisera pas toute la surface. L'option « Ajouter la compatibilité iPhone Duo » des options d'installation peut l'aider.";
+"whatsNew.120.duo.title" = "Compatibilité iPhone Duo";
+"whatsNew.120.duo.text" = "Une option d'installation, par appareil : « Ajouter la compatibilité iPhone Duo » permet à une app conçue avant l'iPhone Duo d'en utiliser tous les écrans, intérieur et extérieur, en mode Duo. Recommandée sur un iPhone Duo quand l'app n'est pas faite pour lui ; l'app n'a pas été faite pour ça, des défauts d'affichage sont possibles. Avec ou sans le module XSide, à retirer quand tu veux dans Réglages > Mes apps.";

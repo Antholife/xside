@@ -18,9 +18,12 @@ public enum InstallPreflight {
         public let developerModeEnabled: Bool?
         /// The version of this app on the device, when it's there and known.
         public let installedVersion: String?
+        /// An iPhone Duo (see `DeviceModel.isDuo`).
+        public let isDuo: Bool
 
         public init(deviceID: String, osVersion: String?, otherApps: [String], hasThisApp: Bool,
-                    developerModeEnabled: Bool? = nil, installedVersion: String? = nil) {
+                    developerModeEnabled: Bool? = nil, installedVersion: String? = nil, isDuo: Bool = false) {
+            self.isDuo = isDuo
             self.installedVersion = installedVersion
             self.deviceID = deviceID
             self.developerModeEnabled = developerModeEnabled
@@ -43,6 +46,9 @@ public enum InstallPreflight {
         case lastAppID
         /// Built with an older iOS SDK than the device's iOS: may run in compatibility mode.
         case notBuiltForDevice(deviceID: String, sdk: String, deviceOS: String)
+        /// An iPhone Duo and an app built before SDK 27.1: it won't fill the Duo's screens (the
+        /// install option "Add iPhone Duo compatibility" can help). Replaces `notBuiltForDevice` there.
+        case notMadeForDuo(deviceID: String)
         /// An older version than the one on the device (the wrong file?).
         case olderVersion(deviceID: String, installing: String, installed: String)
     }
@@ -64,7 +70,9 @@ public enum InstallPreflight {
                 warnings.append(.deviceFull(deviceID: target.deviceID, apps: target.otherApps))
             }
             // Major versions only: iOS 27 devices need an app built with the iOS 27 SDK.
-            if let sdk = sdkVersion, let os = target.osVersion,
+            if target.isDuo, let sdk = sdkVersion, !DuoCompatibility.supportsDuo(sdk: sdk) {
+                warnings.append(.notMadeForDuo(deviceID: target.deviceID))
+            } else if let sdk = sdkVersion, let os = target.osVersion,
                let sdkMajor = Int(sdk.split(separator: ".").first ?? ""), let osMajor = Int(os.split(separator: ".").first ?? ""),
                sdkMajor < osMajor {
                 warnings.append(.notBuiltForDevice(deviceID: target.deviceID, sdk: sdk, deviceOS: os))

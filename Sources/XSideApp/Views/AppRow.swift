@@ -134,6 +134,13 @@ struct AppRow: View {
                         .foregroundStyle(Color(nsColor: .systemOrange))
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                // Asked for, but the last signing installed it without (Settings > Mes apps says more).
+                if step == nil, entry.installation.duoCompatibility == true, entry.installation.duoCompatibilityMissing == true {
+                    Text(L("duo.missing.row"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color(nsColor: .systemOrange))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if step == nil, !looksPaused, let key = entry.installation.lastErrorKey {
                     Text(localizedRowError(key: key))
                         .font(.system(size: 11))

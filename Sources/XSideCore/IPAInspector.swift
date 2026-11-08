@@ -16,11 +16,15 @@ public struct AppInfo: Equatable, Sendable {
     /// iOS SDK the app was built with (`DTPlatformVersion`): on a newer iOS, the app may run in
     /// compatibility mode (not laid out for new screens).
     public let sdkVersion: String?
+    /// What decides the iPhone Duo option (read from the main executable at import); nil when
+    /// not read.
+    public let duo: DuoAppInfo?
 
     public init(bundleID: String, name: String, version: String?, executable: String,
                 sharedKeychainGroups: [String] = [], sharedKeychainVendor: String? = nil,
-                minimumOSVersion: String? = nil, sdkVersion: String? = nil) {
+                minimumOSVersion: String? = nil, sdkVersion: String? = nil, duo: DuoAppInfo? = nil) {
         self.sdkVersion = sdkVersion
+        self.duo = duo
         self.bundleID = bundleID
         self.name = name
         self.version = version

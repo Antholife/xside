@@ -54,10 +54,15 @@ public enum IPAImporter {
                 AppIconExtractor.extract(from: app, plist: plist, to: iconDestination)
             }
         }
+        let plist = (try? IPAInspector.infoPlistData(of: app))
+            .flatMap { (try? PropertyListSerialization.propertyList(from: $0, format: nil)) as? [String: Any] } ?? [:]
+        let duo = DuoAppInfo.read(executable: executable, plist: plist)
         return AppInfo(bundleID: info.bundleID, name: info.name, version: info.version,
                        executable: info.executable, sharedKeychainGroups: shared,
                        sharedKeychainVendor: shared.isEmpty ? nil : Resigner.keychainVendor(entitlements),
-                       minimumOSVersion: info.minimumOSVersion)
+                       minimumOSVersion: info.minimumOSVersion,
+                       // The executable's SDK first: the one iOS goes by (preflight, Duo option).
+                       sdkVersion: duo.sdkVersion ?? info.sdkVersion, duo: duo)
     }
 
     private static func require(_ type: FileAttributeType, _ url: URL) throws {

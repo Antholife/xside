@@ -18,6 +18,12 @@ public protocol Resigning: Sendable {
     /// Whether the signed `app` holds XSide's library: features asked for can still be missing
     /// when the library couldn't be added (the app is then installed as it came).
     func hasXSideLibrary(_ app: URL) -> Bool
+    /// Whether the signed `app` fills an iPhone Duo's screens (see `DuoCompatibility`).
+    func hasDuoCompatibility(_ app: URL) -> Bool
+}
+
+extension Resigning {
+    public func hasDuoCompatibility(_ app: URL) -> Bool { false }
 }
 
 public protocol Installing: Sendable {
@@ -215,9 +221,11 @@ public actor SideloadPipeline {
     /// `inApp`: step ③ of the install window. A new installation takes all its values; an
     /// existing one only the fields the user touched (see `InAppSettings.adopting`), recorded as
     /// a Mac edit when that changes something. nil keeps its own (or the Mac defaults).
+    /// `duoCompatibility`: the iPhone Duo option for this device, remembered on the installation;
+    /// nil keeps the installation's own choice (off for a new one).
     public func install(recordID: UUID, device: Device,
                         environment: @escaping @Sendable () async throws -> SigningEnvironment,
-                        refresh: Bool = false, inApp: InAppDraft? = nil,
+                        refresh: Bool = false, inApp: InAppDraft? = nil, duoCompatibility: Bool? = nil,
                         progress: @escaping @Sendable (InstallStep) async -> Void = { _ in }) async throws -> Installation {
         let previous = tails[device.id]?.task
         let token = UUID()
@@ -225,7 +233,7 @@ public actor SideloadPipeline {
             try await waitCancellably(for: previous)
             try Task.checkCancellation()
             return try await self.perform(recordID: recordID, device: device, environment: environment,
-                                          refresh: refresh, inApp: inApp, progress: progress)
+                                          refresh: refresh, inApp: inApp, duo: duoCompatibility, progress: progress)
         }
         // The chain waits for the previous job too: one cancelled while queued ends at once, and a
         // job queued after it must still wait for the one running.
@@ -300,10 +308,10 @@ public actor SideloadPipeline {
 
     /// A fixed environment (tests, callers that just probed).
     public func install(recordID: UUID, device: Device, env: SigningEnvironment, refresh: Bool = false,
-                        inApp: InAppDraft? = nil,
+                        inApp: InAppDraft? = nil, duoCompatibility: Bool? = nil,
                         progress: @escaping @Sendable (InstallStep) async -> Void = { _ in }) async throws -> Installation {
         try await install(recordID: recordID, device: device, environment: { env }, refresh: refresh, inApp: inApp,
-                          progress: progress)
+                          duoCompatibility: duoCompatibility, progress: progress)
     }
 
     /// Thrown inside the provisioning lock when `environment` fails, to tell it from a job failure.
@@ -311,7 +319,7 @@ public actor SideloadPipeline {
 
     private nonisolated func perform(recordID: UUID, device: Device,
                                      environment: @escaping @Sendable () async throws -> SigningEnvironment,
-                                     refresh: Bool, inApp draft: InAppDraft?,
+                                     refresh: Bool, inApp draft: InAppDraft?, duo: Bool?,
                                      progress: @Sendable (InstallStep) async -> Void) async throws -> Installation {
         guard let record = await library.records().first(where: { $0.id == recordID }) else {
             throw XSideError.recordNotFound
@@ -386,6 +394,9 @@ public actor SideloadPipeline {
                                      appVersion: record.options.version ?? record.version, at: now())
             var options = record.options
             options.withoutXSideFeatures = options.resolvedWithoutXSideFeatures(default: withoutXSideFeaturesByDefault())
+            // Per device: this job's choice, else the installation's.
+            let duoAsked = duo ?? (previous?.duoCompatibility == true)
+            options.duoCompatibility = duoAsked
             // The job's tools all use the Xcode of the environment it started with.
             let app = try await CommandEnvironment.withDeveloperDir(current.developerDir) { [resigner] in
                 try await resigner.resign(
@@ -417,7 +428,10 @@ public actor SideloadPipeline {
                                       lastMacEdit: facts.macEdited ? facts.signedAt : nil,
                                       // What the app got, not only what was asked (final review minor 4).
                                       withoutXSideFeatures: options.withoutXSideFeatures == true
-                                          || !resigner.hasXSideLibrary(app) ? true : nil)
+                                          || !resigner.hasXSideLibrary(app) ? true : nil,
+                                      duoCompatibility: duoAsked ? true : nil,
+                                      duoCompatibilityMissing: duoAsked && !resigner.hasDuoCompatibility(app) ? true : nil,
+                                      onDuo: device.isDuo ? true : nil)
             let installation = try await library.recordSigning(signed, for: recordID, requireExisting: previous != nil)
             Self.logger.notice("\(what): done, expires \(installation.expiresAt.formatted(.iso8601))")
             return installation

@@ -64,8 +64,22 @@ struct IPAImporterTests {
         let ipa = try await zipIPA(root)
 
         let info = try await IPAImporter.inspect(ipa: ipa, runner: ProcessRunner(), scratchRoot: scratch)
-        #expect(info == AppInfo(bundleID: "com.example.demo", name: "Démo", version: "2.0", executable: "Demo"))
+        #expect(info == AppInfo(bundleID: "com.example.demo", name: "Démo", version: "2.0", executable: "Demo",
+                                duo: DuoAppInfo(sdkVersion: nil, adoptsScenes: false, sceneDelegateClass: nil)))
         #expect(isEmpty(scratch))
+    }
+
+    /// The SDK comes from the executable (iOS goes by it), the scene delegate from its classes:
+    /// what the iPhone Duo option and the preflight need.
+    @Test func readsTheDuoFactsFromTheExecutable() async throws {
+        let root = try tempDir(); defer { try? FileManager.default.removeItem(at: root) }
+        let scratch = try tempDir(); defer { try? FileManager.default.removeItem(at: scratch) }
+        let exe = try Data(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/macho/duo-objc-fat"))
+        try FakeIPA.makeApp(at: root, executableData: exe, plistExtras: ["CFBundleName": "Demo", "DTPlatformVersion": "27.2"])
+        let info = try await IPAImporter.inspect(ipa: try await zipIPA(root), runner: ProcessRunner(), scratchRoot: scratch)
+        #expect(info.sdkVersion == "26.4")
+        #expect(info.duo == DuoAppInfo(sdkVersion: "26.4", adoptsScenes: false, sceneDelegateClass: "FXBaseSceneDelegate"))
     }
 
     /// Some tools write folders without the search bit: ditto reproduces it, and the archive was

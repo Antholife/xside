@@ -16,14 +16,21 @@ public struct Device: Identifiable, Equatable, Codable, Sendable {
     public let developerModeEnabled: Bool?
     /// iOS / iPadOS version ("26.1").
     public let osVersion: String?
+    /// Hardware model ("iPhone19,4") and the name Xcode gives it ("iPhone"), when devicectl says.
+    public let productType: String?
+    public let marketingName: String?
 
     public init(id: String, udid: String?, name: String, model: String, kind: DeviceKind,
                 transport: Transport, isPaired: Bool, isAvailable: Bool, developerModeEnabled: Bool?,
-                osVersion: String? = nil) {
+                osVersion: String? = nil, productType: String? = nil, marketingName: String? = nil) {
         self.id = id; self.udid = udid; self.name = name; self.model = model; self.kind = kind
         self.transport = transport; self.isPaired = isPaired; self.isAvailable = isAvailable
         self.developerModeEnabled = developerModeEnabled; self.osVersion = osVersion
+        self.productType = productType; self.marketingName = marketingName
     }
+
+    /// An iPhone Duo (foldable): apps built with an SDK before 27.1 don't fill its screens.
+    public var isDuo: Bool { DeviceModel.isDuo(productType: productType, marketingName: marketingName) }
 }
 
 /// devicectl raw values -> model values. Single place to correct once real
@@ -81,7 +88,8 @@ public struct DeviceService: Sendable {
                 isPaired: paired,
                 isAvailable: available,
                 developerModeEnabled: raw.deviceProperties?.developerModeStatus.map { $0 == DevicectlValues.developerModeEnabled },
-                osVersion: raw.deviceProperties?.osVersionNumber)
+                osVersion: raw.deviceProperties?.osVersionNumber,
+                productType: hw?.productType, marketingName: hw?.marketingName)
         }
     }
 

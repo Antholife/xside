@@ -33,6 +33,22 @@ struct InstallPreflightTests {
                                        appIDsRemaining: 10, sdkVersion: nil).isEmpty)
     }
 
+    /// An iPhone Duo and an app built before SDK 27.1: it won't fill the Duo's screens (the more
+    /// precise note replaces "not built for this iOS" there).
+    @Test func flagsAnAppNotMadeForTheDuo() {
+        let duo = InstallPreflight.Target(deviceID: "duo", osVersion: "27.3", otherApps: [], hasThisApp: false, isDuo: true)
+        let other = target("b", os: "27.3")
+        #expect(InstallPreflight.check(minimumOS: nil, targets: [duo, other], needsNewAppID: false, appIDsRemaining: 10,
+                                       sdkVersion: "26.4")
+                == [.notMadeForDuo(deviceID: "duo"), .notBuiltForDevice(deviceID: "b", sdk: "26.4", deviceOS: "27.3")])
+        #expect(InstallPreflight.check(minimumOS: nil, targets: [duo], needsNewAppID: false, appIDsRemaining: 10,
+                                       sdkVersion: "27.0") == [.notMadeForDuo(deviceID: "duo")])
+        #expect(InstallPreflight.check(minimumOS: nil, targets: [duo], needsNewAppID: false, appIDsRemaining: 10,
+                                       sdkVersion: "27.1").isEmpty)
+        #expect(InstallPreflight.check(minimumOS: nil, targets: [duo], needsNewAppID: false, appIDsRemaining: 10,
+                                       sdkVersion: nil).isEmpty)
+    }
+
     /// Someone picked the wrong file: an older version than the one already on the device.
     @Test func flagsAnOlderVersionThanInstalled() {
         let on = InstallPreflight.Target(deviceID: "a", osVersion: "27.3", otherApps: [], hasThisApp: true, installedVersion: "21.44.4")

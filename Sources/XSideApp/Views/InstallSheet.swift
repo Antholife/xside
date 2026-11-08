@@ -251,6 +251,7 @@ struct InstallSheet: View {
                 if flow.isMultiDevice {
                     DeviceRunList(model: model, flow: flow, steps: steps)
                     summary
+                    DuoMissingNotes(flow: flow)
                     if !flow.failedDeviceIDs.isEmpty { ExportLogsLink(model: model) }
                 } else {
                     InstallProgressView(timeline: StepTimeline(
@@ -259,6 +260,7 @@ struct InstallSheet: View {
                     Label(L("install.success", flow.runs.first?.name ?? ""), systemImage: "checkmark.circle.fill")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(Color(nsColor: .systemGreen))
+                    DuoMissingNotes(flow: flow)
                 }
                 // Wi-Fi checks one device at a time, then every first-install guide.
                 if let check = flow.wifiCheck {
@@ -298,6 +300,7 @@ struct InstallSheet: View {
                 PreflightNotes(warnings: model.preflightWarnings(for: flow), model: model, flow: flow)
             case 1:
                 InstallOptionsSection(model: model, flow: flow)
+                DuoOptionsCard(model: model, flow: flow)
                 // What this step's fields cause (minimum iOS, a new App ID, an older version).
                 PreflightNotes(warnings: model.preflightWarnings(for: flow).filter(\.followsInstallOptions),
                                model: model, flow: flow)
@@ -475,7 +478,7 @@ extension InstallPreflight.Warning {
     var followsInstallOptions: Bool {
         switch self {
         case .iOSTooOld, .noAppIDLeft, .lastAppID, .olderVersion: true
-        case .developerModeOff, .deviceFull, .notBuiltForDevice: false
+        case .developerModeOff, .deviceFull, .notBuiltForDevice, .notMadeForDuo: false
         }
     }
 }
@@ -535,6 +538,7 @@ private struct PreflightNotes: View {
         case .deviceFull: "square.stack.3d.up.fill"
         case .noAppIDLeft, .lastAppID: "number"
         case .notBuiltForDevice: "rectangle.dashed"
+        case .notMadeForDuo: "rectangle.split.2x1"
         case .olderVersion: "arrow.uturn.backward.circle"
         }
     }
@@ -550,6 +554,10 @@ private struct PreflightNotes: View {
         model.devices.first { $0.id == deviceID }?.name ?? L("popover.unknownDevice")
     }
 
+    private var appName: String {
+        flow.draft.name.isEmpty ? flow.info?.name ?? flow.ipa.deletingPathExtension().lastPathComponent : flow.draft.name
+    }
+
     private func text(_ warning: InstallPreflight.Warning) -> String {
         switch warning {
         case .developerModeOff(let id): L("preflight.developerModeOff", name(id))
@@ -558,6 +566,7 @@ private struct PreflightNotes: View {
         case .noAppIDLeft: L("preflight.noAppIDLeft")
         case .lastAppID: L("preflight.lastAppID")
         case .notBuiltForDevice(let id, let sdk, let os): L("preflight.notBuiltForDevice", name(id), os, sdk)
+        case .notMadeForDuo(let id): L("preflight.notMadeForDuo", appName, name(id))
         case .olderVersion(let id, let installing, let installed): L("preflight.olderVersion", installing, installed, name(id))
         }
     }

@@ -1,0 +1,4 @@
+import UIKit
+class AppSceneDelegate: UIResponder, UIWindowSceneDelegate { var window: UIWindow? }
+@objc(FXOtherSceneDelegate) class FakeSceneDelegate: NSObject {}
+@main class AppDelegate: UIResponder, UIApplicationDelegate {}

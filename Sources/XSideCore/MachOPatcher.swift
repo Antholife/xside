@@ -22,7 +22,8 @@ public enum MachOPatcher {
     static let loadWeakDylib: UInt32 = 0x8000_0018
     static let codeSignature: UInt32 = 0x1D
     static let segment64: UInt32 = 0x19
-    private static let headerSize = 32
+    static let rpath: UInt32 = 0x8000_001C
+    static let headerSize = 32
 
     /// Adds `LC_LOAD_WEAK_DYLIB dylibPath` to every 64-bit slice of `executable` that doesn't
     /// load it yet. All slices are checked before anything is written: on a failure the file is
@@ -61,6 +62,77 @@ public enum MachOPatcher {
         return .added
     }
 
+    /// The free bytes between the load commands and the first section, in the slice that has
+    /// the fewest: what a new load command can take.
+    public static func freeSpace(in executable: URL) throws -> Int {
+        guard let data = try? Data(contentsOf: executable),
+              let starts = try? IPAInspector.sliceOffsets(data) else { throw Failure.notMachO }
+        var smallest = Int.max
+        for start in starts {
+            let commands = try loadCommands(data, at: start)
+            let end = headerSize + Int(u32(data, start + 20))
+            guard let first = firstSectionOffset(data, start: start, commands: commands) else { throw Failure.noRoom }
+            smallest = min(smallest, max(0, first - end))
+        }
+        return smallest == .max ? 0 : smallest
+    }
+
+    /// The `LC_RPATH` paths of every slice, in order, each once.
+    public static func rpaths(in executable: URL) throws -> [String] {
+        guard let data = try? Data(contentsOf: executable),
+              let starts = try? IPAInspector.sliceOffsets(data) else { throw Failure.notMachO }
+        var paths: [String] = []
+        for start in starts {
+            for c in try loadCommands(data, at: start) where c.cmd == rpath {
+                if let path = rpathName(data, c), !paths.contains(path) { paths.append(path) }
+            }
+        }
+        return paths
+    }
+
+    /// Removes the `LC_RPATH` commands whose path matches, in every slice: the commands after
+    /// them move up and the freed bytes become free space. All slices are read before anything
+    /// is written. Returns the paths removed (one per command).
+    @discardableResult
+    public static func removeRpaths(from executable: URL, where matches: (String) -> Bool) throws -> [String] {
+        guard var data = try? Data(contentsOf: executable),
+              let starts = try? IPAInspector.sliceOffsets(data) else { throw Failure.notMachO }
+        var plans: [(start: Int, commands: [(cmd: UInt32, pos: Int, size: Int)], drop: [Int])] = []
+        var removed: [String] = []
+        for start in starts {
+            let commands = try loadCommands(data, at: start)
+            var drop: [Int] = []
+            for (i, c) in commands.enumerated() where c.cmd == rpath {
+                if let path = rpathName(data, c), matches(path) { drop.append(i); removed.append(path) }
+            }
+            if !drop.isEmpty { plans.append((start, commands, drop)) }
+        }
+        guard !plans.isEmpty else { return [] }
+        for (start, commands, drop) in plans {
+            let begin = start + headerSize
+            let end = begin + Int(u32(data, start + 20))
+            var kept = Data()
+            var freed = 0
+            for (i, c) in commands.enumerated() {
+                if drop.contains(i) { freed += c.size } else { kept.append(data.subdata(in: c.pos..<c.pos + c.size)) }
+            }
+            kept.append(Data(count: freed))
+            data.replaceSubrange(begin..<end, with: kept)
+            put(&data, start + 16, u32(data, start + 16) - UInt32(drop.count))
+            put(&data, start + 20, u32(data, start + 20) - UInt32(freed))
+        }
+        do { try data.write(to: executable, options: .atomic) } catch { throw Failure.notMachO }
+        return removed
+    }
+
+    /// The path of an `rpath_command` (its `lc_str` offset, NUL-terminated within the command).
+    private static func rpathName(_ data: Data, _ c: (cmd: UInt32, pos: Int, size: Int)) -> String? {
+        guard c.size >= 12 else { return nil }
+        let offset = Int(u32(data, c.pos + 8))
+        guard offset >= 12, offset < c.size else { return nil }
+        return String(decoding: data[(c.pos + offset)..<(c.pos + c.size)].prefix { $0 != 0 }, as: UTF8.self)
+    }
+
     /// `dylib_command`: name right after the 24-byte header, NUL-terminated, size a multiple of 8.
     static func dylibCommand(_ path: String) -> Data {
         var name = Array(path.utf8) + [0]
@@ -75,7 +147,7 @@ public enum MachOPatcher {
     }
 
     /// The commands of the slice at `start`, each size checked against `sizeofcmds` and the file.
-    private static func loadCommands(_ data: Data, at start: Int) throws -> [(cmd: UInt32, pos: Int, size: Int)] {
+    static func loadCommands(_ data: Data, at start: Int) throws -> [(cmd: UInt32, pos: Int, size: Int)] {
         guard start + headerSize <= data.count else { throw Failure.notMachO }
         switch u32(data, start) {
         case 0xFEEDFACF: break
@@ -99,7 +171,7 @@ public enum MachOPatcher {
 
     /// The smallest non-zero file offset of a section (relative to the slice): where the free
     /// space after the load commands ends.
-    private static func firstSectionOffset(_ data: Data, start: Int,
+    static func firstSectionOffset(_ data: Data, start: Int,
                                            commands: [(cmd: UInt32, pos: Int, size: Int)]) -> Int? {
         var first: Int?
         for c in commands where c.cmd == segment64 && c.size >= 72 {
@@ -121,7 +193,7 @@ public enum MachOPatcher {
         return String(decoding: bytes, as: UTF8.self)
     }
 
-    private static func u32(_ data: Data, _ at: Int) -> UInt32 {
+    static func u32(_ data: Data, _ at: Int) -> UInt32 {
         guard at >= 0, at + 4 <= data.count else { return 0 }
         return data[at..<at + 4].withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }.littleEndian
     }

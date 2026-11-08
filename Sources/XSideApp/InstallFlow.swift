@@ -43,6 +43,8 @@ final class InstallFlow {
     var inApp = AppModel.inAppDefaults(at: Date())
     /// The step ③ fields the user changed: the only ones a device that has the app adopts.
     var inAppTouched: Set<InAppField> = []
+    /// Devices getting iPhone Duo compatibility (step ②), prefilled with those that have it.
+    var duoDevices: Set<String> = []
 
     /// Applies a step ③ change, remembering which fields it touched.
     func editInApp(_ change: (InAppSettings) -> InAppSettings) {
@@ -78,6 +80,8 @@ final class InstallFlow {
     var runOptions = InstallOptions()
     /// XSide-in-app settings of the last run, reused by "Retry failed".
     var runInApp: InAppDraft?
+    /// Devices of the last run getting iPhone Duo compatibility, reused by "Retry failed".
+    var runDuo: Set<String> = []
     /// The last run installs the app without XSide's features (the progress says so).
     var runWithoutXSideFeatures: Bool {
         runOptions.resolvedWithoutXSideFeatures(default: AppModel.withoutXSideFeaturesByDefault)
@@ -203,6 +207,8 @@ struct DeviceRun: Identifiable, Equatable {
     var status: Status = .waiting
     /// The device answered over Wi-Fi after its first install (or was installed over Wi-Fi).
     var wifiVerified = false
+    /// iPhone Duo compatibility was asked for but the app was installed without it.
+    var duoMissing = false
 
     var id: String { deviceID }
 

@@ -1,0 +1,19 @@
+#import <UIKit/UIKit.h>
+@interface FXBaseSceneDelegate : UIResponder <UIWindowSceneDelegate>
+@property (strong, nonatomic) UIWindow *window;
+@end
+@implementation FXBaseSceneDelegate
+@end
+@interface FXNotASceneDelegate : NSObject
+@end
+@implementation FXNotASceneDelegate
+@end
+@interface FXHelper : UIResponder <UIWindowSceneDelegate>
+@end
+@implementation FXHelper
+@end
+@interface FXAppDelegate : UIResponder <UIApplicationDelegate>
+@end
+@implementation FXAppDelegate
+@end
+int main(int argc, char *argv[]) { @autoreleasepool { return UIApplicationMain(argc, argv, nil, @"FXAppDelegate"); } }

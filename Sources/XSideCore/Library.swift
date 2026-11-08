@@ -44,6 +44,14 @@ public struct Installation: Codable, Equatable, Sendable {
     /// Signed without XSide's features at its last signing (nothing in the app to talk to XSide).
     /// nil in older state, or when signed with them.
     public var withoutXSideFeatures: Bool?
+    /// The user turned iPhone Duo compatibility on for this installation: each signing applies it
+    /// (see `DuoCompatibility`). nil: off.
+    public var duoCompatibility: Bool?
+    /// Asked for at the last signing, but the app installed doesn't have it (not possible, or the
+    /// patch failed and the app was installed without it). nil otherwise.
+    public var duoCompatibilityMissing: Bool?
+    /// The device was an iPhone Duo at the last signing: remembered for when it isn't connected.
+    public var onDuo: Bool?
 
     public init(deviceID: String, installedAt: Date, expiresAt: Date,
                 lastAttempt: Date? = nil, lastErrorKey: String? = nil, signedBundleID: String? = nil,
@@ -51,7 +59,11 @@ public struct Installation: Codable, Equatable, Sendable {
                 appVersion: String? = nil, inApp: InAppSettings? = nil, pausedBy: ChangeOrigin? = nil,
                 firstInstalledAt: Date? = nil, lastRefreshOutcome: RefreshOutcome? = nil,
                 channelSecret: Data? = nil, lastCheckIn: Date? = nil, lastDeviceRefreshRequest: Date? = nil,
-                lastMacEdit: Date? = nil, withoutXSideFeatures: Bool? = nil) {
+                lastMacEdit: Date? = nil, withoutXSideFeatures: Bool? = nil,
+                duoCompatibility: Bool? = nil, duoCompatibilityMissing: Bool? = nil, onDuo: Bool? = nil) {
+        self.onDuo = onDuo
+        self.duoCompatibility = duoCompatibility
+        self.duoCompatibilityMissing = duoCompatibilityMissing
         self.lastMacEdit = lastMacEdit
         self.withoutXSideFeatures = withoutXSideFeatures
         self.lastDeviceRefreshRequest = lastDeviceRefreshRequest
@@ -95,6 +107,9 @@ public struct Installation: Codable, Equatable, Sendable {
         lastDeviceRefreshRequest = try? c.decodeIfPresent(Date.self, forKey: .lastDeviceRefreshRequest)
         lastMacEdit = try? c.decodeIfPresent(Date.self, forKey: .lastMacEdit)
         withoutXSideFeatures = try? c.decodeIfPresent(Bool.self, forKey: .withoutXSideFeatures)
+        duoCompatibility = try? c.decodeIfPresent(Bool.self, forKey: .duoCompatibility)
+        duoCompatibilityMissing = try? c.decodeIfPresent(Bool.self, forKey: .duoCompatibilityMissing)
+        onDuo = try? c.decodeIfPresent(Bool.self, forKey: .onDuo)
     }
 }
 
@@ -116,6 +131,8 @@ public struct AppRecord: Codable, Identifiable, Equatable, Sendable {
     public var appIDFirstUse: [String: Date]?
     /// Version of the current .ipa (`CFBundleShortVersionString`). nil in older state.
     public var version: String?
+    /// What the current .ipa supports for the iPhone Duo option. nil in older state.
+    public var duo: DuoAppInfo?
 
     public init(id: UUID, displayName: String, originalBundleID: String, signedBundleID: String,
                 ipaPath: String, options: InstallOptions, installations: [Installation], teamID: String,
@@ -149,6 +166,7 @@ public struct AppRecord: Codable, Identifiable, Equatable, Sendable {
         installations = try c.decodeIfPresent([Installation].self, forKey: .installations) ?? []
         appIDFirstUse = try c.decodeIfPresent([String: Date].self, forKey: .appIDFirstUse)
         version = try? c.decodeIfPresent(String.self, forKey: .version)
+        duo = try? c.decodeIfPresent(DuoAppInfo.self, forKey: .duo)
     }
 }
 
@@ -276,12 +294,14 @@ public actor AppLibrary {
             items[index].displayName = info.name
             items[index].ipaPath = relative
             items[index].version = info.version
+            items[index].duo = info.duo
             record = items[index]
         } else {
             record = AppRecord(id: id, displayName: info.name, originalBundleID: info.bundleID,
                                signedBundleID: signed, ipaPath: relative,
                                options: InstallOptions(), installations: [], teamID: teamID)
             record.version = info.version
+            record.duo = info.duo
             items.append(record)
         }
         do { try save() } catch { items = previous; throw error }
@@ -397,6 +417,19 @@ public actor AppLibrary {
         let previous = items
         Self.applyPause(paused, by: origin, at: date, to: &items[index].installations[i])
         items[index].installations[i].pausedUntil = paused ? until : nil
+        do { try save() } catch { items = previous; throw error }
+        return true
+    }
+
+    /// Turns iPhone Duo compatibility on or off for one installation, from its next signing on.
+    /// Returns false when there's no such installation or nothing changed.
+    @discardableResult
+    public func setDuoCompatibility(_ on: Bool, recordID: UUID, deviceID: String) throws -> Bool {
+        let index = try indexOf(recordID)
+        guard let i = items[index].installations.firstIndex(where: { $0.deviceID == deviceID }),
+              (items[index].installations[i].duoCompatibility == true) != on else { return false }
+        let previous = items
+        items[index].installations[i].duoCompatibility = on ? true : nil
         do { try save() } catch { items = previous; throw error }
         return true
     }

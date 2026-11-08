@@ -80,7 +80,10 @@ private struct FakeResigner: Resigning {
     let log: CallLog
     /// Whether the signed app holds XSide's library (false: its injection failed).
     var libraryAdded = true
+    /// Whether the signed app fills an iPhone Duo's screens (false: the Duo patch failed).
+    var duoApplied = true
     func hasXSideLibrary(_ app: URL) -> Bool { libraryAdded }
+    func hasDuoCompatibility(_ app: URL) -> Bool { duoApplied }
     func resign(ipa: URL, workDir: URL, bundleID: String, options: InstallOptions, iconURL: URL?,
                 profileURL: URL, profile: ProvisioningProfile, identitySHA1: String,
                 otherBundleIDs: Set<String>, facts: InstallationFacts?,
@@ -184,10 +187,11 @@ private struct Fixture {
     func pipeline(provisioner: FakeProvisioner? = nil, installer: FakeInstaller? = nil,
                   now: @escaping @Sendable () -> Date = { fixedNow },
                   inAppDefaults: (@Sendable (Date) -> InAppSettings)? = nil,
-                  withoutFeaturesByDefault: Bool = false, libraryAdded: Bool = true) -> SideloadPipeline {
+                  withoutFeaturesByDefault: Bool = false, libraryAdded: Bool = true,
+                  duoApplied: Bool = true) -> SideloadPipeline {
         SideloadPipeline(library: library,
                          provisioner: provisioner ?? FakeProvisioner(log: log),
-                         resigner: FakeResigner(log: log, libraryAdded: libraryAdded),
+                         resigner: FakeResigner(log: log, libraryAdded: libraryAdded, duoApplied: duoApplied),
                          installer: installer ?? FakeInstaller(log: log),
                          workRoot: workRoot, now: now,
                          inAppDefaults: inAppDefaults ?? { InAppSettings.defaults(reminder: true, at: $0) },
@@ -1301,6 +1305,78 @@ extension PipelineChannelTests {
         #expect(stored.inApp?.autoRefresh.value == false)
         #expect(stored.channelSecret == first.channelSecret)
         #expect(stored.lastErrorKey == XSideError.deviceUnavailable.key)
+    }
+
+    // MARK: iPhone Duo compatibility
+
+    /// Chosen per device in the install window, remembered on the installation and applied again
+    /// at each refresh until turned off.
+    @Test func duoChoiceIsPerDeviceAndKeptAcrossRefreshes() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let first = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env, duoCompatibility: true)
+        #expect(await f.log.options.last?.duoCompatibility == true)
+        #expect(first.duoCompatibility == true)
+        #expect(first.duoCompatibilityMissing == nil)
+        _ = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env, refresh: true)
+        #expect(await f.log.options.last?.duoCompatibility == true)
+        // Another device of the same app doesn't get it.
+        let other = try await f.pipeline().install(recordID: f.record.id, device: device("dev-2", udid: "UDID-2"), env: env)
+        #expect(await f.log.options.last?.duoCompatibility == false)
+        #expect(other.duoCompatibility == nil)
+        // Turned off: the next signing goes without.
+        let off = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env, duoCompatibility: false)
+        #expect(await f.log.options.last?.duoCompatibility == false)
+        #expect(off.duoCompatibility == nil)
+    }
+
+    /// The patch failed (or wasn't possible): the app is installed anyway and the installation
+    /// says so, for the window and the panel.
+    @Test func aMissingDuoPatchIsRecorded() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let result = try await f.pipeline(duoApplied: false).install(recordID: f.record.id, device: device(), env: env,
+                                                                     duoCompatibility: true)
+        #expect(result.duoCompatibility == true)
+        #expect(result.duoCompatibilityMissing == true)
+        // Not asked: nothing is missing, whatever the app is.
+        let plain = try await f.pipeline(duoApplied: false).install(recordID: f.record.id, device: device("dev-2", udid: "U2"), env: env)
+        #expect(plain.duoCompatibilityMissing == nil)
+        #expect(plain.onDuo == nil)
+        // A Duo is remembered as one, for when it isn't connected.
+        let duo = Device(id: "duo", udid: "U3", name: "Duo", model: "iPhone", kind: .iPhone, transport: .usb,
+                         isPaired: true, isAvailable: true, developerModeEnabled: true, productType: "iPhone19,4")
+        #expect(try await f.pipeline().install(recordID: f.record.id, device: duo, env: env).onDuo == true)
+    }
+
+    @Test func duoChoiceCanBeChangedForTheNextSigning() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        _ = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
+        #expect(try await f.library.setDuoCompatibility(true, recordID: f.record.id, deviceID: "dev-1"))
+        #expect(await f.library.records().first?.installations.first?.duoCompatibility == true)
+        #expect(try await !f.library.setDuoCompatibility(true, recordID: f.record.id, deviceID: "dev-1")) // unchanged
+        #expect(try await !f.library.setDuoCompatibility(true, recordID: f.record.id, deviceID: "nope"))
+        #expect(try await f.library.setDuoCompatibility(false, recordID: f.record.id, deviceID: "dev-1"))
+        #expect(await f.library.records().first?.installations.first?.duoCompatibility == nil)
+    }
+
+    /// Saved before the option existed: decodes without it.
+    @Test func installationsWithoutDuoFieldsDecode() throws {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let old = try decoder.decode(Installation.self, from: Data(
+            #"{"deviceID":"d","installedAt":"2026-01-01T00:00:00Z","expiresAt":"2026-01-08T00:00:00Z"}"#.utf8))
+        #expect(old.duoCompatibility == nil && old.duoCompatibilityMissing == nil && old.onDuo == nil)
+    }
+
+    /// The app's Duo facts are kept with its record from the import on.
+    @Test func importKeepsTheDuoFacts() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let duo = DuoAppInfo(sdkVersion: "26.4", adoptsScenes: false, sceneDelegateClass: "YTSceneDelegate")
+        let src = f.tmp.appendingPathComponent("again.ipa")
+        try Data("ipa".utf8).write(to: src)
+        let info = AppInfo(bundleID: "com.example.demo", name: "Demo", version: "1.1", executable: "Demo", duo: duo)
+        let record = try await f.library.importIPA(src, info: info, teamID: "TEAM123456")
+        #expect(record.duo == duo)
+        #expect(AppLibrary.readRecords(root: f.library.root)?.first?.duo == duo)
     }
 }
 

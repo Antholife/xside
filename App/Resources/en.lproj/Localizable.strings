@@ -769,3 +769,24 @@
 "whatsNew.110.appPause.text" = "An app's … menu in the panel: Pause for 2 hours, 1 day or until you resume. One app's pause ends by itself.";
 "whatsNew.110.cli.title" = "New xside commands";
 "whatsNew.110.cli.text" = "xside apps, devices, settings <app> (see or change the module's settings), pause and resume <app>, uninstall <app>, logs -f and report. An app is named by its name or bundle id.";
+
+/* iPhone Duo compatibility (install option, 1.2) */
+"duo.section" = "iPhone Duo";
+"duo.option" = "Add iPhone Duo compatibility";
+"duo.recommended" = "Recommended";
+"duo.caption" = "The app will use all of the iPhone Duo's screens (inner and outer) in Duo mode. It wasn't made for it: nobody knows how it will behave or look, glitches are possible (an odd menu or tab bar, misplaced elements), but Duo mode itself will work.";
+"duo.caption.recommended" = "%@ isn't made for your iPhone Duo's screen.";
+"duo.caption.notADuo" = "Not recommended: this device isn't an iPhone Duo.";
+"duo.caption.alreadySupported" = "%@ already supports the iPhone Duo.";
+"duo.caption.noScenes" = "This app doesn't handle iOS scenes: iPhone Duo compatibility isn't possible.";
+"duo.confirm.title" = "Add iPhone Duo compatibility to %@?";
+"duo.confirm.message" = "%@ will use all of the iPhone Duo's screens, inner and outer, in Duo mode. Nobody knows how it will behave or look: it wasn't made for it, glitches are possible (an odd menu or tab bar, misplaced elements). Duo mode itself will work. You can remove it at any time in Settings > My apps.";
+"duo.confirm.turnOn" = "Add";
+"duo.missing" = "The last install couldn't add it: %@ was installed without it. The logs say why.";
+"duo.missing.install" = "%1$@: iPhone Duo compatibility couldn't be added, %2$@ was installed without it.";
+"duo.missing.row" = "iPhone Duo compatibility not added (installed without it)";
+"duo.nextSigning" = "Applied at the app's next refresh on this device.";
+"duo.refreshNow" = "Refresh now";
+"preflight.notMadeForDuo" = "%1$@ isn't made for your iPhone Duo's screen (%2$@): it won't use all of it. The install option \"Add iPhone Duo compatibility\" can help.";
+"whatsNew.120.duo.title" = "iPhone Duo compatibility";
+"whatsNew.120.duo.text" = "An install option, per device: \"Add iPhone Duo compatibility\" lets an app made before the iPhone Duo use all of its screens, inner and outer, in Duo mode. Recommended on an iPhone Duo when the app isn't made for it; the app wasn't made for this, so display glitches are possible. With or without the XSide module, and removable at any time in Settings > My apps.";
