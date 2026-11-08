@@ -77,6 +77,8 @@ struct ReleaseNotes {
                      title: L("whatsNew.110.phone.title"), text: L("whatsNew.110.phone.text")),
                 Item(symbol: "pause.circle.fill",
                      title: L("whatsNew.110.pause.title"), text: L("whatsNew.110.pause.text")),
+                Item(symbol: "bolt.horizontal.circle.fill",
+                     title: L("whatsNew.110.live.title"), text: L("whatsNew.110.live.text")),
                 Item(symbol: "wifi",
                      title: L("whatsNew.110.network.title"), text: L("whatsNew.110.network.text")),
                 Item(symbol: "arrow.clockwise.circle.fill",

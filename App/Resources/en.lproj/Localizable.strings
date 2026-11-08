@@ -550,7 +550,7 @@
 "whatsNew.110.noFeatures.title" = "Install without XSide features";
 "whatsNew.110.noFeatures.text" = "For an app that refuses to launch because it detects a change, install it as it came, per app or for all, after a confirmation that lists what's lost. XSide still refreshes it.";
 "whatsNew.110.appWindow.title" = "My apps, in Settings";
-"whatsNew.110.appWindow.text" = "Settings > My apps lists your apps; pick one to set the XSide module in that app, device by device, applied at its next refresh or opening. An app's … menu in the panel leads straight there.";
+"whatsNew.110.appWindow.text" = "Settings > My apps lists your apps; pick one to set the XSide module in that app, one tab per device when it is on several, applied at its next refresh or opening. An app's … menu in the panel leads straight there.";
 "whatsNew.110.status.title" = "Where each change stands";
 "whatsNew.110.status.text" = "Per device, XSide says whether the iPhone is reachable and whether a change is pending, written or confirmed by the iPhone. It never claims a setting is active before that.";
 "whatsNew.110.panes.title" = "Settings, reorganized";
@@ -748,3 +748,5 @@
 "popover.pausedAll.expiresToday" = "All refreshes paused · expires today";
 "appSettings.device" = "Device";
 "appSettings.perDevice" = "Installed on %ld devices: each has its own module settings. “XSide features” applies to the app on all of them.";
+"whatsNew.110.live.title" = "Live while the app is open";
+"whatsNew.110.live.text" = "A setting changed on the Mac reaches the open app within seconds, without relaunching it, in a single bar that says what changed (\"automatic refresh turned back on from XSide on your Mac\"). Only while the app is on screen, less often in Low Power Mode.";

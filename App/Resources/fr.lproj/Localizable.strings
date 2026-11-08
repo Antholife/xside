@@ -550,7 +550,7 @@
 "whatsNew.110.noFeatures.title" = "Installer sans les fonctionnalités XSide";
 "whatsNew.110.noFeatures.text" = "Pour une app qui refuse de se lancer parce qu'elle détecte une modification : installe-la telle quelle, app par app ou pour toutes, après une confirmation qui liste ce qui est perdu. XSide continue de la rafraîchir.";
 "whatsNew.110.appWindow.title" = "Mes apps, dans les Réglages";
-"whatsNew.110.appWindow.text" = "Réglages > Mes apps liste tes apps ; choisis-en une pour régler le module XSide dans l'app, appareil par appareil, appliqué à son prochain rafraîchissement ou à sa prochaine ouverture. Le menu … d'une app dans le panneau y mène directement.";
+"whatsNew.110.appWindow.text" = "Réglages > Mes apps liste tes apps ; choisis-en une pour régler le module XSide dans l'app, un onglet par appareil quand elle est sur plusieurs, appliqué à son prochain rafraîchissement ou à sa prochaine ouverture. Le menu … d'une app dans le panneau y mène directement.";
 "whatsNew.110.status.title" = "Où en est chaque changement";
 "whatsNew.110.status.text" = "Appareil par appareil, XSide dit si l'iPhone est joignable et si un changement est en attente, écrit ou confirmé par l'iPhone. Il ne prétend jamais qu'un réglage est actif avant.";
 "whatsNew.110.panes.title" = "Réglages réorganisés";
@@ -748,3 +748,5 @@
 "popover.pausedAll.expiresToday" = "Tous les rafraîchissements en pause · expire aujourd'hui";
 "appSettings.device" = "Appareil";
 "appSettings.perDevice" = "Installée sur %ld appareils : chacun a ses propres réglages du module. « Fonctionnalités XSide » vaut pour l'app sur tous.";
+"whatsNew.110.live.title" = "En direct, app ouverte";
+"whatsNew.110.live.text" = "Un réglage changé sur le Mac arrive dans l'app ouverte en quelques secondes, sans la relancer, avec une seule bulle qui dit ce qui a changé (« rafraîchissement automatique réactivé depuis XSide sur ton Mac »). Seulement quand l'app est à l'écran, plus rarement en mode Économie d'énergie.";
