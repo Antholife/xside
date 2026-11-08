@@ -13,7 +13,7 @@ struct InstallOptionsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            SectionTitle(L("install.options"))
+            SectionTitle(L("install.optionsTitle"))
             VStack(alignment: .leading, spacing: 0) {
                 Button {
                     withAnimation(.smooth(duration: 0.2)) { isExpanded.toggle() }
@@ -39,14 +39,9 @@ struct InstallOptionsSection: View {
                 if let info = flow.info, !info.sharedKeychainGroups.isEmpty {
                     Divider().padding(.leading, 48)
                     OptionRow(symbol: "key.fill",
-                              title: L("install.field.shareKeychain", info.sharedKeychainVendor ?? Self.vendor(of: info.bundleID)),
+                              title: L("install.field.shareKeychain", Self.vendor(of: info)),
                               detail: nil) {
-                        Toggle(L("install.field.shareKeychain", info.sharedKeychainVendor ?? Self.vendor(of: info.bundleID)),
-                               isOn: $flow.draft.shareKeychain)
-                            .labelsHidden()
-                            .toggleStyle(.switch)
-                            .controlSize(.mini)
-                            .tint(Theme.violet)
+                        switchToggle(L("install.field.shareKeychain", Self.vendor(of: info)), isOn: $flow.draft.shareKeychain)
                     }
                     KeychainShareNote(groups: info.sharedKeychainGroups, isOn: flow.draft.shareKeychain)
                         .padding(.leading, 48)
@@ -55,11 +50,13 @@ struct InstallOptionsSection: View {
                 }
                 // After the install (defaults from Settings > General).
                 Divider().padding(.leading, 48)
-                OptionRow(symbol: "iphone.and.arrow.forward", title: L("settings.openAppAfterInstall"), detail: nil) {
+                OptionRow(symbol: "iphone.and.arrow.forward", title: L("settings.openAppAfterInstall"),
+                          detail: L("settings.openAppAfterInstall.note")) {
                     switchToggle(L("settings.openAppAfterInstall"), isOn: $flow.openAppAfter)
                 }
                 Divider().padding(.leading, 48)
-                OptionRow(symbol: "checkmark.shield.fill", title: L("settings.openTrustSettings"), detail: nil) {
+                OptionRow(symbol: "checkmark.shield.fill", title: L("settings.openTrustSettings"),
+                          detail: L("settings.openTrustSettings.note")) {
                     switchToggle(L("settings.openTrustSettings"), isOn: $flow.openTrustPage)
                         .disabled(!flow.openAppAfter)
                 }
@@ -72,9 +69,8 @@ struct InstallOptionsSection: View {
     private func switchToggle(_ title: String, isOn: Binding<Bool>) -> some View {
         Toggle(title, isOn: isOn)
             .labelsHidden()
-            .toggleStyle(.switch)
-            .controlSize(.mini)
-            .tint(Theme.violet)
+            .toggleStyle(.xside)
+            .controlSize(.small)
     }
 
     /// What's changed from the app's own values, or a hint of what's inside.
@@ -82,7 +78,7 @@ struct InstallOptionsSection: View {
         let d = flow.draft
         let changed = [!d.name.isEmpty, !d.bundleID.isEmpty, !d.version.isEmpty, d.iconPath != nil,
                        d.fileSharing, d.iPadFullScreen, d.proMotion, !d.minOS.isEmpty].filter { $0 }.count
-        return changed == 0 ? L("install.options.customize.hint") : L("install.options.customize.changed", changed)
+        return changed == 0 ? L("install.options.customize.note") : L("install.options.customize.changed", changed)
     }
 
     private var grid: some View {
@@ -104,9 +100,10 @@ struct InstallOptionsSection: View {
             .padding(.top, 2)
     }
 
-    /// "com.google" for com.google.ios.youtube (fallback when the entitlements name no vendor).
-    private static func vendor(of bundleID: String) -> String {
-        bundleID.split(separator: ".").prefix(2).joined(separator: ".")
+    /// The vendor the app shares its keychain with: as its entitlements name it, else "com.google"
+    /// for com.google.ios.youtube.
+    static func vendor(of info: AppInfo) -> String {
+        info.sharedKeychainVendor ?? info.bundleID.split(separator: ".").prefix(2).joined(separator: ".")
     }
 
     private func label(_ text: String) -> some View {
@@ -129,7 +126,7 @@ struct InstallOptionsSection: View {
             label(title)
             Toggle(title, isOn: isOn)
                 .labelsHidden()
-                .toggleStyle(.switch)
+                .toggleStyle(.xside)
                 .controlSize(.mini)
         }
     }
@@ -271,6 +268,7 @@ private struct OptionRow<Accessory: View>: View {
                 Text(title).font(.system(size: 13))
                 if let detail {
                     Text(detail).font(.system(size: 11)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer(minLength: 8)

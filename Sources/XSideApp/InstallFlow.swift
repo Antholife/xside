@@ -38,13 +38,41 @@ final class InstallFlow {
     /// device only: with several, the checks come after every install and aren't a step of each.
     var wifiStepPlanned = false
     var draft = OptionsDraft()
+    /// XSide in the app (step ③): the values every checked device gets. Prefilled from the app's
+    /// last-used values, else the Mac defaults; only the values count (see `InAppSettings.adopting`).
+    var inApp = AppModel.inAppDefaults(at: Date())
+    /// The step shown while editing: 0 devices, 1 install options, 2 XSide in the app.
+    var step = 0
+    /// Steps ①②③ with Next/Back. False for an app already installed when "Revoir les options à
+    /// chaque installation" is off: step ① then lists every option, with Edit, and Install.
+    var reviewsSteps = true
 
     init(ipa: URL) { self.ipa = ipa }
+
+    /// Steps of the install window, in order.
+    static let stepCount = 3
+
+    /// Shows step `index`; from the summary, editing turns the steps on.
+    func go(to index: Int) {
+        reviewsSteps = true
+        step = min(max(index, 0), Self.stepCount - 1)
+    }
+
+    /// The app gets no XSide features: its own choice, else the Mac's default.
+    var withoutXSideFeatures: Bool {
+        draft.withoutXSideFeatures ?? AppModel.withoutXSideFeaturesByDefault
+    }
 
     /// Devices of the last run, in install order.
     var runs: [DeviceRun] = []
     /// Options of the last run, reused by "Retry failed".
     var runOptions = InstallOptions()
+    /// XSide-in-app settings of the last run, reused by "Retry failed".
+    var runInApp: InAppSettings?
+    /// The last run installs the app without XSide's features (the progress says so).
+    var runWithoutXSideFeatures: Bool {
+        runOptions.resolvedWithoutXSideFeatures(default: AppModel.withoutXSideFeaturesByDefault)
+    }
     /// Record this `.ipa` was imported into during this flow: later devices install it as is.
     var importedRecordID: UUID?
 
@@ -193,6 +221,8 @@ struct OptionsDraft: Equatable {
     var proMotion = false
     var shareKeychain = false
     var minOS = ""
+    /// The app's own choice (nil: the Mac's default), see `InstallOptions.withoutXSideFeatures`.
+    var withoutXSideFeatures: Bool?
 
     init() {}
 
@@ -206,6 +236,7 @@ struct OptionsDraft: Equatable {
         proMotion = o.proMotion
         shareKeychain = o.shareKeychain
         minOS = o.minimumOSVersion ?? ""
+        withoutXSideFeatures = o.withoutXSideFeatures
     }
 
     var options: InstallOptions {
@@ -215,7 +246,8 @@ struct OptionsDraft: Equatable {
         }
         return InstallOptions(displayName: clean(name), customBundleID: clean(bundleID), version: clean(version),
                               iconPath: iconPath, fileSharing: fileSharing, iPadFullScreen: iPadFullScreen,
-                              proMotion: proMotion, minimumOSVersion: clean(minOS), shareKeychain: shareKeychain)
+                              proMotion: proMotion, minimumOSVersion: clean(minOS), shareKeychain: shareKeychain,
+                              withoutXSideFeatures: withoutXSideFeatures)
     }
 }
 

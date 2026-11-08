@@ -27,6 +27,8 @@ struct AppRow: View {
     let onStopRefreshing: () -> Void
     let onResume: () -> Void
     let onRemoveFromList: () -> Void
+    /// Opens the app's "Réglages XSide…" window for this device.
+    let onXSideSettings: () -> Void
 
     private var isPaused: Bool { entry.installation.refreshPaused }
 
@@ -52,11 +54,14 @@ struct AppRow: View {
                              deviceName: deviceName, onRefresh: onRefresh, onUninstall: onUninstall,
                              onStopRefreshing: onStopRefreshing, onResume: onResume,
                              onRemoveFromList: onRemoveFromList))
+        .accessibilityAction(named: L("popover.app.xsideSettings"), onXSideSettings)
     }
 
     private var appName: String { entry.record.options.displayName ?? entry.record.displayName }
 
     @ViewBuilder private var actions: some View {
+        Button(L("popover.app.xsideSettings"), systemImage: "slider.horizontal.3", action: onXSideSettings)
+        Divider()
         if isPaused {
             Button(L("popover.app.resumeRefreshing"), systemImage: "play.circle", action: onResume)
                 .disabled(!canManage)
@@ -98,10 +103,14 @@ struct AppRow: View {
                             .layoutPriority(-1)
                     }
                 }
-                Text(subtitle(validity: validity, now: now))
+                let subtitle = subtitle(validity: validity, now: now)
+                Text(subtitle)
                     .font(.system(size: 11))
                     .foregroundStyle(validity.isExpired && step == nil && !isPaused ? Color(nsColor: .systemRed) : .secondary)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .help(subtitle.count > 60 ? subtitle : "") // the whole text when it may be cut
                 // Nothing to plug in nor to fix while paused: no refresh will be attempted.
                 if step == nil, !isPaused, needsUSB,
                    entry.installation.expiresAt.timeIntervalSince(now) <= RefreshPlanner.threshold {
@@ -149,9 +158,11 @@ struct AppRow: View {
         if isUninstalling { return L("popover.app.uninstalling") }
         if let step { return percent.map { "\(step.rowText) \(percentText($0))" } ?? step.rowText }
         if isPaused {
-            if validity.isExpired { return L("popover.paused.expired") }
-            if Calendar.current.isDateInToday(validity.expiresAt) { return L("popover.paused.expiresToday") }
-            return L("popover.paused.expiresIn", validity.daysLeft)
+            // Stopped from the iPhone (its "Rafraîchissement automatique"): said so.
+            let prefix = entry.installation.pausedBy == .device ? "popover.pausedDevice" : "popover.paused"
+            if validity.isExpired { return L(prefix + ".expired") }
+            if Calendar.current.isDateInToday(validity.expiresAt) { return L(prefix + ".expiresToday") }
+            return L(prefix + ".expiresIn", validity.daysLeft)
         }
         if validity.isExpired { return L("popover.expired") }
         let next = entry.installation.expiresAt.addingTimeInterval(-RefreshPlanner.threshold)

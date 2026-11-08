@@ -11,7 +11,7 @@ struct AppEntry: Identifiable, Equatable {
     var job: RefreshJob { RefreshJob(recordID: record.id, deviceID: installation.deviceID) }
 }
 
-struct JobKey: Hashable {
+struct JobKey: Hashable, Codable {
     let recordID: UUID
     let deviceID: String
 }
@@ -222,7 +222,8 @@ final class AppModel {
                                welcome: { _ in AppModel.welcomePayload() }),
             installer: Installer(runner: runner),
             workRoot: paths.jobsWork, now: { Date() }, macIsBeta: XcodeLauncher.macIsBeta,
-            inAppDefaults: { AppModel.inAppDefaults(at: $0) })
+            inAppDefaults: { AppModel.inAppDefaults(at: $0) },
+            withoutXSideFeaturesByDefault: { AppModel.withoutXSideFeaturesByDefault })
         // An update waits while an install or a refresh runs (`release` retries it after).
         updater.isBusy = { [unowned self] in !self.claims.isEmpty || self.install?.isRunning == true }
         Task { await start() }
@@ -255,10 +256,31 @@ final class AppModel {
             inApp: facts?.inApp ?? inAppDefaults(at: now))
     }
 
-    /// XSide-in-app settings of an installation that has none yet: the Mac defaults, the reminder
-    /// following the global "Reminder on the device" setting.
+    /// XSide-in-app settings of an installation that has none yet: the Mac defaults (Settings >
+    /// XSide dans les apps), automatic refresh on.
     nonisolated static func inAppDefaults(at date: Date) -> InAppSettings {
-        InAppSettings.defaults(reminder: setting(deviceReminderKey), at: date)
+        func f<V>(_ v: V) -> Field<V> { Field(value: v, changedAt: date, changedBy: .mac) }
+        let language = UserDefaults.standard.string(forKey: inAppLanguageKey).flatMap(MessageLanguage.init) ?? .automatic
+        return InAppSettings(showValidity: f(setting(inAppShowValidityKey)), alertLate: f(setting(inAppAlertLateKey)),
+                             refreshCard: f(setting(inAppRefreshCardKey)), reminder: f(setting(deviceReminderKey)),
+                             language: f(language), autoRefresh: f(true))
+    }
+
+    /// Writes the Mac defaults of new installs (Settings > XSide dans les apps). Automatic refresh
+    /// isn't one: a new install is always refreshed.
+    static func setInAppDefaults(_ s: InAppSettings) {
+        let defaults = UserDefaults.standard
+        defaults.set(s.showValidity.value, forKey: inAppShowValidityKey)
+        defaults.set(s.alertLate.value, forKey: inAppAlertLateKey)
+        defaults.set(s.refreshCard.value, forKey: inAppRefreshCardKey)
+        defaults.set(s.reminder.value, forKey: deviceReminderKey)
+        defaults.set(s.language.value.rawValue, forKey: inAppLanguageKey)
+    }
+
+    /// "Installer les apps sans les fonctionnalités XSide" (off by default): apps that made no
+    /// choice of their own are signed as they came.
+    nonisolated static var withoutXSideFeaturesByDefault: Bool {
+        UserDefaults.standard.bool(forKey: installWithoutFeaturesKey)
     }
 
     // MARK: - Startup
@@ -929,6 +951,7 @@ final class AppModel {
     /// `imported` reports the record once imported with its options, even if the install then fails.
     @discardableResult
     func importAndInstall(_ ipa: URL, on device: Device, options: InstallOptions? = nil,
+                          inApp: InAppSettings? = nil,
                           importedInto recordID: UUID? = nil,
                           imported: @MainActor (UUID) -> Void = { _ in },
                           progress: @escaping @MainActor @Sendable (JobStage) -> Void = { _ in }) async throws -> AppRecord {
@@ -961,7 +984,7 @@ final class AppModel {
         // (provisioning lock, or another job on the same device).
         if jobs[key] == .preparing { jobs[key] = .waiting }
         progress(jobs[key] ?? .waiting) // never replaces a real step another holder already reported
-        try await run(key: key, device: device, progress: progress)
+        try await run(key: key, device: device, inApp: inApp, progress: progress)
         return records.first { $0.id == record.id } ?? record
     }
 
@@ -1578,7 +1601,7 @@ final class AppModel {
 
     /// The caller must hold a claim on `key`. `refresh`: see `SideloadPipeline.install`.
     private func run(key: JobKey, device: Device, refresh: Bool = false,
-                     automatic: Bool = false,
+                     automatic: Bool = false, inApp: InAppSettings? = nil,
                      progress: @escaping @MainActor @Sendable (JobStage) -> Void = { _ in }) async throws {
         let job = RefreshJob(recordID: key.recordID, deviceID: key.deviceID)
         // A refresh renews an existing installation; a first install is shown by the install window.
@@ -1596,7 +1619,7 @@ final class AppModel {
             }
             _ = try await StepProgress.$report.withValue(report) {
                 try await pipeline.install(recordID: key.recordID, device: device, environment: environment,
-                                           refresh: refresh) { step in
+                                           refresh: refresh, inApp: inApp) { step in
                     await MainActor.run {
                         self.jobs[key] = .step(step)
                         self.stepPercent[key] = nil // a new step starts from nothing
@@ -1657,6 +1680,13 @@ final class AppModel {
                 let existing = records.first { $0.originalBundleID == info.bundleID }
                 flow.existing = existing
                 flow.draft = OptionsDraft(existing?.options ?? InstallOptions())
+                // The app's last-used values; a reinstall refreshes it again (as before 1.1), so
+                // automatic refresh starts on.
+                if let used = existing.flatMap({ InAppSettings.lastUsed(in: $0.installations) }) {
+                    flow.inApp = used.setting(\.autoRefresh, to: true, at: Date(), by: .mac)
+                }
+                let installed = existing?.installations.isEmpty == false
+                flow.reviewsSteps = !installed || Self.setting(Self.reviewInstallOptionsKey)
                 flow.phase = .editing(error: nil)
                 autoselectDevice() // the default now depends on where the app is installed
                 #if DEBUG
@@ -1722,6 +1752,7 @@ final class AppModel {
         }
         flow.runs = targets.map { id in DeviceRun(deviceID: id, name: devices.first { $0.id == id }?.name ?? id) }
         flow.runOptions = flow.draft.options
+        flow.runInApp = flow.inApp
         // A new run imports again (the options may have changed); only its later devices reuse it.
         flow.importedRecordID = nil
         flow.guides = []
@@ -1808,6 +1839,7 @@ final class AppModel {
         unhide(deviceID) // installing on it brings it back
         do {
             let installed = try await importAndInstall(flow.ipa, on: device, options: flow.runOptions,
+                                       inApp: flow.runInApp,
                                        importedInto: flow.importedRecordID,
                                        imported: { flow.importedRecordID = $0 },
                                        progress: { stage in
@@ -1816,6 +1848,9 @@ final class AppModel {
                                            flow.setStatus(.running(stage), for: deviceID)
                                        })
             flow.setStatus(.succeeded, for: deviceID)
+            // "Rafraîchissement automatique" off in step ③: installed, then paused (a signing
+            // always leaves it on).
+            if flow.runInApp?.autoRefresh.value == false { await pauseAfterInstall(recordID: installed.id, deviceID: deviceID) }
             // Asked to the device itself; the remembered rule only when it can't tell.
             let signedID = installed.installations.first { $0.deviceID == deviceID }?.signedBundleID ?? installed.signedBundleID
             // Opening the app is how the device tells; when off, the remembered rule decides.
@@ -1851,6 +1886,42 @@ final class AppModel {
                 flow.setStatus(.failed(StepFailure(stage: flow.lastStage, message: localizedMessage(error))), for: deviceID)
             }
         }
+    }
+
+    /// Pauses an installation just installed (its row is still claimed by the run, so not
+    /// through `stopRefreshing`): its reminder and notification state go, as from the panel.
+    private func pauseAfterInstall(recordID: UUID, deviceID: String) async {
+        do {
+            guard try await library.setRefreshPaused(true, recordID: recordID, deviceID: deviceID, by: .mac) else { return }
+        } catch {
+            Self.logger.error("pause after install failed: \(String(describing: error))")
+            return
+        }
+        await reloadRecords()
+        onInstallationRemoved?(RefreshJob(recordID: recordID, deviceID: deviceID))
+    }
+
+    /// Changes one installation's XSide-in-app settings from the Mac ("Réglages XSide…"). They
+    /// reach the app at its next check-in or signing.
+    func editInApp(_ key: JobKey, _ transform: @escaping @Sendable (InAppSettings) -> InAppSettings) async {
+        do {
+            try await library.editInApp(recordID: key.recordID, deviceID: key.deviceID,
+                                        reminder: Self.setting(Self.deviceReminderKey), at: Date(), transform)
+        } catch {
+            Self.logger.error("in-app settings edit failed: \(String(describing: error))")
+        }
+        await reloadRecords()
+    }
+
+    /// The app's own choice of XSide's features (nil: follow the Mac's default). Applies at its
+    /// next install or refresh.
+    func setWithoutXSideFeatures(_ without: Bool?, recordID: UUID) async {
+        guard var options = records.first(where: { $0.id == recordID })?.options else { return }
+        options.withoutXSideFeatures = without
+        do { try await library.setOptions(options, for: recordID) } catch {
+            Self.logger.error("features choice failed: \(String(describing: error))")
+        }
+        await reloadRecords()
     }
 
     /// "Cancel install": cancels the run's task. The device being installed stops at once (its
@@ -1960,9 +2031,19 @@ final class AppModel {
     static let openAppAfterInstallKey = "openAppAfterInstall"
     static let openTrustSettingsKey = "openTrustSettingsAutomatically"
     static let forgetDeletedAppsKey = "forgetDeletedApps"
-    /// The reminder the installed app shows itself, the day before it expires (written into the
-    /// app at each install and refresh).
+    /// The reminder the installed app shows itself before it expires ("Rappel avant l'expiration",
+    /// default of new installs; each installation has its own since 1.1).
     nonisolated static let deviceReminderKey = "deviceReminder"
+    /// The other defaults of new installs for XSide in the app (Settings > XSide dans les apps).
+    nonisolated static let inAppShowValidityKey = "inApp.showValidity"
+    nonisolated static let inAppAlertLateKey = "inApp.alertLate"
+    nonisolated static let inAppRefreshCardKey = "inApp.refreshCard"
+    nonisolated static let inAppLanguageKey = "inApp.language"
+    /// "Installer les apps sans les fonctionnalités XSide" (see `withoutXSideFeaturesByDefault`).
+    nonisolated static let installWithoutFeaturesKey = "installWithoutXSideFeatures"
+    /// "Revoir les options à chaque installation" (on by default): off, an app already installed
+    /// gets the summary of its options on the first step instead of the three steps.
+    static let reviewInstallOptionsKey = "reviewInstallOptions"
     /// What the welcome library reads in each app (see `WelcomePayload`): the Mac-wide part; the
     /// installation's own values are filled in at signing (`Resigner.payload(_:with:)`).
     nonisolated static func welcomePayload() -> WelcomePayload {

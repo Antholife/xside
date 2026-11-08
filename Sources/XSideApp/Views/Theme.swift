@@ -74,3 +74,62 @@ enum InstallWindow {
     panel.orderFrontRegardless()
     return panel.runModal() == .OK ? panel.url : nil
 }
+
+/// XSide's switch: drawn like the macOS one (same sizes per control size, a knob that slides),
+/// filled with the brand gradient when on, neutral grey when off. Used for every XSide toggle
+/// (`.toggleStyle(.xside)`). In a grouped Form the label sits on the left as the system's does
+/// (title and note lines), elsewhere the switch follows the label.
+struct XSideSwitchStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        LabeledContent {
+            XSideSwitch(isOn: configuration.$isOn)
+        } label: {
+            configuration.label
+        }
+        // VoiceOver reads a switch, with its label and on/off value.
+        .accessibilityRepresentation {
+            Toggle(isOn: configuration.$isOn) { configuration.label }
+        }
+    }
+}
+
+extension ToggleStyle where Self == XSideSwitchStyle {
+    static var xside: XSideSwitchStyle { XSideSwitchStyle() }
+}
+
+/// The switch itself: a button, so Space toggles it once focused.
+private struct XSideSwitch: View {
+    @Binding var isOn: Bool
+    @Environment(\.controlSize) private var controlSize
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// The system switch's track size for each control size.
+    private var size: CGSize {
+        switch controlSize {
+        case .mini: CGSize(width: 26, height: 15)
+        case .small: CGSize(width: 32, height: 18)
+        default: CGSize(width: 38, height: 22)
+        }
+    }
+
+    var body: some View {
+        Button {
+            withAnimation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.8)) { isOn.toggle() }
+        } label: {
+            ZStack(alignment: isOn ? .trailing : .leading) {
+                Capsule()
+                    .fill(isOn ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(Color.primary.opacity(0.16)))
+                    .overlay(Capsule().strokeBorder(Color.primary.opacity(isOn ? 0 : 0.08), lineWidth: 0.5))
+                Circle()
+                    .fill(.white)
+                    .shadow(color: .black.opacity(0.25), radius: 1, y: 0.5)
+                    .padding(2)
+            }
+            .frame(width: size.width, height: size.height)
+            .opacity(isEnabled ? 1 : 0.45)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+}

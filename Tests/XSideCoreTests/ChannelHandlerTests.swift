@@ -305,6 +305,19 @@ import Foundation
         #expect(i?.inApp?.autoRefresh == Field(value: true, changedAt: now.addingTimeInterval(1), changedBy: .mac))
     }
 
+    @Test func macEditIsStampedAndKeepsThePause() async throws {
+        let (lib, rec, tmp) = try await library(); defer { try? FileManager.default.removeItem(at: tmp) }
+        try await lib.editInApp(recordID: rec.id, deviceID: "a", reminder: true, at: now) {
+            $0.setting(\.reminder, to: false, at: now, by: .mac)
+        }
+        let i = await stored(lib, rec.id)
+        #expect(i?.inApp?.reminder == Field(value: false, changedAt: now, changedBy: .mac))
+        #expect(i?.refreshPaused == false)
+        await #expect(throws: XSideError.recordNotFound) {
+            try await lib.editInApp(recordID: rec.id, deviceID: "zz", reminder: true, at: now) { $0 }
+        }
+    }
+
     @Test func checkInIsStoredAndItsAutoRefreshApplies() async throws {
         let (lib, rec, tmp) = try await library(); defer { try? FileManager.default.removeItem(at: tmp) }
         let merged = InAppSettings.defaults(reminder: true, at: now.addingTimeInterval(-60))

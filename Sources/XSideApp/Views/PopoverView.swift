@@ -182,7 +182,12 @@ private struct PopoverContent: View {
                                    onUninstall: { uninstall(entry, deviceName: group.name) },
                                    onStopRefreshing: { stopRefreshing(entry, deviceName: group.name) },
                                    onResume: { resume(entry) },
-                                   onRemoveFromList: { removeFromList(entry, deviceName: group.name) })
+                                   onRemoveFromList: { removeFromList(entry, deviceName: group.name) },
+                                   onXSideSettings: {
+                                       dismiss()
+                                       openWindow(id: AppSettingsWindow.id, value: entry.id)
+                                       NSApp.activate()
+                                   })
                         }
                     }
                 }

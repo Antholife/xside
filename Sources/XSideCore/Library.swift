@@ -423,6 +423,24 @@ public actor AppLibrary {
         return change
     }
 
+    /// Changes an installation's in-app settings from the Mac ("Réglages XSide…"), on the values
+    /// stored now (seeded with the Mac defaults, `reminder`, for older state). `transform` stamps
+    /// what it changes; "automatic refresh" is left as it was (it goes with the pause, through
+    /// `setRefreshPaused`). Throws `recordNotFound` when the installation is gone.
+    public func editInApp(recordID: UUID, deviceID: String, reminder: Bool, at date: Date,
+                          _ transform: @Sendable (InAppSettings) -> InAppSettings) throws {
+        let index = try indexOf(recordID)
+        guard let i = items[index].installations.firstIndex(where: { $0.deviceID == deviceID }) else {
+            throw XSideError.recordNotFound
+        }
+        let previous = items
+        let current = items[index].installations[i].seededInApp(reminder: reminder, at: date)
+        var edited = transform(current)
+        edited.autoRefresh = current.autoRefresh
+        items[index].installations[i].inApp = edited
+        do { try save() } catch { items = previous; throw error }
+    }
+
     /// Records that the phone asked for a refresh XSide started (see
     /// `Installation.lastDeviceRefreshRequest`). Throws `recordNotFound` when the installation is gone.
     public func markDeviceRefreshRequest(at date: Date, recordID: UUID, deviceID: String) throws {

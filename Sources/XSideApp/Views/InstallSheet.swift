@@ -90,7 +90,8 @@ extension ProgressHeader {
     fileprivate func subtitle(now: Date) -> String {
         let device = flow.runs.first?.name ?? ""
         if let percent, let step = timeline.current {
-            return L("install.progress.subtitlePercent", device, step.label, percentText(percent))
+            return L("install.progress.subtitlePercent", device, step.label(withoutXSideFeatures: flow.runWithoutXSideFeatures),
+                     percentText(percent))
         }
         if timeline.current == .installing, let started = model.runStepStarted(flow) {
             let elapsed = Duration.seconds(max(0, now.timeIntervalSince(started)))
@@ -213,30 +214,23 @@ struct InstallSheet: View {
             case .running(let stage) where !flow.isMultiDevice:
                 // One device: the header shows the ring, the steps follow, nothing else.
                 InstallProgressView(timeline: StepTimeline(steps: steps, stage: stage), showsBar: false,
-                                    activePercent: model.runPercent(flow), activeSince: model.runStepStarted(flow))
-            case .editing, .running:
-                // The run's status comes first, right under the app header.
-                if case .running = flow.phase {
-                    EmptyView()
-                } else if let failure = flow.failure, case .editing = flow.phase {
+                                    activePercent: model.runPercent(flow), activeSince: model.runStepStarted(flow),
+                                    withoutXSideFeatures: flow.runWithoutXSideFeatures)
+            case .running:
+                DeviceRunList(model: model, flow: flow, steps: steps)
+            case .editing:
+                if flow.reviewsSteps { StepBar(flow: flow) }
+                // The last run's outcome comes first, on whichever step is shown.
+                if let failure = flow.failure {
                     InstallProgressView(timeline: StepTimeline(steps: steps, stage: failure.stage, failed: true),
-                                        failureMessage: failure.message)
+                                        failureMessage: failure.message, withoutXSideFeatures: flow.runWithoutXSideFeatures)
                     ExportLogsLink(model: model)
                 } else if case .editing(let error?) = flow.phase {
                     ErrorText(error)
-                } else if case .editing(nil) = flow.phase, flow.wasCancelled {
+                } else if flow.wasCancelled {
                     CancelledNote()
                 }
-                if flow.isRunning && flow.isMultiDevice {
-                    DeviceRunList(model: model, flow: flow, steps: steps)
-                } else {
-                    DevicePicker(model: model, flow: flow)
-                }
-                InstallOptionsSection(model: model, flow: flow)
-                if case .editing = flow.phase {
-                    BlockedNotice(model: model, flow: flow)
-                    PreflightNotes(warnings: model.preflightWarnings(for: flow), model: model, flow: flow)
-                }
+                editingStep
             case .finished:
                 if flow.isMultiDevice {
                     DeviceRunList(model: model, flow: flow, steps: steps)
@@ -244,7 +238,8 @@ struct InstallSheet: View {
                     if !flow.failedDeviceIDs.isEmpty { ExportLogsLink(model: model) }
                 } else {
                     InstallProgressView(timeline: StepTimeline(
-                        steps: steps, current: flow.wifiCheck != nil ? .wifiCheck : nil, skipped: skippedSteps))
+                        steps: steps, current: flow.wifiCheck != nil ? .wifiCheck : nil, skipped: skippedSteps),
+                        withoutXSideFeatures: flow.runWithoutXSideFeatures)
                     Label(L("install.success", flow.runs.first?.name ?? ""), systemImage: "checkmark.circle.fill")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(Color(nsColor: .systemGreen))
@@ -268,6 +263,28 @@ struct InstallSheet: View {
                             .onAppear { model.guideDisplayed(guide) }
                     }
                 }
+            }
+        }
+    }
+
+    /// The step being edited: ① devices (and, without the steps, everything that will apply),
+    /// ② install options, ③ XSide in the app.
+    @ViewBuilder private var editingStep: some View {
+        if !flow.reviewsSteps {
+            DevicePicker(model: model, flow: flow)
+            BlockedNotice(model: model, flow: flow)
+            PreflightNotes(warnings: model.preflightWarnings(for: flow), model: model, flow: flow)
+            InstallSummaryView(model: model, flow: flow)
+        } else {
+            switch flow.step {
+            case 0:
+                DevicePicker(model: model, flow: flow)
+                PreflightNotes(warnings: model.preflightWarnings(for: flow), model: model, flow: flow)
+            case 1:
+                InstallOptionsSection(model: model, flow: flow)
+            default:
+                InAppStep(model: model, flow: flow)
+                BlockedNotice(model: model, flow: flow)
             }
         }
     }
@@ -383,18 +400,27 @@ struct InstallSheet: View {
                 Button(L("install.cancel"), action: close)
                     .keyboardShortcut(.cancelAction)
                     .controlSize(.large)
-            case .editing, .running:
-                if flow.isRunning {
-                    // Immediate, even mid-transfer: no confirmation, so no Escape shortcut either.
-                    Button(L("install.cancelRun"), action: model.cancelInstall)
-                        .controlSize(.large)
-                        .disabled(flow.cancelRequested)
-                } else {
-                    Button(L("install.cancel"), action: close)
-                        .keyboardShortcut(.cancelAction)
+            case .running:
+                // Immediate, even mid-transfer: no confirmation, so no Escape shortcut either.
+                Button(L("install.cancelRun"), action: model.cancelInstall)
+                    .controlSize(.large)
+                    .disabled(flow.cancelRequested)
+            case .editing:
+                Button(L("install.cancel"), action: close)
+                    .keyboardShortcut(.cancelAction)
+                    .controlSize(.large)
+                if flow.reviewsSteps && flow.step > 0 {
+                    Button(L("install.back")) { withAnimation(.smooth(duration: 0.2)) { flow.go(to: flow.step - 1) } }
                         .controlSize(.large)
                 }
-                if !flow.isRunning {
+                // Install only at the last step (or on the summary).
+                if flow.reviewsSteps && flow.step < InstallFlow.stepCount - 1 {
+                    Button(L("install.next")) { withAnimation(.smooth(duration: 0.2)) { flow.go(to: flow.step + 1) } }
+                        .buttonStyle(GradientButtonStyle())
+                        .controlSize(.large)
+                        .frame(maxWidth: .infinity)
+                        .keyboardShortcut(.defaultAction)
+                } else {
                     Button(installLabel, action: model.startInstall)
                         .buttonStyle(GradientButtonStyle())
                         .controlSize(.large)
@@ -761,9 +787,8 @@ private struct DeviceTile: View {
             .accessibilityAddTraits(isSelected ? .isSelected : [])
             if isSelected {
                 Toggle(L("popover.device.wifiRefresh"), isOn: $wifiRefresh)
-                    .toggleStyle(.switch)
+                    .toggleStyle(.xside)
                     .controlSize(.mini)
-                    .tint(Theme.violet)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .disabled(isRunning)

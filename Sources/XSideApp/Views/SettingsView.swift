@@ -11,12 +11,15 @@ enum AppLinks {
 
 /// The pages of the Settings window.
 enum SettingsPane: String, CaseIterable, Identifiable {
-    case general, signing, notifications, updates, logs, about
+    case general, refresh, install, inApp, notifications, signing, updates, logs, about
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .general: L("settings.pane.general")
+        case .refresh: L("settings.pane.refresh")
+        case .install: L("settings.pane.install")
+        case .inApp: L("settings.pane.inApp")
         case .signing: L("settings.signing")
         case .notifications: L("settings.notifications")
         case .updates: L("updates.title")
@@ -28,6 +31,9 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .general: "gearshape.fill"
+        case .refresh: "arrow.clockwise"
+        case .install: "square.and.arrow.down.fill"
+        case .inApp: "apps.iphone"
         case .signing: "hammer.fill"
         case .notifications: "bell.badge.fill"
         case .updates: "arrow.triangle.2.circlepath"
@@ -142,7 +148,7 @@ private struct SettingsPage: View {
     @AppStorage(AppModel.openAppAfterInstallKey) private var openAppAfterInstall = true
     @AppStorage(AppModel.openTrustSettingsKey) private var openTrustSettings = true
     @AppStorage(AppModel.forgetDeletedAppsKey) private var forgetDeletedApps = true
-    @AppStorage(AppModel.deviceReminderKey) private var deviceReminder = true
+    @AppStorage(AppModel.reviewInstallOptionsKey) private var reviewInstallOptions = true
     @AppStorage(BackgroundEngine.refreshDaysBeforeKey) private var refreshDaysBefore = 2
     @AppStorage(BackgroundEngine.pausedUntilKey) private var pausedUntil = 0.0
     @AppStorage(BackgroundEngine.acOnlyKey) private var acOnly = false
@@ -156,6 +162,9 @@ private struct SettingsPage: View {
         Form {
             switch pane {
             case .general: general
+            case .refresh: refreshPage
+            case .install: installPage
+            case .inApp: InAppDefaultsPage()
             case .signing:
                 Section { SigningHero(model: model) }
                 SigningSettingsSection(model: model)
@@ -166,6 +175,7 @@ private struct SettingsPage: View {
             }
         }
         .formStyle(.grouped)
+        .toggleStyle(.xside)
         .onAppear(perform: login.refresh)
         .task { await notifications.refresh() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -185,6 +195,21 @@ private struct SettingsPage: View {
             }
             KeepInDockToggle()
         }
+        if let issue = model.library.loadIssue {
+            Section { LibraryIssueBanner(issue: issue) }
+        }
+        Section {
+            CommandLineRow()
+        }
+        Section {
+            LabeledContent(L("settings.journey")) {
+                Button(L("settings.replayJourney")) { openWindow.presentJourney(model, at: .language) }
+            }
+        }
+    }
+
+    /// Automatic refreshes, and what XSide notices on the devices.
+    @ViewBuilder private var refreshPage: some View {
         Section {
             Picker(selection: $refreshDaysBefore) {
                 ForEach(RefreshPlanner.daysBeforeChoices, id: \.self) { days in
@@ -217,6 +242,24 @@ private struct SettingsPage: View {
                 .foregroundStyle(.secondary)
         }
         Section {
+            Toggle(isOn: Binding(get: { model.devicePrefs.newDevicesWifi }, set: { model.setNewDevicesWifi($0) })) {
+                Text(L("settings.newDevicesWifi"))
+                Text(L("settings.newDevicesWifi.note"))
+            }
+            Toggle(isOn: $forgetDeletedApps) {
+                Text(L("settings.forgetDeletedApps"))
+                Text(L("settings.forgetDeletedApps.note"))
+            }
+        }
+    }
+
+    /// The install window's defaults, and the firewall prompt the apps' channel can bring.
+    @ViewBuilder private var installPage: some View {
+        Section {
+            Toggle(isOn: $reviewInstallOptions) {
+                Text(L("settings.reviewOptions"))
+                Text(L("settings.reviewOptions.note"))
+            }
             Toggle(isOn: $openAppAfterInstall) {
                 Text(L("settings.openAppAfterInstall"))
                 Text(L("settings.openAppAfterInstall.note"))
@@ -226,30 +269,18 @@ private struct SettingsPage: View {
                 Text(L("settings.openTrustSettings.note"))
             }
             .disabled(!openAppAfterInstall)
-            Toggle(isOn: $forgetDeletedApps) {
-                Text(L("settings.forgetDeletedApps"))
-                Text(L("settings.forgetDeletedApps.note"))
-            }
-            Toggle(isOn: Binding(get: { model.devicePrefs.newDevicesWifi }, set: { model.setNewDevicesWifi($0) })) {
-                Text(L("settings.newDevicesWifi"))
-                Text(L("settings.newDevicesWifi.note"))
-            }
-        } header: {
-            Text(L("settings.afterInstall"))
         } footer: {
             Text(L("settings.afterInstall.footer"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
-        if let issue = model.library.loadIssue {
-            Section { LibraryIssueBanner(issue: issue) }
-        }
         Section {
-            CommandLineRow()
-        }
-        Section {
-            LabeledContent(L("settings.journey")) {
-                Button(L("settings.replayJourney")) { openWindow.presentJourney(model, at: .language) }
+            LabeledContent {
+                Image(systemName: "network.badge.shield.half.filled")
+                    .foregroundStyle(.secondary)
+            } label: {
+                Text(L("settings.firewall"))
+                Text(L("settings.firewall.note"))
             }
         }
     }
@@ -260,10 +291,6 @@ private struct SettingsPage: View {
             Toggle(isOn: $notifyAppRemoved) {
                 Text(L("settings.notifyAppRemoved"))
                 Text(L("settings.notifyAppRemoved.note"))
-            }
-            Toggle(isOn: $deviceReminder) {
-                Text(L("settings.deviceReminder"))
-                Text(L("settings.deviceReminder.note"))
             }
             if notifications.state == .notDetermined || notifications.state == .denied {
                 NotificationPermissionCard(permission: notifications)
@@ -493,6 +520,75 @@ private struct CommandLineRow: View {
             } else {
                 Text(L("cli.detail"))
             }
+        }
+    }
+}
+
+/// Settings > XSide dans les apps: what new installs start with (each app then keeps its own),
+/// and, apart, installing every app without XSide's features.
+private struct InAppDefaultsPage: View {
+    @AppStorage(AppModel.inAppShowValidityKey) private var showValidity = true
+    @AppStorage(AppModel.inAppAlertLateKey) private var alertLate = true
+    @AppStorage(AppModel.inAppRefreshCardKey) private var refreshCard = true
+    @AppStorage(AppModel.deviceReminderKey) private var reminder = true
+    @AppStorage(AppModel.inAppLanguageKey) private var language = MessageLanguage.automatic.rawValue
+    @AppStorage(AppModel.installWithoutFeaturesKey) private var withoutFeatures = false
+    @State private var confirmingNoFeatures = false
+
+    /// The stored defaults (the `@AppStorage` values above keep the page current).
+    private var defaults: InAppSettings {
+        _ = (showValidity, alertLate, refreshCard, reminder, language)
+        return AppModel.inAppDefaults(at: Date())
+    }
+
+    private func edit(_ change: InAppEdit) {
+        AppModel.setInAppDefaults(change(defaults))
+    }
+
+    var body: some View {
+        Section {
+            WhereBox(appName: L("inApp.where.anyApp"))
+                .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
+            LabeledContent {
+                MessagesMenu(level: defaults.derivedLevel) { level in edit { $0.applying(level: level, at: Date(), by: .mac) } }
+            } label: {
+                Text(L("inApp.messages"))
+                Text(defaults.derivedLevel.note)
+            }
+            toggle(.showValidity, $showValidity)
+            toggle(.alertLate, $alertLate)
+            toggle(.refreshCard, $refreshCard)
+            toggle(.reminder, $reminder)
+            LabeledContent {
+                LanguagePicker(language: defaults.language.value) { language = $0.rawValue }
+            } label: {
+                Text(L("inApp.language"))
+                Text(L("inApp.language.note"))
+            }
+        } header: {
+            Text(L("settings.inApp.defaults"))
+        } footer: {
+            Text(L("settings.inApp.footer"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        Section {
+            Toggle(isOn: Binding(get: { withoutFeatures }, set: { on in
+                if on { confirmingNoFeatures = true } else { withoutFeatures = false }
+            })) {
+                Text(L("settings.withoutFeatures"))
+                Text(L("settings.withoutFeatures.note"))
+            }
+        }
+        .sheet(isPresented: $confirmingNoFeatures) {
+            NoFeaturesConfirmation(appName: nil) { withoutFeatures = true }
+        }
+    }
+
+    private func toggle(_ option: InAppOption, _ value: Binding<Bool>) -> some View {
+        Toggle(isOn: value) {
+            Text(option.title)
+            Text(option.note)
         }
     }
 }

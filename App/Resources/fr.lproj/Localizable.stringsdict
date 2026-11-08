@@ -82,5 +82,21 @@
 			<string>%ld modifications</string>
 		</dict>
 	</dict>
+	<key>popover.pausedDevice.expiresIn</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@days@</string>
+		<key>days</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>ld</string>
+			<key>one</key>
+			<string>Arrêté depuis l'appareil · expire dans %ld jour</string>
+			<key>other</key>
+			<string>Arrêté depuis l'appareil · expire dans %ld jours</string>
+		</dict>
+	</dict>
 </dict>
 </plist>

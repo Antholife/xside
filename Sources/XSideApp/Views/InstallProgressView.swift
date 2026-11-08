@@ -12,6 +12,8 @@ struct InstallProgressView: View {
     var activePercent: Int?
     /// When the running step started: without a percentage, the time spent shows instead.
     var activeSince: Date?
+    /// The app goes without XSide's features: the module step says it's skipped.
+    var withoutXSideFeatures = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -40,7 +42,7 @@ struct InstallProgressView: View {
             HStack(spacing: 8) {
                 indicator(status)
                     .frame(width: 16, height: 16)
-                Text(step.label)
+                Text(step.label(withoutXSideFeatures: withoutXSideFeatures))
                     .font(.system(size: 13, weight: status == .active || status == .waiting || status == .failed ? .semibold : .regular))
                     .foregroundStyle(titleStyle(status))
                     .lineLimit(2)
@@ -77,7 +79,7 @@ struct InstallProgressView: View {
                     .animation(.smooth(duration: 0.4), value: activePercent)
             }
             // What "XSide features" means, once that step has started.
-            if step == .welcome, status == .active || status == .done {
+            if step == .welcome, !withoutXSideFeatures, status == .active || status == .done {
                 XSideFeaturesList()
                     .padding(.leading, 24)
                     .padding(.top, 3)
@@ -91,7 +93,8 @@ struct InstallProgressView: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(L("install.progress.accessibility", index, timeline.total, step.label, status.label))
+        .accessibilityLabel(L("install.progress.accessibility", index, timeline.total,
+                              step.label(withoutXSideFeatures: withoutXSideFeatures), status.label))
     }
 
     private func titleStyle(_ status: StepStatus) -> HierarchicalShapeStyle {
@@ -121,13 +124,15 @@ struct InstallProgressView: View {
     }
 }
 
-/// What XSide adds to each app, under the "Adding XSide features" step.
+/// What XSide adds to each app, under the "Injecting the XSide module" step.
 private struct XSideFeaturesList: View {
     private static let items: [(symbol: String, key: String)] = [
         ("rectangle.portrait.bottomhalf.inset.filled", "install.feature.sheet"),
-        ("rectangle.topthird.inset.filled", "install.feature.banner"),
+        ("rectangle.topthird.inset.filled", "install.feature.pill"),
+        ("rectangle.bottomthird.inset.filled", "install.feature.banner"),
         ("bell.badge.fill", "install.feature.reminder"),
         ("gearshape.fill", "install.feature.settings"),
+        ("hand.tap.fill", "install.feature.quick"),
     ]
 
     var body: some View {
@@ -182,6 +187,11 @@ extension ProgressStep {
         case .installing: L("install.step.installing")
         case .wifiCheck: L("wifi.title")
         }
+    }
+
+    /// The module step says it's skipped when the app goes without XSide's features.
+    func label(withoutXSideFeatures: Bool) -> String {
+        self == .welcome && withoutXSideFeatures ? L("install.step.welcomeSkipped") : label
     }
 }
 
