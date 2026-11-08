@@ -1,0 +1,307 @@
+// See XSPill.h.
+
+#import "XSPill.h"
+#import "XSChannel.h"
+#import "XSSettingsCore.h"
+
+#ifdef XS_TEST_LATE
+// Found by scripts/release.sh, which refuses to ship a test build.
+__attribute__((used)) static const char XSTestLateMarker[] = "XSIDE_TEST_LATE_BUILD";
+#endif
+
+static const int XSPillMaxAttempts = 20;
+
+@implementation XSPillContent
+@end
+
+static UIColor *XSToneColor(XSPillTone tone) {
+    switch (tone) {
+        case XSPillToneOrange: return UIColor.systemOrangeColor;
+        case XSPillToneRed: return UIColor.systemRedColor;
+        default: return UIColor.labelColor;
+    }
+}
+
+@interface XSPillController : UIViewController
+- (instancetype)initWithContent:(XSPillContent *)content;
+- (void)dismiss;
+@end
+
+/// The pill's own window: passthrough, never key, under the install sheet's.
+static UIWindow *XSPillWindow;
+
+static void XSHidePillWindow(UIWindow *window) {
+    window.hidden = YES;
+    if (XSPillWindow == window) XSPillWindow = nil;
+}
+
+@implementation XSPillController {
+    XSPillContent *_content;
+    UIView *_holder;
+    BOOL _closing;
+}
+
+- (instancetype)initWithContent:(XSPillContent *)content {
+    if ((self = [super initWithNibName:nil bundle:nil])) _content = content;
+    return self;
+}
+
+- (UILabel *)label:(CGFloat)size weight:(UIFontWeight)weight color:(UIColor *)color {
+    UILabel *l = [UILabel new];
+    l.font = XSScaledFont(size, weight);
+    l.textColor = color;
+    l.adjustsFontForContentSizeCategory = YES;
+    l.numberOfLines = 0;
+    return l;
+}
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.view.backgroundColor = UIColor.clearColor;
+    XSPillContent *c = _content;
+    BOOL twoLines = c.hint.length > 0 || c.buttonTitle.length > 0;
+
+    // The shadow lives on a holder: the blur view clips.
+    UIView *holder = [UIView new];
+    holder.layer.shadowColor = UIColor.blackColor.CGColor;
+    holder.layer.shadowOpacity = 0.18;
+    holder.layer.shadowRadius = 14;
+    holder.layer.shadowOffset = CGSizeMake(0, 6);
+    UIVisualEffectView *blur = [[UIVisualEffectView alloc] initWithEffect:
+                                [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThickMaterial]];
+    blur.layer.cornerCurve = kCACornerCurveContinuous;
+    blur.layer.cornerRadius = twoLines ? 20 : 25;
+    blur.clipsToBounds = YES;
+
+    UIImageView *icon = [[UIImageView alloc] initWithImage:XSIcon()];
+    icon.layer.cornerRadius = 8;
+    icon.layer.cornerCurve = kCACornerCurveContinuous;
+    icon.clipsToBounds = YES;
+
+    UILabel *title = [self label:14 weight:UIFontWeightSemibold color:UIColor.labelColor];
+    NSMutableAttributedString *text = [[NSMutableAttributedString alloc] initWithString:c.lead ?: @""];
+    if (c.strong.length) {
+        [text appendAttributedString:[[NSAttributedString alloc] initWithString:c.strong attributes:@{
+            NSFontAttributeName: XSScaledFont(14, UIFontWeightBold), NSForegroundColorAttributeName: XSToneColor(c.tone)}]];
+    }
+    if (c.tail.length) [text appendAttributedString:[[NSAttributedString alloc] initWithString:c.tail]];
+    title.attributedText = text;
+    if (!twoLines) title.numberOfLines = 2;
+
+    NSMutableArray<UIView *> *texts = [NSMutableArray arrayWithObject:title];
+    if (c.hint.length) {
+        UILabel *hint = [self label:12 weight:UIFontWeightMedium color:UIColor.secondaryLabelColor];
+        hint.text = c.hint;
+        [texts addObject:hint];
+    }
+    UIStackView *textStack = [[UIStackView alloc] initWithArrangedSubviews:texts];
+    textStack.axis = UILayoutConstraintAxisVertical;
+    textStack.spacing = 2;
+
+    NSMutableArray<UIView *> *row = [NSMutableArray arrayWithObjects:icon, textStack, nil];
+    if (c.busy) {
+        UIActivityIndicatorView *spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+        [spinner startAnimating];
+        [row addObject:spinner];
+    }
+    if (c.buttonTitle.length) {
+        XSGradientButton *button = [XSGradientButton buttonWithType:UIButtonTypeCustom];
+        ((CAGradientLayer *)button.layer).cornerRadius = 15;
+        UIButtonConfiguration *config = [UIButtonConfiguration plainButtonConfiguration];
+        config.contentInsets = NSDirectionalEdgeInsetsMake(6, 12, 6, 12);
+        config.baseForegroundColor = UIColor.whiteColor;
+        config.attributedTitle = [[NSAttributedString alloc] initWithString:c.buttonTitle attributes:@{
+            NSFontAttributeName: XSScaledFont(13, UIFontWeightSemibold)}];
+        button.configuration = config;
+        [button setContentCompressionResistancePriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
+        [button setContentHuggingPriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
+        [button addTarget:self action:@selector(tapButton) forControlEvents:UIControlEventTouchUpInside];
+        [button.heightAnchor constraintGreaterThanOrEqualToConstant:30].active = YES;
+        [row addObject:button];
+    }
+    UIStackView *content = [[UIStackView alloc] initWithArrangedSubviews:row];
+    content.spacing = 10;
+    content.alignment = twoLines ? UIStackViewAlignmentTop : UIStackViewAlignmentCenter;
+    if (c.buttonTitle.length) content.alignment = UIStackViewAlignmentCenter;
+
+    for (UIView *v in @[holder, blur, content]) v.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:holder];
+    [holder addSubview:blur];
+    [blur.contentView addSubview:content];
+    // Almost full width (10 pt each side), capped on iPad.
+    NSLayoutConstraint *wide = [holder.widthAnchor constraintEqualToAnchor:self.view.widthAnchor constant:-20];
+    wide.priority = UILayoutPriorityDefaultHigh;
+    [NSLayoutConstraint activateConstraints:@[
+        [holder.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:6],
+        [holder.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [holder.widthAnchor constraintLessThanOrEqualToConstant:500],
+        wide,
+        [blur.topAnchor constraintEqualToAnchor:holder.topAnchor],
+        [blur.bottomAnchor constraintEqualToAnchor:holder.bottomAnchor],
+        [blur.leadingAnchor constraintEqualToAnchor:holder.leadingAnchor],
+        [blur.trailingAnchor constraintEqualToAnchor:holder.trailingAnchor],
+        [content.topAnchor constraintEqualToAnchor:blur.contentView.topAnchor constant:10],
+        [content.bottomAnchor constraintEqualToAnchor:blur.contentView.bottomAnchor constant:-10],
+        [content.leadingAnchor constraintEqualToAnchor:blur.contentView.leadingAnchor constant:10],
+        [content.trailingAnchor constraintEqualToAnchor:blur.contentView.trailingAnchor constant:-14],
+        [icon.widthAnchor constraintEqualToConstant:30],
+        [icon.heightAnchor constraintEqualToConstant:30],
+    ]];
+    _holder = holder;
+
+    // A tap (outside the button) or a swipe up dismisses it; the app stays usable around it.
+    [holder addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(dismiss)]];
+    UISwipeGestureRecognizer *up = [[UISwipeGestureRecognizer alloc] initWithTarget:self action:@selector(dismiss)];
+    up.direction = UISwipeGestureRecognizerDirectionUp;
+    [holder addGestureRecognizer:up];
+}
+
+- (CGAffineTransform)hiddenTransform {
+    return CGAffineTransformMakeTranslation(0, -(CGRectGetMaxY(_holder.frame) + 20));
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    [self.view layoutIfNeeded];
+    _holder.transform = [self hiddenTransform];
+    [UIView animateWithDuration:0.55 delay:0 usingSpringWithDamping:0.8 initialSpringVelocity:0.4
+                        options:UIViewAnimationOptionAllowUserInteraction animations:^{
+        self->_holder.transform = CGAffineTransformIdentity;
+    } completion:nil];
+    NSString *spoken = [NSString stringWithFormat:@"%@%@%@. %@", _content.lead ?: @"", _content.strong ?: @"",
+                        _content.tail ?: @"", _content.hint ?: @""];
+    UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, spoken);
+    if (_content.duration > 0) {
+        __weak XSPillController *weakSelf = self;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(_content.duration * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [weakSelf dismiss];
+        });
+    }
+}
+
+- (void)dismiss {
+    if (_closing) return;
+    _closing = YES;
+    UIWindow *window = self.view.window;
+    [UIView animateWithDuration:0.3 animations:^{
+        self->_holder.transform = [self hiddenTransform];
+    } completion:^(BOOL finished) { XSHidePillWindow(window); }];
+}
+
+- (void)tapButton {
+    void (^action)(void) = _content.action;
+    [self dismiss];
+    if (action) action();
+}
+@end
+
+static void XSShowPillAttempt(XSPillContent *content, int attempt) {
+    UIWindowScene *scene = XSScene();
+    if (!scene) {
+        if (attempt + 1 >= XSPillMaxAttempts) return;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            XSShowPillAttempt(content, attempt + 1);
+        });
+        return;
+    }
+    if (XSPillWindow) XSHidePillWindow(XSPillWindow); // one pill at a time: the newest
+    UIWindow *window = [[XSPassthroughWindow alloc] initWithWindowScene:scene];
+    window.rootViewController = [[XSPillController alloc] initWithContent:content];
+    window.windowLevel = UIWindowLevelAlert + 99;
+    window.backgroundColor = UIColor.clearColor;
+    XSPillWindow = window;
+    window.hidden = NO; // never key: the app keeps its keyboard and focus
+}
+
+void XSShowPill(XSPillContent *content) {
+    dispatch_async(dispatch_get_main_queue(), ^{ XSShowPillAttempt(content, 0); });
+}
+
+// MARK: - The launch pill
+
+/// "Valable encore " + "N jours", or under a day "Expire dans " + "N h".
+static void XSTimeLeft(NSTimeInterval left, XSPillContent *c) {
+    BOOL fr = XSFrench();
+    if (left >= 86400) {
+        long days = (long)ceil(left / 86400);
+        c.lead = fr ? @"Valable encore " : @"Valid for ";
+        c.strong = days == 1 ? (fr ? @"1 jour" : @"1 more day")
+                             : [NSString stringWithFormat:fr ? @"%ld jours" : @"%ld more days", days];
+    } else {
+        long hours = MAX(1, lround(left / 3600));
+        c.lead = fr ? @"Expire dans " : @"Expires in ";
+        c.strong = [NSString stringWithFormat:@"%ld h", hours];
+    }
+}
+
+static XSPillContent *XSRefreshablePill(XSPillContent *c) {
+    c.buttonTitle = XST(@"Rafraîchir", @"Refresh");
+    c.action = ^{ XSRequestRefresh(); };
+    return c;
+}
+
+XSPillContent *XSLaunchPillContent(NSDate *expiry) {
+    NSDictionary *s = XSCurrentSettings();
+    NSTimeInterval left = expiry.timeIntervalSinceNow;
+    if (left <= 0) return nil;
+    NSInteger threshold = XSThresholdHours();
+    BOOL late = XSIsLate(left, threshold);
+    // Paused: no refresh is coming, so "late" starts at the threshold itself (no 6 h margin).
+    BOOL pausedLate = left < threshold * 3600.0;
+#ifdef XS_TEST_LATE
+    late = pausedLate = YES; // test build (XSIDE_TEST_LATE=1 scripts/bundle.sh)
+#endif
+    BOOL fr = XSFrench();
+    NSString *device = XSDeviceKind();
+    XSPillContent *c = [XSPillContent new];
+
+    // A refresh asked from this phone failed while the app was away (its notification may have
+    // gone unseen). It answers the person's own request, so only "Aucun" hides it.
+    NSString *failure = XSTakePendingFailure();
+    if (failure && ![XSSettingValue(s, @"level") isEqual:@"none"]) {
+        c.lead = fr ? @"Le dernier rafraîchissement demandé a échoué" : @"The refresh you asked for failed";
+        NSString *reason = XSReasonText(failure, fr);
+        c.hint = [[reason substringToIndex:1].uppercaseString stringByAppendingString:[reason substringFromIndex:1]];
+        c.tone = XSPillToneOrange;
+        c.duration = 8;
+        return XSRefreshablePill(c);
+    }
+
+    if (!XSSettingBool(s, @"autoRefresh")) {
+        // Spec "Late pill when paused": never "XSide couldn't refresh it", under the same switches.
+        if (!XSShowsLatePill(s, pausedLate) && !XSShowsValidityPill(s, pausedLate)) return nil;
+        BOOL byDevice = [s[@"autoRefresh"][@"changedBy"] isEqual:@"device"];
+        NSString *who = byDevice ? [NSString stringWithFormat:fr ? @"cet %@" : @"this %@", device]
+                                 : (fr ? @"le Mac" : @"the Mac");
+        c.lead = [NSString stringWithFormat:fr ? @"Rafraîchissement automatique désactivé depuis %@ · expire le "
+                                               : @"Automatic refresh turned off from %@ · expires ", who];
+        c.strong = XSDate(expiry);
+        c.tone = left < 86400 ? XSPillToneRed : pausedLate ? XSPillToneOrange : XSPillToneNeutral;
+        c.duration = c.tone == XSPillToneNeutral ? 3 : 8;
+        return c;
+    }
+
+    if (XSShowsLatePill(s, late)) {
+        XSTimeLeft(left, c);
+        if (left >= 86400) {
+            c.tone = XSPillToneOrange;
+            c.hint = fr ? @"XSide n'a pas encore pu la rafraîchir. Pense à ouvrir XSide sur ton Mac (même Wi-Fi ou câble USB)."
+                        : @"XSide hasn't been able to refresh it yet. Remember to open XSide on your Mac (same Wi-Fi or USB cable).";
+        } else {
+            c.tone = XSPillToneRed;
+            c.hint = [NSString stringWithFormat:fr
+                ? @"XSide n'a pas pu la rafraîchir. Ouvre XSide sur ton Mac, %@ sur le même Wi-Fi ou branché, avant qu'elle expire."
+                : @"XSide couldn't refresh it. Open XSide on your Mac, with your %@ on the same Wi-Fi or plugged in, before it expires.",
+                device];
+        }
+        c.duration = 8;
+        return XSRefreshablePill(c); // always offered (spec Q1); "Mac not found" comes after the tap
+    }
+
+    if (XSShowsValidityPill(s, late)) {
+        XSTimeLeft(left, c);
+        c.duration = 3;
+        return c;
+    }
+    return nil;
+}

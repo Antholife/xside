@@ -44,13 +44,18 @@ if xcrun -sdk iphoneos --show-sdk-path >/dev/null 2>&1; then
     sips -Z 180 docs/assets/icon.png --out "$WELCOME_GEN/icon.png" >/dev/null
     (cd "$WELCOME_GEN" && xxd -i -n XSWelcomeIcon icon.png > XSideWelcomeIcon.h)
     # XSIDE_TEST_REMINDER=1: the on-device reminder fires a minute after launch, to try it.
+    # XSIDE_TEST_LATE=1: the launch pill always in its late (or paused) state, to see it.
     TEST_FLAGS=""
-    [ "${XSIDE_TEST_REMINDER:-}" = 1 ] && TEST_FLAGS="-DXS_TEST_REMINDER" && echo "warning: test reminder build"
-    xcrun -sdk iphoneos clang -dynamiclib -arch arm64 -mios-version-min=15.0 -fobjc-arc -O2 \
-        -I "$WELCOME_GEN" $TEST_FLAGS \
+    [ "${XSIDE_TEST_REMINDER:-}" = 1 ] && TEST_FLAGS="$TEST_FLAGS -DXS_TEST_REMINDER" && echo "warning: test reminder build"
+    [ "${XSIDE_TEST_LATE:-}" = 1 ] && TEST_FLAGS="$TEST_FLAGS -DXS_TEST_LATE" && echo "warning: test late pill build"
+    # Every App/Welcome/*.m (XSChannelCore.m and XSSettingsCore.m are also checked on the Mac by
+    # scripts/test-welcome-hmac.sh).
+    xcrun -sdk iphoneos clang -dynamiclib -arch arm64 -mios-version-min=15.0 -fobjc-arc -O2 -Wall \
+        -I "$WELCOME_GEN" -I App/Welcome $TEST_FLAGS \
         -framework UIKit -framework Foundation -framework QuartzCore -framework CoreGraphics -framework UserNotifications \
+        -framework Network -framework Security \
         -install_name @executable_path/Frameworks/XSideWelcome.dylib \
-        -o "$APP/Contents/Resources/XSideWelcome.dylib" App/Welcome/XSideWelcome.m
+        -o "$APP/Contents/Resources/XSideWelcome.dylib" App/Welcome/*.m
     rm -rf "$WELCOME_GEN"
 else
     echo "warning: no iOS SDK, building without the welcome popup library" >&2

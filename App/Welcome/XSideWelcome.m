@@ -1,18 +1,22 @@
-// XSideWelcome: loaded by every app XSide installs. Once per signature (each new provisioning
-// profile), at the first launch after it:
-// - after an install (no earlier signature known to the app), a sheet saying the app was
-//   installed with XSide and until when it works;
-// - after a refresh, a card at the bottom with an OK button.
-// At each launch it also schedules a local reminder 24 h before expiry when the app may notify.
-// If the app never asked for that permission, it's asked once, when the sheet is closed. It never throws, asserts or blocks: anything
-// missing (no profile, no window) and it silently does nothing.
+// XSideWelcome: loaded by every app XSide installs. At each cold launch:
+// - once per signature (each new provisioning profile), at the first launch after it: after an
+//   install (no earlier signature known to the app), a sheet saying the app was installed with
+//   XSide and until when it works; after a refresh or an update, a card at the bottom with OK;
+// - otherwise the pill at the top (XSPill.m): validity, late or paused alerts;
+// - a local reminder before expiry when the app may notify (asked once, when the sheet closes);
+// - the per-app "Réglages XSide" (XSSettings.m) decide what of this shows, and in which language;
+// - once the person allowed the local network, a silent check-in with XSide (XSChannel.m).
+// The quick actions on the icon are handled by XSShortcuts.m. It never throws, asserts or blocks:
+// anything missing (no profile, no window, no network) and it silently does nothing.
 //
-// Built by scripts/bundle.sh for iOS arm64 and shipped in XSide.app/Contents/Resources; XSide
-// copies it into the app's Frameworks/ and signs it with the app.
+// Built by scripts/bundle.sh for iOS arm64 (all App/Welcome/*.m) and shipped in
+// XSide.app/Contents/Resources; XSide copies it into the app's Frameworks/ and signs it with the app.
 
-#import <Foundation/Foundation.h>
-#import <UIKit/UIKit.h>
-#import <UserNotifications/UserNotifications.h>
+#import "XSCommon.h"
+#import "XSSettingsCore.h"
+#import "XSPill.h"
+#import "XSChannel.h"
+#import "XSShortcuts.h"
 
 static NSString *const XSAnnouncedKey = @"io.github.xside.welcome.announcedExpiry";
 /// The app's version when it was last announced: a different one means XSide installed an update.
@@ -25,99 +29,6 @@ __attribute__((used)) static const char XSTestBuildMarker[] = "XSIDE_TEST_REMIND
 #endif
 static const int XSMaxAttempts = 10;
 
-/// ExpirationDate of the app's own embedded.mobileprovision (a CMS blob around an XML plist).
-static NSDate *XSExpirationDate(void) {
-    NSString *path = [NSBundle.mainBundle pathForResource:@"embedded" ofType:@"mobileprovision"];
-    NSData *blob = path ? [NSData dataWithContentsOfFile:path] : nil;
-    if (blob.length == 0) return nil;
-    NSData *open = [@"<?xml" dataUsingEncoding:NSUTF8StringEncoding];
-    NSData *close = [@"</plist>" dataUsingEncoding:NSUTF8StringEncoding];
-    NSRange start = [blob rangeOfData:open options:0 range:NSMakeRange(0, blob.length)];
-    if (start.location == NSNotFound) return nil;
-    NSRange rest = NSMakeRange(start.location, blob.length - start.location);
-    NSRange end = [blob rangeOfData:close options:0 range:rest];
-    if (end.location == NSNotFound) return nil;
-    NSData *xml = [blob subdataWithRange:NSMakeRange(start.location, NSMaxRange(end) - start.location)];
-    id plist = [NSPropertyListSerialization propertyListWithData:xml options:NSPropertyListImmutable
-                                                          format:NULL error:NULL];
-    if (![plist isKindOfClass:NSDictionary.class]) return nil;
-    id date = ((NSDictionary *)plist)[@"ExpirationDate"];
-    return [date isKindOfClass:NSDate.class] ? date : nil;
-}
-
-/// The notification center of the app as installed. Some tweaked apps make NSBundle report
-/// another bundle id (e.g. "com.google.ios.youtube", for Google sign-in); iOS then refuses
-/// notifications to that app, which isn't installed (UNErrorDomain 1, seen 2026-11-05). The
-/// real id is read from the Info.plist file itself.
-/// The app's Info.plist as written by XSide, read from the file itself: tweaks may fake
-/// NSBundle's copy.
-static NSDictionary *XSInfo(void) {
-    static NSDictionary *info;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        NSString *path = [NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"Info.plist"];
-        NSData *data = [NSData dataWithContentsOfFile:path];
-        id plist = data ? [NSPropertyListSerialization propertyListWithData:data options:0 format:NULL error:NULL] : nil;
-        info = [plist isKindOfClass:NSDictionary.class] ? plist : @{};
-    });
-    return info;
-}
-
-/// The on-device reminder, unless turned off in XSide's Settings (`XSideWelcome.reminder`).
-static BOOL XSReminderOn(void) {
-    id options = XSInfo()[@"XSideWelcome"];
-    id on = [options isKindOfClass:NSDictionary.class] ? options[@"reminder"] : nil;
-    return [on isKindOfClass:NSNumber.class] ? [on boolValue] : YES;
-}
-
-/// How long before expiry the reminder fires (`XSideWelcome.reminderLeadHours`), 24 h by default.
-static NSTimeInterval XSReminderLead(void) {
-    id options = XSInfo()[@"XSideWelcome"];
-    id hours = [options isKindOfClass:NSDictionary.class] ? options[@"reminderLeadHours"] : nil;
-    NSInteger h = [hours isKindOfClass:NSNumber.class] ? [hours integerValue] : 24;
-    return (h > 0 && h <= 48 ? h : 24) * 3600.0;
-}
-
-/// The app's version (CFBundleShortVersionString), as installed.
-static NSString *XSAppVersion(void) {
-    id v = XSInfo()[@"CFBundleShortVersionString"];
-    return [v isKindOfClass:NSString.class] && [v length] ? v : nil;
-}
-
-static UNUserNotificationCenter *XSCenter(void) {
-    static UNUserNotificationCenter *center;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        NSString *real = XSInfo()[@"CFBundleIdentifier"];
-        NSString *reported = NSBundle.mainBundle.bundleIdentifier;
-        NSLog(@"[XSide] bundle id: reported %@, real %@", reported, real);
-        SEL init = NSSelectorFromString(@"initWithBundleIdentifier:");
-        if ([real isKindOfClass:NSString.class] && real.length && ![real isEqualToString:reported]
-            && [UNUserNotificationCenter instancesRespondToSelector:init]) {
-            UNUserNotificationCenter *own = [UNUserNotificationCenter alloc];
-            center = ((UNUserNotificationCenter *(*)(id, SEL, NSString *))[own methodForSelector:init])(own, init, real);
-        }
-        if (!center) center = UNUserNotificationCenter.currentNotificationCenter;
-    });
-    return center;
-}
-
-static BOOL XSFrench(void) {
-    NSString *first = NSLocale.preferredLanguages.firstObject ?: @"";
-    return [first.lowercaseString hasPrefix:@"fr"];
-}
-
-/// The foreground scene, with a window on screen; nil while there's none.
-static UIWindowScene *XSScene(void) {
-    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-        if (scene.activationState != UISceneActivationStateForegroundActive) continue;
-        if (![scene isKindOfClass:UIWindowScene.class]) continue;
-        UIWindowScene *ws = (UIWindowScene *)scene;
-        for (UIWindow *w in ws.windows) if (!w.hidden && w.rootViewController) return ws;
-    }
-    return nil;
-}
-
 /// The sheet's (or banner's) own window, above the app's (and its alerts): the app can present,
 /// dismiss or replace its screens (sign-in, onboarding) without ever covering or closing it.
 static UIWindow *XSWindow;
@@ -125,53 +36,6 @@ static UIWindow *XSWindow;
 static __weak UIWindow *XSPreviousKey;
 
 // MARK: - The sheet (design "B": a card rising from the bottom over the dimmed app)
-
-#if __has_include("XSideWelcomeIcon.h")
-#include "XSideWelcomeIcon.h" // XSWelcomeIcon / XSWelcomeIcon_len, generated by scripts/bundle.sh
-#define XS_HAS_ICON 1
-#endif
-
-static UIColor *XSViolet(void) { return [UIColor colorWithRed:0x7B / 255.0 green:0x5C / 255.0 blue:0xFF / 255.0 alpha:1]; }
-static UIColor *XSPink(void) { return [UIColor colorWithRed:0xC9 / 255.0 green:0x6F / 255.0 blue:0xAD / 255.0 alpha:1]; }
-
-/// The primary button: XSide's violet-to-pink gradient.
-@interface XSGradientButton : UIButton
-@end
-@implementation XSGradientButton
-+ (Class)layerClass { return CAGradientLayer.class; }
-- (instancetype)initWithFrame:(CGRect)frame {
-    if ((self = [super initWithFrame:frame])) {
-        CAGradientLayer *g = (CAGradientLayer *)self.layer;
-        g.colors = @[(id)XSViolet().CGColor, (id)XSPink().CGColor];
-        g.startPoint = CGPointMake(0, 0);
-        g.endPoint = CGPointMake(1, 1);
-        g.cornerRadius = 14;
-    }
-    return self;
-}
-@end
-
-/// A system font that follows the reader's text size (Dynamic Type), up to 1.6 times `size`.
-static UIFont *XSScaledFont(CGFloat size, UIFontWeight weight) {
-    return [UIFontMetrics.defaultMetrics scaledFontForFont:[UIFont systemFontOfSize:size weight:weight]
-                                          maximumPointSize:size * 1.6];
-}
-
-static NSString *XSDate(NSDate *date) {
-    NSDateFormatter *formatter = [NSDateFormatter new];
-    formatter.locale = NSLocale.currentLocale;
-    [formatter setLocalizedDateFormatFromTemplate:@"EEEdMMMjmm"];
-    return [formatter stringFromDate:date];
-}
-
-static NSString *XSAppName(void) {
-    // The name shown on the home screen and in Settings: the localized one first.
-    NSDictionary *localized = NSBundle.mainBundle.localizedInfoDictionary;
-    NSDictionary *info = NSBundle.mainBundle.infoDictionary;
-    NSString *name = localized[@"CFBundleDisplayName"] ?: info[@"CFBundleDisplayName"] ?: localized[@"CFBundleName"] ?: info[@"CFBundleName"];
-    if ([name isKindOfClass:NSString.class] && name.length) return name;
-    return XSFrench() ? @"L'app" : @"The app";
-}
 
 /// XSide added its section to the app's page in the iOS Settings app (keys "io.github.xside.settings.*").
 static BOOL XSHasSettingsSection(void) {
@@ -187,22 +51,12 @@ static BOOL XSHasSettingsSection(void) {
     return NO;
 }
 
-static UIImage *XSIcon(void) {
-#ifdef XS_HAS_ICON
-    return [UIImage imageWithData:[NSData dataWithBytesNoCopy:(void *)XSWelcomeIcon
-                                                         length:XSWelcomeIcon_len freeWhenDone:NO]];
-#else
-    return nil;
-#endif
-}
 
 static void XSHideWindow(void) {
     XSWindow.hidden = YES;
     XSWindow = nil;
     [XSPreviousKey makeKeyWindow];
 }
-
-static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
 
 @interface XSWelcomeController : UIViewController
 - (instancetype)initWithExpiry:(NSDate *)expiry;
@@ -400,7 +254,7 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
     UIView *notice = [self notificationCard];
     notice.hidden = YES;
     __weak UIButton *weakOK = ok;
-    if (XSReminderOn()) [XSCenter() getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings *settings) {
+    if (XSSchedulesReminder(XSCurrentSettings())) [XSCenter() getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings *settings) {
         if (settings.authorizationStatus != UNAuthorizationStatusNotDetermined) return;
         dispatch_async(dispatch_get_main_queue(), ^{
             notice.hidden = NO;
@@ -494,18 +348,6 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
     NSURL *url = [NSURL URLWithString:XSRepoURL];
     if (url) [UIApplication.sharedApplication openURL:url options:@{} completionHandler:nil];
     [self close];
-}
-@end
-
-// MARK: - The banner (after a refresh): a card rising at the bottom, closed with OK
-
-/// Touches outside the banner go to the app.
-@interface XSPassthroughWindow : UIWindow
-@end
-@implementation XSPassthroughWindow
-- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
-    UIView *hit = [super hitTest:point withEvent:event];
-    return (hit == self || hit == self.rootViewController.view) ? nil : hit;
 }
 @end
 
@@ -644,6 +486,12 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded);
 
 // MARK: - Showing them
 
+static void XSMarkAnnounced(NSDate *expiry) {
+    [NSUserDefaults.standardUserDefaults setObject:expiry forKey:XSAnnouncedKey];
+    NSString *version = XSAppVersion();
+    if (version) [NSUserDefaults.standardUserDefaults setObject:version forKey:XSAnnouncedVersionKey];
+}
+
 /// `refreshed`: the app already knew an earlier signature (an install over it): the banner.
 /// `previousVersion`: set when that install was another version of the app (an update).
 static void XSShow(NSDate *expiry, BOOL refreshed, NSString *previousVersion, int attempt) {
@@ -672,36 +520,31 @@ static void XSShow(NSDate *expiry, BOOL refreshed, NSString *previousVersion, in
     XSWindow = window;
     if (refreshed) window.hidden = NO; else [window makeKeyAndVisible];
     // Announced once shown: a relaunch before tapping OK doesn't show it again.
-    [NSUserDefaults.standardUserDefaults setObject:expiry forKey:XSAnnouncedKey];
-    NSString *version = XSAppVersion();
-    if (version) [NSUserDefaults.standardUserDefaults setObject:version forKey:XSAnnouncedVersionKey];
+    XSMarkAnnounced(expiry);
 }
 
 /// XSide's logo as a notification thumbnail. iOS moves the file into its own store, so a fresh
 /// copy is written each time. Nil without the logo or when the file can't be written.
 static UNNotificationAttachment *XSLogoAttachment(void) {
-#ifdef XS_HAS_ICON
+    NSData *png = XSIconPNG();
+    if (!png) return nil;
     NSString *name = [NSString stringWithFormat:@"xside-logo-%@.png", NSUUID.UUID.UUIDString];
     NSURL *url = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:name]];
-    NSData *png = [NSData dataWithBytesNoCopy:(void *)XSWelcomeIcon length:XSWelcomeIcon_len freeWhenDone:NO];
     if (![png writeToURL:url atomically:YES]) return nil;
     return [UNNotificationAttachment attachmentWithIdentifier:@"xside-logo" URL:url options:nil error:NULL];
-#else
-    return nil;
-#endif
 }
 
 /// A local reminder 24 h before expiry, replaced at each launch (so a refresh followed by a
 /// launch moves it), when the app may notify. `askIfNeeded`: the app never asked for that
 /// permission, so it's asked now (once: iOS never asks again after an answer).
-static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded) {
+void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded) {
 #ifdef XS_TEST_REMINDER
     NSTimeInterval wait = 60; // test build (XSIDE_TEST_REMINDER=1 scripts/bundle.sh): a minute after launch
 #else
     NSTimeInterval wait = [expiry timeIntervalSinceNow] - XSReminderLead();
 #endif
     UNUserNotificationCenter *center = XSCenter();
-    if (wait < 60 || !XSReminderOn()) {
+    if (wait < 60 || !XSSchedulesReminder(XSCurrentSettings())) {
         [center removePendingNotificationRequestsWithIdentifiers:@[XSReminderID]];
         return;
     }
@@ -736,25 +579,60 @@ static void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded) {
     }];
 }
 
+// MARK: - Each launch
+
+/// What this cold launch shows: the sheet or the card for a new signature (when the settings
+/// allow it), else the pill; never both (spec §1).
+static void XSLaunch(void) {
+    XSLoadSettings(); // what the person changed in iOS Settings applies from this launch on
+    NSDate *expiry = XSExpirationDate();
+    if (!expiry) return;
+    XSNoteSignature(expiry);
+    XSWriteStatusRows(expiry);
+    XSScheduleReminder(expiry, NO); // asked only when the sheet closes, as it says
+    NSDictionary *settings = XSCurrentSettings();
+
+    id announced = [NSUserDefaults.standardUserDefaults objectForKey:XSAnnouncedKey];
+    // Known since 1.0.6: before, an update reads as a refresh. "21.37.04" and "21.37.4" are the same.
+    id seen = [NSUserDefaults.standardUserDefaults objectForKey:XSAnnouncedVersionKey];
+    NSString *version = XSAppVersion();
+    NSString *previous = [seen isKindOfClass:NSString.class] && version
+        && [version compare:seen options:NSNumericSearch] != NSOrderedSame ? seen : nil;
+    // New: another signature, or another version (a new version with the same profile still shows).
+    BOOL isNew = !([announced isKindOfClass:NSDate.class] && [announced isEqualToDate:expiry] && !previous);
+    BOOL refreshed = [announced isKindOfClass:NSDate.class];
+    if (isNew && (refreshed ? XSShowsRefreshCard(settings) : XSShowsInstallSheet(settings))) {
+        XSShow(expiry, refreshed, previous, 0);
+    } else {
+        // Turned off: counted as announced all the same, so it doesn't come back later.
+        if (isNew) XSMarkAnnounced(expiry);
+        XSPillContent *pill = XSLaunchPillContent(expiry);
+        if (pill) XSShowPill(pill);
+    }
+    // Off the launch's way; silent, and only once the local network was allowed.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ XSCheckIn(); });
+}
+
+/// Back from the background (not a launch: no pill): changes made meanwhile in iOS Settings apply
+/// now, and XSide hears of them when it can be reached.
+static void XSReturn(void) {
+    if (!XSLoadSettings()) return;
+    NSDate *expiry = XSExpirationDate();
+    if (expiry) XSScheduleReminder(expiry, NO);
+    XSCheckIn();
+}
+
 __attribute__((constructor)) static void XSideWelcomeInit(void) {
+    XSInstallShortcuts(); // before UIApplicationMain sets the app's delegates
     __block id observer = nil;
     observer = [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification
                                                                object:nil queue:NSOperationQueue.mainQueue
                                                            usingBlock:^(NSNotification *note) {
         [NSNotificationCenter.defaultCenter removeObserver:observer];
         observer = nil;
-        NSDate *expiry = XSExpirationDate();
-        if (!expiry) return;
-        XSScheduleReminder(expiry, NO); // asked only when the sheet closes, as it says
-
-        id announced = [NSUserDefaults.standardUserDefaults objectForKey:XSAnnouncedKey];
-        // Known since 1.0.6: before, an update reads as a refresh. "21.37.04" and "21.37.4" are the same.
-        id seen = [NSUserDefaults.standardUserDefaults objectForKey:XSAnnouncedVersionKey];
-        NSString *version = XSAppVersion();
-        NSString *previous = [seen isKindOfClass:NSString.class] && version
-            && [version compare:seen options:NSNumericSearch] != NSOrderedSame ? seen : nil;
-        // Nothing new: same signature and same version (a new version with the same profile still shows).
-        if ([announced isKindOfClass:NSDate.class] && [announced isEqualToDate:expiry] && !previous) return;
-        XSShow(expiry, [announced isKindOfClass:NSDate.class], previous, 0);
+        XSLaunch();
+        [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillEnterForegroundNotification
+                                                        object:nil queue:NSOperationQueue.mainQueue
+                                                    usingBlock:^(NSNotification *n) { XSReturn(); }];
     }];
 }

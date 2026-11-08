@@ -20,14 +20,14 @@ PLIST_VERSION="$(plutil -extract CFBundleShortVersionString raw App/Info.plist)"
 grep -q "<title>XSide $TAG<" appcast.xml 2>/dev/null && { echo "$TAG is already in appcast.xml" >&2; exit 1; }
 
 # Never the test reminder (a minute after launch) in a release, whatever the shell exports.
-unset XSIDE_TEST_REMINDER
+unset XSIDE_TEST_REMINDER XSIDE_TEST_LATE
 CONFIG=release scripts/bundle.sh
 APP=build/XSide.app
 # Every app gets XSide's features through this library: no release without it, nor a test build of it.
 WELCOME="$APP/Contents/Resources/XSideWelcome.dylib"
 [ -f "$WELCOME" ] || { echo "No $WELCOME (iOS SDK missing?): not releasing without it" >&2; exit 1; }
-if strings -a "$WELCOME" | grep -q XSIDE_TEST_REMINDER_BUILD; then
-    echo "$WELCOME is a test build (XSIDE_TEST_REMINDER): not releasing it" >&2; exit 1
+if strings -a "$WELCOME" | grep -qE 'XSIDE_TEST_(REMINDER|LATE)_BUILD'; then
+    echo "$WELCOME is a test build (XSIDE_TEST_REMINDER / XSIDE_TEST_LATE): not releasing it" >&2; exit 1
 fi
 ZIP="build/release/XSide-$TAG.zip"
 mkdir -p build/release
