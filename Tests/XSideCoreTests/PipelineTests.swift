@@ -40,6 +40,8 @@ private actor CallLog {
     }
     private(set) var facts: [InstallationFacts?] = []
     func fact(_ f: InstallationFacts?) { facts.append(f) }
+    private(set) var options: [InstallOptions] = []
+    func option(_ o: InstallOptions) { options.append(o) }
     private(set) var uninstalls: [(bundleID: String, deviceID: String)] = []
     /// Install ("install:<device>") and uninstall ("uninstall:<device>") calls, in call order.
     private(set) var deviceCalls: [String] = []
@@ -82,6 +84,7 @@ private struct FakeResigner: Resigning {
                 onSigning: @Sendable () async -> Void) async throws -> URL {
         await log.resign(ipa, workDir, bundleID, iconURL, profileURL, profile)
         await log.fact(facts)
+        await log.option(options)
         await onSigning()
         // Simulate unpacking into the work dir.
         let app = workDir.appendingPathComponent("Payload/Demo.app", isDirectory: true)
@@ -177,13 +180,15 @@ private struct Fixture {
 
     func pipeline(provisioner: FakeProvisioner? = nil, installer: FakeInstaller? = nil,
                   now: @escaping @Sendable () -> Date = { fixedNow },
-                  inAppDefaults: (@Sendable (Date) -> InAppSettings)? = nil) -> SideloadPipeline {
+                  inAppDefaults: (@Sendable (Date) -> InAppSettings)? = nil,
+                  withoutFeaturesByDefault: Bool = false) -> SideloadPipeline {
         SideloadPipeline(library: library,
                          provisioner: provisioner ?? FakeProvisioner(log: log),
                          resigner: FakeResigner(log: log),
                          installer: installer ?? FakeInstaller(log: log),
                          workRoot: workRoot, now: now,
-                         inAppDefaults: inAppDefaults ?? { InAppSettings.defaults(reminder: true, at: $0) })
+                         inAppDefaults: inAppDefaults ?? { InAppSettings.defaults(reminder: true, at: $0) },
+                         withoutXSideFeaturesByDefault: { withoutFeaturesByDefault })
     }
 
     func cleanup() { try? FileManager.default.removeItem(at: tmp) }
@@ -1172,6 +1177,35 @@ struct PipelineChainCancellationTests {
             .install(recordID: f.record.id, device: device(), env: env, refresh: true)
         #expect(result.inApp == InAppSettings.defaults(reminder: false, at: fixedNow))
         #expect(result.firstInstalledAt == old) // the earliest date XSide knows it was there
+    }
+
+    /// The install window's settings: adopted by the installation, only changed fields restamped.
+    @Test func installWindowSettingsAreAdopted() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let clock = TestClock(fixedNow)
+        let pipeline = f.pipeline(now: { clock.now })
+        let first = try await pipeline.install(recordID: f.record.id, device: device(), env: env)
+        let later = fixedNow.addingTimeInterval(3600)
+        clock.now = later
+        let draft = InAppSettings.defaults(reminder: false, at: fixedNow.addingTimeInterval(-50))
+        let result = try await pipeline.install(recordID: f.record.id, device: device(), env: env, inApp: draft)
+        #expect(result.inApp?.reminder == Field(value: false, changedAt: later, changedBy: .mac))
+        #expect(result.inApp?.showValidity == first.inApp?.showValidity)
+        #expect(await f.log.facts.last??.inApp.reminder.value == false)
+    }
+
+    /// An app that made no choice follows the Mac's default; its own choice wins.
+    @Test func featuresChoiceIsResolvedBeforeSigning() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        _ = try await f.pipeline(withoutFeaturesByDefault: true).install(recordID: f.record.id, device: device(), env: env)
+        #expect(await f.log.options.last?.withoutXSideFeatures == true)
+        var options = f.record.options
+        options.withoutXSideFeatures = false
+        try await f.library.setOptions(options, for: f.record.id)
+        _ = try await f.pipeline(withoutFeaturesByDefault: true).install(recordID: f.record.id, device: device(), env: env)
+        #expect(await f.log.options.last?.withoutXSideFeatures == false)
+        _ = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
+        #expect(await f.log.options.last?.withoutXSideFeatures == false)
     }
 
     /// Reinstalling clears a pause: the setting the app gets says so.

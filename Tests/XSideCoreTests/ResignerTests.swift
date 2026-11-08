@@ -284,9 +284,9 @@ private func plist(_ app: URL) throws -> [String: Any] {
 
     @Test func withoutFeaturesDecodesFromOldOptions() throws {
         let old = try JSONDecoder().decode(InstallOptions.self, from: Data(#"{"fileSharing":true}"#.utf8))
-        #expect(old.withoutXSideFeatures == false)
+        #expect(old.withoutXSideFeatures == nil)
         let on = try JSONDecoder().decode(InstallOptions.self, from: Data(#"{"withoutXSideFeatures":true}"#.utf8))
-        #expect(on.withoutXSideFeatures)
+        #expect(on.withoutXSideFeatures == true)
     }
 
     @Test func settingsPageProblemsDontFailTheInstall() async throws {

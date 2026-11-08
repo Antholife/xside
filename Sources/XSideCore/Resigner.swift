@@ -14,13 +14,15 @@ public struct InstallOptions: Codable, Equatable, Sendable {
     /// vendor is read from the IPA itself, so a crafted IPA could claim one to read their logins.
     public var shareKeychain: Bool = false
     /// Install the app as it came: nothing of XSide inside (no library, payload, Settings section,
-    /// Bonjour keys or quick actions). For apps that refuse to launch once modified.
-    public var withoutXSideFeatures: Bool = false
+    /// Bonjour keys or quick actions). For apps that refuse to launch once modified. nil: the app
+    /// made no choice and follows the Mac's default (see `resolvedWithoutXSideFeatures`), which
+    /// the pipeline resolves before signing.
+    public var withoutXSideFeatures: Bool?
 
     public init(displayName: String? = nil, customBundleID: String? = nil, version: String? = nil,
                 iconPath: String? = nil, fileSharing: Bool = false, iPadFullScreen: Bool = false,
                 proMotion: Bool = false, minimumOSVersion: String? = nil, shareKeychain: Bool = false,
-                withoutXSideFeatures: Bool = false) {
+                withoutXSideFeatures: Bool? = nil) {
         self.displayName = displayName
         self.customBundleID = customBundleID
         self.version = version
@@ -45,7 +47,7 @@ public struct InstallOptions: Codable, Equatable, Sendable {
         proMotion = try c.decodeIfPresent(Bool.self, forKey: .proMotion) ?? false
         minimumOSVersion = try c.decodeIfPresent(String.self, forKey: .minimumOSVersion)
         shareKeychain = try c.decodeIfPresent(Bool.self, forKey: .shareKeychain) ?? false
-        withoutXSideFeatures = try c.decodeIfPresent(Bool.self, forKey: .withoutXSideFeatures) ?? false
+        withoutXSideFeatures = try c.decodeIfPresent(Bool.self, forKey: .withoutXSideFeatures)
     }
 }
 
@@ -108,7 +110,7 @@ public struct Resigner: Sendable {
             if exists(url) { try fm.removeItem(at: url) } // removes a link itself, never its target
         }
 
-        let features = !options.withoutXSideFeatures
+        let features = options.withoutXSideFeatures != true
         // The library first: the payload, Bonjour keys and quick actions mean nothing without it
         // (quick actions nothing handles would be a regression), so they follow its outcome.
         let hasLibrary = features && addWelcomePopup(to: app, executable: executableURL)
