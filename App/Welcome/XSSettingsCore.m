@@ -195,6 +195,13 @@ NSString *XSSettingsPaneURLString(NSString *bundleID) {
     return [NSString stringWithFormat:@"App-prefs:%@&path=io.github.xside.settings.pane", bundleID];
 }
 
+NSDate *XSRowChangeDate(NSDate *fileModified, NSDate *lastLooked, NSDate *now) {
+    NSDate *date = fileModified ?: now;
+    if (lastLooked && [date compare:lastLooked] == NSOrderedAscending) date = lastLooked;
+    if ([date compare:now] == NSOrderedDescending) date = now;
+    return date;
+}
+
 const NSUInteger XSMaxShortcuts = 4;
 
 NSArray<NSString *> *XSShortcutNamesFitting(NSUInteger staticCount, NSUInteger appDynamicCount) {

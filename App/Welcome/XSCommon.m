@@ -97,6 +97,13 @@ NSUserDefaults *XSDefaults(void) {
     return defaults;
 }
 
+NSURL *XSDefaultsFile(void) {
+    NSString *domain = XSRealBundleIDIfFaked() ?: NSBundle.mainBundle.bundleIdentifier;
+    if (!domain.length || [domain containsString:@"/"]) return nil;
+    return [[NSURL fileURLWithPath:NSHomeDirectory()] URLByAppendingPathComponent:
+            [NSString stringWithFormat:@"Library/Preferences/%@.plist", domain]];
+}
+
 UNUserNotificationCenter *XSCenter(void) {
     // Some tweaked apps make NSBundle report another bundle id (e.g. "com.google.ios.youtube", for
     // Google sign-in); iOS then refuses notifications to that app, which isn't installed

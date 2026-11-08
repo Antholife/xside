@@ -18,6 +18,8 @@ static NSString *const XSPendingFailureKey = @"io.github.xside.welcome.pendingFa
 static NSString *const XSLastExpiryKey = @"io.github.xside.welcome.lastExpiry";
 static NSString *const XSChannelGrantedKey = @"io.github.xside.welcome.channelGranted";
 static NSString *const XSNetworkExplainedKey = @"io.github.xside.welcome.networkExplained";
+/// When the library last looked at the iOS Settings rows (saved when the app leaves).
+static NSString *const XSLastLookedKey = @"io.github.xside.welcome.rowsLookedAt";
 
 static NSObject *XSLock(void) {
     static NSObject *lock;
@@ -29,6 +31,30 @@ static NSObject *XSLock(void) {
 static NSDictionary *XSCached; // guarded by XSLock()
 static BOOL XSAutoRefreshChangedOnPhone; // guarded by XSLock()
 static BOOL XSOtherChangedOnPhone; // guarded by XSLock()
+static NSDate *XSLookedAt; // guarded by XSLock()
+
+/// The latest time the library looked at the rows: this run's, else the one saved when it left.
+static NSDate *XSLastLooked(void) {
+    id saved = [XSDefaults() objectForKey:XSLastLookedKey];
+    NSDate *stored = [saved isKindOfClass:NSDate.class] ? saved : nil;
+    if (!XSLookedAt) return stored;
+    return stored ? [XSLookedAt laterDate:stored] : XSLookedAt;
+}
+
+/// When the app's preferences file was last written (iOS Settings writes it on a change).
+static NSDate *XSDefaultsModified(void) {
+    NSURL *file = XSDefaultsFile();
+    if (!file) return nil;
+    NSDate *date = nil;
+    if (![file getResourceValue:&date forKey:NSURLContentModificationDateKey error:NULL]) return nil;
+    return date;
+}
+
+void XSNoteLeaving(void) {
+    @synchronized (XSLock()) {
+        [XSDefaults() setObject:NSDate.date forKey:XSLastLookedKey];
+    }
+}
 
 /// The payload's settings; for a payload without them (or with invalid ones), the Mac's defaults
 /// dated 1970, so anything set on the phone wins.
@@ -68,14 +94,19 @@ BOOL XSLoadSettings(void) {
         NSDictionary *local = saved ? XSSettingsSanitized(saved, payload) : payload;
         id rawShadow = [d objectForKey:XSShadowKey];
         NSDictionary *shadow = [rawShadow isKindOfClass:NSDictionary.class] ? rawShadow : @{};
-        // Changes made in iOS Settings since the library last wrote the rows: dated now, by the
-        // device (spec "Sync model"; there is no other way to know when they were made).
+        // Changes made in iOS Settings since the library last wrote the rows, by the device (spec
+        // "Sync model"). Dated by the preferences file iOS Settings wrote, between the last look
+        // and now (final review minor 1: dating them now made a change made while the app was
+        // closed beat a newer Mac change).
         NSMutableDictionary *rows = [NSMutableDictionary dictionary];
         for (NSString *f in XSSettingFields()) {
             id value = [d objectForKey:[XSRowPrefix stringByAppendingString:f]];
             if (value) rows[f] = value;
         }
-        NSDictionary *noticed = XSSettingsNoticingRowChanges(local, rows, shadow, NSDate.date);
+        NSDate *now = NSDate.date;
+        NSDate *when = XSRowChangeDate(XSDefaultsModified(), XSLastLooked(), now);
+        XSLookedAt = now;
+        NSDictionary *noticed = XSSettingsNoticingRowChanges(local, rows, shadow, when);
         // Restamped fields (a new date, even when the value is back to what it was) are told.
         for (NSString *f in XSSettingFields()) {
             if ([noticed[f] isEqual:local[f]]) continue;

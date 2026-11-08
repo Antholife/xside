@@ -864,5 +864,8 @@ __attribute__((constructor)) static void XSideWelcomeInit(void) {
         [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillEnterForegroundNotification
                                                         object:nil queue:NSOperationQueue.mainQueue
                                                     usingBlock:^(NSNotification *n) { XSReturn(); }];
+        [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidEnterBackgroundNotification
+                                                        object:nil queue:NSOperationQueue.mainQueue
+                                                    usingBlock:^(NSNotification *n) { XSNoteLeaving(); }];
     }];
 }

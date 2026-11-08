@@ -41,6 +41,13 @@ NSDictionary *XSSettingsSetting(NSDictionary *s, NSString *field, id value, NSDa
 /// itself (e.g. the Mac's, adopted from a check-in reply) are therefore never re-stamped.
 NSDictionary *XSSettingsNoticingRowChanges(NSDictionary *local, NSDictionary *rows, NSDictionary *shadow, NSDate *now);
 
+/// When a change found in the iOS Settings rows was made (final review minor 1): iOS Settings
+/// writes the app's preferences file when the person changes a row, so the file's modification
+/// date (`fileModified`) is the best clue; the app writing its own preferences since only moves it
+/// later. Kept no earlier than the last time the library looked at the rows (`lastLooked`: the
+/// change came after) and no later than `now`. Without a file date: `now`.
+NSDate *XSRowChangeDate(NSDate *_Nullable fileModified, NSDate *_Nullable lastLooked, NSDate *now);
+
 /// Back from the background: check in with XSide (pulling what changed on the Mac meanwhile)
 /// unless the last check-in was less than `XSReturnCheckInInterval` ago and there is nothing to
 /// tell (`changed`: settings changed in iOS Settings; `pending`: a refresh outcome still unknown).

@@ -199,6 +199,14 @@ int main(int argc, const char *argv[]) {
         check([adopted[@"autoRefresh"] isEqual:field(@YES, XSMillis(at(20)), @"mac")], @"the Mac's newer resume wins on the phone");
         NSDictionary *again = XSSettingsNoticingRowChanges(adopted, values(adopted), values(adopted), at(30));
         check([again isEqual:adopted], @"adopted values written to the rows are not re-stamped as the phone's");
+        // Final review minor 1: a change made in iOS Settings while the app was closed is dated by
+        // the preferences file's modification (iOS Settings writes it then), kept between the last
+        // time the library looked at the rows and now; without a file date, now.
+        check([XSRowChangeDate(at(5), at(1), at(9)) isEqual:at(5)], @"row change dated by the file");
+        check([XSRowChangeDate(at(12), at(1), at(9)) isEqual:at(9)] && [XSRowChangeDate(nil, at(1), at(9)) isEqual:at(9)],
+              @"row change: never after now");
+        check([XSRowChangeDate(at(0), at(3), at(9)) isEqual:at(3)] && [XSRowChangeDate(at(0), nil, at(9)) isEqual:at(0)]
+              && [XSRowChangeDate(at(0), at(20), at(9)) isEqual:at(9)], @"row change: never before the library last looked");
         // A return from the background checks in too (the Mac's change must reach a running app),
         // but not again within a few seconds of the last one.
         check(XSShouldCheckInOnReturn(NO, NO, nil, at(0)) && XSShouldCheckInOnReturn(NO, NO, at(-60), at(0))

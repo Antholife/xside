@@ -24,6 +24,8 @@ NSString *XSAppName(void);
 /// The app's defaults, where iOS Settings stores the "Réglages XSide" values: the real bundle
 /// id's even when a tweak makes NSBundle report another one. Any thread.
 NSUserDefaults *XSDefaults(void);
+/// The file iOS Settings writes the app's page into: Library/Preferences/<real id>.plist.
+NSURL *XSDefaultsFile(void);
 /// The app's notification center, under its real bundle id. Any thread.
 UNUserNotificationCenter *XSCenter(void);
 /// "iPhone" or "iPad".
@@ -78,8 +80,8 @@ void XSOpenAppSettings(void);
 
 /// The effective XSide-in-app settings (see XSSettingsCore.h). Any thread.
 NSDictionary *XSCurrentSettings(void);
-/// Reads the payload and the app's defaults, notes changes made in iOS Settings (dated now,
-/// by the device), merges, writes the result back. Returns YES if a value changed since the last
+/// Reads the payload and the app's defaults, notes changes made in iOS Settings (dated by the
+/// preferences file, see XSRowChangeDate; by the device), merges, writes the result back. Returns YES if a value changed since the last
 /// call. Main thread.
 BOOL XSLoadSettings(void);
 /// YES once after an `XSLoadSettings` that found "Rafraîchissement automatique" changed in iOS
@@ -88,6 +90,8 @@ BOOL XSTakeAutoRefreshChangedOnPhone(void);
 /// YES once after an `XSLoadSettings` that found another XSide setting changed in iOS Settings:
 /// the next check-in sends it, saying so in a pill (see XSSendSettings).
 BOOL XSTakeSettingsChangedOnPhone(void);
+/// The app goes to the background: a change found in iOS Settings later was made after now.
+void XSNoteLeaving(void);
 /// Adopts settings XSide sent (merged field by field). Main thread.
 void XSAdoptSettings(NSDictionary *settings);
 /// A change made on the phone by the dylib itself (e.g. turning automatic refresh back on).
