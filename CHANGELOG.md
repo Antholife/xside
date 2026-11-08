@@ -32,6 +32,9 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 - **Refresh now from the iPhone says what happens next**: "refresh asked of your Mac, the app will close when it's done (about 1 min), open it again then", until the outcome (done, refused and why, or the Mac unreachable and what to do).
 - XSide Settings (touch and hold the icon, or a pill) opens XSide's own page in iOS Settings directly when iOS allows it, else the app's page.
 - In the app, XSide's texts wrap instead of being cut (the sheet's "These details stay in Settings > ..." line, long pills). With every XSide message off, no pill shows on its own; the answers to a Refresh you asked for (and to a pill's button) still show.
+- The answer to a Refresh asked from the iPhone that arrives while you're in another app shows when you come back (within 10 minutes). "XSide on your Mac doesn't know this app" also suggests checking the date and time.
+- *Settings > My apps* says when an app was installed by an earlier XSide (reachable after its next refresh), and an app whose XSide module couldn't be added counts as installed without XSide features.
+- XSide's Bonjour service is published as "XSide" rather than under the Mac's name.
 - Existing apps get their per-app values from today's global settings (the global reminder switch becomes each app's reminder; the others start on).
 
 ## [1.0.6-beta] - 2026-11-06
