@@ -69,9 +69,12 @@ BOOL XSShowsRefreshCard(NSDictionary *s);
 BOOL XSSchedulesReminder(NSDictionary *s);
 BOOL XSShowsInstallSheet(NSDictionary *s);
 
-/// Any pill at all: every message off ("Aucun") silences them all, even the answers to something
-/// the person asked for (device feedback round 1).
+/// Any pill XSide shows on its own: every message off ("Aucun") silences them all.
 BOOL XSShowsPills(NSDictionary *s);
+/// One pill: `answer` (the answer to something the person just asked: a Refresh and its outcome,
+/// a pill's button) shows even with "Aucun", since silence after a tap looks broken (ledger
+/// ruling after device feedback round 1); any other only when XSShowsPills.
+BOOL XSShowsPill(NSDictionary *s, BOOL answer);
 /// "Réglages mis à jour depuis ton Mac": news of what XSide did from the Mac, like the card after
 /// a refresh, so under the same switch.
 BOOL XSShowsMacUpdatePill(NSDictionary *s);

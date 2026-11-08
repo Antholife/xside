@@ -23,10 +23,13 @@ typedef NS_ENUM(NSInteger, XSPillTone) { XSPillToneNeutral, XSPillToneOrange, XS
 @property (nonatomic, copy, nullable) void (^action)(void);
 /// A tap on the pill itself (outside the button) runs this instead of only dismissing it.
 @property (nonatomic, copy, nullable) void (^tapAction)(void);
+/// The answer to something the person just asked (a Refresh and its outcome, a pill's button):
+/// shown even with every message off (XSShowsPill).
+@property (nonatomic) BOOL answer;
 @end
 
 /// Shows `content`, replacing any pill on screen. Waits a few seconds for a foreground scene.
-/// Nothing with every message off ("Aucun": XSShowsPills).
+/// Nothing with every message off ("Aucun"), unless it is an answer (XSShowsPill).
 void XSShowPill(XSPillContent *content);
 /// The same, without cutting short a pill already on screen (the launch pill, a refresh's): it
 /// waits until that one is gone (30 s at most, then it is dropped). Only one waits, the newest; a
@@ -39,7 +42,8 @@ XSPillContent *_Nullable XSLaunchPillContent(NSDate *expiry);
 
 /// The pill for a pending state (a failure reason key, or XSNoOutcomeKey), with Rafraîchir.
 XSPillContent *XSPendingPillContent(NSString *key);
-/// Shows (and clears) the pending state now, if the app is on screen and "Aucun" isn't set.
+/// Shows (and clears) the pending state now, if the app is on screen. It answers a Refresh the
+/// person asked for, so "Aucun" doesn't hide it.
 void XSShowPendingPill(void);
 
 /// With the reminder on and notifications never asked (the install sheet didn't): once, a pill

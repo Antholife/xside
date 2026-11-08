@@ -31,7 +31,7 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 - The install step "Adding XSide features" is "Injecting the XSide module", and says "skipped (installed as is)" when it was.
 - **Refresh now from the iPhone says what happens next**: "refresh asked of your Mac, the app will close when it's done (about 1 min), open it again then", until the outcome (done, refused and why, or the Mac unreachable and what to do).
 - XSide Settings (touch and hold the icon, or a pill) opens XSide's own page in iOS Settings directly when iOS allows it, else the app's page.
-- In the app, XSide's texts wrap instead of being cut (the sheet's "These details stay in Settings > ..." line, long pills). With every XSide message off, no pill shows at all, not even the answer to a Refresh.
+- In the app, XSide's texts wrap instead of being cut (the sheet's "These details stay in Settings > ..." line, long pills). With every XSide message off, no pill shows on its own; the answers to a Refresh you asked for (and to a pill's button) still show.
 - Existing apps get their per-app values from today's global settings (the global reminder switch becomes each app's reminder; the others start on).
 
 ## [1.0.6-beta] - 2026-11-06

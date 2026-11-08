@@ -217,6 +217,11 @@ int main(int argc, const char *argv[]) {
         // Which pills show: none at all with every message off; the Mac's news under the refresh card.
         check(!XSShowsPills(S(NO, NO, NO, NO)) && XSShowsPills(S(NO, NO, NO, YES)) && XSShowsPills(S(YES, NO, NO, NO)),
               @"pills: only \"Aucun\" silences them all");
+        // Ledger ruling: the answers to something the person just asked (a Refresh and its outcome)
+        // show even with every message off; silence would look broken.
+        check(XSShowsPill(S(NO, NO, NO, NO), YES) && !XSShowsPill(S(NO, NO, NO, NO), NO)
+              && XSShowsPill(S(NO, NO, NO, YES), NO) && XSShowsPill(S(YES, YES, YES, YES), YES),
+              @"pills: answers to the person show even with \"Aucun\"");
         check(XSShowsMacUpdatePill(S(NO, NO, YES, NO)) && !XSShowsMacUpdatePill(S(YES, YES, NO, YES)),
               @"\"updated from your Mac\" follows the refresh card switch");
 
@@ -238,7 +243,7 @@ int main(int argc, const char *argv[]) {
         // Final review Important 1: XSide's quick actions are dynamic and only take the slots the
         // app leaves (iOS shows 4: the app's static ones, then its dynamic ones).
         check([XSShortcutNamesFitting(0, 0) isEqual:(@[@"settings", @"refresh", @"report"])], @"quick actions: all three in an empty menu");
-        check([XSShortcutNamesFitting(0, 2) isEqual:@[@"settings"]] && [XSShortcutNamesFitting(1, 1) isEqual:(@[@"settings", @"refresh"])]
+        check([XSShortcutNamesFitting(0, 3) isEqual:@[@"settings"]] && [XSShortcutNamesFitting(2, 0) isEqual:(@[@"settings", @"refresh"])] && [XSShortcutNamesFitting(1, 1) isEqual:(@[@"settings", @"refresh"])]
               && XSShortcutNamesFitting(0, 4).count == 0 && XSShortcutNamesFitting(3, 1).count == 0
               && XSShortcutNamesFitting(4, 3).count == 0, @"quick actions: only the slots the app's static and dynamic items leave");
         check(XSIsXSideShortcutType(@"io.github.xside.shortcut.refresh") && !XSIsXSideShortcutType(@"com.app.search")

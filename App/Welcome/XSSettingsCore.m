@@ -175,6 +175,8 @@ BOOL XSShowsInstallSheet(NSDictionary *s) { return ![XSDerivedLevel(s) isEqualTo
 
 BOOL XSShowsPills(NSDictionary *s) { return ![XSDerivedLevel(s) isEqualToString:@"none"]; }
 
+BOOL XSShowsPill(NSDictionary *s, BOOL answer) { return answer || XSShowsPills(s); }
+
 BOOL XSShowsMacUpdatePill(NSDictionary *s) { return XSShowsRefreshCard(s); }
 
 NSArray<NSString *> *XSSheetPages(BOOL channel, BOOL granted, BOOL explained, BOOL askNotifications) {

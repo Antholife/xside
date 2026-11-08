@@ -417,14 +417,16 @@ static XSChannelExchange *XSPatientExchange(NSDictionary *body, BOOL waitsOutcom
     return exchange;
 }
 
-/// "XSide : en attente du Mac…": no answer after a few seconds, still trying.
-static void XSShowWaitingPill(void) {
+/// "XSide : en attente du Mac…": no answer after a few seconds, still trying. `answer`: waiting
+/// on something the person just asked (XSPillContent.answer).
+static void XSShowWaitingPill(BOOL answer) {
     BOOL fr = XSFrench();
     XSPillContent *c = [XSPillContent new];
     c.lead = fr ? @"En attente du Mac…" : @"Waiting for the Mac…";
     c.hint = fr ? @"Accepte la connexion sur ton Mac si macOS le demande."
                 : @"Accept the connection on your Mac if macOS asks.";
     c.busy = YES;
+    c.answer = answer;
     XSShowPill(c);
 }
 
@@ -435,6 +437,13 @@ static XSPillContent *XSPill(NSString *lead, NSString *hint, XSPillTone tone, NS
     c.tone = tone;
     c.duration = duration;
     return c;
+}
+
+/// A pill answering something the person just asked (a Refresh and its outcome, a pill's button):
+/// shown even with every message off (ledger ruling).
+static void XSShowAnswer(XSPillContent *c) {
+    c.answer = YES;
+    XSShowPill(c);
 }
 
 /// The pill for a request no XSide answered.
@@ -466,7 +475,7 @@ static void XSTellFailure(NSString *reasonKey) {
     NSString *text = [NSString stringWithFormat:fr ? @"Rafraîchissement impossible : %@" : @"Couldn't refresh: %@",
                       XSReasonText(reasonKey, fr)];
     if (UIApplication.sharedApplication.applicationState == UIApplicationStateActive) {
-        XSShowPill(XSPill(text, fr ? @"Rien n'a changé dans l'app. Le détail est dans XSide sur ton Mac."
+        XSShowAnswer(XSPill(text, fr ? @"Rien n'a changé dans l'app. Le détail est dans XSide sur ton Mac."
                                    : @"Nothing changed in the app. XSide on your Mac has the details.", XSPillToneOrange, 8));
     } else {
         XSSetPendingFailure(reasonKey ?: @"unknown", NSDate.date);
@@ -515,7 +524,7 @@ static void XSRequestRefreshNow(void) {
     if (XSRefreshRunning) return;
     BOOL fr = XSFrench();
     if (!XSInstallationID() || !XSChannelSecret()) {
-        XSShowPill(XSPill(fr ? @"Pas encore de lien avec XSide" : @"No link with XSide yet",
+        XSShowAnswer(XSPill(fr ? @"Pas encore de lien avec XSide" : @"No link with XSide yet",
                           fr ? @"Rafraîchis-la une fois depuis XSide sur ton Mac pour pouvoir le faire d'ici."
                              : @"Refresh it once from XSide on your Mac to be able to do it from here.", XSPillToneNeutral, 6));
         return;
@@ -532,7 +541,7 @@ static void XSRequestRefreshNow(void) {
             XSPillContent *why = XSPill(french ? @"Autorise les notifications" : @"Allow notifications",
                                         french ? @"XSide s'en sert pour te dire si le rafraîchissement échoue."
                                                : @"XSide uses them to tell you if the refresh fails.", XSPillToneNeutral, 0);
-            XSShowPill(why);
+            XSShowAnswer(why);
             [XSCenter() requestAuthorizationWithOptions:UNAuthorizationOptionAlert | UNAuthorizationOptionSound
                                       completionHandler:^(BOOL granted, NSError *error) {
                 NSLog(@"[XSide] notifications: asked before a refresh, granted %d, error %@", granted, error);
@@ -568,7 +577,7 @@ static void XSStartRefresh(void) {
                                        fr ? @"S'il accepte, l'app se fermera une fois rafraîchie ; rouvre-la ensuite."
                                           : @"If it accepts, the app will close once refreshed; open it again then.", XSPillToneNeutral, 0);
         asking.busy = YES;
-        XSShowPill(asking);
+        XSShowAnswer(asking);
         XSStartRefreshExchange();
     });
 }
@@ -577,7 +586,7 @@ static void XSStartRefreshExchange(void) {
     [XSPatientExchange(XSRefreshBody(), YES, ^(XSChannelResult result, NSDictionary *reply, BOOL final) {
         BOOL french = XSFrench();
         NSString *type = reply[@"type"];
-        if (result == XSChannelWaiting) { XSShowWaitingPill(); return; }
+        if (result == XSChannelWaiting) { XSShowWaitingPill(YES); return; }
         if (final) {
             XSRefreshRunning = NO;
             XSEndRefreshTask();
@@ -591,7 +600,7 @@ static void XSStartRefreshExchange(void) {
             return;
         }
         if (result != XSChannelReplied) {
-            XSShowPill(XSRefreshUnansweredPill(result));
+            XSShowAnswer(XSRefreshUnansweredPill(result));
             return;
         }
         if ([type isEqual:@"accepted"]) {
@@ -603,7 +612,7 @@ static void XSStartRefreshExchange(void) {
                                                     : @"The app will close when it's done (about 1 min); open it again then.",
                                              XSPillToneNeutral, 0);
             accepted.busy = YES;
-            XSShowPill(accepted);
+            XSShowAnswer(accepted);
             // Keeps the connection a little if the person leaves the app, to hear a failure.
             XSEndRefreshTask();
             XSRefreshTask = [UIApplication.sharedApplication beginBackgroundTaskWithName:@"XSide refresh"
@@ -611,21 +620,21 @@ static void XSStartRefreshExchange(void) {
             XSHasRefreshTask = XSRefreshTask != UIBackgroundTaskInvalid;
         } else if ([type isEqual:@"refreshed"]) {
             XSRecordRefresh(YES, nil, NSDate.date); // the new app replaces this one right after
-            XSShowPill(XSPill(french ? @"App rafraîchie, elle va se fermer" : @"App refreshed, it's about to close",
+            XSShowAnswer(XSPill(french ? @"App rafraîchie, elle va se fermer" : @"App refreshed, it's about to close",
                               french ? @"Rouvre-la ensuite." : @"Open it again then.", XSPillToneNeutral, 6));
         } else if ([type isEqual:@"failed"]) {
             NSString *reason = [reply[@"reasonKey"] isKindOfClass:NSString.class] ? reply[@"reasonKey"] : @"unknown";
             XSRecordRefresh(NO, reason, NSDate.date);
             XSTellFailure(reason);
         } else if ([type isEqual:@"busy"]) {
-            XSShowPill(XSPill(french ? @"XSide la rafraîchit déjà, ou vient de le faire"
+            XSShowAnswer(XSPill(french ? @"XSide la rafraîchit déjà, ou vient de le faire"
                                      : @"XSide is already refreshing it, or just did",
                               french ? @"Une demande depuis l'iPhone toutes les 10 minutes au plus. Réessaie un peu plus tard."
                                      : @"One request from the phone every 10 minutes at most. Try again a little later.",
                               XSPillToneNeutral, 6));
         } else if ([type isEqual:@"deviceUnreachable"]) {
             NSString *device = XSDeviceKind();
-            XSShowPill(XSPill([NSString stringWithFormat:french ? @"Ton Mac ne voit pas cet %@" : @"Your Mac can't see this %@", device],
+            XSShowAnswer(XSPill([NSString stringWithFormat:french ? @"Ton Mac ne voit pas cet %@" : @"Your Mac can't see this %@", device],
                               french ? @"Déverrouille-le, et vérifie qu'il est sur le même Wi-Fi que le Mac ou branché en USB."
                                      : @"Unlock it, and check it's on the same Wi-Fi as the Mac or plugged in over USB.",
                               XSPillToneOrange, 8));
@@ -640,9 +649,9 @@ static void XSStartRefreshExchange(void) {
                                       XSPillToneOrange, 8);
             c.buttonTitle = french ? @"Réactiver" : @"Turn on";
             c.action = ^{ XSResumeAutoRefresh(); };
-            XSShowPill(c);
+            XSShowAnswer(c);
         } else {
-            XSShowPill(XSPill(french ? @"XSide n'a pas pu lancer le rafraîchissement" : @"XSide couldn't start the refresh",
+            XSShowAnswer(XSPill(french ? @"XSide n'a pas pu lancer le rafraîchissement" : @"XSide couldn't start the refresh",
                               nil, XSPillToneOrange, 6));
         }
     }) start];
@@ -663,7 +672,7 @@ static void XSTellAutoRefreshChangeNow(void) {
     NSDictionary *body = XSCheckInBody(XSCurrentSettings(), XSLastRefresh(), XSAppVersion());
     [XSPatientExchange(body, NO, ^(XSChannelResult result, NSDictionary *reply, BOOL final) {
         BOOL fr = XSFrench();
-        if (result == XSChannelWaiting) { XSShowWaitingPill(); return; }
+        if (result == XSChannelWaiting) { XSShowWaitingPill(NO); return; }
         XSCheckInRunning = NO;
         NSDictionary *settings = result == XSChannelReplied && [reply[@"type"] isEqual:@"settings"]
             ? XSSettingsFromJSONObject(reply[@"settings"]) : nil;
@@ -696,12 +705,12 @@ static void XSResumeAutoRefresh(void) {
     XSSetDeviceSetting(@"autoRefresh", @YES);
     [XSPatientExchange(XSSetAutoRefreshBody(YES), NO, ^(XSChannelResult result, NSDictionary *reply, BOOL final) {
         BOOL fr = XSFrench();
-        if (result == XSChannelWaiting) { XSShowWaitingPill(); return; }
+        if (result == XSChannelWaiting) { XSShowWaitingPill(YES); return; }
         if (result != XSChannelReplied) {
             XSPillContent *c = XSUnansweredPill(result);
             c.hint = c.hint ?: (fr ? @"Réactivé sur l'iPhone : XSide le saura à la prochaine connexion."
                                    : @"Turned on here: XSide will know at the next connection.");
-            XSShowPill(c);
+            XSShowAnswer(c);
             return;
         }
         NSDictionary *settings = [reply[@"type"] isEqual:@"settings"] ? XSSettingsFromJSONObject(reply[@"settings"]) : nil;
@@ -710,6 +719,6 @@ static void XSResumeAutoRefresh(void) {
                                   nil, XSPillToneNeutral, 6);
         c.buttonTitle = fr ? @"Rafraîchir" : @"Refresh";
         c.action = ^{ XSRequestRefresh(); };
-        XSShowPill(c);
+        XSShowAnswer(c);
     }) start];
 }

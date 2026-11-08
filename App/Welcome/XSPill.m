@@ -252,12 +252,12 @@ static void XSShowPillAttempt(XSPillContent *content, int attempt) {
 }
 
 void XSShowPill(XSPillContent *content) {
-    if (!XSShowsPills(XSCurrentSettings())) return; // "Aucun": nothing at all, even an answer
+    if (!XSShowsPill(XSCurrentSettings(), content.answer)) return; // "Aucun": only answers to the person
     dispatch_async(dispatch_get_main_queue(), ^{ XSShowPillAttempt(content, 0); });
 }
 
 void XSShowPillWhenFree(XSPillContent *content) {
-    if (!XSShowsPills(XSCurrentSettings())) return;
+    if (!XSShowsPill(XSCurrentSettings(), content.answer)) return;
     content.whenFree = YES;
     dispatch_async(dispatch_get_main_queue(), ^{
         if (!XSPillWindow || XSPillOnScreen.whenFree) {
@@ -312,9 +312,11 @@ XSPillContent *XSPendingPillContent(NSString *key) {
 
 void XSShowPendingPill(void) {
     if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return; // next launch
-    if ([XSDerivedLevel(XSCurrentSettings()) isEqual:@"none"]) return;
     NSString *key = XSTakePendingFailure();
-    if (key) XSShowPill(XSPendingPillContent(key));
+    if (!key) return;
+    XSPillContent *c = XSPendingPillContent(key);
+    c.answer = YES; // the outcome of a Refresh the person asked for
+    XSShowPill(c);
 }
 
 static NSString *const XSNotificationsExplainedKey = @"io.github.xside.welcome.notificationsExplained";
