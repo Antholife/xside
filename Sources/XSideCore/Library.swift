@@ -31,13 +31,17 @@ public struct Installation: Codable, Equatable, Sendable {
     public var channelSecret: Data?
     /// Last time the phone checked in through the channel. nil if never.
     public var lastCheckIn: Date?
+    /// Last refresh the phone itself asked for and XSide started: the phone's refresh limit counts
+    /// from it. Set only by XSide; nothing the phone sends resets it. nil if never.
+    public var lastDeviceRefreshRequest: Date?
 
     public init(deviceID: String, installedAt: Date, expiresAt: Date,
                 lastAttempt: Date? = nil, lastErrorKey: String? = nil, signedBundleID: String? = nil,
                 signingIdentitySHA1: String? = nil, teamID: String? = nil, refreshPaused: Bool = false,
                 appVersion: String? = nil, inApp: InAppSettings? = nil, pausedBy: ChangeOrigin? = nil,
                 firstInstalledAt: Date? = nil, lastRefreshOutcome: RefreshOutcome? = nil,
-                channelSecret: Data? = nil, lastCheckIn: Date? = nil) {
+                channelSecret: Data? = nil, lastCheckIn: Date? = nil, lastDeviceRefreshRequest: Date? = nil) {
+        self.lastDeviceRefreshRequest = lastDeviceRefreshRequest
         self.inApp = inApp
         self.pausedBy = pausedBy
         self.firstInstalledAt = firstInstalledAt
@@ -74,6 +78,7 @@ public struct Installation: Codable, Equatable, Sendable {
         lastRefreshOutcome = try? c.decodeIfPresent(RefreshOutcome.self, forKey: .lastRefreshOutcome)
         channelSecret = try? c.decodeIfPresent(Data.self, forKey: .channelSecret)
         lastCheckIn = try? c.decodeIfPresent(Date.self, forKey: .lastCheckIn)
+        lastDeviceRefreshRequest = try? c.decodeIfPresent(Date.self, forKey: .lastDeviceRefreshRequest)
     }
 }
 
@@ -416,6 +421,18 @@ public actor AppLibrary {
         items[index].installations[i] = installation
         do { try save() } catch { items = previous; throw error }
         return change
+    }
+
+    /// Records that the phone asked for a refresh XSide started (see
+    /// `Installation.lastDeviceRefreshRequest`). Throws `recordNotFound` when the installation is gone.
+    public func markDeviceRefreshRequest(at date: Date, recordID: UUID, deviceID: String) throws {
+        let index = try indexOf(recordID)
+        guard let i = items[index].installations.firstIndex(where: { $0.deviceID == deviceID }) else {
+            throw XSideError.recordNotFound
+        }
+        let previous = items
+        items[index].installations[i].lastDeviceRefreshRequest = date
+        do { try save() } catch { items = previous; throw error }
     }
 
     /// Records a failed attempt on the installation as stored now (the attempt date, the error

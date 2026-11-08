@@ -100,13 +100,17 @@ import Foundation
         #expect(on == .paused(false, by: .device))
     }
 
-    /// A phone can't make the Mac re-sign its app in a loop.
-    @Test func refreshSoonAfterTheLastAttemptIsRefusedAsBusy() {
-        var recent = installation()
-        recent.lastAttempt = now.addingTimeInterval(-9 * 60)
-        #expect(ChannelHandler.handle(.refresh, installation: recent, now: now, reminder: true) == (.busy, .none))
-        recent.lastAttempt = now.addingTimeInterval(-10 * 60)
-        #expect(ChannelHandler.handle(.refresh, installation: recent, now: now, reminder: true) == (.accepted, .refreshRequested))
+    /// A phone can't make the Mac re-sign its app in a loop: counted from its own last request only.
+    @Test func phoneRefreshesAreLimitedByThePhonesOwnRequests() {
+        // XSide's own bookkeeping (an unreachable attempt 2 min ago) doesn't block the phone.
+        var i = installation()
+        i.lastAttempt = now.addingTimeInterval(-2 * 60)
+        i.lastErrorKey = XSideError.deviceUnavailable.key
+        #expect(ChannelHandler.handle(.refresh, installation: i, now: now, reminder: true) == (.accepted, .refreshRequested))
+        i.lastDeviceRefreshRequest = now.addingTimeInterval(-5 * 60)
+        #expect(ChannelHandler.handle(.refresh, installation: i, now: now, reminder: true) == (.busy, .none))
+        i.lastDeviceRefreshRequest = now.addingTimeInterval(-11 * 60)
+        #expect(ChannelHandler.handle(.refresh, installation: i, now: now, reminder: true) == (.accepted, .refreshRequested))
     }
 
     /// Settings seeded for older state follow the Mac's global reminder setting.
@@ -242,6 +246,8 @@ import Foundation
         #expect(merged.lastCheckIn == signedAt.addingTimeInterval(20))
         #expect(merged.lastRefreshOutcome?.at == signedAt.addingTimeInterval(5))
         #expect(merged.channelSecret == result.channelSecret)
+        current.lastDeviceRefreshRequest = signedAt.addingTimeInterval(-60)
+        #expect(result.keepingChannelState(of: current).lastDeviceRefreshRequest == signedAt.addingTimeInterval(-60))
         // Nothing new meanwhile: the signing result stands, not paused.
         let plain = result.keepingChannelState(of: installation(inApp: signed))
         #expect(!plain.refreshPaused && plain.pausedBy == nil && plain.inApp == signed)
@@ -323,6 +329,21 @@ import Foundation
         await #expect(throws: XSideError.recordNotFound) {
             try await lib.recordFailure(errorKey: "k", at: now, recordID: rec.id, deviceID: "gone")
         }
+    }
+
+    /// Nothing the phone sends (pause, resume, check-in) resets its last refresh request.
+    @Test func thePhonesLastRefreshRequestSurvivesItsOtherMessages() async throws {
+        let (lib, rec, tmp) = try await library(); defer { try? FileManager.default.removeItem(at: tmp) }
+        try await lib.markDeviceRefreshRequest(at: now, recordID: rec.id, deviceID: "a")
+        try await lib.setRefreshPaused(true, recordID: rec.id, deviceID: "a", by: .device, at: now.addingTimeInterval(60))
+        try await lib.applyCheckIn(InAppSettings.defaults(reminder: true, at: now), checkIn: now.addingTimeInterval(90),
+                                   outcome: nil, recordID: rec.id, deviceID: "a")
+        try await lib.setRefreshPaused(false, recordID: rec.id, deviceID: "a", by: .device, at: now.addingTimeInterval(120))
+        let reloaded = try #require(await AppLibrary(root: tmp).records().first?.installations.first) // persisted
+        #expect(reloaded.lastDeviceRefreshRequest == now)
+        #expect(!reloaded.refreshPaused)
+        #expect(ChannelHandler.handle(.refresh, installation: reloaded, now: now.addingTimeInterval(5 * 60), reminder: true)
+                == (.busy, .none))
     }
 
     @Test func missingSettingsAreSeeded() async throws {

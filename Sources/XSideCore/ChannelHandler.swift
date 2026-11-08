@@ -47,9 +47,16 @@ public enum ChannelHandler {
         return .request(installationID: envelope.installationID, nonce: envelope.nonce, request)
     }
 
-    /// Shortest time between two refreshes asked from the phone for one installation (counted
-    /// from its last attempt, whatever started it): sooner, the request is answered `busy`.
+    /// Shortest time between two refreshes the phone asks for, for one installation, counted from
+    /// the last one XSide started for it (`Installation.lastDeviceRefreshRequest`, which nothing the
+    /// phone sends can reset): sooner, the request is answered `busy`. XSide's own attempts don't count.
     public static let refreshInterval: TimeInterval = 10 * 60
+
+    /// The phone asked for a refresh less than `refreshInterval` ago.
+    public static func phoneRefreshTooSoon(_ installation: Installation, now: Date) -> Bool {
+        guard let last = installation.lastDeviceRefreshRequest else { return false }
+        return now.timeIntervalSince(last) < refreshInterval
+    }
 
     /// The reply to an authenticated request and the change it asks for. A `refresh` is answered
     /// `accepted` here; the caller replaces that with `busy` or `deviceUnreachable` when the job
@@ -74,7 +81,7 @@ public enum ChannelHandler {
         case .refresh:
             // Paused before XSide recorded who did it: only the Mac could pause then.
             if installation.refreshPaused { return (.paused(by: installation.pausedBy ?? .mac), .none) }
-            if let last = installation.lastAttempt, now.timeIntervalSince(last) < refreshInterval { return (.busy, .none) }
+            if phoneRefreshTooSoon(installation, now: now) { return (.busy, .none) }
             return (.accepted, .refreshRequested)
         case let .setAutoRefresh(on):
             let current = installation.seededInApp(reminder: reminder, at: now)
@@ -162,6 +169,9 @@ extension Installation {
         if let checkIn = current.lastCheckIn, checkIn > (lastCheckIn ?? .distantPast) { result.lastCheckIn = checkIn }
         if let outcome = current.lastRefreshOutcome, outcome.at > (lastRefreshOutcome?.at ?? .distantPast) {
             result.lastRefreshOutcome = outcome
+        }
+        if let asked = current.lastDeviceRefreshRequest, asked > (lastDeviceRefreshRequest ?? .distantPast) {
+            result.lastDeviceRefreshRequest = asked
         }
         if let auto = result.inApp?.autoRefresh {
             result.refreshPaused = !auto.value

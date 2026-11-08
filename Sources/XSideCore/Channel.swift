@@ -47,8 +47,9 @@ import CryptoKit
 //   `failed(reasonKey)` when the job ends (the connection stays open up to 2 min; after that it is
 //   closed without the second line, and the success closes the app anyway). One line when it
 //   can't start: `paused(by)` (automatic refresh off for this installation), `busy` (a job is
-//   already running on it, or its last refresh attempt is under 10 minutes old: the phone can't
-//   make the Mac re-sign in a loop), `deviceUnreachable` (the Mac can't see the device), or
+//   already running on it, or the phone's own previous refresh request started less than 10
+//   minutes ago, a date XSide keeps and nothing the phone sends resets; XSide's own attempts
+//   don't count), `deviceUnreachable` (the Mac can't see the device), or
 //   `failed(reasonKey)` (e.g. Xcode isn't usable). reasonKey is an XSideError key, "cancelled"
 //   when the person stopped the job on the Mac, or "unknown".
 // - A request that doesn't authenticate (unknown installation id, wrong MAC, outside the window,

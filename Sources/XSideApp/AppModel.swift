@@ -1067,16 +1067,22 @@ final class AppModel {
             }
             await reply(answer)
         case .refreshRequested:
-            // Paused since the snapshot the handler saw: say so, rather than "busy".
-            if let fresh = await library.installation(channelID: installationID)?.installation, fresh.refreshPaused {
-                await reply(.paused(by: fresh.pausedBy ?? .mac))
+            // Checked again on the installation as stored now: paused since the handler's snapshot
+            // says so (rather than "busy"), and another phone request may have started meanwhile.
+            guard let fresh = await library.installation(channelID: installationID)?.installation else {
+                await reply(.deviceUnreachable)
                 return
             }
-            switch refreshFromDevice(job) {
+            switch refreshFromDevice(job, stored: fresh, now: Date()) {
             case .failure(let refusal):
                 Self.channelLogger.notice("channel: refresh not started: \(Self.describe(refusal.reply))")
                 await reply(refusal.reply)
             case .success(let task):
+                do {
+                    try await library.markDeviceRefreshRequest(at: Date(), recordID: job.recordID, deviceID: job.deviceID)
+                } catch {
+                    Self.channelLogger.error("channel: refresh request not recorded: \(String(describing: error))")
+                }
                 await reply(.accepted)
                 if let outcome = await waitForOutcome(task) { await reply(outcome) }
             }
@@ -1086,13 +1092,16 @@ final class AppModel {
     private struct Refusal: Error { let reply: ChannelReply }
 
     /// A refresh asked from the phone: the normal manual refresh, or why it can't start.
-    private func refreshFromDevice(_ job: RefreshJob) -> Result<Task<(any Error)?, Never>, Refusal> {
+    /// `stored`: the installation as the library holds it now.
+    private func refreshFromDevice(_ job: RefreshJob, stored: Installation,
+                                   now: Date) -> Result<Task<(any Error)?, Never>, Refusal> {
         let key = JobKey(recordID: job.recordID, deviceID: job.deviceID)
-        if let paused = records.first(where: { $0.id == job.recordID })?.installations
-            .first(where: { $0.deviceID == job.deviceID }), paused.refreshPaused {
-            return .failure(Refusal(reply: .paused(by: paused.pausedBy ?? .mac)))
+        if stored.refreshPaused || isPaused(job) {
+            return .failure(Refusal(reply: .paused(by: stored.pausedBy ?? .mac)))
         }
-        if jobs[key] != nil { return .failure(Refusal(reply: .busy)) }
+        if jobs[key] != nil || ChannelHandler.phoneRefreshTooSoon(stored, now: now) {
+            return .failure(Refusal(reply: .busy))
+        }
         guard let device = devices.first(where: { $0.id == job.deviceID }), device.isAvailable,
               !removingDevices.contains(job.deviceID) else { return .failure(Refusal(reply: .deviceUnreachable)) }
         guard signingEnvironment != nil else {
