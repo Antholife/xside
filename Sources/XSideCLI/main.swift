@@ -36,6 +36,7 @@ let usage = """
       open                                 Open XSide
 
       <app> is a name or a bundle id, any case; part of it is fine when only one app matches.
+      Exit status: 0 done, 1 failed, 2 not known yet (XSide still working: see its panel).
       --debug     Talk to XSide-debug instead of XSide
       --version   Print the version
     """
@@ -52,7 +53,13 @@ func fail(_ message: String) -> Never {
 }
 
 let debug = takeFlag("--debug")
-let bundleID = debug ? "io.github.xside.XSide.debug" : "io.github.xside.XSide"
+#if DEBUG
+/// Debug builds only: talk to a stand-in (a test responder) instead of XSide; nothing is launched.
+let testBundleID = ProcessInfo.processInfo.environment["XSIDE_CLI_TEST_BUNDLE_ID"]
+#else
+let testBundleID: String? = nil
+#endif
+let bundleID = testBundleID ?? (debug ? "io.github.xside.XSide.debug" : "io.github.xside.XSide")
 let libraryRoot = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
     .appendingPathComponent(LibraryLocation.folderName(bundleID: bundleID), isDirectory: true)
 
@@ -150,32 +157,63 @@ var isAppRunning: Bool { !NSRunningApplication.runningApplications(withBundleIde
 }
 
 /// Sends `command` to XSide (started first if needed) and prints its answer. The request is
-/// sent again every second until the app, maybe still launching, answers (30 s at most).
+/// sent again every second: until the app, maybe still launching, answers (30 s at most), then
+/// as long as it answers "working" (an uninstall, the report archive), up to `CLIBridge.Wait`'s
+/// longest wait. Exit 0 done, 1 failed or never answered, 2 outcome unknown (review D–G, I1).
 @MainActor func ask(_ command: CLIBridge.Command) -> Never {
-    launchInBackground()
-    guard isAppRunning || NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) != nil else {
-        fail("XSide isn't installed")
+    if testBundleID == nil {
+        launchInBackground()
+        guard isAppRunning || NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) != nil else {
+            fail("XSide isn't installed")
+        }
     }
     let request = CLIBridge.Request(command: command)
     let center = DistributedNotificationCenter.default()
-    nonisolated(unsafe) var reply: CLIBridge.Reply?
+    nonisolated(unsafe) var wait = CLIBridge.Wait(start: Date())
+    nonisolated(unsafe) var workingMessage: String?
     let observer = center.addObserver(forName: CLIBridge.replyName(bundleID: bundleID), object: nil, queue: .main) { note in
-        if let answer = CLIBridge.Reply(userInfo: note.userInfo), answer.id == request.id { reply = answer }
+        guard let answer = CLIBridge.Reply(userInfo: note.userInfo) else { return }
+        wait.received(answer, at: Date(), requestID: request.id)
+        if answer.id == request.id, answer.working { workingMessage = answer.message }
     }
-    let deadline = Date().addingTimeInterval(30)
     var lastSent = Date.distantPast
-    while reply == nil, Date() < deadline {
-        if Date().timeIntervalSince(lastSent) >= 1 {
+    let askedAt = Date()
+    var shownWorking = false, lastProgress = Date()
+    var outcome = wait.outcome(at: Date())
+    while outcome == .waiting {
+        let now = Date()
+        if now.timeIntervalSince(lastSent) >= 1 {
             center.postNotificationName(CLIBridge.requestName(bundleID: bundleID), object: nil,
                                         userInfo: request.userInfo, deliverImmediately: true)
-            lastSent = Date()
+            lastSent = now
         }
-        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        // Progress, so a long wait never looks stuck: the app's own words once (after 2 s, so a
+        // quick answer prints alone), then a line a minute.
+        if let message = workingMessage, !shownWorking, now.timeIntervalSince(askedAt) >= 2 {
+            print(message)
+            shownWorking = true
+            lastProgress = now
+        } else if shownWorking, now.timeIntervalSince(lastProgress) >= 60 {
+            print("Still working…")
+            lastProgress = now
+        }
+        RunLoop.main.run(until: now.addingTimeInterval(0.1))
+        outcome = wait.outcome(at: Date())
     }
     center.removeObserver(observer)
-    guard let reply else { fail("no answer from XSide (is it up to date?)") }
-    if reply.ok { print(reply.message); exit(0) }
-    fail(reply.message)
+    switch outcome {
+    case .finished(let reply) where reply.ok:
+        print(reply.message)
+    case .finished(let reply):
+        FileHandle.standardError.write(Data("xside: \(reply.message)\n".utf8))
+    case .noAnswer:
+        FileHandle.standardError.write(Data("xside: no answer from XSide (is it running and up to date?)\n".utf8))
+    case .stoppedAnswering:
+        FileHandle.standardError.write(Data("xside: XSide stopped answering while working on it; the outcome is unknown: check its panel or xside apps\n".utf8))
+    case .stillWorking, .waiting:
+        FileHandle.standardError.write(Data("xside: XSide is still working on it; check its panel or xside apps\n".utf8))
+    }
+    exit(outcome.exitCode)
 }
 
 @MainActor func openApp(with file: URL? = nil) -> Never {

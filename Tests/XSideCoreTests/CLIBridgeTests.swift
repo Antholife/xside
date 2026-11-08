@@ -47,3 +47,76 @@ struct CLIBridgeTests {
         #expect(CLIBridge.Request(userInfo: ["id": "1", "command": "pause"])?.command == .pause(seconds: nil))
     }
 }
+
+/// Review D–G Important 1: a long `uninstall` or `report` is waited for as long as it takes.
+struct CLIBridgeWaitTests {
+    let start = Date(timeIntervalSince1970: 1_000_000)
+    func working(_ id: String = "r") -> CLIBridge.Reply { CLIBridge.Reply(id: id, working: true, message: "Uninstalling…") }
+
+    @Test func workingReplyTravels() {
+        let reply = working()
+        #expect(CLIBridge.Reply(userInfo: reply.userInfo) == reply)
+        #expect(reply.working)
+        let done = CLIBridge.Reply(id: "r", ok: true, message: "done")
+        #expect(CLIBridge.Reply(userInfo: done.userInfo)?.working == false)
+    }
+
+    @Test func noAnswerAtAllGivesUpAfterTheFirstDeadline() {
+        let wait = CLIBridge.Wait(start: start)
+        #expect(wait.outcome(at: start.addingTimeInterval(29)) == .waiting)
+        #expect(wait.outcome(at: start.addingTimeInterval(31)) == .noAnswer)
+    }
+
+    @Test func aFinalReplyEndsTheWait() {
+        var wait = CLIBridge.Wait(start: start)
+        let done = CLIBridge.Reply(id: "r", ok: false, message: "busy")
+        wait.received(done, at: start.addingTimeInterval(2))
+        #expect(wait.outcome(at: start.addingTimeInterval(2)) == .finished(done))
+    }
+
+    /// Acknowledged and still answering "working": no deadline as long as XSide keeps answering.
+    @Test func workingKeepsTheToolWaitingPastThirtySeconds() {
+        var wait = CLIBridge.Wait(start: start)
+        for second in stride(from: 1, through: 600, by: 2) {
+            wait.received(working(), at: start.addingTimeInterval(TimeInterval(second)))
+            #expect(wait.outcome(at: start.addingTimeInterval(TimeInterval(second) + 1)) == .waiting)
+        }
+        #expect(wait.acknowledged)
+        let done = CLIBridge.Reply(id: "r", ok: true, message: "Uninstalled")
+        wait.received(done, at: start.addingTimeInterval(601))
+        #expect(wait.outcome(at: start.addingTimeInterval(601)) == .finished(done))
+    }
+
+    /// Acknowledged, then silence (XSide quit or hung): the outcome is unknown, never "failed".
+    @Test func silenceAfterTheAcknowledgementIsUnknown() {
+        var wait = CLIBridge.Wait(start: start)
+        wait.received(working(), at: start.addingTimeInterval(1))
+        #expect(wait.outcome(at: start.addingTimeInterval(30)) == .waiting)
+        #expect(wait.outcome(at: start.addingTimeInterval(32)) == .stoppedAnswering)
+    }
+
+    /// Past the longest wait, the tool stops waiting and says XSide is still at it.
+    @Test func theLongestWaitSaysStillWorking() {
+        var wait = CLIBridge.Wait(start: start)
+        let end = CLIBridge.Wait.longest
+        wait.received(working(), at: start.addingTimeInterval(end - 1))
+        #expect(wait.outcome(at: start.addingTimeInterval(end + 1)) == .stillWorking)
+    }
+
+    /// An empty or foreign reply never counts.
+    @Test func otherRepliesAreIgnored() {
+        var wait = CLIBridge.Wait(start: start)
+        wait.received(CLIBridge.Reply(id: "other", ok: true, message: "x"), at: start.addingTimeInterval(1), requestID: "r")
+        #expect(!wait.acknowledged)
+        #expect(wait.outcome(at: start.addingTimeInterval(31)) == .noAnswer)
+    }
+
+    /// Exit codes: 0 done, 1 failed or never answered, 2 outcome unknown (still working).
+    @Test func exitCodesAreTruthful() {
+        #expect(CLIBridge.Wait.Outcome.finished(.init(id: "r", ok: true, message: "")).exitCode == 0)
+        #expect(CLIBridge.Wait.Outcome.finished(.init(id: "r", ok: false, message: "")).exitCode == 1)
+        #expect(CLIBridge.Wait.Outcome.noAnswer.exitCode == 1)
+        #expect(CLIBridge.Wait.Outcome.stoppedAnswering.exitCode == 2)
+        #expect(CLIBridge.Wait.Outcome.stillWorking.exitCode == 2)
+    }
+}

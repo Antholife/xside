@@ -124,23 +124,96 @@ public enum CLIBridge {
         }
     }
 
-    /// The app's answer: what it started, or why nothing did.
+    /// The app's answer: what it started, or why nothing did. `working`: not the answer yet, the
+    /// request is being done (an uninstall, the report archive); the final answer follows.
     public struct Reply: Equatable, Sendable {
         public let id: String
         public let ok: Bool
+        public let working: Bool
         public let message: String
 
         public init(id: String, ok: Bool, message: String) {
             self.id = id
             self.ok = ok
+            self.working = false
             self.message = message
         }
 
-        public var userInfo: [String: String] { ["id": id, "ok": ok ? "1" : "0", "message": message] }
+        /// The interim answer: XSide has the request and is at it.
+        public init(id: String, working: Bool, message: String) {
+            self.id = id
+            self.ok = true
+            self.working = working
+            self.message = message
+        }
+
+        public var userInfo: [String: String] {
+            ["id": id, "ok": ok ? "1" : "0", "message": message].merging(working ? ["working": "1"] : [:]) { $1 }
+        }
 
         public init?(userInfo: [AnyHashable: Any]?) {
             guard let info = userInfo as? [String: String], let id = info["id"] else { return nil }
-            self.init(id: id, ok: info["ok"] == "1", message: info["message"] ?? "")
+            if info["working"] == "1" {
+                self.init(id: id, working: true, message: info["message"] ?? "")
+            } else {
+                self.init(id: id, ok: info["ok"] == "1", message: info["message"] ?? "")
+            }
+        }
+    }
+
+    /// How long the tool waits for an answer (review D–G, Important 1). Before XSide answers at
+    /// all: `firstAnswer` (it may be launching). Once it said it's working: as long as it keeps
+    /// answering the repeated request (`silence` at most between two answers), up to `longest`.
+    /// An outcome the tool can't know is never reported as a failure.
+    public struct Wait: Sendable {
+        public static let firstAnswer: TimeInterval = 30
+        public static let silence: TimeInterval = 30
+        public static let longest: TimeInterval = 30 * 60
+
+        public enum Outcome: Equatable, Sendable {
+            case waiting
+            case finished(Reply)
+            /// XSide never answered: not running, or too old to know the request.
+            case noAnswer
+            /// XSide said it was working, then went quiet (quit or hung): the outcome is unknown.
+            case stoppedAnswering
+            /// Still working after `longest`: the outcome is unknown yet.
+            case stillWorking
+
+            /// 0 done, 1 failed or never started, 2 outcome unknown (see the panel or `xside apps`).
+            public var exitCode: Int32 {
+                switch self {
+                case .finished(let reply): reply.ok ? 0 : 1
+                case .waiting, .noAnswer: 1
+                case .stoppedAnswering, .stillWorking: 2
+                }
+            }
+        }
+
+        private let start: Date
+        private var lastAnswer: Date?
+        private var final: Reply?
+
+        public init(start: Date) { self.start = start }
+
+        /// True once XSide answered anything about this request.
+        public var acknowledged: Bool { lastAnswer != nil }
+
+        /// An answer heard; one for another request (`requestID` given) is ignored.
+        public mutating func received(_ reply: Reply, at date: Date, requestID: String? = nil) {
+            if let requestID, reply.id != requestID { return }
+            lastAnswer = date
+            if !reply.working { final = reply }
+        }
+
+        public func outcome(at now: Date) -> Outcome {
+            if let final { return .finished(final) }
+            guard let lastAnswer else {
+                return now.timeIntervalSince(start) > Self.firstAnswer ? .noAnswer : .waiting
+            }
+            if now.timeIntervalSince(start) > Self.longest { return .stillWorking }
+            if now.timeIntervalSince(lastAnswer) > Self.silence { return .stoppedAnswering }
+            return .waiting
         }
     }
 }

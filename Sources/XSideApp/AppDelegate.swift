@@ -96,8 +96,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     return
                 }
                 Self.handledRequests.insert(request.id)
-                // Some take a moment (an uninstall, the report archive): the tool keeps asking,
-                // and gets the answer once it's there.
+                // Some take a moment (an uninstall, the report archive): "working" at once, which
+                // the tool's repeated asks get back until the answer is there, so it waits as long
+                // as the work takes (review D–G, Important 1).
+                let working = CLIBridge.Reply(id: request.id, working: true, message: Self.workingMessage(request.command)).userInfo
+                Self.lastReplies[request.id] = working
+                center.postNotificationName(CLIBridge.replyName(bundleID: bundleID), object: nil,
+                                            userInfo: working, deliverImmediately: true)
                 Task { @MainActor in
                     let answer = await model.handle(request.command)
                     let reply = CLIBridge.Reply(id: request.id, ok: answer.ok, message: answer.message).userInfo
@@ -106,6 +111,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                                 userInfo: reply, deliverImmediately: true)
                 }
             }
+        }
+    }
+    /// What the tool prints while it waits (English, like the tool's other output).
+    private static func workingMessage(_ command: CLIBridge.Command) -> String {
+        switch command {
+        case .uninstall: "Uninstalling (about a minute per device)…"
+        case .report: "Writing the report archive…"
+        default: "Working on it…"
         }
     }
     private static var handledRequests: Set<String> = []
