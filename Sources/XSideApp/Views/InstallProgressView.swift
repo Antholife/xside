@@ -14,8 +14,6 @@ struct InstallProgressView: View {
     var activeSince: Date?
     /// The app goes without XSide's features: the module step says it's skipped.
     var withoutXSideFeatures = false
-    /// The app is deleted from the device before it's installed (the module goes, opted in): the
-    /// install step says so.
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -80,9 +78,10 @@ struct InstallProgressView: View {
                     .padding(.leading, 24)
                     .animation(.smooth(duration: 0.4), value: activePercent)
             }
-            // What "XSide features" means, once that step has started.
-            if step == .welcome, !withoutXSideFeatures, status == .active || status == .done {
-                XSideFeaturesList()
+            // What "XSide features" means, from the start of the install (device feedback 3, E8):
+            // greyed until the step runs, ticked once it's done.
+            if step == .welcome, !withoutXSideFeatures, status != .skipped {
+                XSideFeaturesList(status: status)
                     .padding(.leading, 24)
                     .padding(.top, 3)
             }
@@ -127,9 +126,12 @@ struct InstallProgressView: View {
 }
 
 /// Under the "Injecting the XSide module" step, what it really does (device feedback round 2,
-/// M4): what this step writes into the app now, then what the module does in the app once it's
-/// opened (quick actions and notifications are set up there, at run time, not at install).
+/// M4): what this step writes into the app now (the quick actions among them, static items since
+/// device feedback 3, E1), then what the module does in the app once it's opened. Shown from the
+/// start of the install (E8).
 private struct XSideFeaturesList: View {
+    /// The module step's status: what it writes is greyed before it runs, ticked once done.
+    let status: StepStatus
     private static let now: [(symbol: String, key: String)] = [
         ("puzzlepiece.extension.fill", "install.feature.module"),
         ("gearshape.fill", "install.feature.settings"),
@@ -145,10 +147,11 @@ private struct XSideFeaturesList: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            group(L("install.feature.title"), Self.now)
-            group(L("install.feature.atLaunch"), Self.atLaunch)
+            group(L("install.feature.title"), Self.now, ticks: true)
+            group(L("install.feature.atLaunch"), Self.atLaunch, ticks: false)
                 .padding(.top, 4)
         }
+        .opacity(status == .pending || status == .waiting || status == .failed ? 0.5 : 1)
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.violet.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -156,7 +159,8 @@ private struct XSideFeaturesList: View {
         .accessibilityElement(children: .combine)
     }
 
-    @ViewBuilder private func group(_ title: String, _ items: [(symbol: String, key: String)]) -> some View {
+    /// `ticks`: the group of what the step writes now, each ticked once the step is done.
+    @ViewBuilder private func group(_ title: String, _ items: [(symbol: String, key: String)], ticks: Bool) -> some View {
         Text(title)
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(.secondary)
@@ -171,6 +175,13 @@ private struct XSideFeaturesList: View {
                 Text(L(item.key))
                     .font(.system(size: 12))
                     .fixedSize(horizontal: false, vertical: true)
+                if ticks {
+                    Spacer(minLength: 0)
+                    Image(systemName: status == .done ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 11))
+                        .foregroundStyle(status == .done ? AnyShapeStyle(Color(nsColor: .systemGreen)) : AnyShapeStyle(.tertiary))
+                        .accessibilityHidden(true)
+                }
             }
         }
     }

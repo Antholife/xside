@@ -46,6 +46,7 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 - *Settings > My apps* starts with the device (a segmented control, or a menu with more than three), then that device's apps, then the app's settings: each app on a device has its own settings. No more device tabs on the right.
 - In the app, pills, the first-launch sheet and the card wrap their text and grow instead of being cut or touching the screen's edges; a pill's button sits under its text.
 - Existing apps get their per-app values from today's global settings (the global reminder switch becomes each app's reminder; the others start on).
+- The install window lists what *Injecting the XSide module* does from the start of the install, greyed until that step runs, then ticked.
 
 ## [1.0.6-beta] - 2026-11-06
 
