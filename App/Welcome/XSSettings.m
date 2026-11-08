@@ -65,15 +65,14 @@ BOOL XSLoadSettings(void) {
         NSDictionary *local = saved ? XSSettingsSanitized(saved, payload) : payload;
         id rawShadow = [d objectForKey:XSShadowKey];
         NSDictionary *shadow = [rawShadow isKindOfClass:NSDictionary.class] ? rawShadow : @{};
-        NSDate *now = NSDate.date;
         // Changes made in iOS Settings since the library last wrote the rows: dated now, by the
         // device (spec "Sync model"; there is no other way to know when they were made).
+        NSMutableDictionary *rows = [NSMutableDictionary dictionary];
         for (NSString *f in XSSettingFields()) {
             id value = [d objectForKey:[XSRowPrefix stringByAppendingString:f]];
-            if (!XSSettingValueValid(f, value)) continue;
-            id known = XSSettingValueValid(f, shadow[f]) ? shadow[f] : XSSettingValue(local, f);
-            if (![value isEqual:known]) local = XSSettingsSetting(local, f, value, now, @"device");
+            if (value) rows[f] = value;
         }
+        local = XSSettingsNoticingRowChanges(local, rows, shadow, NSDate.date);
         NSDictionary *merged = XSSettingsMerge(local, payload);
         NSDictionary *before = XSCached;
         XSStore(merged);
@@ -149,6 +148,11 @@ void XSRecordRefresh(BOOL succeeded, NSString *reasonKey, NSDate *at) {
 void XSRecordCheckIn(NSDate *at) {
     [XSDefaults() setObject:at forKey:XSLastCheckInKey];
     XSWriteStatusRows(nil);
+}
+
+NSDate *XSLastCheckIn(void) {
+    id at = [XSDefaults() objectForKey:XSLastCheckInKey];
+    return [at isKindOfClass:NSDate.class] ? at : nil;
 }
 
 void XSSetPendingFailure(NSString *reasonKey, NSDate *at) {

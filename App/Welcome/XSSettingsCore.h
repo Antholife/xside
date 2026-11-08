@@ -34,6 +34,19 @@ NSDictionary *XSSettingsMerge(NSDictionary *a, NSDictionary *b);
 /// A copy with `field` set to `value`, dated `at`, changed by `by`.
 NSDictionary *XSSettingsSetting(NSDictionary *s, NSString *field, id value, NSDate *at, NSString *by);
 
+/// `local` with each value the person changed in iOS Settings since the library last wrote the
+/// rows stamped as a device change dated `now` (spec "Sync model": there is no other way to know
+/// when it was made). `rows`: the values iOS Settings holds now; `shadow`: the values the library
+/// last wrote there (a field missing from it compares with `local`). Values the library wrote
+/// itself (e.g. the Mac's, adopted from a check-in reply) are therefore never re-stamped.
+NSDictionary *XSSettingsNoticingRowChanges(NSDictionary *local, NSDictionary *rows, NSDictionary *shadow, NSDate *now);
+
+/// Back from the background: check in with XSide (pulling what changed on the Mac meanwhile)
+/// unless the last check-in was less than `XSReturnCheckInInterval` ago and there is nothing to
+/// tell (`changed`: settings changed in iOS Settings; `pending`: a refresh outcome still unknown).
+extern const NSTimeInterval XSReturnCheckInInterval;
+BOOL XSShouldCheckInOnReturn(BOOL changed, BOOL pending, NSDate *_Nullable lastCheckIn, NSDate *now);
+
 id _Nullable XSSettingValue(NSDictionary *s, NSString *field);
 BOOL XSSettingBool(NSDictionary *s, NSString *field);
 

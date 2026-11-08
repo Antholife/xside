@@ -406,4 +406,35 @@ import Foundation
         #expect(await lib.installation(channelID: id + "x") == nil)
         #expect(await lib.installation(channelID: id.lowercased()) == nil)
     }
+
+    /// Device feedback 2026-11-08: automatic refresh turned off on the phone (reported at t1), turned
+    /// back on from the Mac panel (t2 > t1), then the app opens: the check-in carries the phone's
+    /// old "off" and the reply must carry the Mac's newer "on", the pause staying lifted.
+    @Test func macResumeWinsOverAnOlderPhoneOff() async throws {
+        let (lib, rec, tmp) = try await library(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let t1 = now, t2 = now.addingTimeInterval(30), t3 = now.addingTimeInterval(60)
+        // 1. The phone reports "off" (changed there at t1): XSide pauses.
+        let phone = InAppSettings.defaults(reminder: true, at: now.addingTimeInterval(-60))
+            .setting(\.autoRefresh, to: false, at: t1, by: .device)
+        var i = try #require(await stored(lib, rec.id))
+        var (reply, update) = ChannelHandler.handle(.checkIn(settings: phone, lastRefresh: nil, appVersion: "1"),
+                                                    installation: i, now: t1, reminder: true)
+        guard case let .merged(m1, c1, o1) = update else { Issue.record("not merged"); return }
+        #expect(try await lib.applyCheckIn(m1, checkIn: c1, outcome: o1, recordID: rec.id, deviceID: "a") == true)
+        #expect(await stored(lib, rec.id)?.pausedBy == .device)
+        // 2. The Mac resumes at t2: stamped as the Mac's change, dated t2.
+        #expect(try await lib.setRefreshPaused(false, recordID: rec.id, deviceID: "a", by: .mac, at: t2))
+        i = try #require(await stored(lib, rec.id))
+        #expect(i.inApp?.autoRefresh == Field(value: true, changedAt: t2, changedBy: .mac))
+        // 3. The app opens and checks in with what it still holds (off, device, t1).
+        (reply, update) = ChannelHandler.handle(.checkIn(settings: phone, lastRefresh: nil, appVersion: "1"),
+                                                installation: i, now: t3, reminder: true)
+        guard case let .settings(sent, _) = reply, case let .merged(m3, c3, o3) = update else {
+            Issue.record("unexpected reply \(reply)"); return
+        }
+        #expect(sent.autoRefresh == Field(value: true, changedAt: t2, changedBy: .mac))
+        #expect(try await lib.applyCheckIn(m3, checkIn: c3, outcome: o3, recordID: rec.id, deviceID: "a") == nil)
+        let after = try #require(await stored(lib, rec.id))
+        #expect(!after.refreshPaused && after.inApp?.autoRefresh.value == true)
+    }
 }

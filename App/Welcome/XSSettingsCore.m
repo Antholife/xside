@@ -101,6 +101,27 @@ NSDictionary *XSSettingsSetting(NSDictionary *s, NSString *field, id value, NSDa
     return copy;
 }
 
+NSDictionary *XSSettingsNoticingRowChanges(NSDictionary *local, NSDictionary *rows, NSDictionary *shadow, NSDate *now) {
+    NSDictionary *result = local;
+    for (NSString *f in XSSettingFields()) {
+        id value = rows[f];
+        if (!XSSettingValueValid(f, value)) continue;
+        id known = XSSettingValueValid(f, shadow[f]) ? shadow[f] : XSSettingValue(local, f);
+        if (![value isEqual:known]) {
+            result = XSSettingsSetting(result, f, value, now, @"device");
+        }
+    }
+    return result;
+}
+
+const NSTimeInterval XSReturnCheckInInterval = 15;
+
+BOOL XSShouldCheckInOnReturn(BOOL changed, BOOL pending, NSDate *lastCheckIn, NSDate *now) {
+    if (changed || pending || !lastCheckIn) return YES;
+    NSTimeInterval since = [now timeIntervalSinceDate:lastCheckIn];
+    return since < 0 || since >= XSReturnCheckInInterval;
+}
+
 id XSSettingValue(NSDictionary *s, NSString *field) {
     id f = s[field];
     return [f isKindOfClass:NSDictionary.class] ? f[@"value"] : nil;

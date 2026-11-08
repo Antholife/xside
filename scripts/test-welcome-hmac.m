@@ -180,6 +180,31 @@ int main(int argc, const char *argv[]) {
               && [XSDerivedLevel(S(NO, YES, NO, NO)) isEqual:@"custom"], @"derived level");
         check(XSIsLate(41 * 3600, 48) && !XSIsLate(43 * 3600, 48) && XSIsLate(17 * 3600, 24), @"late = threshold - 6 h");
 
+        // Device feedback 2026-11-08: off on the phone (t1), back on from the Mac (t2), app opened.
+        NSDictionary *(^values)(NSDictionary *) = ^(NSDictionary *st) {
+            NSMutableDictionary *v = [NSMutableDictionary dictionary];
+            for (NSString *f in XSSettingFields()) v[f] = XSSettingValue(st, f);
+            return (NSDictionary *)v;
+        };
+        NSDictionary *shown = values(base); // the iOS Settings rows and their shadow, as last written
+        NSMutableDictionary *rowsOff = [shown mutableCopy];
+        rowsOff[@"autoRefresh"] = @NO; // turned off in iOS Settings
+        NSDictionary *phoneOff = XSSettingsNoticingRowChanges(base, rowsOff, shown, at(10));
+        check([phoneOff[@"autoRefresh"] isEqual:field(@NO, XSMillis(at(10)), @"device")]
+              && [phoneOff[@"reminder"] isEqual:base[@"reminder"]], @"a row changed in iOS Settings is a device change dated now");
+        // Reported; the Mac resumes at t2 = 20 s; the next check-in's reply is adopted (merged, stored,
+        // rows and shadow rewritten together).
+        NSDictionary *macReply = XSSettingsSetting(phoneOff, @"autoRefresh", @YES, at(20), @"mac");
+        NSDictionary *adopted = XSSettingsMerge(phoneOff, macReply);
+        check([adopted[@"autoRefresh"] isEqual:field(@YES, XSMillis(at(20)), @"mac")], @"the Mac's newer resume wins on the phone");
+        NSDictionary *again = XSSettingsNoticingRowChanges(adopted, values(adopted), values(adopted), at(30));
+        check([again isEqual:adopted], @"adopted values written to the rows are not re-stamped as the phone's");
+        // A return from the background checks in too (the Mac's change must reach a running app),
+        // but not again within a few seconds of the last one.
+        check(XSShouldCheckInOnReturn(NO, NO, nil, at(0)) && XSShouldCheckInOnReturn(NO, NO, at(-60), at(0))
+              && !XSShouldCheckInOnReturn(NO, NO, at(-5), at(0)) && XSShouldCheckInOnReturn(YES, NO, at(-5), at(0))
+              && XSShouldCheckInOnReturn(NO, YES, at(-5), at(0)), @"check-in on return from the background");
+
         // JSON round trip of the settings.
         check(sameSettings(XSSettingsFromJSONObject(XSSettingsJSONObject(fixtureSettings())) ?: @{}, fixtureSettings()),
               @"settings JSON round trip");

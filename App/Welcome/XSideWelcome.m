@@ -625,7 +625,10 @@ static void XSLaunch(void) {
 }
 
 /// Back from the background (not a launch: no validity pill): changes made meanwhile in iOS
-/// Settings apply now, and XSide hears of them when it can be reached.
+/// Settings apply now, and XSide hears of them when it can be reached. XSide is asked even when
+/// nothing changed here: a change made on the Mac meanwhile (e.g. automatic refresh turned back on
+/// from the panel) must reach an app that was only in the background, not only a cold launch
+/// (device feedback 2026-11-08). Not again within a few seconds of the last check-in.
 static void XSReturn(void) {
     // Coming back from iOS Settings right after turning it on is the usual way to use it.
     if (XSTakeRefreshOnLaunch()) XSWhenForeground(0.5, ^{ XSRequestRefresh(); });
@@ -636,7 +639,9 @@ static void XSReturn(void) {
     }
     // A refresh asked from here that failed or went unheard while the app was away: said now,
     // after asking XSide how it went.
-    if (changed || XSPendingFailure()) XSCheckIn(^{ XSShowPendingPill(); });
+    BOOL pending = XSPendingFailure() != nil;
+    if (!XSShouldCheckInOnReturn(changed, pending, XSLastCheckIn(), NSDate.date)) return;
+    XSCheckIn(^{ if (changed || pending) XSShowPendingPill(); });
 }
 
 __attribute__((constructor)) static void XSideWelcomeInit(void) {

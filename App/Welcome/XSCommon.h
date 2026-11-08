@@ -96,6 +96,8 @@ NSData *_Nullable XSChannelSecret(void);
 NSDictionary *_Nullable XSLastRefresh(void);
 void XSRecordRefresh(BOOL succeeded, NSString *_Nullable reasonKey, NSDate *at);
 void XSRecordCheckIn(NSDate *at);
+/// When XSide last answered a check-in; nil if never.
+NSDate *_Nullable XSLastCheckIn(void);
 /// The pending-state key of a refresh XSide accepted but whose outcome never reached the phone.
 static NSString *const XSNoOutcomeKey = @"noOutcome";
 /// A refresh the person asked for failed (a reason key) or was never heard of (XSNoOutcomeKey)
