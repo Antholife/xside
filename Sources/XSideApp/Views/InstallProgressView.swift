@@ -14,6 +14,8 @@ struct InstallProgressView: View {
     var activeSince: Date?
     /// The app goes without XSide's features: the module step says it's skipped.
     var withoutXSideFeatures = false
+    /// How the iPhone Duo step went, once known: said under it.
+    var duoOutcome: DuoOutcome?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -84,6 +86,13 @@ struct InstallProgressView: View {
                 XSideFeaturesList(status: status)
                     .padding(.leading, 24)
                     .padding(.top, 3)
+            }
+            if step == .duo, status == .done || status == .skipped, let duoOutcome {
+                Text(L("install.step.duo.\(duoOutcome.rawValue)"))
+                    .font(.system(size: 12))
+                    .foregroundStyle(duoOutcome == .failed ? AnyShapeStyle(Color(nsColor: .systemOrange)) : AnyShapeStyle(.secondary))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 24)
             }
             if status == .failed, let failureMessage {
                 Text(failureMessage)
@@ -208,6 +217,7 @@ extension ProgressStep {
         case .preparing: L("install.step.preparing")
         case .profile: L("install.step.profile")
         case .welcome: L("install.step.welcome")
+        case .duo: L("install.step.duo")
         case .signing: L("install.step.signing")
         case .installing: L("install.step.installing")
         case .wifiCheck: L("wifi.title")

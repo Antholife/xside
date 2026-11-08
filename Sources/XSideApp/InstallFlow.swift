@@ -89,6 +89,24 @@ final class InstallFlow {
     /// The steps the last run passes over: the module step when the app goes without XSide's
     /// features (shown as skipped, not ticked: device feedback round 2, M4).
     var skippedRunSteps: Set<ProgressStep> { runWithoutXSideFeatures ? [.welcome] : [] }
+
+    /// The steps of the last run on one device (nil: the only or first one): the iPhone Duo step
+    /// when the option is on there. Wi-Fi verification is planned or not, never added later.
+    func runSteps(for deviceID: String? = nil) -> [ProgressStep] {
+        let id = deviceID ?? runs.first?.deviceID
+        return ProgressStep.list(includingWifiCheck: wifiStepPlanned, includingDuo: id.map(runDuo.contains) ?? false)
+    }
+
+    /// `skippedRunSteps`, and the Duo step on a device where it added nothing.
+    func skippedSteps(for deviceID: String? = nil) -> Set<ProgressStep> {
+        guard let outcome = duoOutcome(for: deviceID), outcome != .added else { return skippedRunSteps }
+        return skippedRunSteps.union([.duo])
+    }
+
+    func duoOutcome(for deviceID: String? = nil) -> DuoOutcome? {
+        let id = deviceID ?? runs.first?.deviceID
+        return runs.first { $0.deviceID == id }?.duoOutcome
+    }
     /// Record this `.ipa` was imported into during this flow: later devices install it as is.
     var importedRecordID: UUID?
 
@@ -209,6 +227,8 @@ struct DeviceRun: Identifiable, Equatable {
     var wifiVerified = false
     /// iPhone Duo compatibility was asked for but the app was installed without it.
     var duoMissing = false
+    /// How the iPhone Duo step went in this run, once known (nil: not asked, or not there yet).
+    var duoOutcome: DuoOutcome?
 
     var id: String { deviceID }
 

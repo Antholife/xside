@@ -170,7 +170,7 @@ struct InstallSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             Group {
                 if case .running(let stage) = flow.phase, !flow.isMultiDevice {
-                    ProgressHeader(model: model, flow: flow, timeline: StepTimeline(steps: steps, stage: stage, skipped: flow.skippedRunSteps))
+                    ProgressHeader(model: model, flow: flow, timeline: StepTimeline(steps: steps, stage: stage, skipped: flow.skippedSteps()))
                 } else {
                     header
                 }
@@ -228,18 +228,19 @@ struct InstallSheet: View {
                 ExportLogsLink(model: model)
             case .running(let stage) where !flow.isMultiDevice:
                 // One device: the header shows the ring, the steps follow, nothing else.
-                InstallProgressView(timeline: StepTimeline(steps: steps, stage: stage, skipped: flow.skippedRunSteps), showsBar: false,
+                InstallProgressView(timeline: StepTimeline(steps: steps, stage: stage, skipped: flow.skippedSteps()), showsBar: false,
                                     activePercent: model.runPercent(flow), activeSince: model.runStepStarted(flow),
-                                    withoutXSideFeatures: flow.runWithoutXSideFeatures)
+                                    withoutXSideFeatures: flow.runWithoutXSideFeatures, duoOutcome: flow.duoOutcome())
             case .running:
-                DeviceRunList(model: model, flow: flow, steps: steps)
+                DeviceRunList(model: model, flow: flow)
             case .editing:
                 if flow.reviewsSteps { StepBar(flow: flow) }
                 // The last run's outcome comes first, on whichever step is shown.
                 if let failure = flow.failure {
                     InstallProgressView(timeline: StepTimeline(steps: steps, stage: failure.stage, failed: true,
-                                                               skipped: flow.skippedRunSteps),
-                                        failureMessage: failure.message, withoutXSideFeatures: flow.runWithoutXSideFeatures)
+                                                               skipped: flow.skippedSteps()),
+                                        failureMessage: failure.message, withoutXSideFeatures: flow.runWithoutXSideFeatures,
+                                        duoOutcome: flow.duoOutcome())
                     ExportLogsLink(model: model)
                 } else if case .editing(let error?) = flow.phase {
                     ErrorText(error)
@@ -249,14 +250,14 @@ struct InstallSheet: View {
                 editingStep
             case .finished:
                 if flow.isMultiDevice {
-                    DeviceRunList(model: model, flow: flow, steps: steps)
+                    DeviceRunList(model: model, flow: flow)
                     summary
                     DuoMissingNotes(flow: flow)
                     if !flow.failedDeviceIDs.isEmpty { ExportLogsLink(model: model) }
                 } else {
                     InstallProgressView(timeline: StepTimeline(
                         steps: steps, current: flow.wifiCheck != nil ? .wifiCheck : nil, skipped: skippedSteps),
-                        withoutXSideFeatures: flow.runWithoutXSideFeatures)
+                        withoutXSideFeatures: flow.runWithoutXSideFeatures, duoOutcome: flow.duoOutcome())
                     Label(L("install.success", flow.runs.first?.name ?? ""), systemImage: "checkmark.circle.fill")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(Color(nsColor: .systemGreen))
@@ -314,13 +315,14 @@ struct InstallSheet: View {
     }
 
     /// Steps of the run, fixed up front: Wi-Fi verification is planned or not, never added later.
-    private var steps: [ProgressStep] { ProgressStep.list(includingWifiCheck: flow.wifiStepPlanned) }
+    /// The single (or first) device's: with the iPhone Duo step when the option is on there.
+    private var steps: [ProgressStep] { flow.runSteps() }
 
     /// The Wi-Fi check ended without success (skipped, USB chosen or window closed).
     private var skippedSteps: Set<ProgressStep> {
         guard flow.wifiStepPlanned, case .finished = flow.phase,
-              flow.wifiCheck == nil, flow.runs.first?.wifiVerified != true else { return flow.skippedRunSteps }
-        return flow.skippedRunSteps.union([.wifiCheck])
+              flow.wifiCheck == nil, flow.runs.first?.wifiVerified != true else { return flow.skippedSteps() }
+        return flow.skippedSteps().union([.wifiCheck])
     }
 
     /// One device: the app is deleted there before it's installed.
@@ -478,7 +480,7 @@ extension InstallPreflight.Warning {
     var followsInstallOptions: Bool {
         switch self {
         case .iOSTooOld, .noAppIDLeft, .lastAppID, .olderVersion: true
-        case .developerModeOff, .deviceFull, .notBuiltForDevice, .notMadeForDuo: false
+        case .developerModeOff, .deviceFull, .notMadeForDuo: false
         }
     }
 }
@@ -537,7 +539,6 @@ private struct PreflightNotes: View {
         case .iOSTooOld: "iphone.gen3.slash"
         case .deviceFull: "square.stack.3d.up.fill"
         case .noAppIDLeft, .lastAppID: "number"
-        case .notBuiltForDevice: "rectangle.dashed"
         case .notMadeForDuo: "rectangle.split.2x1"
         case .olderVersion: "arrow.uturn.backward.circle"
         }
@@ -565,8 +566,8 @@ private struct PreflightNotes: View {
         case .deviceFull(let id, _): L("preflight.deviceFull", name(id))
         case .noAppIDLeft: L("preflight.noAppIDLeft")
         case .lastAppID: L("preflight.lastAppID")
-        case .notBuiltForDevice(let id, let sdk, let os): L("preflight.notBuiltForDevice", name(id), os, sdk)
-        case .notMadeForDuo(let id): L("preflight.notMadeForDuo", appName, name(id))
+        case .notMadeForDuo(let id, let possible):
+            L(possible ? "preflight.notMadeForDuo" : "preflight.notMadeForDuo.noOption", appName, name(id))
         case .olderVersion(let id, let installing, let installed): L("preflight.olderVersion", installing, installed, name(id))
         }
     }
@@ -874,7 +875,6 @@ private struct NewDeviceTile: View {
 private struct DeviceRunList: View {
     let model: AppModel
     let flow: InstallFlow
-    let steps: [ProgressStep]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -885,8 +885,10 @@ private struct DeviceRunList: View {
                         DeviceRunRow(run: run, symbolName: symbolName(run.deviceID),
                                      checkingWifi: flow.wifiCheck != nil && flow.wifiDeviceID == run.deviceID)
                         if case .running(let stage) = run.status {
-                            InstallProgressView(timeline: StepTimeline(steps: steps, stage: stage, skipped: flow.skippedRunSteps),
-                                                withoutXSideFeatures: flow.runWithoutXSideFeatures)
+                            InstallProgressView(timeline: StepTimeline(steps: flow.runSteps(for: run.deviceID), stage: stage,
+                                                                       skipped: flow.skippedSteps(for: run.deviceID)),
+                                                withoutXSideFeatures: flow.runWithoutXSideFeatures,
+                                                duoOutcome: flow.duoOutcome(for: run.deviceID))
                                 .padding(.leading, 28)
                         }
                     }

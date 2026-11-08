@@ -460,7 +460,6 @@
 "preflight.iOSTooOld" = "%1$@ runs iOS %2$@, but this app needs iOS %3$@: it won't open there.";
 "preflight.deviceFull" = "%@ already has 3 apps from XSide, the most a free account allows. Which one should go?";
 "preflight.noAppIDLeft" = "No App ID left this week (estimate): installing a new app will likely fail until one frees up.";
-"preflight.notBuiltForDevice" = "%1$@ runs iOS %2$@, but this app was built for iOS %3$@: it may open in compatibility mode (scaled up, not fitted to the screen). A newer version of the app fixes that.";
 "preflight.olderVersion" = "This is version %1$@, older than the %2$@ installed on %3$@. Is it the right file?";
 "preflight.lastAppID" = "This install uses your last App ID of the week (estimate).";
 "notification.action.refresh" = "Refresh now";
@@ -774,13 +773,13 @@
 "duo.section" = "iPhone Duo";
 "duo.option" = "Add iPhone Duo compatibility";
 "duo.recommended" = "Recommended";
-"duo.caption" = "The app will use all of the iPhone Duo's screens (inner and outer) in Duo mode. It wasn't made for it: nobody knows how it will behave or look, glitches are possible (an odd menu or tab bar, misplaced elements), but Duo mode itself will work.";
+"duo.caption" = "The app will use all of the iPhone Duo's screens (inner and outer) in Duo mode. It wasn't made for it: nobody knows how it will behave or look, glitches are possible (an odd menu or tab bar, misplaced elements), but Duo mode itself will work. Sometimes just relaunching the app is enough for it to adapt.";
 "duo.caption.recommended" = "%@ isn't made for your iPhone Duo's screen.";
 "duo.caption.notADuo" = "Not recommended: this device isn't an iPhone Duo.";
 "duo.caption.alreadySupported" = "%@ already supports the iPhone Duo.";
 "duo.caption.noScenes" = "This app doesn't handle iOS scenes: iPhone Duo compatibility isn't possible.";
 "duo.confirm.title" = "Add iPhone Duo compatibility to %@?";
-"duo.confirm.message" = "%@ will use all of the iPhone Duo's screens, inner and outer, in Duo mode. Nobody knows how it will behave or look: it wasn't made for it, glitches are possible (an odd menu or tab bar, misplaced elements). Duo mode itself will work. You can remove it at any time in Settings > My apps.";
+"duo.confirm.message" = "%@ will use all of the iPhone Duo's screens, inner and outer, in Duo mode. Nobody knows how it will behave or look: it wasn't made for it, glitches are possible (an odd menu or tab bar, misplaced elements). Duo mode itself will work. Sometimes just relaunching the app is enough for it to adapt. You can remove it at any time in Settings > My apps.";
 "duo.confirm.turnOn" = "Add";
 "duo.missing" = "The last install couldn't add it: %@ was installed without it. The logs say why.";
 "duo.missing.install" = "%1$@: iPhone Duo compatibility couldn't be added, %2$@ was installed without it.";
@@ -788,5 +787,11 @@
 "duo.nextSigning" = "Applied at the app's next refresh on this device.";
 "duo.refreshNow" = "Refresh now";
 "preflight.notMadeForDuo" = "%1$@ isn't made for your iPhone Duo's screen (%2$@): it won't use all of it. The install option \"Add iPhone Duo compatibility\" can help.";
+"preflight.notMadeForDuo.noOption" = "%1$@ isn't made for your iPhone Duo's screen (%2$@): it won't use all of it. It doesn't handle iOS scenes, so iPhone Duo compatibility can't be added to it.";
+"install.step.duo" = "Adding iPhone Duo compatibility";
+"install.step.duo.added" = "Added: the app will use all of the iPhone Duo's screens.";
+"install.step.duo.failed" = "Couldn't be added: the app is installed without it. The logs say why.";
+"install.step.duo.alreadySupported" = "Nothing to add: the app already supports the iPhone Duo.";
+"install.step.duo.notPossible" = "Not possible: the app doesn't handle iOS scenes. It is installed without it.";
 "whatsNew.120.duo.title" = "iPhone Duo compatibility";
 "whatsNew.120.duo.text" = "An install option, per device: \"Add iPhone Duo compatibility\" lets an app made before the iPhone Duo use all of its screens, inner and outer, in Duo mode. Recommended on an iPhone Duo when the app isn't made for it; the app wasn't made for this, so display glitches are possible. With or without the XSide module, and removable at any time in Settings > My apps.";

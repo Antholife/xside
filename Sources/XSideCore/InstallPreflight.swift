@@ -44,19 +44,21 @@ public enum InstallPreflight {
         case noAppIDLeft
         /// The last App ID of the week.
         case lastAppID
-        /// Built with an older iOS SDK than the device's iOS: may run in compatibility mode.
-        case notBuiltForDevice(deviceID: String, sdk: String, deviceOS: String)
-        /// An iPhone Duo and an app built before SDK 27.1: it won't fill the Duo's screens (the
-        /// install option "Add iPhone Duo compatibility" can help). Replaces `notBuiltForDevice` there.
-        case notMadeForDuo(deviceID: String)
+        /// An iPhone Duo and an app built before SDK 27.1: it won't fill the Duo's screens.
+        /// `optionPossible`: the install option "Add iPhone Duo compatibility" can be turned on for
+        /// this app (the note then says it can help). An older SDK on any other device says
+        /// nothing: the visible difference is the Duo's.
+        case notMadeForDuo(deviceID: String, optionPossible: Bool)
         /// An older version than the one on the device (the wrong file?).
         case olderVersion(deviceID: String, installing: String, installed: String)
     }
 
     /// `needsNewAppID`: the signed bundle id isn't registered yet (a first install, or a new id).
     /// `sdkVersion` / `appVersion`: the .ipa's build SDK and version (nil: not checked).
+    /// `duo`: what the .ipa supports for the iPhone Duo option (nil: not known).
     public static func check(minimumOS: String?, targets: [Target], needsNewAppID: Bool,
-                             appIDsRemaining: Int?, sdkVersion: String? = nil, appVersion: String? = nil) -> [Warning] {
+                             appIDsRemaining: Int?, sdkVersion: String? = nil, appVersion: String? = nil,
+                             duo: DuoAppInfo? = nil) -> [Warning] {
         var warnings: [Warning] = []
         for target in targets {
             if target.developerModeEnabled == false {
@@ -69,13 +71,9 @@ public enum InstallPreflight {
             if !target.hasThisApp, target.otherApps.count >= appsPerDevice {
                 warnings.append(.deviceFull(deviceID: target.deviceID, apps: target.otherApps))
             }
-            // Major versions only: iOS 27 devices need an app built with the iOS 27 SDK.
             if target.isDuo, let sdk = sdkVersion, !DuoCompatibility.supportsDuo(sdk: sdk) {
-                warnings.append(.notMadeForDuo(deviceID: target.deviceID))
-            } else if let sdk = sdkVersion, let os = target.osVersion,
-               let sdkMajor = Int(sdk.split(separator: ".").first ?? ""), let osMajor = Int(os.split(separator: ".").first ?? ""),
-               sdkMajor < osMajor {
-                warnings.append(.notBuiltForDevice(deviceID: target.deviceID, sdk: sdk, deviceOS: os))
+                let possible = DuoCompatibility.optionState(isDuo: true, app: duo).canTurnOn
+                warnings.append(.notMadeForDuo(deviceID: target.deviceID, optionPossible: possible))
             }
             if let appVersion, let installed = target.installedVersion, compare(appVersion, installed) == .orderedAscending {
                 warnings.append(.olderVersion(deviceID: target.deviceID, installing: appVersion, installed: installed))

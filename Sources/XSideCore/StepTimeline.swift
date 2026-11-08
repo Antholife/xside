@@ -11,20 +11,23 @@ public enum JobStage: Equatable, Sendable {
 
 /// A step of the progress list shown to the user.
 public enum ProgressStep: Int, CaseIterable, Sendable {
-    case preparing, profile, welcome, signing, installing, wifiCheck
+    /// `duo`: adding iPhone Duo compatibility, listed only for a run that asked for it.
+    case preparing, profile, welcome, duo, signing, installing, wifiCheck
 
     public init(_ step: InstallStep) {
         switch step {
         case .profile: self = .profile
         case .welcome: self = .welcome
+        case .duo: self = .duo
         case .signing: self = .signing
         case .installing: self = .installing
         }
     }
 
-    /// The list for a run; Wi-Fi verification only exists after a first install.
-    public static func list(includingWifiCheck: Bool) -> [ProgressStep] {
-        includingWifiCheck ? allCases : allCases.filter { $0 != .wifiCheck }
+    /// The list for a run; Wi-Fi verification only exists after a first install, the Duo step
+    /// only when the option is on for the device.
+    public static func list(includingWifiCheck: Bool, includingDuo: Bool = false) -> [ProgressStep] {
+        allCases.filter { ($0 != .wifiCheck || includingWifiCheck) && ($0 != .duo || includingDuo) }
     }
 }
 

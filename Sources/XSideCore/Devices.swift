@@ -31,6 +31,12 @@ public struct Device: Identifiable, Equatable, Codable, Sendable {
 
     /// An iPhone Duo (foldable): apps built with an SDK before 27.1 don't fill its screens.
     public var isDuo: Bool { DeviceModel.isDuo(productType: productType, marketingName: marketingName) }
+
+    /// `isDuo`, or, when devicectl didn't say what the device is (over Wi-Fi it may leave the
+    /// hardware facts out), what was `remembered` from an earlier connection.
+    public func isDuo(remembered: Bool?) -> Bool {
+        productType == nil && marketingName == nil ? remembered == true : isDuo
+    }
 }
 
 /// devicectl raw values -> model values. Single place to correct once real

@@ -321,7 +321,8 @@ private struct AppSettingsContent: View {
                              isOn: Binding(get: { on }, set: { value in
                                  Task { await model.setDuoCompatibility(value, for: entry) }
                              }),
-                             missing: on && entry.installation.duoCompatibilityMissing == true)
+                             missing: on && entry.installation.duoCompatibilityMissing == true,
+                             storedChoice: true)
                 .disabled(!model.canManage(entry))
                 HStack(spacing: 8) {
                     Text(L("duo.nextSigning"))

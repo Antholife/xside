@@ -99,6 +99,7 @@ public struct Resigner: Sendable {
     public func resign(ipa: URL, workDir: URL, bundleID: String, options: InstallOptions,
                        iconURL: URL?, profileURL: URL, profile: ProvisioningProfile,
                        identitySHA1: String, otherBundleIDs: Set<String> = [], facts: InstallationFacts? = nil,
+                       onDuo: @Sendable (DuoOutcome?) async -> Void = { _ in },
                        onSigning: @Sendable () async -> Void = {}) async throws -> URL {
         let fm = FileManager.default
         try fm.createDirectory(at: workDir, withIntermediateDirectories: true)
@@ -129,16 +130,34 @@ public struct Resigner: Sendable {
         }
 
         let features = options.withoutXSideFeatures != true
-        // Asked for this device: what the app needs, and room in its header for it (before
-        // XSide's own load command takes what is left).
-        let duo = options.duoCompatibility == true ? duoPlan(app: app, executable: executableURL) : nil
-        if let duo { makeRoom(in: executableURL, needing: duo.growth + (features ? Self.welcomeCommandSize : 0)) }
-        // The library first: the payload, Bonjour keys and quick actions mean nothing without it
-        // (quick actions nothing handles would be a regression), so they follow its outcome.
+        // Asked for this device: patched on a copy that replaces the executable only once it
+        // declares the new SDK (XSide's load command included, when the features are on, so
+        // both get the room); the Info.plist keys follow. Any problem leaves the executable
+        // exactly as it was, and the library is then added as without the option.
+        var duoApplied: DuoPlan?
+        if options.duoCompatibility == true {
+            await onDuo(nil)
+            let outcome: DuoOutcome
+            switch duoPlan(app: app, executable: executableURL) {
+            case .plan(let plan):
+                let library = features && welcomeDylib.map { FileManager.default.fileExists(atPath: $0.path) } == true
+                if await applyDuo(to: executableURL, growth: plan.growth, loading: library ? Self.welcomeLoadPath : nil,
+                                  workDir: workDir) {
+                    duoApplied = plan
+                    outcome = .added
+                } else {
+                    outcome = .failed
+                }
+            case .skip(let reason):
+                outcome = reason
+            }
+            await onDuo(outcome)
+        }
+        // The library first among what follows: the payload, Bonjour keys and quick actions mean
+        // nothing without it (quick actions nothing handles would be a regression), so they
+        // follow its outcome. After a Duo patch its load command is already there.
         let hasLibrary = features && addWelcomePopup(to: app, executable: executableURL)
         let payload = hasLibrary ? welcome(profile).map { Self.payload($0, with: facts) } : nil
-        // The Info.plist keys only once the executable declares the new SDK.
-        let duoApplied = if let duo { await raiseSDK(of: executableURL, workDir: workDir) ? duo : nil } else { DuoPlan?.none }
         try editInfoPlist(app: app, bundleID: bundleID, options: options, payload: payload, features: hasLibrary,
                           language: textLanguage(facts), duo: duoApplied)
         if let iconURL { try await applyIcon(iconURL, to: app, workDir: workDir) }
@@ -210,60 +229,66 @@ public struct Resigner: Sendable {
         let sceneDelegate: String?
     }
 
-    static let welcomeCommandSize = MachOPatcher.dylibCommand(welcomeLoadPath).count
+    enum DuoDecision {
+        case plan(DuoPlan)
+        /// Nothing to do, nothing possible, or the app can't be read.
+        case skip(DuoOutcome)
+    }
 
-    /// Nil when there's nothing to do (already built for the Duo) or nothing possible (no scenes).
-    private func duoPlan(app: URL, executable: URL) -> DuoPlan? {
+    private func duoPlan(app: URL, executable: URL) -> DuoDecision {
         guard let data = try? IPAInspector.infoPlistData(of: app),
               let plist = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any] else {
             Self.logger.notice("duo compatibility skipped: unreadable Info.plist")
-            return nil
+            return .skip(.failed)
         }
         let info = DuoAppInfo.read(executable: executable, plist: plist)
         switch DuoCompatibility.optionState(isDuo: true, app: info) {
         case .alreadySupported:
             Self.logger.info("duo compatibility: built with SDK \(info.sdkVersion ?? "?"), nothing to do")
-            return nil
+            return .skip(.alreadySupported)
         case .noSceneSupport:
             Self.logger.notice("duo compatibility skipped: no scene manifest nor scene delegate")
-            return nil
+            return .skip(.notPossible)
         case .recommended, .notADuo, .unknown:
             guard let growth = try? MachOBuildInfo.versionCommandGrowth(of: executable) else {
                 Self.logger.notice("duo compatibility skipped: unreadable executable")
-                return nil
+                return .skip(.failed)
             }
             Self.logger.info("duo compatibility: SDK \(info.sdkVersion ?? "?"), scene delegate \(info.adoptsScenes ? "(own manifest)" : info.sceneDelegateClass ?? "?")")
-            return DuoPlan(growth: growth, sceneDelegate: info.adoptsScenes ? nil : info.sceneDelegateClass)
-        }
-    }
-
-    /// Frees header space by removing the build Mac's toolchain run paths, only when the new
-    /// commands wouldn't fit otherwise.
-    private func makeRoom(in executable: URL, needing bytes: Int) {
-        guard bytes > 0, let free = try? MachOPatcher.freeSpace(in: executable), free < bytes else { return }
-        do {
-            let removed = try MachOPatcher.removeRpaths(from: executable, where: DuoCompatibility.isBuildMacToolchainPath)
-            Self.logger.info("duo compatibility: \(free) bytes free for \(bytes), removed \(removed.count) toolchain rpath(s)")
-        } catch {
-            Self.logger.notice("duo compatibility: couldn't make room: \(String(describing: error))")
+            return .plan(DuoPlan(growth: growth, sceneDelegate: info.adoptsScenes ? nil : info.sceneDelegateClass))
         }
     }
 
     /// Gives every slice of the executable SDK 27.1 with `xcrun vtool` (the job's Xcode),
-    /// keeping its minimum iOS. Never fails the install: on any problem the executable is left
-    /// as it was. Returns whether it now declares 27.1.
-    private func raiseSDK(of executable: URL, workDir: URL) async -> Bool {
+    /// keeping its minimum iOS. Done on a copy: when the header lacks room for the bigger
+    /// version command (and XSide's), the copy loses the build Mac's toolchain run paths first; the copy
+    /// replaces the executable only once every slice declares 27.1. Never fails the install: on
+    /// any problem the executable stays exactly as it was (run paths included). Returns whether
+    /// it now declares 27.1.
+    /// `loading`: XSide's library, whose load command goes in the copy first (it takes room too).
+    private func applyDuo(to executable: URL, growth: Int, loading dylibPath: String?, workDir: URL) async -> Bool {
         let fm = FileManager.default
         let tag = UUID().uuidString
+        let input = workDir.appendingPathComponent("duo-\(tag)-in")
         let output = workDir.appendingPathComponent("duo-\(tag)")
         var temps: [URL] = []
         defer {
+            try? fm.removeItem(at: input)
             try? fm.removeItem(at: output)
             for t in temps { try? fm.removeItem(at: t) }
         }
         do {
-            let slices = try MachOBuildInfo.slices(of: executable)
-            guard let calls = DuoCompatibility.vtoolCalls(input: executable.path, output: output.path, slices: slices, temp: { i in
+            try fm.copyItem(at: executable, to: input)
+            let command = dylibPath.map { MachOPatcher.dylibCommand($0).count } ?? 0
+            makeRoom(in: input, needing: growth + command)
+            if let dylibPath {
+                // Its own failure (no room) is the library's, found again when it's added for real.
+                do { _ = try MachOPatcher.addWeakDylib(dylibPath, to: input) } catch {
+                    Self.logger.notice("duo compatibility: XSide's load command didn't fit: \(String(describing: error))")
+                }
+            }
+            let slices = try MachOBuildInfo.slices(of: input)
+            guard let calls = DuoCompatibility.vtoolCalls(input: input.path, output: output.path, slices: slices, temp: { i in
                 let url = workDir.appendingPathComponent("duo-\(tag)-\(i)")
                 temps.append(url)
                 return url.path
@@ -290,6 +315,18 @@ public struct Resigner: Sendable {
         } catch {
             Self.logger.notice("duo compatibility skipped: \(String(describing: error))")
             return false
+        }
+    }
+
+    /// Frees header space by removing the build Mac's toolchain run paths, only when the new
+    /// command wouldn't fit otherwise.
+    private func makeRoom(in executable: URL, needing bytes: Int) {
+        guard bytes > 0, let free = try? MachOPatcher.freeSpace(in: executable), free < bytes else { return }
+        do {
+            let removed = try MachOPatcher.removeRpaths(from: executable, where: DuoCompatibility.isBuildMacToolchainPath)
+            Self.logger.info("duo compatibility: \(free) bytes free for \(bytes), removed \(removed.count) toolchain rpath(s)")
+        } catch {
+            Self.logger.notice("duo compatibility: couldn't make room: \(String(describing: error))")
         }
     }
 

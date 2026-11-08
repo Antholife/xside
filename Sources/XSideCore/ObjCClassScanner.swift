@@ -8,7 +8,8 @@ import Foundation
 public enum ObjCClassScanner {
     public struct ClassInfo: Equatable, Sendable {
         /// The runtime name (a Swift class without `@objc(name)` has its mangled one, which
-        /// `NSClassFromString` accepts).
+        /// `NSClassFromString` accepts). Not verified on a device yet: that UIKit takes a mangled
+        /// name from the scene manifest (the plain ObjC names, like YouTube's, are the known case).
         public let name: String
         /// It, or a superclass in the same executable, declares `UIWindowSceneDelegate` (directly
         /// or through a protocol that inherits it).

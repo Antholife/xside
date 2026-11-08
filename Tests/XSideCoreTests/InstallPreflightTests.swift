@@ -23,30 +23,43 @@ struct InstallPreflightTests {
         #expect(warnings == [.developerModeOff(deviceID: "a")])
     }
 
-    /// Built with an older iOS SDK than the device runs: shown in compatibility mode (seen
-    /// 2026-11-06: YouTube 21.37.4, SDK 26.4, on an iPhone on iOS 27).
-    @Test func flagsAnAppNotBuiltForTheDevicesIOS() {
-        let warnings = InstallPreflight.check(minimumOS: nil, targets: [target("a", os: "27.3"), target("b", os: "26.2")],
-                                              needsNewAppID: false, appIDsRemaining: 10, sdkVersion: "26.4")
-        #expect(warnings == [.notBuiltForDevice(deviceID: "a", sdk: "26.4", deviceOS: "27.3")])
-        #expect(InstallPreflight.check(minimumOS: nil, targets: [target("a", os: "27.3")], needsNewAppID: false,
-                                       appIDsRemaining: 10, sdkVersion: nil).isEmpty)
+    /// Built with an older iOS SDK than the device runs: outside an iPhone Duo, nothing is said
+    /// (ruling on duo review I2: the "compatibility mode" claim was mostly untrue there).
+    @Test func saysNothingOfAnOlderSDKOutsideTheDuo() {
+        #expect(InstallPreflight.check(minimumOS: nil, targets: [target("a", os: "27.3"), target("b", os: "26.2")],
+                                       needsNewAppID: false, appIDsRemaining: 10, sdkVersion: "26.4").isEmpty)
     }
 
-    /// An iPhone Duo and an app built before SDK 27.1: it won't fill the Duo's screens (the more
-    /// precise note replaces "not built for this iOS" there).
+    /// An iPhone Duo and an app built before SDK 27.1: it won't fill the Duo's screens.
     @Test func flagsAnAppNotMadeForTheDuo() {
         let duo = InstallPreflight.Target(deviceID: "duo", osVersion: "27.3", otherApps: [], hasThisApp: false, isDuo: true)
         let other = target("b", os: "27.3")
         #expect(InstallPreflight.check(minimumOS: nil, targets: [duo, other], needsNewAppID: false, appIDsRemaining: 10,
                                        sdkVersion: "26.4")
-                == [.notMadeForDuo(deviceID: "duo"), .notBuiltForDevice(deviceID: "b", sdk: "26.4", deviceOS: "27.3")])
+                == [.notMadeForDuo(deviceID: "duo", optionPossible: true)])
         #expect(InstallPreflight.check(minimumOS: nil, targets: [duo], needsNewAppID: false, appIDsRemaining: 10,
-                                       sdkVersion: "27.0") == [.notMadeForDuo(deviceID: "duo")])
+                                       sdkVersion: "27.0") == [.notMadeForDuo(deviceID: "duo", optionPossible: true)])
         #expect(InstallPreflight.check(minimumOS: nil, targets: [duo], needsNewAppID: false, appIDsRemaining: 10,
                                        sdkVersion: "27.1").isEmpty)
         #expect(InstallPreflight.check(minimumOS: nil, targets: [duo], needsNewAppID: false, appIDsRemaining: 10,
                                        sdkVersion: nil).isEmpty)
+    }
+
+    /// The note says the install option can help only when the option can be turned on for this
+    /// app (duo review minor 1): not for an app without scenes and without a scene delegate.
+    @Test func theDuoNoteOffersTheOptionOnlyWhenItIsPossible() {
+        let duo = InstallPreflight.Target(deviceID: "duo", osVersion: "27.3", otherApps: [], hasThisApp: false, isDuo: true)
+        func check(_ app: DuoAppInfo?) -> [InstallPreflight.Warning] {
+            InstallPreflight.check(minimumOS: nil, targets: [duo], needsNewAppID: false, appIDsRemaining: 10,
+                                   sdkVersion: "26.4", duo: app)
+        }
+        #expect(check(DuoAppInfo(sdkVersion: "26.4", adoptsScenes: false, sceneDelegateClass: nil))
+                == [.notMadeForDuo(deviceID: "duo", optionPossible: false)])
+        #expect(check(DuoAppInfo(sdkVersion: "26.4", adoptsScenes: false, sceneDelegateClass: "YTSceneDelegate"))
+                == [.notMadeForDuo(deviceID: "duo", optionPossible: true)])
+        #expect(check(DuoAppInfo(sdkVersion: "26.4", adoptsScenes: true, sceneDelegateClass: nil))
+                == [.notMadeForDuo(deviceID: "duo", optionPossible: true)])
+        #expect(check(nil) == [.notMadeForDuo(deviceID: "duo", optionPossible: true)]) // not known: offered
     }
 
     /// Someone picked the wrong file: an older version than the one already on the device.

@@ -182,7 +182,7 @@ struct DuoResignTests {
     /// run paths go (only then), and both fit.
     @Test func makesRoomByDroppingTheToolchainRpaths() async throws {
         let toolchain = "/private/var/select/developer_dir/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.5/iphoneos"
-        let exe = versionedMachO(versionMin: (packed(12, 0), packed(14, 5)),
+        let exe = versionedMachO(buildVersion: (2, packed(12, 0), packed(14, 5)),
                                  rpaths: [toolchain, "@executable_path/Frameworks"], padding: 40)
         let manifest: [String: Any] = ["UIApplicationSupportsMultipleScenes": false]
         let f = try await DuoFixture(executable: exe, plistExtras: ["UIApplicationSceneManifest": manifest])
@@ -197,6 +197,48 @@ struct DuoResignTests {
         let plainApp = try await plainFixture.run(InstallOptions())
         #expect(try MachOPatcher.rpaths(in: plainApp.appendingPathComponent("Demo")).count == 2)
         #expect(!plainFixture.resigner.hasXSideLibrary(plainApp))
+    }
+
+    /// The patch is done on a copy: when vtool fails after the run paths were dropped to make
+    /// room, the executable is exactly what it would be without the option (duo review minor 3).
+    @Test func aFailedPatchKeepsTheRunPaths() async throws {
+        let toolchain = "/private/var/select/developer_dir/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.5/iphoneos"
+        let exe = versionedMachO(buildVersion: (2, packed(12, 0), packed(14, 5)),
+                                 rpaths: [toolchain, "@executable_path/Frameworks"], padding: 40)
+        let manifest: [String: Any] = ["UIApplicationSupportsMultipleScenes": false]
+        let failing = try await DuoFixture(executable: exe, plistExtras: ["UIApplicationSceneManifest": manifest], vtoolFails: true)
+        let app = try await failing.run(InstallOptions(duoCompatibility: true))
+        let plain = try await DuoFixture(executable: exe, plistExtras: ["UIApplicationSceneManifest": manifest])
+        let plainApp = try await plain.run(InstallOptions())
+        #expect(failing.vtoolCalls.count == 1)
+        #expect(try Data(contentsOf: app.appendingPathComponent("Demo")) == Data(contentsOf: plainApp.appendingPathComponent("Demo")))
+        #expect(try MachOPatcher.rpaths(in: app.appendingPathComponent("Demo")).count == 2)
+        #expect(failing.resigner.hasXSideLibrary(app) == plain.resigner.hasXSideLibrary(plainApp))
+        #expect(!failing.resigner.hasDuoCompatibility(app))
+        #expect(try plist(app)["DTPlatformVersion"] as? String != "27.1")
+        // Nothing of the patch is left in the work folder.
+        #expect(try FileManager.default.contentsOfDirectory(atPath: failing.work.path).filter { $0.hasPrefix("duo-") }.isEmpty)
+    }
+
+    /// Each signing tells how the option went, for the install window's Duo step.
+    @Test func tellsTheOutcome() async throws {
+        actor Outcomes { var items: [DuoOutcome?] = []; func add(_ o: DuoOutcome?) { items.append(o) } }
+        func outcomes(_ f: DuoFixture, _ options: InstallOptions) async throws -> [DuoOutcome?] {
+            let log = Outcomes()
+            _ = try await f.resigner.resign(ipa: f.ipa, workDir: f.work, bundleID: "com.example.new", options: options,
+                                            iconURL: nil, profileURL: f.profileURL, profile: profile(), identitySHA1: "SHA",
+                                            facts: nil, onDuo: { await log.add($0) })
+            return await log.items
+        }
+        let on = InstallOptions(duoCompatibility: true)
+        #expect(try await outcomes(DuoFixture(executable: realExecutable("duo-objc-fat")), on) == [nil, .added])
+        #expect(try await outcomes(DuoFixture(executable: realExecutable("duo-objc-fat"), vtoolFails: true), on) == [nil, .failed])
+        #expect(try await outcomes(DuoFixture(executable: versionedMachO(buildVersion: (2, packed(15, 0), packed(26, 4))),
+                                              withLibrary: false), on) == [nil, .notPossible])
+        #expect(try await outcomes(DuoFixture(executable: versionedMachO(buildVersion: (2, packed(15, 0), packed(27, 2))),
+                                              plistExtras: ["DTPlatformVersion": "27.2"], withLibrary: false), on)
+                == [nil, .alreadySupported])
+        #expect(try await outcomes(DuoFixture(executable: realExecutable("duo-objc-fat")), InstallOptions()).isEmpty)
     }
 
     @Test func optionDecodesFromOldOptions() throws {

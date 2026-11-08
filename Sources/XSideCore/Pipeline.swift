@@ -14,6 +14,7 @@ public protocol Resigning: Sendable {
     func resign(ipa: URL, workDir: URL, bundleID: String, options: InstallOptions,
                 iconURL: URL?, profileURL: URL, profile: ProvisioningProfile,
                 identitySHA1: String, otherBundleIDs: Set<String>, facts: InstallationFacts?,
+                onDuo: @Sendable (DuoOutcome?) async -> Void,
                 onSigning: @Sendable () async -> Void) async throws -> URL
     /// Whether the signed `app` holds XSide's library: features asked for can still be missing
     /// when the library couldn't be added (the app is then installed as it came).
@@ -46,7 +47,8 @@ extension Installer: Installing {}
 /// Phase reported by `SideloadPipeline.install(recordID:device:env:refresh:progress:)` as each step starts.
 public enum InstallStep: Int, CaseIterable, Sendable {
     /// `welcome`: unpacking the app and adding the XSide welcome popup to it, before signing.
-    case profile, welcome, signing, installing
+    /// `duo`: adding iPhone Duo compatibility, only when it was asked for.
+    case profile, welcome, duo, signing, installing
 }
 
 /// FIFO async mutex: `run` bodies execute one at a time, in arrival order. A task already
@@ -222,18 +224,21 @@ public actor SideloadPipeline {
     /// existing one only the fields the user touched (see `InAppSettings.adopting`), recorded as
     /// a Mac edit when that changes something. nil keeps its own (or the Mac defaults).
     /// `duoCompatibility`: the iPhone Duo option for this device, remembered on the installation;
-    /// nil keeps the installation's own choice (off for a new one).
+    /// nil keeps the installation's own choice (off for a new one). When it applies, `.duo` is a
+    /// step of its own and `duoOutcome` tells how it went as soon as it's known.
     public func install(recordID: UUID, device: Device,
                         environment: @escaping @Sendable () async throws -> SigningEnvironment,
                         refresh: Bool = false, inApp: InAppDraft? = nil, duoCompatibility: Bool? = nil,
-                        progress: @escaping @Sendable (InstallStep) async -> Void = { _ in }) async throws -> Installation {
+                        progress: @escaping @Sendable (InstallStep) async -> Void = { _ in },
+                        duoOutcome: @escaping @Sendable (DuoOutcome) async -> Void = { _ in }) async throws -> Installation {
         let previous = tails[device.id]?.task
         let token = UUID()
         let job = Task<Installation, Error> {
             try await waitCancellably(for: previous)
             try Task.checkCancellation()
             return try await self.perform(recordID: recordID, device: device, environment: environment,
-                                          refresh: refresh, inApp: inApp, duo: duoCompatibility, progress: progress)
+                                          refresh: refresh, inApp: inApp, duo: duoCompatibility, progress: progress,
+                                          duoOutcome: duoOutcome)
         }
         // The chain waits for the previous job too: one cancelled while queued ends at once, and a
         // job queued after it must still wait for the one running.
@@ -309,9 +314,10 @@ public actor SideloadPipeline {
     /// A fixed environment (tests, callers that just probed).
     public func install(recordID: UUID, device: Device, env: SigningEnvironment, refresh: Bool = false,
                         inApp: InAppDraft? = nil, duoCompatibility: Bool? = nil,
-                        progress: @escaping @Sendable (InstallStep) async -> Void = { _ in }) async throws -> Installation {
+                        progress: @escaping @Sendable (InstallStep) async -> Void = { _ in },
+                        duoOutcome: @escaping @Sendable (DuoOutcome) async -> Void = { _ in }) async throws -> Installation {
         try await install(recordID: recordID, device: device, environment: { env }, refresh: refresh, inApp: inApp,
-                          duoCompatibility: duoCompatibility, progress: progress)
+                          duoCompatibility: duoCompatibility, progress: progress, duoOutcome: duoOutcome)
     }
 
     /// Thrown inside the provisioning lock when `environment` fails, to tell it from a job failure.
@@ -320,7 +326,8 @@ public actor SideloadPipeline {
     private nonisolated func perform(recordID: UUID, device: Device,
                                      environment: @escaping @Sendable () async throws -> SigningEnvironment,
                                      refresh: Bool, inApp draft: InAppDraft?, duo: Bool?,
-                                     progress: @Sendable (InstallStep) async -> Void) async throws -> Installation {
+                                     progress: @escaping @Sendable (InstallStep) async -> Void,
+                                     duoOutcome: @escaping @Sendable (DuoOutcome) async -> Void) async throws -> Installation {
         guard let record = await library.records().first(where: { $0.id == recordID }) else {
             throw XSideError.recordNotFound
         }
@@ -403,6 +410,14 @@ public actor SideloadPipeline {
                     ipa: ipa, workDir: workDir, bundleID: bundleID, options: options,
                     iconURL: icon, profileURL: provisioned.url, profile: provisioned.profile,
                     identitySHA1: current.identitySHA1, otherBundleIDs: others, facts: facts,
+                    onDuo: { outcome in
+                        if let outcome {
+                            await duoOutcome(outcome)
+                        } else {
+                            await progress(.duo)
+                            Self.logger.info("\(what): adding iPhone Duo compatibility")
+                        }
+                    },
                     onSigning: {
                         await progress(.signing)
                         Self.logger.info("\(what): signing")
@@ -431,7 +446,8 @@ public actor SideloadPipeline {
                                           || !resigner.hasXSideLibrary(app) ? true : nil,
                                       duoCompatibility: duoAsked ? true : nil,
                                       duoCompatibilityMissing: duoAsked && !resigner.hasDuoCompatibility(app) ? true : nil,
-                                      onDuo: device.isDuo ? true : nil)
+                                      // Kept when devicectl doesn't say what the device is.
+                                      onDuo: device.isDuo(remembered: previous?.onDuo) ? true : nil)
             let installation = try await library.recordSigning(signed, for: recordID, requireExisting: previous != nil)
             Self.logger.notice("\(what): done, expires \(installation.expiresAt.formatted(.iso8601))")
             return installation

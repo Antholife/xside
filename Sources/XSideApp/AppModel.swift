@@ -983,7 +983,8 @@ final class AppModel {
                           inApp: InAppDraft? = nil, duoCompatibility: Bool? = nil,
                           importedInto recordID: UUID? = nil,
                           imported: @MainActor (UUID) -> Void = { _ in },
-                          progress: @escaping @MainActor @Sendable (JobStage) -> Void = { _ in }) async throws -> AppRecord {
+                          progress: @escaping @MainActor @Sendable (JobStage) -> Void = { _ in },
+                          duoOutcome: @escaping @MainActor @Sendable (DuoOutcome) -> Void = { _ in }) async throws -> AppRecord {
         guard let env = try environment?.get() else { throw XSideError.xcodeMissing }
         guard !removingDevices.contains(device.id) else { throw XSideError.deviceUnavailable }
         let record: AppRecord
@@ -1013,7 +1014,8 @@ final class AppModel {
         // (provisioning lock, or another job on the same device).
         if jobs[key] == .preparing { jobs[key] = .waiting }
         progress(jobs[key] ?? .waiting) // never replaces a real step another holder already reported
-        try await run(key: key, device: device, inApp: inApp, duoCompatibility: duoCompatibility, progress: progress)
+        try await run(key: key, device: device, inApp: inApp, duoCompatibility: duoCompatibility, progress: progress,
+                      duoOutcome: duoOutcome)
         return records.first { $0.id == record.id } ?? record
     }
 
@@ -1599,7 +1601,7 @@ final class AppModel {
                 installedVersion: existing?.installations.first {
                     $0.deviceID == id && ($0.signedBundleID ?? existing?.signedBundleID) == signedID
                 }.flatMap { $0.appVersion },
-                isDuo: device.isDuo)
+                isDuo: isDuo(device.id))
         }
         #if DEBUG
         // Debug-only: XSIDE_FAKE_PREFLIGHT=1 shows every warning, on the first selected device.
@@ -1607,8 +1609,8 @@ final class AppModel {
            let first = targets.max(by: { $0.otherApps.count < $1.otherApps.count }) {
             return [.iOSTooOld(deviceID: first.deviceID, required: "99.0", actual: first.osVersion ?? "?"),
                     .deviceFull(deviceID: first.deviceID, apps: first.otherApps),
-                    .notBuiltForDevice(deviceID: first.deviceID, sdk: "26.4", deviceOS: first.osVersion ?? "27.0"),
-                    .notMadeForDuo(deviceID: first.deviceID),
+                    .notMadeForDuo(deviceID: first.deviceID, optionPossible: true),
+                    .notMadeForDuo(deviceID: first.deviceID, optionPossible: false),
                     .olderVersion(deviceID: first.deviceID, installing: "1.0", installed: "2.0"),
                     .noAppIDLeft]
         }
@@ -1616,7 +1618,8 @@ final class AppModel {
         let version = flow.draft.version.trimmingCharacters(in: .whitespacesAndNewlines)
         return InstallPreflight.check(minimumOS: minOS.isEmpty ? info.minimumOSVersion : minOS, targets: targets,
                                       needsNewAppID: needsNewAppID, appIDsRemaining: appIDsRemaining,
-                                      sdkVersion: info.sdkVersion, appVersion: version.isEmpty ? info.version : version)
+                                      sdkVersion: info.sdkVersion, appVersion: version.isEmpty ? info.version : version,
+                                      duo: info.duo)
     }
 
     /// The running step's progress per row, in whole percents, when its tool reports one.
@@ -1890,7 +1893,8 @@ final class AppModel {
     /// The caller must hold a claim on `key`. `refresh`: see `SideloadPipeline.install`.
     private func run(key: JobKey, device: Device, refresh: Bool = false,
                      automatic: Bool = false, inApp: InAppDraft? = nil, duoCompatibility: Bool? = nil,
-                     progress: @escaping @MainActor @Sendable (JobStage) -> Void = { _ in }) async throws {
+                     progress: @escaping @MainActor @Sendable (JobStage) -> Void = { _ in },
+                     duoOutcome: @escaping @MainActor @Sendable (DuoOutcome) -> Void = { _ in }) async throws {
         let job = RefreshJob(recordID: key.recordID, deviceID: key.deviceID)
         // A refresh renews an existing installation; a first install is shown by the install window.
         let wasRefresh = records.first { $0.id == key.recordID }?
@@ -1916,6 +1920,8 @@ final class AppModel {
                         self.updateDockBadge()
                         progress(.step(step))
                     }
+                } duoOutcome: { outcome in
+                    await MainActor.run { duoOutcome(outcome) }
                 }
             }
         } catch {
@@ -2121,7 +2127,10 @@ final class AppModel {
         flow.lastStage = .preparing
         flow.phase = .running(.preparing)
         flow.setStatus(.running(.preparing), for: deviceID)
-        if let i = flow.runs.firstIndex(where: { $0.deviceID == deviceID }) { flow.runs[i].duoMissing = false }
+        if let i = flow.runs.firstIndex(where: { $0.deviceID == deviceID }) {
+            flow.runs[i].duoMissing = false
+            flow.runs[i].duoOutcome = nil
+        }
         needsUnlock.remove(deviceID)
         // Looked up now: the device may have gone (or changed transport) during the earlier ones.
         guard !removingDevices.contains(deviceID),
@@ -2140,6 +2149,11 @@ final class AppModel {
                                            flow.lastStage = stage
                                            flow.phase = .running(stage)
                                            flow.setStatus(.running(stage), for: deviceID)
+                                       },
+                                       duoOutcome: { outcome in
+                                           if let i = flow.runs.firstIndex(where: { $0.deviceID == deviceID }) {
+                                               flow.runs[i].duoOutcome = outcome
+                                           }
                                        })
             flow.setStatus(.succeeded, for: deviceID)
             if installed.installations.first(where: { $0.deviceID == deviceID })?.duoCompatibilityMissing == true,
@@ -2218,8 +2232,16 @@ final class AppModel {
     /// How the iPhone Duo option shows for an app (`app`: what its .ipa supports) on a device:
     /// connected, as devicectl describes it, else as it was at its last signing.
     func duoState(for deviceID: String, app: DuoAppInfo?, installation: Installation? = nil) -> DuoCompatibility.OptionState {
-        let isDuo = devices.first { $0.id == deviceID }?.isDuo ?? (installation?.onDuo == true)
-        return DuoCompatibility.optionState(isDuo: isDuo, app: app)
+        DuoCompatibility.optionState(isDuo: isDuo(deviceID, installation: installation), app: app)
+    }
+
+    /// The device is an iPhone Duo: what devicectl says of it, else (it isn't connected, or
+    /// didn't say what it is) what an earlier signing there remembered (duo review minor 4).
+    func isDuo(_ deviceID: String, installation: Installation? = nil) -> Bool {
+        let remembered = installation?.onDuo == true
+            || records.contains { $0.installations.contains { $0.deviceID == deviceID && $0.onDuo == true } }
+        guard let device = devices.first(where: { $0.id == deviceID }) else { return remembered }
+        return device.isDuo(remembered: remembered)
     }
 
     /// Settings > Mes apps: iPhone Duo compatibility for one installation, from its next signing.

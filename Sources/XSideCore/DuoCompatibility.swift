@@ -41,6 +41,18 @@ public struct DuoAppInfo: Codable, Equatable, Sendable {
     }
 }
 
+/// What a signing did with the iPhone Duo option it was asked for.
+public enum DuoOutcome: String, Codable, Equatable, Sendable {
+    /// The app now declares SDK 27.1 (and names its scene delegate when it had no manifest).
+    case added
+    /// Built with SDK 27.1 or later: nothing to add.
+    case alreadySupported
+    /// No scene manifest and no scene delegate of its own: nothing can be added.
+    case notPossible
+    /// The patch didn't work (unreadable executable, vtool failed…): installed without it.
+    case failed
+}
+
 /// The iPhone Duo compatibility install option. On a Duo, iOS lays an app out by the SDK it was
 /// built with: before 27.0 a narrow column on black, 27.0 wider with margins, 27.1 and later the
 /// full inner and outer screens. Declaring SDK 27.1 makes an older app fill them; since apps built

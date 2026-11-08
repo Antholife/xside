@@ -87,10 +87,15 @@ private struct FakeResigner: Resigning {
     func resign(ipa: URL, workDir: URL, bundleID: String, options: InstallOptions, iconURL: URL?,
                 profileURL: URL, profile: ProvisioningProfile, identitySHA1: String,
                 otherBundleIDs: Set<String>, facts: InstallationFacts?,
+                onDuo: @Sendable (DuoOutcome?) async -> Void,
                 onSigning: @Sendable () async -> Void) async throws -> URL {
         await log.resign(ipa, workDir, bundleID, iconURL, profileURL, profile)
         await log.fact(facts)
         await log.option(options)
+        if options.duoCompatibility == true {
+            await onDuo(nil)
+            await onDuo(duoApplied ? .added : .failed)
+        }
         await onSigning()
         // Simulate unpacking into the work dir.
         let app = workDir.appendingPathComponent("Payload/Demo.app", isDirectory: true)
@@ -138,6 +143,11 @@ private struct FirstCallTimesOut: Provisioning {
         if await log.provisionUDIDs.count == 1 { throw XSideError.timedOut(tool: "xcodebuild") }
         return (URL(fileURLWithPath: "/nonexistent/profile.mobileprovision"), makeProfile(udids: deviceUDIDs))
     }
+}
+
+private actor OutcomeLog {
+    private(set) var items: [DuoOutcome] = []
+    func add(_ outcome: DuoOutcome) { items.append(outcome) }
 }
 
 private actor StepLog {
@@ -1347,6 +1357,51 @@ extension PipelineChannelTests {
         #expect(try await f.pipeline().install(recordID: f.record.id, device: duo, env: env).onDuo == true)
     }
 
+    /// With the option on, the Duo patch is a step of its own, between the module and the
+    /// signature, and its outcome is told as soon as it's known (Anthony, duo fix pass).
+    @Test func duoIsAStepWithItsOutcome() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let steps = StepLog()
+        let outcomes = OutcomeLog()
+        _ = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env, duoCompatibility: true,
+                                           progress: { await steps.add($0) }, duoOutcome: { await outcomes.add($0) })
+        #expect(await steps.items == [.profile, .welcome, .duo, .signing, .installing])
+        #expect(await outcomes.items == [.added])
+        let failedSteps = StepLog()
+        let failed = OutcomeLog()
+        _ = try await f.pipeline(duoApplied: false).install(recordID: f.record.id, device: device(), env: env,
+                                                            progress: { await failedSteps.add($0) },
+                                                            duoOutcome: { await failed.add($0) })
+        #expect(await failedSteps.items == [.profile, .welcome, .duo, .signing, .installing]) // kept: still on
+        #expect(await failed.items == [.failed])
+        // Off: no such step.
+        let offSteps = StepLog()
+        _ = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env, duoCompatibility: false) {
+            await offSteps.add($0)
+        }
+        #expect(await offSteps.items == [.profile, .welcome, .signing, .installing])
+    }
+
+    /// devicectl may leave out the hardware facts (over Wi-Fi): a device known as a Duo stays
+    /// one instead of turning into "not recommended" (duo review minor 4).
+    @Test func aDuoStaysOneWhenItsModelIsntSaid() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let duo = Device(id: "duo", udid: "U3", name: "Duo", model: "iPhone", kind: .iPhone, transport: .usb,
+                         isPaired: true, isAvailable: true, developerModeEnabled: true, productType: "iPhone19,4")
+        let anonymous = Device(id: "duo", udid: "U3", name: "Duo", model: "iPhone", kind: .iPhone, transport: .network,
+                               isPaired: true, isAvailable: true, developerModeEnabled: true)
+        #expect(try await f.pipeline().install(recordID: f.record.id, device: duo, env: env).onDuo == true)
+        #expect(try await f.pipeline().install(recordID: f.record.id, device: anonymous, env: env, refresh: true).onDuo == true)
+        // Said, and not a Duo: forgotten.
+        let other = Device(id: "duo", udid: "U3", name: "Duo", model: "iPhone", kind: .iPhone, transport: .usb,
+                           isPaired: true, isAvailable: true, developerModeEnabled: true, productType: "iPhone18,2")
+        #expect(try await f.pipeline().install(recordID: f.record.id, device: other, env: env, refresh: true).onDuo == nil)
+        #expect(anonymous.isDuo(remembered: true))
+        #expect(!anonymous.isDuo(remembered: nil))
+        #expect(!other.isDuo(remembered: true))
+        #expect(duo.isDuo(remembered: nil))
+    }
+
     @Test func duoChoiceCanBeChangedForTheNextSigning() async throws {
         let f = try await Fixture(); defer { f.cleanup() }
         _ = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
@@ -1356,6 +1411,13 @@ extension PipelineChannelTests {
         #expect(try await !f.library.setDuoCompatibility(true, recordID: f.record.id, deviceID: "nope"))
         #expect(try await f.library.setDuoCompatibility(false, recordID: f.record.id, deviceID: "dev-1"))
         #expect(await f.library.records().first?.installations.first?.duoCompatibility == nil)
+        // A choice whose last signing went without it can be cleared, and the note goes with it
+        // (duo review minor 2: whatever the current .ipa allows).
+        _ = try await f.pipeline(duoApplied: false).install(recordID: f.record.id, device: device(), env: env,
+                                                            duoCompatibility: true)
+        #expect(await f.library.records().first?.installations.first?.duoCompatibilityMissing == true)
+        #expect(try await f.library.setDuoCompatibility(false, recordID: f.record.id, deviceID: "dev-1"))
+        #expect(await f.library.records().first?.installations.first?.duoCompatibilityMissing == nil)
     }
 
     /// Saved before the option existed: decodes without it.

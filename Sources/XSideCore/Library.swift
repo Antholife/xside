@@ -430,6 +430,7 @@ public actor AppLibrary {
               (items[index].installations[i].duoCompatibility == true) != on else { return false }
         let previous = items
         items[index].installations[i].duoCompatibility = on ? true : nil
+        if !on { items[index].installations[i].duoCompatibilityMissing = nil } // nothing asked, nothing missing
         do { try save() } catch { items = previous; throw error }
         return true
     }

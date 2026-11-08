@@ -102,7 +102,7 @@ struct InstallSummaryView: View {
                                          openAppAfter: flow.openAppAfter, openTrustPage: flow.openTrustPage,
                                          offersKeychain: info?.sharedKeychainGroups.isEmpty == false,
                                          duoDevices: duoOn.map(deviceName),
-                                         offersDuo: flow.deviceIDs.contains { id in model.devices.first { $0.id == id }?.isDuo == true })
+                                         offersDuo: flow.deviceIDs.contains { model.isDuo($0) })
         VStack(alignment: .leading, spacing: 10) {
             SectionTitle(L("install.summary.title"))
             group(L("install.optionsTitle"), lines.install, step: 1)

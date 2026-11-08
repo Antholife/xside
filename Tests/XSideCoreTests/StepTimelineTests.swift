@@ -10,6 +10,22 @@ import Testing
         #expect(firstRun.last == .wifiCheck)
     }
 
+    /// Its own step when the Duo option is on: done once passed, skipped (with its reason in the
+    /// app) when it couldn't be added.
+    @Test func theDuoStepIsListedOnlyWhenAskedFor() {
+        let duoRun = ProgressStep.list(includingWifiCheck: false, includingDuo: true)
+        #expect(duoRun == [.preparing, .profile, .welcome, .duo, .signing, .installing])
+        let t = StepTimeline(steps: duoRun, stage: .step(.duo))
+        #expect(t.status(of: .welcome) == .done)
+        #expect(t.status(of: .duo) == .active)
+        #expect(t.status(of: .signing) == .pending)
+        let skipped = StepTimeline(steps: duoRun, stage: .step(.signing), skipped: [.duo])
+        #expect(skipped.status(of: .duo) == .skipped)
+        #expect(StepTimeline(steps: duoRun, stage: .step(.signing)).status(of: .duo) == .done)
+        // Not listed: a .duo stage resolves to the step after it.
+        #expect(StepTimeline(steps: run, stage: .step(.duo)).status(of: .signing) == .active)
+    }
+
     @Test func midRunStatuses() {
         let t = StepTimeline(steps: firstRun, stage: .step(.signing))
         #expect(t.status(of: .preparing) == .done)

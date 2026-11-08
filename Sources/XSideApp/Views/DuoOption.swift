@@ -15,6 +15,12 @@ struct DuoOptionRow: View {
     @Binding var isOn: Bool
     /// The last signing couldn't add it (Settings > Mes apps).
     var missing = false
+    /// `isOn` is a choice already stored on an installation (Settings > Mes apps): it shows, and
+    /// can be turned off, even when the app's current .ipa no longer allows it (duo review minor 2).
+    var storedChoice = false
+
+    /// The switch can be used: to turn it on when possible, or to clear a stored choice.
+    private var usable: Bool { state.canTurnOn || (storedChoice && isOn) }
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -53,13 +59,13 @@ struct DuoOptionRow: View {
             }
             .opacity(state.canTurnOn ? 1 : 0.7)
             Spacer(minLength: 8)
-            Toggle(L("duo.option"), isOn: Binding(get: { isOn && state.canTurnOn }, set: { on in
+            Toggle(L("duo.option"), isOn: Binding(get: { isOn && usable }, set: { on in
                 if !on || Self.confirm(app: appName) { isOn = on }
             }))
             .labelsHidden()
             .toggleStyle(.xside)
             .controlSize(.small)
-            .disabled(!state.canTurnOn)
+            .disabled(!usable)
             .help(caption)
         }
         .padding(.horizontal, 12)

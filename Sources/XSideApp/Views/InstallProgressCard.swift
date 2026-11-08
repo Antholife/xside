@@ -88,7 +88,7 @@ struct InstallProgressCard: View {
         flow.draft.options.displayName ?? flow.info?.name ?? flow.ipa.deletingPathExtension().lastPathComponent
     }
 
-    private var steps: [ProgressStep] { ProgressStep.list(includingWifiCheck: flow.wifiStepPlanned) }
+    private var steps: [ProgressStep] { flow.runSteps(for: flow.currentRun?.run.deviceID) }
 
     /// The device being installed and its stage (between two devices: the run's own stage).
     private var current: (name: String?, stage: JobStage)? {
