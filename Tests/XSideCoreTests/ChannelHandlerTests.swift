@@ -32,6 +32,35 @@ import Foundation
         #expect(update == .merged(merged, checkIn: now, outcome: phoneOutcome))
     }
 
+    /// Review D–G minor 7: a pause of a while made on the Mac reaches the phone with its end, and
+    /// only while the reply still has automatic refresh off.
+    @Test func checkInSaysWhenAMacPauseEnds() {
+        let end = now.addingTimeInterval(2 * 3600)
+        let off = InAppSettings.defaults(reminder: true, at: now.addingTimeInterval(-3600))
+            .setting(\.autoRefresh, to: false, at: now.addingTimeInterval(-60), by: .mac)
+        var paused = installation(inApp: off, paused: true, pausedBy: .mac)
+        paused.pausedUntil = end
+        let phone = InAppSettings.defaults(reminder: true, at: now.addingTimeInterval(-3600))
+        let (reply, _) = ChannelHandler.handle(.checkIn(settings: phone, lastRefresh: nil, appVersion: "2"),
+                                               installation: paused, now: now, reminder: true)
+        guard case let .settings(_, _, until) = reply else { Issue.record("no settings"); return }
+        #expect(until == end)
+        #expect(ChannelWatchState(paused)?.pausedUntil == end)
+        // The phone turned it back on meanwhile (newer): no end to tell.
+        let resumed = phone.setting(\.autoRefresh, to: true, at: now.addingTimeInterval(-10), by: .device)
+        let (back, _) = ChannelHandler.handle(.checkIn(settings: resumed, lastRefresh: nil, appVersion: "2"),
+                                              installation: paused, now: now, reminder: true)
+        guard case let .settings(_, _, none) = back else { Issue.record("no settings"); return }
+        #expect(none == nil)
+        // Until resumed: none either.
+        paused.pausedUntil = nil
+        #expect(ChannelWatchState(paused)?.pausedUntil == nil)
+        // On the wire: an epoch-milliseconds date, omitted when nil.
+        let body = String(decoding: (try? ChannelReply.settings(off, pausedUntil: end).encodedBody()) ?? Data(), as: UTF8.self)
+        #expect(body.contains("\"pausedUntil\":1800007200000"))
+        #expect(!String(decoding: (try? ChannelReply.settings(off).encodedBody()) ?? Data(), as: UTF8.self).contains("pausedUntil"))
+    }
+
     /// The phone learns how a refresh it asked for ended, even if it was suspended meanwhile:
     /// the check-in answer carries the newest outcome the Mac knows (its own or the phone's).
     @Test func checkInReplyCarriesTheNewestRefreshOutcome() {
@@ -59,7 +88,7 @@ import Foundation
         let future = RefreshOutcome(at: now.addingTimeInterval(86_400), succeeded: true)
         let (reply, update) = ChannelHandler.handle(.checkIn(settings: phone, lastRefresh: future, appVersion: nil),
                                                     installation: installation(inApp: mac), now: now, reminder: true)
-        guard case let .settings(merged, _) = reply else { Issue.record("no settings"); return }
+        guard case let .settings(merged, _, _) = reply else { Issue.record("no settings"); return }
         #expect(merged.reminder == Field(value: false, changedAt: now, changedBy: .device))
         #expect(merged.refreshCard.changedAt == now.addingTimeInterval(100))
         #expect(update == .merged(merged, checkIn: now, outcome: RefreshOutcome(at: now, succeeded: true)))
@@ -112,7 +141,7 @@ import Foundation
     @Test func setAutoRefreshFromTheDeviceRecordsTheOrigin() {
         let (offReply, off) = ChannelHandler.handle(.setAutoRefresh(false), installation: installation(), now: now, reminder: true)
         #expect(off == .paused(true, by: .device))
-        guard case let .settings(s, _) = offReply else { Issue.record("no settings"); return }
+        guard case let .settings(s, _, _) = offReply else { Issue.record("no settings"); return }
         #expect(s.autoRefresh == Field(value: false, changedAt: now, changedBy: .device))
         let (_, on) = ChannelHandler.handle(.setAutoRefresh(true),
                                             installation: installation(paused: true, pausedBy: .mac), now: now, reminder: true)
@@ -137,7 +166,7 @@ import Foundation
         var old = installation()
         old.inApp = nil
         let (reply, _) = ChannelHandler.handle(.setAutoRefresh(false), installation: old, now: now, reminder: false)
-        guard case let .settings(s, _) = reply else { Issue.record("no settings"); return }
+        guard case let .settings(s, _, _) = reply else { Issue.record("no settings"); return }
         #expect(s.reminder.value == false)
     }
 
@@ -426,14 +455,14 @@ import Foundation
         #expect(found.recordID == rec.id && found.installation.deviceID == "a")
         let (reply, update) = ChannelHandler.handle(.checkIn(settings: phone, lastRefresh: nil, appVersion: "1"),
                                                     installation: found.installation, now: now, reminder: true)
-        guard case let .settings(sent, _) = reply else { Issue.record("no settings reply"); return }
+        guard case let .settings(sent, _, _) = reply else { Issue.record("no settings reply"); return }
         #expect(sent.refreshCard == Field(value: false, changedAt: edit, changedBy: .mac))
         #expect(ChannelHandler.fieldsChanged(for: phone, by: sent) == [.refreshCard])
         // Over the wire, as the phone opens it.
         let line = try ChannelHandler.replyLine(reply, installationID: channelID, requestNonce: "n1", secret: secret)
         let opened = try ChannelReplyEnvelope.decode(line: line.dropLast())
             .open(secret: secret, expectedInstallationID: channelID, expectedNonce: "n1")
-        guard case let .settings(received, _)? = opened else { Issue.record("reply not opened"); return }
+        guard case let .settings(received, _, _)? = opened else { Issue.record("reply not opened"); return }
         #expect(received.refreshCard.value == false && received.refreshCard.changedBy == .mac)
         #expect(abs(received.refreshCard.changedAt.timeIntervalSince(edit)) < 0.001)
         // Stored, the edit stays the Mac's and is confirmed by this check-in.
@@ -556,7 +585,7 @@ import Foundation
         // 3. The app opens and checks in with what it still holds (off, device, t1).
         (reply, update) = ChannelHandler.handle(.checkIn(settings: phone, lastRefresh: nil, appVersion: "1"),
                                                 installation: i, now: t3, reminder: true)
-        guard case let .settings(sent, _) = reply, case let .merged(m3, c3, o3) = update else {
+        guard case let .settings(sent, _, _) = reply, case let .merged(m3, c3, o3) = update else {
             Issue.record("unexpected reply \(reply)"); return
         }
         #expect(sent.autoRefresh == Field(value: true, changedAt: t2, changedBy: .mac))

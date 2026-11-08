@@ -1233,7 +1233,7 @@ final class AppModel {
             await reply(answer)
         case let .merged(settings, checkIn, outcome):
             // What this reply changes on the phone (device feedback 3, E2): a Mac edit shows here.
-            if let sent = request.checkInReport?.settings, case let .settings(replied, _) = answer {
+            if let sent = request.checkInReport?.settings, case let .settings(replied, _, _) = answer {
                 let changed = ChannelHandler.fieldsChanged(for: sent, by: replied)
                 Self.channelLogger.notice("channel: settings reply for \(found.recordID) on \(job.deviceID): changed fields \(changed.isEmpty ? "none" : changed.map { "\($0.rawValue)=\(Self.describe(replied, $0))" }.joined(separator: ", "))")
             }
@@ -1246,9 +1246,10 @@ final class AppModel {
                 Self.channelLogger.error("channel: check-in not stored: \(String(describing: error))")
             }
             // A watch (only ever an authenticated one) stays open; refused, it is a plain check-in.
-            if ChannelHandler.watchRequested(received) != nil, case let .settings(first, lastRefresh) = answer,
+            if ChannelHandler.watchRequested(received) != nil, case let .settings(first, lastRefresh, pausedUntil) = answer,
                await holdWatch(installationID: installationID, nonce: nonce, secret: secret,
-                               first: ChannelWatchState(settings: first, lastRefresh: lastRefresh), key: key, hold: hold) {
+                               first: ChannelWatchState(settings: first, lastRefresh: lastRefresh, pausedUntil: pausedUntil),
+                               key: key, hold: hold) {
                 return
             }
             await reply(answer) // the phone's view is right either way

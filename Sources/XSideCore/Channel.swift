@@ -34,10 +34,10 @@ import CryptoKit
 //   ChannelRequest: {"type":"refresh"} | {"type":"setAutoRefresh","on":true}
 //                 | {"type":"checkIn","settings":{...},"lastRefresh":{...},"appVersion":"1.2","pollEvery":45}
 //                 | {"type":"watch","settings":{...},"lastRefresh":{...},"appVersion":"1.2"}
-//   ChannelReply:   {"type":"settings","settings":{...},"lastRefresh":{...}} | {"type":"accepted"} | {"type":"refreshed"}
+//   ChannelReply:   {"type":"settings","settings":{...},"lastRefresh":{...},"pausedUntil":1800000000000} | {"type":"accepted"} | {"type":"refreshed"}
 //                 | {"type":"failed","reasonKey":"..."} | {"type":"busy"} | {"type":"deviceUnreachable"}
 //                 | {"type":"paused","by":"mac"|"device"} | {"type":"rejected"}
-//                 | {"type":"live","seq":1,"settings":{...},"lastRefresh":{...}} | {"type":"alive","seq":2}
+//                 | {"type":"live","seq":1,"settings":{...},"lastRefresh":{...},"pausedUntil":...} | {"type":"alive","seq":2}
 //
 // Exchanges (XSide's side: ChannelHandler, ChannelServer). One request per connection; XSide
 // closes the connection after its last line.
@@ -46,6 +46,10 @@ import CryptoKit
 //   lastRefresh (optional, omitted when unknown; same shape as in checkIn) is the newest refresh
 //   outcome XSide knows for the installation, so a phone that was suspended while a refresh it
 //   asked for ended still learns how it went.
+//   pausedUntil (optional, a date like the others, on `settings` and `live`): when the Mac paused
+//   the app's refreshes for a while (Pause > 2 h, `xside pause <app> 1d`), when that pause ends by
+//   itself; omitted for a pause until resumed and when not paused. The phone only says it in its
+//   pill (review D–G, minor 7); older dylibs ignore it.
 //   pollEvery (optional, whole seconds, inside the signed body like every field): the phone's
 //   foreground poll interval (15, 45 in Low Power Mode), sent while it is in front. The Mac only
 //   uses it to keep "open, live" until the next poll (counted 15 to 120 s, plus a 10 s margin;
@@ -163,7 +167,8 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
 /// XSide's answer to a request.
 public enum ChannelReply: Codable, Equatable, Sendable {
     /// The installation's settings and, when known, its newest refresh outcome.
-    case settings(InAppSettings, lastRefresh: RefreshOutcome? = nil)
+    /// `pausedUntil`: the end of a pause of a while made on the Mac (see the header).
+    case settings(InAppSettings, lastRefresh: RefreshOutcome? = nil, pausedUntil: Date? = nil)
     /// Refresh queued; the app will be replaced, so it closes.
     case accepted
     case refreshed
@@ -175,18 +180,19 @@ public enum ChannelReply: Codable, Equatable, Sendable {
     case rejected
     /// On a watch: the installation's settings and newest refresh outcome changed on the Mac.
     /// `seq`: this line's number on the connection (1, 2, 3…, shared with `alive`).
-    case live(seq: Int, InAppSettings, lastRefresh: RefreshOutcome? = nil)
+    case live(seq: Int, InAppSettings, lastRefresh: RefreshOutcome? = nil, pausedUntil: Date? = nil)
     /// On a watch: nothing to say for a while, the connection is alive.
     case alive(seq: Int)
 
-    private enum CodingKeys: String, CodingKey { case type, settings, lastRefresh, reasonKey, by, seq }
+    private enum CodingKeys: String, CodingKey { case type, settings, lastRefresh, reasonKey, by, seq, pausedUntil }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         switch try c.decode(String.self, forKey: .type) {
         case "settings":
             self = .settings(try c.decode(InAppSettings.self, forKey: .settings),
-                             lastRefresh: try c.decodeIfPresent(RefreshOutcome.self, forKey: .lastRefresh))
+                             lastRefresh: try c.decodeIfPresent(RefreshOutcome.self, forKey: .lastRefresh),
+                             pausedUntil: try c.decodeIfPresent(Date.self, forKey: .pausedUntil))
         case "accepted": self = .accepted
         case "refreshed": self = .refreshed
         case "failed": self = .failed(reasonKey: try c.decode(String.self, forKey: .reasonKey))
@@ -196,7 +202,8 @@ public enum ChannelReply: Codable, Equatable, Sendable {
         case "rejected": self = .rejected
         case "live":
             self = .live(seq: try c.decode(Int.self, forKey: .seq), try c.decode(InAppSettings.self, forKey: .settings),
-                         lastRefresh: try c.decodeIfPresent(RefreshOutcome.self, forKey: .lastRefresh))
+                         lastRefresh: try c.decodeIfPresent(RefreshOutcome.self, forKey: .lastRefresh),
+                         pausedUntil: try c.decodeIfPresent(Date.self, forKey: .pausedUntil))
         case "alive": self = .alive(seq: try c.decode(Int.self, forKey: .seq))
         case let other:
             throw DecodingError.dataCorruptedError(forKey: .type, in: c, debugDescription: "unknown reply \(other)")
@@ -206,10 +213,11 @@ public enum ChannelReply: Codable, Equatable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case let .settings(s, lastRefresh):
+        case let .settings(s, lastRefresh, pausedUntil):
             try c.encode("settings", forKey: .type)
             try c.encode(s, forKey: .settings)
             try c.encodeIfPresent(lastRefresh, forKey: .lastRefresh)
+            try c.encodeIfPresent(pausedUntil, forKey: .pausedUntil)
         case .accepted: try c.encode("accepted", forKey: .type)
         case .refreshed: try c.encode("refreshed", forKey: .type)
         case let .failed(key):
@@ -221,11 +229,12 @@ public enum ChannelReply: Codable, Equatable, Sendable {
             try c.encode("paused", forKey: .type)
             try c.encode(by, forKey: .by)
         case .rejected: try c.encode("rejected", forKey: .type)
-        case let .live(seq, s, lastRefresh):
+        case let .live(seq, s, lastRefresh, pausedUntil):
             try c.encode("live", forKey: .type)
             try c.encode(seq, forKey: .seq)
             try c.encode(s, forKey: .settings)
             try c.encodeIfPresent(lastRefresh, forKey: .lastRefresh)
+            try c.encodeIfPresent(pausedUntil, forKey: .pausedUntil)
         case let .alive(seq):
             try c.encode("alive", forKey: .type)
             try c.encode(seq, forKey: .seq)
@@ -235,7 +244,7 @@ public enum ChannelReply: Codable, Equatable, Sendable {
     /// The line number of a watch line (`live`, `alive`), nil for the other replies.
     public var watchSeq: Int? {
         switch self {
-        case let .live(seq, _, _), let .alive(seq): seq
+        case let .live(seq, _, _, _), let .alive(seq): seq
         default: nil
         }
     }

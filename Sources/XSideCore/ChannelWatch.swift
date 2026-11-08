@@ -4,17 +4,21 @@ import Foundation
 public struct ChannelWatchState: Equatable, Sendable {
     public var settings: InAppSettings
     public var lastRefresh: RefreshOutcome?
+    /// The end of a pause of a while made on the Mac (review D–G, minor 7).
+    public var pausedUntil: Date?
 
-    public init(settings: InAppSettings, lastRefresh: RefreshOutcome?) {
+    public init(settings: InAppSettings, lastRefresh: RefreshOutcome?, pausedUntil: Date? = nil) {
         self.settings = settings
         self.lastRefresh = lastRefresh
+        self.pausedUntil = pausedUntil
     }
 
     /// The installation as stored (its settings carry the pause, as automatic refresh), nil while
     /// it has no settings yet (never the case once a watch's check-in was stored).
     public init?(_ installation: Installation) {
         guard let settings = installation.inApp else { return nil }
-        self.init(settings: settings, lastRefresh: installation.lastRefreshOutcome)
+        self.init(settings: settings, lastRefresh: installation.lastRefreshOutcome,
+                  pausedUntil: ChannelHandler.pauseEnd(installation, settings: settings))
     }
 }
 
@@ -54,7 +58,7 @@ public final class ChannelWatches<Token: Hashable> {
     @discardableResult
     public func open(_ token: Token, installationID: String, nonce: String, secret: Data,
                      first: ChannelWatchState, now: Date, send: @escaping (Data) -> Void) throws -> Token? {
-        let line = try ChannelHandler.replyLine(.settings(first.settings, lastRefresh: first.lastRefresh),
+        let line = try ChannelHandler.replyLine(.settings(first.settings, lastRefresh: first.lastRefresh, pausedUntil: first.pausedUntil),
                                                 installationID: installationID, requestNonce: nonce, secret: secret)
         let replaced = watches[installationID]?.token
         watches[installationID] = Watch(token: token, nonce: nonce, secret: secret, send: send, state: first, lastWrite: now)
@@ -68,7 +72,7 @@ public final class ChannelWatches<Token: Hashable> {
     public func update(_ installationID: String, to state: ChannelWatchState, now: Date) -> Bool {
         guard var watch = watches[installationID], watch.state != state else { return false }
         watch.state = state
-        return write(.live(seq: watch.seq + 1, state.settings, lastRefresh: state.lastRefresh), to: &watch,
+        return write(.live(seq: watch.seq + 1, state.settings, lastRefresh: state.lastRefresh, pausedUntil: state.pausedUntil), to: &watch,
                      installationID: installationID, now: now)
     }
 

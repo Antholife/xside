@@ -197,6 +197,13 @@ NSDictionary *_Nullable XSSettingsFromJSONObject(id _Nullable json);
 /// {at (NSDate), succeeded (NSNumber), reasonKey (optional)}; nil if malformed.
 NSDictionary *_Nullable XSRefreshOutcomeFromJSONObject(id _Nullable json);
 
+/// The end of a Mac pause of a while, from a `settings` or `live` reply's "pausedUntil" (integer
+/// epoch milliseconds); nil when absent or malformed (review D–G, minor 7).
+NSDate *_Nullable XSPausedUntilFromReply(NSDictionary *_Nullable reply);
+
+/// "Reprend tout seul le 9 nov. à 14:00" / "Resumes by itself on 9 Nov at 14:00", in `zone`.
+NSString *XSPauseEndHint(NSDate *until, BOOL french, NSTimeZone *zone);
+
 /// Integer epoch milliseconds, clamped to 1970...3000 (the channel's accepted range).
 int64_t XSMillis(NSDate *date);
 NSDate *XSDateFromMillis(int64_t ms);

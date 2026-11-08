@@ -391,6 +391,27 @@ NSDictionary *XSSettingsFromJSONObject(id json) {
     return result;
 }
 
+NSDate *XSPausedUntilFromReply(NSDictionary *reply) {
+    if (![reply isKindOfClass:NSDictionary.class]) return nil;
+    id at = reply[@"pausedUntil"];
+    if (![at isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)at) == CFBooleanGetTypeID()) return nil;
+    long long ms = [at longLongValue];
+    if (ms < 0 || ms > XSMaxMillis || [at doubleValue] != (double)ms) return nil;
+    return XSDateFromMillis(ms);
+}
+
+NSString *XSPauseEndHint(NSDate *until, BOOL fr, NSTimeZone *zone) {
+    NSDateFormatter *day = [NSDateFormatter new], *time = [NSDateFormatter new];
+    for (NSDateFormatter *f in @[day, time]) {
+        f.locale = [NSLocale localeWithLocaleIdentifier:fr ? @"fr_FR" : @"en_GB"];
+        f.timeZone = zone;
+    }
+    [day setLocalizedDateFormatFromTemplate:@"dMMM"];
+    time.dateFormat = @"HH:mm";
+    return [NSString stringWithFormat:fr ? @"Reprend tout seul le %@ à %@" : @"Resumes by itself on %@ at %@",
+            [day stringFromDate:until], [time stringFromDate:until]];
+}
+
 NSDictionary *XSRefreshOutcomeFromJSONObject(id json) {
     if (![json isKindOfClass:NSDictionary.class]) return nil;
     id at = json[@"at"], succeeded = json[@"succeeded"], reason = json[@"reasonKey"];

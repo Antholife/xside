@@ -86,7 +86,8 @@ public enum ChannelHandler {
                 (installation.lastRefreshOutcome.map { r.at > $0.at } ?? true) ? r : nil
             }
             // What the installation will hold once stored: the phone's report if newer, else the Mac's.
-            return (.settings(merged, lastRefresh: newer ?? installation.lastRefreshOutcome),
+            return (.settings(merged, lastRefresh: newer ?? installation.lastRefreshOutcome,
+                              pausedUntil: pauseEnd(installation, settings: merged)),
                     .merged(merged, checkIn: now, outcome: newer))
         case .refresh:
             // Paused before XSide recorded who did it: only the Mac could pause then.
@@ -98,6 +99,13 @@ public enum ChannelHandler {
             let updated = current.setting(\.autoRefresh, to: on, at: now, by: .device)
             return (.settings(updated), .paused(!on, by: .device))
         }
+    }
+
+    /// When the installation's pause ends by itself, as the phone is told (review D–G, minor 7):
+    /// only while `settings` (what the reply carries) still has automatic refresh off.
+    public static func pauseEnd(_ installation: Installation, settings: InAppSettings) -> Date? {
+        guard installation.refreshPaused, !settings.autoRefresh.value else { return nil }
+        return installation.pausedUntil
     }
 
     /// The fields whose value a `settings` reply changes for a phone that sent `sent`, in the

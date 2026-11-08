@@ -126,12 +126,19 @@ import CryptoKit
         var watchRequest: FixtureEntry
         var liveLine: FixtureEntry
         var aliveLine: FixtureEntry
+        /// Review D–G minor 7: a reply carrying the end of a Mac pause of a while.
+        var pausedReply: FixtureEntry
     }
     static let fixtureWatch = ChannelRequest.watch(settings: fixtureSettings, lastRefresh: nil, appVersion: "2.3.1")
     /// What the Mac pushes: the fixture settings with the reminder turned back on from the Mac.
     static let fixtureLive = ChannelReply.live(
         seq: 1, fixtureSettings.setting(\.reminder, to: true, at: Date(timeIntervalSince1970: 1_800_000_010), by: .mac),
         lastRefresh: fixtureOutcome)
+
+    /// Paused from the Mac for 2 hours: automatic refresh off, and when it comes back.
+    static let fixturePaused = ChannelReply.settings(
+        fixtureSettings.setting(\.autoRefresh, to: false, at: Date(timeIntervalSince1970: 1_800_000_020), by: .mac),
+        pausedUntil: Date(timeIntervalSince1970: 1_800_007_220))
 
     static func requestEntry(_ r: ChannelRequest, nonce: String) throws -> FixtureEntry {
         let ts: Int64 = 1_800_000_000_000
@@ -162,7 +169,8 @@ import CryptoKit
                     settingsReply: try replyEntry(.settings(fixtureSettings, lastRefresh: fixtureOutcome), nonce: "n2-checkin"),
                     watchRequest: try requestEntry(fixtureWatch, nonce: "n3-watch"),
                     liveLine: try replyEntry(fixtureLive, nonce: "n3-watch"),
-                    aliveLine: try replyEntry(.alive(seq: 2), nonce: "n3-watch"))
+                    aliveLine: try replyEntry(.alive(seq: 2), nonce: "n3-watch"),
+                    pausedReply: try replyEntry(fixturePaused, nonce: "n2-checkin"))
     }
     static var fixtureURL: URL {
         URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/channel-fixture.json")
@@ -197,6 +205,8 @@ import CryptoKit
         var reader = ChannelWatchReader(installationID: Self.fixtureID, nonce: "n3-watch", secret: secret)
         #expect(reader.open(line: Data(onDisk.liveLine.line.utf8)) == Self.fixtureLive)
         #expect(reader.open(line: Data(onDisk.aliveLine.line.utf8)) == .alive(seq: 2))
+        let paused = try ChannelReplyEnvelope.decode(line: Data(onDisk.pausedReply.line.utf8))
+        #expect(paused.open(secret: secret, expectedInstallationID: Self.fixtureID, expectedNonce: "n2-checkin") == Self.fixturePaused)
     }
 
     @Test func regenerateFixtureOnDemand() throws {

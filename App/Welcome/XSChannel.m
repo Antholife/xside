@@ -386,6 +386,9 @@ static NSString *XSWhereHint(BOOL fr) {
 /// is one ("XSide : rafraîchissement automatique réactivé depuis XSide sur ton Mac"), else the
 /// list. From the Mac (`byMac`) a tap (or Voir) opens the app's page in iOS Settings, where XSide's
 /// row is. `others`: fields the Mac changed in the reply to the phone's own change.
+/// The end of the Mac's pause of a while, from the last adopted reply (review D–G, minor 7).
+static NSDate *XSMacPauseEnd;
+
 static XSPillContent *XSChangePill(NSArray<NSString *> *fields, BOOL byMac, NSArray<NSString *> *others) {
     BOOL fr = XSFrench();
     NSDictionary *now = XSCurrentSettings();
@@ -394,6 +397,11 @@ static XSPillContent *XSChangePill(NSArray<NSString *> *fields, BOOL byMac, NSAr
     c.lead = texts[@"lead"];
     NSMutableArray<NSString *> *hint = [NSMutableArray array];
     if (texts[@"list"]) [hint addObject:texts[@"list"]];
+    // Paused from the Mac for a while: say it comes back by itself, and when.
+    BOOL macPause = (byMac && [fields containsObject:@"autoRefresh"]) || [others containsObject:@"autoRefresh"];
+    if (macPause && ![XSSettingValue(now, @"autoRefresh") boolValue] && XSMacPauseEnd.timeIntervalSinceNow > 0) {
+        [hint addObject:XSPauseEndHint(XSMacPauseEnd, fr, NSTimeZone.localTimeZone)];
+    }
     if (others.count) {
         // One: "« Rappel avant l'expiration » désactivé depuis ton Mac"; several: listed.
         NSDictionary *more = XSChangeTexts(others, now, YES, fr);
@@ -440,6 +448,7 @@ static NSArray<NSString *> *XSAdoptCheckInReply(XSChannelResult result, NSDictio
     XSSettingsBeforeAdopt = before;
     XSAdoptSettings(settings);
     XSRecordCheckIn(NSDate.date);
+    XSMacPauseEnd = XSPausedUntilFromReply(reply);
     // How the last refresh went, as XSide knows it (it may have ended while the app was away).
     NSDictionary *outcome = XSRefreshOutcomeFromJSONObject(reply[@"lastRefresh"]);
     if (outcome) XSAdoptRefreshOutcome(outcome);

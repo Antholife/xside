@@ -119,6 +119,20 @@ int main(int argc, const char *argv[]) {
         check(XSCanonicalBase64(@"eyJ0eXBlIjoicmVmcmVzaCJ9") != nil && XSCanonicalBase64(@"eyJ0eXBlIjoicmVmcmVzaCJ9\n") == nil
               && XSCanonicalBase64(@"QQ") == nil, @"canonical base64");
 
+        // Review D–G minor 7: a Mac pause of a while says when it ends.
+        NSDictionary *pausedEntry = fx[@"pausedReply"], *pausedBody = nil;
+        check(XSOpenReply([pausedEntry[@"line"] dataUsingEncoding:NSUTF8StringEncoding], secret, iid, pausedEntry[@"nonce"], &pausedBody) == XSReplyOK
+              && [XSSettingValue(XSSettingsFromJSONObject(pausedBody[@"settings"]) ?: @{}, @"autoRefresh") isEqual:@NO]
+              && XSMillis(XSPausedUntilFromReply(pausedBody)) == 1800007220000, @"paused reply: its end read back");
+        check(XSPausedUntilFromReply(body) == nil && XSPausedUntilFromReply(@{@"pausedUntil": @YES}) == nil
+              && XSPausedUntilFromReply(@{@"pausedUntil": @1.5}) == nil && XSPausedUntilFromReply(@{@"pausedUntil": @"1"}) == nil
+              && XSPausedUntilFromReply(@{@"pausedUntil": @(-1)}) == nil, @"paused reply: absent or malformed end ignored");
+        NSTimeZone *utc = [NSTimeZone timeZoneForSecondsFromGMT:0];
+        NSDate *end = XSDateFromMillis(1800007220000); // 2027-01-15 10:00:20 UTC
+        check([XSPauseEndHint(end, YES, utc) hasPrefix:@"Reprend tout seul le 15"] && [XSPauseEndHint(end, YES, utc) hasSuffix:@" à 10:00"]
+              && [XSPauseEndHint(end, NO, utc) hasPrefix:@"Resumes by itself on 15"] && [XSPauseEndHint(end, NO, utc) hasSuffix:@" at 10:00"],
+              @"pause end hint, fr and en");
+
         // Device feedback 4: the watch request, and the lines XSide writes on it.
         NSDictionary *watchLast = nil;
         requestCase(fx[@"watchRequest"], secret, XSWatchBody(fixtureSettings(), watchLast, @"2.3.1"), @"watch");
