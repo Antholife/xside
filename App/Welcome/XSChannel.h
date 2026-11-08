@@ -40,9 +40,11 @@ void XSSendSettings(NSArray<NSString *> *fields, void (^done)(XSPillContent *_Nu
 /// and one pill says whether the Mac knows or will at the next connection. Main thread.
 void XSTellAutoRefreshChange(void);
 
-/// While the app is in front, XSide is asked again every few seconds (XSForegroundPollInterval),
-/// so a change made on the Mac shows without leaving the app (device feedback round 2, P3). Only
-/// once the local network was allowed; stopped when the app leaves the foreground. Main thread.
+/// While the app is in front, a signed watch stays open to XSide, which writes each change made on
+/// the Mac on it at once (device feedback 4); while none can be open, XSide is asked again every
+/// few seconds instead (XSForegroundPollInterval, device feedback round 2, P3). Either way a change
+/// made on the Mac shows without leaving the app. Only once the local network was allowed; the
+/// watch is closed and polling stopped when the app leaves the foreground. Main thread.
 void XSStartForegroundUpdates(void);
 void XSStopForegroundUpdates(void);
 

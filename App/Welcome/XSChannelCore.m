@@ -86,6 +86,12 @@ NSDictionary *XSCheckInBody(NSDictionary *settings, NSDictionary *lastRefresh, N
     return body;
 }
 
+NSDictionary *XSWatchBody(NSDictionary *settings, NSDictionary *lastRefresh, NSString *appVersion) {
+    NSMutableDictionary *body = [XSCheckInBody(settings, lastRefresh, appVersion) mutableCopy];
+    body[@"type"] = @"watch";
+    return body;
+}
+
 NSData *XSCanonicalBase64(id text) {
     if (![text isKindOfClass:NSString.class]) return nil;
     NSData *data = [[NSData alloc] initWithBase64EncodedString:text options:0];
@@ -122,6 +128,22 @@ XSReplyStatus XSOpenReply(NSData *line, NSData *secret, NSString *installationID
     if (!XSConstantTimeEqual(expected, mac)) return XSReplyInvalid;
     id reply = [NSJSONSerialization JSONObjectWithData:payload options:0 error:NULL];
     if (![reply isKindOfClass:NSDictionary.class] || ![reply[@"type"] isKindOfClass:NSString.class]) return XSReplyInvalid;
+    if (body) *body = reply;
+    return XSReplyOK;
+}
+
+XSReplyStatus XSOpenWatchLine(NSData *line, NSData *secret, NSString *installationID, NSString *nonce,
+                              int64_t lastSeq, NSDictionary **body) {
+    if (body) *body = nil;
+    NSDictionary *reply = nil;
+    // The bare `rejected` (unsigned) is only ever a first line: here it is invalid like any other.
+    if (XSOpenReply(line, secret, installationID, nonce, &reply) != XSReplyOK) return XSReplyInvalid;
+    if (![reply[@"type"] isEqual:@"live"] && ![reply[@"type"] isEqual:@"alive"]) return XSReplyInvalid;
+    id seq = reply[@"seq"];
+    // An integer (not a Bool, not a fraction), exactly the next one.
+    if (![seq isKindOfClass:NSNumber.class] || strcmp([seq objCType], @encode(BOOL)) == 0
+        || strcmp([seq objCType], @encode(char)) == 0) return XSReplyInvalid;
+    if ([seq doubleValue] != (double)[seq longLongValue] || [seq longLongValue] != lastSeq + 1) return XSReplyInvalid;
     if (body) *body = reply;
     return XSReplyOK;
 }

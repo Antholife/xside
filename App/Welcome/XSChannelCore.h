@@ -34,6 +34,10 @@ NSDictionary *XSSetAutoRefreshBody(BOOL on);
 /// `lastRefresh`: {at (NSDate), succeeded (Bool), reasonKey (optional)}; `appVersion` optional.
 NSDictionary *XSCheckInBody(NSDictionary *settings, NSDictionary *_Nullable lastRefresh,
                             NSString *_Nullable appVersion);
+/// A check-in that keeps the connection open while the app is in front (device feedback 4): the
+/// first line is the check-in's `settings` reply, then XSide writes `live`/`alive` lines on it.
+NSDictionary *XSWatchBody(NSDictionary *settings, NSDictionary *_Nullable lastRefresh,
+                          NSString *_Nullable appVersion);
 
 typedef NS_ENUM(NSInteger, XSReplyStatus) {
     /// A signed reply to this request: `*body` is its JSON object (with a "type").
@@ -48,6 +52,14 @@ typedef NS_ENUM(NSInteger, XSReplyStatus) {
 /// that it answers `nonce`.
 XSReplyStatus XSOpenReply(NSData *line, NSData *secret, NSString *installationID, NSString *nonce,
                           NSDictionary *_Nullable *_Nullable body);
+
+/// One line XSide wrote on a watch after its first line: XSReplyOK only if it is signed for this
+/// installation and this watch's `nonce` (XSOpenReply) and is `live` or `alive` with
+/// "seq" == `lastSeq` + 1. Anything else (forged, from another watch, replayed, skipped, unsigned,
+/// the bare `rejected`) is XSReplyInvalid: the phone then closes the watch. Mirrors
+/// ChannelWatchReader in Sources/XSideCore/Channel.swift.
+XSReplyStatus XSOpenWatchLine(NSData *line, NSData *secret, NSString *installationID, NSString *nonce,
+                              int64_t lastSeq, NSDictionary *_Nullable *_Nullable body);
 
 /// Standard base64 with padding, decoded only if it is canonical (re-encodes to the same text).
 NSData *_Nullable XSCanonicalBase64(id _Nullable text);

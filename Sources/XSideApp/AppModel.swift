@@ -883,6 +883,7 @@ final class AppModel {
 
     func reloadRecords() async {
         records = await library.records()
+        pushToWatches() // the Mac's changes reach the apps open in front at once (device feedback 4)
         hasLoadedRecords = true
         updateAttention()
         icons.backfill(records) // once per launch
@@ -1029,6 +1030,17 @@ final class AppModel {
     /// nothing aren't written to the library): says when the app is open on its device right now
     /// (device feedback 3, E3).
     private(set) var channelSeen: [JobKey: Date] = [:]
+    /// The open watches (device feedback 4): while an app is in front, the Mac's changes to its
+    /// installation are written to it at once (`pushToWatches`, after each library reload).
+    @ObservationIgnored private let channelWatches = ChannelWatches<UUID>()
+    /// Watches whose connection ended before they were registered (see `holdWatch`).
+    @ObservationIgnored private var endedWatchTokens: Set<UUID> = []
+    /// The installations whose app is open on its device right now (`ReachabilityStatus.isLive`:
+    /// a watch is open, or a check-in came within 20 s). Observed by Settings > My apps, so the
+    /// status line flips on its own when the app leaves the screen; re-evaluated on each watch
+    /// change, each request and every 2 s (`channelTicker`).
+    private(set) var liveInstallations: Set<JobKey> = []
+    @ObservationIgnored private var channelTicker: Task<Void, Never>?
     private static let channelLogger = Log("channel")
     /// How long a refresh asked from the phone keeps its connection waiting for the outcome.
     private static let refreshOutcomeWait: Duration = .seconds(120)
@@ -1037,21 +1049,113 @@ final class AppModel {
     /// installs apps without XSide's features: they have nothing to talk with).
     private func startChannel() {
         guard channelServer == nil, !Self.featuresOff else { return }
-        let server = ChannelServer { [weak self] line, send in
-            await self?.handleChannelLine(line, send: send)
+        let server = ChannelServer { [weak self] line, send, hold in
+            await self?.handleChannelLine(line, send: send, hold: hold)
         }
         channelServer = server
         server.start()
+        // Keep-alives on the watches, and the "app open" status ending on its own.
+        channelTicker = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                guard let self else { return }
+                self.channelWatches.keepAlive(now: Date())
+                self.updateLiveInstallations()
+            }
+        }
     }
 
     func stopChannel() {
         channelServer?.stop()
         channelServer = nil
+        channelTicker?.cancel()
+        channelTicker = nil
+    }
+
+    /// Whether the app is open on that device now (see `liveInstallations`).
+    func isLive(_ key: JobKey) -> Bool { liveInstallations.contains(key) }
+
+    /// `liveInstallations` from the watches and the last check-ins; assigned only when it changes.
+    private func updateLiveInstallations(now: Date = Date()) {
+        var live: Set<JobKey> = []
+        for record in records {
+            for installation in record.installations {
+                let key = JobKey(recordID: record.id, deviceID: installation.deviceID)
+                let id = ChannelEnvelope.installationID(recordID: record.id, deviceID: installation.deviceID)
+                let seen = [installation.lastCheckIn, channelSeen[key]].compactMap { $0 }.max()
+                if ReachabilityStatus.isLive(watching: channelWatches.isWatched(id), lastSeen: seen, now: now) {
+                    live.insert(key)
+                }
+            }
+        }
+        if live != liveInstallations { liveInstallations = live }
+    }
+
+    /// Writes to each open watch what changed in its installation since its last line: a Mac edit,
+    /// a pause or resume (from the panel, the CLI or its end), a refresh outcome. Runs after every
+    /// library reload, in the same turn as the change it sees.
+    private func pushToWatches() {
+        let now = Date()
+        for id in channelWatches.installationIDs {
+            guard let found = Self.installation(channelID: id, in: records),
+                  let state = ChannelWatchState(found.installation) else { continue }
+            if channelWatches.update(id, to: state, now: now) {
+                Self.channelLogger.notice("channel: live update written to the watch of \(found.recordID) on \(found.installation.deviceID)")
+            }
+        }
+    }
+
+    private static func installation(channelID: String, in records: [AppRecord]) -> (recordID: UUID, installation: Installation)? {
+        for record in records {
+            for installation in record.installations
+            where ChannelEnvelope.installationID(recordID: record.id, deviceID: installation.deviceID) == channelID {
+                return (record.id, installation)
+            }
+        }
+        return nil
+    }
+
+    /// A watch whose `watch` request authenticated and whose check-in was stored: held open by the
+    /// server if a slot is left, then its first line (`first`, the check-in's reply) and what changed
+    /// meanwhile are written. False when the server refused it (answer it as a check-in).
+    private func holdWatch(installationID: String, nonce: String, secret: Data, first: ChannelWatchState,
+                           key: JobKey, hold: ChannelServer.Hold) async -> Bool {
+        let token = UUID()
+        let push = await hold(installationID) { [weak self] in
+            Task { @MainActor in self?.watchEnded(token, key: key) }
+        }
+        guard let push else { return false }
+        do {
+            if let replaced = try channelWatches.open(token, installationID: installationID, nonce: nonce, secret: secret,
+                                                      first: first, now: Date(), send: push) {
+                endedWatchTokens.remove(replaced)
+            }
+        } catch {
+            Self.channelLogger.error("channel: watch not opened: \(String(describing: error))")
+            return true // held: its connection closes at its lifetime, or when the phone gives up
+        }
+        // Its connection may have ended while this waited for the server.
+        if endedWatchTokens.remove(token) != nil { channelWatches.close(token) }
+        Self.channelLogger.notice("channel: watch open for \(key.recordID) on \(key.deviceID)")
+        pushToWatches() // a change stored while the watch was being set up
+        updateLiveInstallations()
+        return true
+    }
+
+    private func watchEnded(_ token: UUID, key: JobKey) {
+        if channelWatches.close(token) == nil {
+            endedWatchTokens.insert(token) // not registered yet (see `holdWatch`), or already replaced
+            if endedWatchTokens.count > 64 { endedWatchTokens.removeAll() }
+        } else {
+            Self.channelLogger.notice("channel: watch closed for \(key.recordID) on \(key.deviceID)")
+        }
+        updateLiveInstallations()
     }
 
     /// One request from an app (see `ChannelHandler`): only the installation that signed it can be
     /// read or changed, and only its settings, pause and refresh.
-    private func handleChannelLine(_ line: Data, send: @escaping ChannelServer.Send) async {
+    private func handleChannelLine(_ line: Data, send: @escaping ChannelServer.Send,
+                                   hold: @escaping ChannelServer.Hold) async {
         guard let envelope = try? ChannelEnvelope.decode(line: line) else {
             Self.channelLogger.info("channel: malformed request ignored")
             return
@@ -1068,7 +1172,9 @@ final class AppModel {
             return
         }
         let job = RefreshJob(recordID: found.recordID, deviceID: found.installation.deviceID)
-        channelSeen[JobKey(recordID: found.recordID, deviceID: found.installation.deviceID)] = now
+        let key = JobKey(recordID: found.recordID, deviceID: found.installation.deviceID)
+        channelSeen[key] = now
+        updateLiveInstallations(now: now)
         let reply: (ChannelReply) async -> Void = { answer in
             do {
                 await send(try ChannelHandler.replyLine(answer, installationID: installationID, requestNonce: nonce, secret: secret))
@@ -1084,7 +1190,7 @@ final class AppModel {
             await reply(answer)
         case let .merged(settings, checkIn, outcome):
             // What this reply changes on the phone (device feedback 3, E2): a Mac edit shows here.
-            if case let .checkIn(sent, _, _) = request, case let .settings(replied, _) = answer {
+            if let sent = request.checkInReport?.settings, case let .settings(replied, _) = answer {
                 let changed = ChannelHandler.fieldsChanged(for: sent, by: replied)
                 Self.channelLogger.notice("channel: settings reply for \(found.recordID) on \(job.deviceID): changed fields \(changed.isEmpty ? "none" : changed.map { "\($0.rawValue)=\(Self.describe(replied, $0))" }.joined(separator: ", "))")
             }
@@ -1095,6 +1201,12 @@ final class AppModel {
                 if let paused = change { pauseChanged(job, paused: paused) }
             } catch {
                 Self.channelLogger.error("channel: check-in not stored: \(String(describing: error))")
+            }
+            // A watch (only ever an authenticated one) stays open; refused, it is a plain check-in.
+            if ChannelHandler.watchRequested(received) != nil, case let .settings(first, lastRefresh) = answer,
+               await holdWatch(installationID: installationID, nonce: nonce, secret: secret,
+                               first: ChannelWatchState(settings: first, lastRefresh: lastRefresh), key: key, hold: hold) {
+                return
             }
             await reply(answer) // the phone's view is right either way
         case let .paused(paused, by):
@@ -1205,6 +1317,7 @@ final class AppModel {
     private static func describe(_ request: ChannelRequest) -> String {
         switch request {
         case .checkIn: "check-in"
+        case .watch: "watch"
         case .refresh: "refresh"
         case .setAutoRefresh(let on): "automatic refresh \(on ? "on" : "off")"
         }

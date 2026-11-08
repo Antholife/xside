@@ -30,7 +30,9 @@ struct InAppStatusTests {
         let i = installation(installedAt: t0, lastCheckIn: at(day))
         #expect(ReachabilityStatus.of(installation: i, now: at(3 * day)) == .joinable(lastSeen: at(day)))
         // A check-in a little in the future (clock skew) is recent: the app is open (E3).
-        #expect(ReachabilityStatus.of(installation: i, now: at(day - 30)) == .openNow(lastSeen: at(day)))
+        #expect(ReachabilityStatus.of(installation: i, now: at(day - 10)) == .openNow(lastSeen: at(day)))
+        // Not far ahead, though: a Mac clock moved back an hour doesn't say "open" for an hour.
+        #expect(ReachabilityStatus.of(installation: i, now: at(day - 30)) == .joinable(lastSeen: at(day)))
     }
 
     @Test func oldCheckInIsNotSeenSince() {
@@ -40,14 +42,15 @@ struct InAppStatusTests {
         #expect(ReachabilityStatus.of(installation: i, now: limit.addingTimeInterval(1)) == .notSeenSince(at(day)))
     }
 
-    /// Device feedback 3, E3: an app that checked in within the last 45 s is open on the device
-    /// (it polls every 15 s while in front), so the Mac's changes arrive live. The Mac's memory of
-    /// the last check-in (`lastSeen`, quiet check-ins aren't written) counts as well.
+    /// Device feedback 3, E3, tightened in feedback 4: without a watch, an app that checked in
+    /// within the last 20 s is open on the device (it polls every 15 s while in front), so the
+    /// Mac's changes arrive live; 21 s later it flips back by itself. The Mac's memory of the last
+    /// check-in (`lastSeen`, quiet check-ins aren't written) counts as well.
     @Test func aCheckInWithinSecondsIsTheAppOpen() {
         let i = installation(installedAt: t0, lastCheckIn: at(100))
-        #expect(ReachabilityStatus.of(installation: i, now: at(130)) == .openNow(lastSeen: at(100)))
-        #expect(ReachabilityStatus.of(installation: i, now: at(145)) == .openNow(lastSeen: at(100)))
-        #expect(ReachabilityStatus.of(installation: i, now: at(146)) == .joinable(lastSeen: at(100)))
+        #expect(ReachabilityStatus.of(installation: i, now: at(115)) == .openNow(lastSeen: at(100)))
+        #expect(ReachabilityStatus.of(installation: i, now: at(120)) == .openNow(lastSeen: at(100)))
+        #expect(ReachabilityStatus.of(installation: i, now: at(121)) == .joinable(lastSeen: at(100)))
         #expect(ReachabilityStatus.of(installation: i, now: at(200), lastSeen: at(190)) == .openNow(lastSeen: at(190)))
         #expect(ReachabilityStatus.of(installation: i, now: at(200), lastSeen: at(50)) == .joinable(lastSeen: at(100)))
         let never = installation(installedAt: t0)
@@ -55,6 +58,21 @@ struct InAppStatusTests {
         var bare = i
         bare.withoutXSideFeatures = true
         #expect(ReachabilityStatus.of(installation: bare, now: at(130), lastSeen: at(129)) == .noFeatures)
+    }
+
+    /// Device feedback 4: "live" is true exactly while a watch is open, or (no watch: polling)
+    /// within 20 s of a check-in; it ends on its own once neither holds.
+    @Test func liveFollowsTheWatchOrARecentCheckIn() {
+        #expect(ReachabilityStatus.isLive(watching: true, lastSeen: nil, now: at(0)))
+        #expect(ReachabilityStatus.isLive(watching: true, lastSeen: at(-3600), now: at(0)))
+        // The watch closed (app sent to the background, keep-alive missed): live only if polled lately.
+        #expect(!ReachabilityStatus.isLive(watching: false, lastSeen: at(-3600), now: at(0)))
+        #expect(!ReachabilityStatus.isLive(watching: false, lastSeen: nil, now: at(0)))
+        #expect(ReachabilityStatus.isLive(watching: false, lastSeen: at(-20), now: at(0)))
+        #expect(!ReachabilityStatus.isLive(watching: false, lastSeen: at(-21), now: at(0)))
+        let i = installation(installedAt: t0, lastCheckIn: at(100))
+        #expect(ReachabilityStatus.of(installation: i, now: at(500), watching: true) == .openNow(lastSeen: at(500)))
+        #expect(ReachabilityStatus.of(installation: i, now: at(500), watching: false) == .joinable(lastSeen: at(100)))
     }
 
     // MARK: Delivery of the Mac's changes

@@ -33,9 +33,11 @@ import CryptoKit
 // dates are integer epoch milliseconds (1800000000000); nils are omitted.
 //   ChannelRequest: {"type":"refresh"} | {"type":"setAutoRefresh","on":true}
 //                 | {"type":"checkIn","settings":{...},"lastRefresh":{...},"appVersion":"1.2"}
+//                 | {"type":"watch","settings":{...},"lastRefresh":{...},"appVersion":"1.2"}
 //   ChannelReply:   {"type":"settings","settings":{...},"lastRefresh":{...}} | {"type":"accepted"} | {"type":"refreshed"}
 //                 | {"type":"failed","reasonKey":"..."} | {"type":"busy"} | {"type":"deviceUnreachable"}
 //                 | {"type":"paused","by":"mac"|"device"} | {"type":"rejected"}
+//                 | {"type":"live","seq":1,"settings":{...},"lastRefresh":{...}} | {"type":"alive","seq":2}
 //
 // Exchanges (XSide's side: ChannelHandler, ChannelServer). One request per connection; XSide
 // closes the connection after its last line.
@@ -55,6 +57,21 @@ import CryptoKit
 //   don't count), `deviceUnreachable` (the Mac can't see the device), or
 //   `failed(reasonKey)` (e.g. Xcode isn't usable). reasonKey is an XSideError key, "cancelled"
 //   when the person stopped the job on the Mac, or "unknown".
+// - watch -> the check-in's `settings` reply at once (the request is a check-in: same fields, same
+//   merge, same storage), then the connection stays open while the app is in front, and XSide
+//   writes on it, without being asked again (device feedback 4: live, not every 15 s):
+//     `live(seq, settings, lastRefresh)` as soon as the installation's stored settings (pause
+//       included: it is the automatic-refresh setting) or refresh outcome change on the Mac;
+//     `alive(seq)` when nothing was written for 25 s, so the phone can tell a dead connection.
+//   Every line is a ChannelReplyEnvelope signed like any reply, with the watch request's nonce;
+//   `seq` counts 1, 2, 3… on the connection and the phone takes only the next one, so a line can't
+//   be replayed, dropped or reordered on the connection unseen, nor carried to another one (other
+//   nonce). The phone checks every line (MAC, installation, nonce, next seq) and closes the watch
+//   at the first one that fails. Only an authenticated `watch` is ever kept open (anything else is
+//   answered and closed as below); one watch per installation (a newer one replaces it), at most
+//   2 per address and 8 in all (beyond that it is answered like a check-in and closed: the phone
+//   polls instead); XSide closes it after 5 min and the phone opens another; the phone closes it
+//   when the app leaves the foreground. A phone writing anything more on a watch is closed.
 // - A request that doesn't authenticate (unknown installation id, wrong MAC, outside the window,
 //   replayed nonce, unreadable body) gets the bare, UNSIGNED line `{"type":"rejected"}` (not an
 //   envelope: nothing is ever signed for an unauthenticated request). The phone must not act on it
@@ -74,6 +91,9 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
     case refresh
     /// Pause (`false`) or resume (`true`) automatic refresh for this installation.
     case setAutoRefresh(Bool)
+    /// A check-in that keeps the connection open while the app is in front: the Mac's changes are
+    /// written on it as they happen (`ChannelReply.live`).
+    case watch(settings: InAppSettings, lastRefresh: RefreshOutcome?, appVersion: String?)
 
     private enum CodingKeys: String, CodingKey { case type, settings, lastRefresh, appVersion, on }
 
@@ -84,6 +104,10 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
             self = .checkIn(settings: try c.decode(InAppSettings.self, forKey: .settings),
                             lastRefresh: try c.decodeIfPresent(RefreshOutcome.self, forKey: .lastRefresh),
                             appVersion: try c.decodeIfPresent(String.self, forKey: .appVersion))
+        case "watch":
+            self = .watch(settings: try c.decode(InAppSettings.self, forKey: .settings),
+                          lastRefresh: try c.decodeIfPresent(RefreshOutcome.self, forKey: .lastRefresh),
+                          appVersion: try c.decodeIfPresent(String.self, forKey: .appVersion))
         case "refresh": self = .refresh
         case "setAutoRefresh": self = .setAutoRefresh(try c.decode(Bool.self, forKey: .on))
         case let other:
@@ -99,10 +123,23 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
             try c.encode(settings, forKey: .settings)
             try c.encodeIfPresent(lastRefresh, forKey: .lastRefresh)
             try c.encodeIfPresent(appVersion, forKey: .appVersion)
+        case let .watch(settings, lastRefresh, appVersion):
+            try c.encode("watch", forKey: .type)
+            try c.encode(settings, forKey: .settings)
+            try c.encodeIfPresent(lastRefresh, forKey: .lastRefresh)
+            try c.encodeIfPresent(appVersion, forKey: .appVersion)
         case .refresh: try c.encode("refresh", forKey: .type)
         case let .setAutoRefresh(on):
             try c.encode("setAutoRefresh", forKey: .type)
             try c.encode(on, forKey: .on)
+        }
+    }
+
+    /// What a check-in or a watch reports (both are check-ins), nil for the other requests.
+    public var checkInReport: (settings: InAppSettings, lastRefresh: RefreshOutcome?)? {
+        switch self {
+        case let .checkIn(settings, lastRefresh, _), let .watch(settings, lastRefresh, _): (settings, lastRefresh)
+        case .refresh, .setAutoRefresh: nil
         }
     }
 }
@@ -120,8 +157,13 @@ public enum ChannelReply: Codable, Equatable, Sendable {
     /// Automatic refresh is paused, by the Mac or by the device.
     case paused(by: ChangeOrigin)
     case rejected
+    /// On a watch: the installation's settings and newest refresh outcome changed on the Mac.
+    /// `seq`: this line's number on the connection (1, 2, 3…, shared with `alive`).
+    case live(seq: Int, InAppSettings, lastRefresh: RefreshOutcome? = nil)
+    /// On a watch: nothing to say for a while, the connection is alive.
+    case alive(seq: Int)
 
-    private enum CodingKeys: String, CodingKey { case type, settings, lastRefresh, reasonKey, by }
+    private enum CodingKeys: String, CodingKey { case type, settings, lastRefresh, reasonKey, by, seq }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -136,6 +178,10 @@ public enum ChannelReply: Codable, Equatable, Sendable {
         case "deviceUnreachable": self = .deviceUnreachable
         case "paused": self = .paused(by: try c.decode(ChangeOrigin.self, forKey: .by))
         case "rejected": self = .rejected
+        case "live":
+            self = .live(seq: try c.decode(Int.self, forKey: .seq), try c.decode(InAppSettings.self, forKey: .settings),
+                         lastRefresh: try c.decodeIfPresent(RefreshOutcome.self, forKey: .lastRefresh))
+        case "alive": self = .alive(seq: try c.decode(Int.self, forKey: .seq))
         case let other:
             throw DecodingError.dataCorruptedError(forKey: .type, in: c, debugDescription: "unknown reply \(other)")
         }
@@ -159,6 +205,22 @@ public enum ChannelReply: Codable, Equatable, Sendable {
             try c.encode("paused", forKey: .type)
             try c.encode(by, forKey: .by)
         case .rejected: try c.encode("rejected", forKey: .type)
+        case let .live(seq, s, lastRefresh):
+            try c.encode("live", forKey: .type)
+            try c.encode(seq, forKey: .seq)
+            try c.encode(s, forKey: .settings)
+            try c.encodeIfPresent(lastRefresh, forKey: .lastRefresh)
+        case let .alive(seq):
+            try c.encode("alive", forKey: .type)
+            try c.encode(seq, forKey: .seq)
+        }
+    }
+
+    /// The line number of a watch line (`live`, `alive`), nil for the other replies.
+    public var watchSeq: Int? {
+        switch self {
+        case let .live(seq, _, _), let .alive(seq): seq
+        default: nil
         }
     }
 
@@ -392,5 +454,34 @@ public struct ChannelReplyEnvelope: Codable, Equatable, Sendable {
 
     public static func decode(line: Data) throws -> ChannelReplyEnvelope {
         try JSONDecoder.channel.decode(ChannelReplyEnvelope.self, from: line)
+    }
+}
+
+/// The phone's side of a watch, in Swift (the dylib's is `XSOpenWatchLine` in XSChannelCore.m, held
+/// to the same fixture): after the first line (the check-in's `settings`, opened as any reply), it
+/// takes only lines signed for this installation and this watch's nonce that are `live` or `alive`
+/// with the next `seq`. Anything else (forged, from another connection, replayed, skipped, unsigned)
+/// is refused, and the phone then closes the watch.
+public struct ChannelWatchReader: Sendable {
+    public let installationID: String
+    public let nonce: String
+    private let secret: Data
+    /// The last line number taken (0 before the first `live`/`alive`).
+    public private(set) var lastSeq = 0
+
+    public init(installationID: String, nonce: String, secret: Data) {
+        self.installationID = installationID
+        self.nonce = nonce
+        self.secret = secret
+    }
+
+    /// The reply carried by `line` (without its "\n") if it is the watch's next line, else nil
+    /// (and nothing changes: the phone closes the watch).
+    public mutating func open(line: Data) -> ChannelReply? {
+        guard let envelope = try? ChannelReplyEnvelope.decode(line: line),
+              let reply = envelope.open(secret: secret, expectedInstallationID: installationID, expectedNonce: nonce),
+              let seq = reply.watchSeq, seq == lastSeq + 1 else { return nil }
+        lastSeq = seq
+        return reply
     }
 }

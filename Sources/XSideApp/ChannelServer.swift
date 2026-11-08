@@ -4,20 +4,31 @@ import XSideCore
 
 /// The local-network end of the channel (wire format in XSideCore's Channel.swift): a TCP listener
 /// published over Bonjour as `_xside._tcp`. Each connection carries one request line; the handler
-/// sends its reply line(s), then the connection is closed. Deliberately thin: authentication and
-/// every decision are in `ChannelHandler` (XSideCore, tested); this only frames bytes and bounds
-/// what a peer can make it hold (line size, time, number of connections).
+/// sends its reply line(s), then the connection is closed, unless the handler held it as a watch
+/// (only after its `watch` request authenticated). Deliberately thin: authentication and every
+/// decision are in `ChannelHandler` / `ChannelWatches` (XSideCore, tested); this only frames bytes
+/// and bounds what a peer can make it hold (line size, time, number of connections and watches).
 final class ChannelServer: @unchecked Sendable {
     /// Writes one line to the peer; returns once it was handed to the network (or failed).
     typealias Send = @Sendable (Data) async -> Void
+    /// Writes one line to a held watch at once, without waiting; lines go out in call order.
+    typealias Push = @Sendable (Data) -> Void
+    /// Keeps this connection open as the watch of `installationID`: to be called only once its
+    /// `watch` request authenticated (`ChannelHandler.watchRequested`). Returns how to write on it,
+    /// or nil when refused (no watch slot left, or the connection is gone): the handler then
+    /// answers as to a check-in and the connection closes as usual. `ended` runs once, on the
+    /// server's queue, when a held watch closes (either side, lifetime, or replaced by a newer one).
+    typealias Hold = @Sendable (_ installationID: String, _ ended: @escaping @Sendable () -> Void) async -> Push?
     /// Called once per connection with its request line (without "\n").
-    typealias Handler = @Sendable (_ line: Data, _ send: @escaping Send) async -> Void
+    typealias Handler = @Sendable (_ line: Data, _ send: @escaping Send, _ hold: @escaping Hold) async -> Void
 
     static let serviceType = "_xside._tcp"
     /// A request line must arrive whole within this time.
     private static let readTimeout: TimeInterval = 10
     /// Longest a connection stays open: a refresh's outcome is awaited up to 2 minutes.
     private static let connectionLifetime: TimeInterval = 150
+    /// Longest a held watch stays open (counted from when it was held); the phone opens another.
+    private static let watchLifetime: TimeInterval = ChannelWatches<Int>.lifetime
     private static let logger = Log("channel")
 
     private let handler: Handler
@@ -52,7 +63,16 @@ final class ChannelServer: @unchecked Sendable {
     private func listen() {
         guard running, listener == nil else { return }
         do {
-            let parameters = NWParameters.tcp
+            // A watch must end within seconds when its phone is gone without closing it (Wi-Fi
+            // lost, phone locked hard): TCP probes an idle connection after 10 s, and a line (such
+            // as a keep-alive) the phone doesn't acknowledge within 20 s drops the connection.
+            let tcp = NWProtocolTCP.Options()
+            tcp.enableKeepalive = true
+            tcp.keepaliveIdle = 10
+            tcp.keepaliveInterval = 5
+            tcp.keepaliveCount = 2
+            tcp.connectionDropTime = 20
+            let parameters = NWParameters(tls: nil, tcp: tcp)
             parameters.includePeerToPeer = false
             let listener = try NWListener(using: parameters)
             // A plain name rather than the Mac's own (the default): the service is seen on every
@@ -113,7 +133,7 @@ final class ChannelServer: @unchecked Sendable {
             if !read.gotLine { connection?.cancel() }
         }
         let lifeTimer = DispatchWorkItem { [weak connection] in connection?.cancel() }
-        connections[id] = Entry(connection: connection, remote: remote, timers: [readTimer, lifeTimer])
+        connections[id] = Entry(connection: connection, remote: remote, read: read, timers: [readTimer, lifeTimer])
         connection.stateUpdateHandler = { [weak self] state in
             switch state {
             case .failed, .cancelled: self?.ended(id)
@@ -130,6 +150,39 @@ final class ChannelServer: @unchecked Sendable {
         guard let entry = connections.removeValue(forKey: id) else { return }
         for timer in entry.timers { timer.cancel() }
         admission.ended(id)
+        entry.watchEnded?()
+    }
+
+    /// `Hold`, on the queue: the connection becomes the installation's watch if a slot is left
+    /// (`ChannelAdmission.watch`). Its 150 s lifetime becomes the watch's own, and it is read again,
+    /// only to notice the phone closing it: a phone sends nothing more on a watch, so any byte
+    /// closes it too.
+    private func hold(_ id: ObjectIdentifier, installationID: String,
+                      ended: @escaping @Sendable () -> Void) -> Push? {
+        guard var entry = connections[id], entry.read.gotLine, entry.watchEnded == nil else { return nil }
+        switch admission.watch(id, installationID: installationID) {
+        case .refuse:
+            Self.logger.notice("channel: watch refused (no watch slot left): answered as a check-in")
+            return nil
+        case .watch(let replaced):
+            if let replaced { connections[replaced]?.connection.cancel() } // a newer watch replaces it
+        }
+        let connection = entry.connection
+        for timer in entry.timers { timer.cancel() }
+        let lifeTimer = DispatchWorkItem { [weak connection] in connection?.cancel() }
+        entry.timers = [lifeTimer]
+        entry.watchEnded = ended
+        connections[id] = entry
+        queue.asyncAfter(deadline: .now() + Self.watchLifetime, execute: lifeTimer)
+        watchForClose(connection)
+        return { data in connection.send(content: data, completion: .contentProcessed { _ in }) }
+    }
+
+    /// A held watch: closed when the phone closes it, fails, or writes anything.
+    private func watchForClose(_ connection: NWConnection) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 1024) { data, _, isComplete, error in
+            if data?.isEmpty == false || isComplete || error != nil { connection.cancel() }
+        }
     }
 
     /// Reads until the first "\n". Malformed framing (too long, closed early) closes silently.
@@ -141,7 +194,7 @@ final class ChannelServer: @unchecked Sendable {
                 case .line(let line):
                     read.gotLine = true
                     self.admission.gotLine(id)
-                    self.dispatch(line, on: connection)
+                    self.dispatch(line, on: connection, id: id)
                     return
                 case .tooLong:
                     connection.cancel()
@@ -158,18 +211,29 @@ final class ChannelServer: @unchecked Sendable {
         }
     }
 
-    private func dispatch(_ line: Data, on connection: NWConnection) {
+    private func dispatch(_ line: Data, on connection: NWConnection, id: ObjectIdentifier) {
         let send: Send = { data in
             await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
                 // Called on success, failure, and when the connection is cancelled meanwhile.
                 connection.send(content: data, completion: .contentProcessed { _ in continuation.resume() })
             }
         }
+        let hold: Hold = { [weak self] installationID, ended in
+            guard let self else { return nil }
+            return await withCheckedContinuation { (continuation: CheckedContinuation<Push?, Never>) in
+                self.queue.async { continuation.resume(returning: self.hold(id, installationID: installationID, ended: ended)) }
+            }
+        }
         let handler = handler
-        Task {
-            await handler(line, send)
-            connection.send(content: nil, contentContext: .finalMessage, isComplete: true,
-                            completion: .contentProcessed { _ in connection.cancel() })
+        let queue = queue
+        Task { [weak self] in
+            await handler(line, send, hold)
+            queue.async { [weak self] in
+                // A held watch stays open; everything else is closed after its last line.
+                if self?.connections[id]?.watchEnded != nil { return }
+                connection.send(content: nil, contentContext: .finalMessage, isComplete: true,
+                                completion: .contentProcessed { _ in connection.cancel() })
+            }
         }
     }
 }
@@ -178,7 +242,10 @@ final class ChannelServer: @unchecked Sendable {
 private struct Entry {
     let connection: NWConnection
     let remote: String
-    let timers: [DispatchWorkItem]
+    let read: ReadState
+    var timers: [DispatchWorkItem]
+    /// Set once the connection is held as a watch: told when it ends.
+    var watchEnded: (@Sendable () -> Void)?
 }
 
 /// One connection's read progress (only touched on the server's queue).

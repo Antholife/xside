@@ -755,7 +755,7 @@
 "appSettings.device" = "Device";
 "appSettings.perDevice" = "Installed on %ld devices: each has its own module settings. “XSide features” applies to the app on all of them.";
 "whatsNew.110.live.title" = "Live while the app is open";
-"whatsNew.110.live.text" = "A setting changed on the Mac reaches the open app within seconds, without relaunching it, in a single bar that says what changed (\"automatic refresh turned back on from XSide on your Mac\"). Only while the app is on screen, less often in Low Power Mode.";
+"whatsNew.110.live.text" = "A setting changed on the Mac, or a pause, reaches the open app at once, without relaunching it, in a single bar that says what changed (\"automatic refresh turned back on from XSide on your Mac\"). The app keeps a signed connection to XSide while it is on screen, and closes it when you leave it.";
 "whatsNew.110.appPause.title" = "Pause one app for a while";
 "whatsNew.110.appPause.text" = "An app's … menu in the panel: Pause for 2 hours, 1 day or until you resume. One app's pause ends by itself.";
 "whatsNew.110.cli.title" = "New xside commands";

@@ -47,6 +47,13 @@ public enum ChannelHandler {
         return .request(installationID: envelope.installationID, nonce: envelope.nonce, request)
     }
 
+    /// The installation a received line asks to watch: only an authenticated `watch` request (the
+    /// one kind of connection XSide keeps open), never a line that failed to authenticate.
+    public static func watchRequested(_ received: ChannelReceived) -> String? {
+        guard case let .request(installationID, _, .watch) = received else { return nil }
+        return installationID
+    }
+
     /// Shortest time between two refreshes the phone asks for, for one installation, counted from
     /// the last one XSide started for it (`Installation.lastDeviceRefreshRequest`, which nothing the
     /// phone sends can reset): sooner, the request is answered `busy`. XSide's own attempts don't count.
@@ -66,7 +73,8 @@ public enum ChannelHandler {
     public static func handle(_ request: ChannelRequest, installation: Installation, now: Date,
                               reminder: Bool) -> (reply: ChannelReply, update: InstallationUpdate) {
         switch request {
-        case let .checkIn(settings, lastRefresh, _):
+        case let .checkIn(settings, lastRefresh, _), let .watch(settings, lastRefresh, _):
+            // A watch is a check-in first (its first line is this reply); the connection then stays open.
             let remote = clamped(settings, now: now)
             let merged = installation.inApp.map { InAppSettings.merge($0, remote) } ?? remote
             let reported = lastRefresh.map { outcome -> RefreshOutcome in

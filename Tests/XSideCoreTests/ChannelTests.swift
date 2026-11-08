@@ -105,7 +105,16 @@ import CryptoKit
         var refreshRequest: FixtureEntry
         var checkInRequest: FixtureEntry
         var settingsReply: FixtureEntry
+        /// Device feedback 4: a watch request and two lines the Mac writes on it (same nonce).
+        var watchRequest: FixtureEntry
+        var liveLine: FixtureEntry
+        var aliveLine: FixtureEntry
     }
+    static let fixtureWatch = ChannelRequest.watch(settings: fixtureSettings, lastRefresh: nil, appVersion: "2.3.1")
+    /// What the Mac pushes: the fixture settings with the reminder turned back on from the Mac.
+    static let fixtureLive = ChannelReply.live(
+        seq: 1, fixtureSettings.setting(\.reminder, to: true, at: Date(timeIntervalSince1970: 1_800_000_010), by: .mac),
+        lastRefresh: fixtureOutcome)
 
     static func requestEntry(_ r: ChannelRequest, nonce: String) throws -> FixtureEntry {
         let ts: Int64 = 1_800_000_000_000
@@ -133,7 +142,10 @@ import CryptoKit
         FixtureFile(secretHex: fixtureSecretHex,
                     refreshRequest: try requestEntry(.refresh, nonce: "n1"),
                     checkInRequest: try requestEntry(fixtureCheckIn, nonce: "n2-checkin"),
-                    settingsReply: try replyEntry(.settings(fixtureSettings, lastRefresh: fixtureOutcome), nonce: "n2-checkin"))
+                    settingsReply: try replyEntry(.settings(fixtureSettings, lastRefresh: fixtureOutcome), nonce: "n2-checkin"),
+                    watchRequest: try requestEntry(fixtureWatch, nonce: "n3-watch"),
+                    liveLine: try replyEntry(fixtureLive, nonce: "n3-watch"),
+                    aliveLine: try replyEntry(.alive(seq: 2), nonce: "n3-watch"))
     }
     static var fixtureURL: URL {
         URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/channel-fixture.json")
@@ -163,6 +175,11 @@ import CryptoKit
         #expect(c.open(secret: secret, now: Self.fixtureNow, seen: &seen) == Self.fixtureCheckIn)
         let rep = try ChannelReplyEnvelope.decode(line: Data(onDisk.settingsReply.line.utf8))
         #expect(rep.open(secret: secret, expectedInstallationID: Self.fixtureID, expectedNonce: "n2-checkin") == .settings(Self.fixtureSettings, lastRefresh: Self.fixtureOutcome))
+        let w = try ChannelEnvelope.decode(line: Data(onDisk.watchRequest.line.utf8))
+        #expect(w.open(secret: secret, now: Self.fixtureNow, seen: &seen) == Self.fixtureWatch)
+        var reader = ChannelWatchReader(installationID: Self.fixtureID, nonce: "n3-watch", secret: secret)
+        #expect(reader.open(line: Data(onDisk.liveLine.line.utf8)) == Self.fixtureLive)
+        #expect(reader.open(line: Data(onDisk.aliveLine.line.utf8)) == .alive(seq: 2))
     }
 
     @Test func regenerateFixtureOnDemand() throws {

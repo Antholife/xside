@@ -274,10 +274,24 @@ NSDictionary<NSString *, NSString *> *XSChangeTexts(NSArray<NSString *> *fields,
 
 NSTimeInterval XSForegroundPollInterval(BOOL lowPower) { return lowPower ? 45 : 15; }
 
-BOOL XSShouldPoll(BOOL channel, BOOL granted, NSDate *lastCheckIn, NSDate *now, BOOL lowPower) {
-    if (!channel || !granted) return NO;
+BOOL XSShouldPoll(BOOL channel, BOOL granted, NSDate *lastCheckIn, NSDate *now, BOOL lowPower, BOOL watching) {
+    if (!channel || !granted || watching) return NO;
     // A second of slack: the timer fires one interval after the last check-in it made.
     return !lastCheckIn || [now timeIntervalSinceDate:lastCheckIn] >= XSForegroundPollInterval(lowPower) - 1;
+}
+
+const NSTimeInterval XSWatchKeepAliveTimeout = 60;
+
+BOOL XSShouldOpenWatch(BOOL channel, BOOL granted, BOOL watching, NSDate *retryAt, NSDate *now) {
+    if (!channel || !granted || watching) return NO;
+    return !retryAt || [now compare:retryAt] != NSOrderedAscending;
+}
+
+NSTimeInterval XSWatchRetryDelay(BOOL answered, NSTimeInterval lived) {
+    // A watch that worked and ended (XSide's 5 min, a network change): another one at once. One
+    // that never answered, or ended right away (an XSide without watches, no slot left, a line
+    // that didn't check out): polling for a minute instead of reconnecting in a loop.
+    return answered && lived >= 20 ? 0 : 60;
 }
 
 BOOL XSKeepsAnswerForReturn(BOOL onScreen, NSTimeInterval duration) { return !onScreen && duration > 0; }

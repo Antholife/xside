@@ -17,11 +17,27 @@ public struct ChannelAdmission<ID: Hashable & Sendable>: Sendable {
     public var maxConnections = 16
     public var maxConnectionsPerRemote = 4
     public var maxAcceptsPerRemotePerMinute = 20
+    /// Watches (connections kept open while an app is in front, see Channel.swift) are slots like
+    /// any other, counted in the limits above, and are never evicted (they sent their line). These
+    /// caps keep at least half the slots, and 2 of each address's 4, for short requests.
+    public var maxWatches = 8
+    public var maxWatchesPerRemote = 2
+
+    /// Whether a connection whose `watch` request authenticated may stay open as that watch.
+    public enum WatchDecision: Equatable, Sendable {
+        /// Keep it open; close `replacing` first (the same installation's older watch), if any.
+        case watch(replacing: ID?)
+        /// Answer it like a check-in and close it (no watch slot left, or not a connection that
+        /// sent its line).
+        case refuse
+    }
 
     private struct Slot: Sendable {
         let remote: String
         let openedAt: Date
         var gotLine = false
+        /// The installation it watches, once its authenticated `watch` request was admitted.
+        var watching: String?
     }
 
     private var slots: [ID: Slot] = [:]
@@ -56,6 +72,23 @@ public struct ChannelAdmission<ID: Hashable & Sendable>: Sendable {
     public mutating func gotLine(_ id: ID) {
         slots[id]?.gotLine = true
     }
+
+    /// Asked by the server only once the connection's `watch` request authenticated (see
+    /// `ChannelHandler.watchRequested`): a peer without the installation's secret never holds a
+    /// watch. One watch per installation: a newer one replaces the older (which the caller closes).
+    public mutating func watch(_ id: ID, installationID: String) -> WatchDecision {
+        guard let slot = slots[id], slot.gotLine, slot.watching == nil else { return .refuse }
+        let replaced = slots.first { $0.key != id && $0.value.watching == installationID }?.key
+        let others = slots.filter { $0.key != id && $0.key != replaced && $0.value.watching != nil }
+        guard others.count < maxWatches,
+              others.values.filter({ $0.remote == slot.remote }).count < maxWatchesPerRemote else { return .refuse }
+        if let replaced { slots[replaced]?.watching = nil } // closing: no longer counts as the watch
+        slots[id]?.watching = installationID
+        return .watch(replacing: replaced)
+    }
+
+    /// The installation this connection watches, if it is a watch.
+    public func watching(_ id: ID) -> String? { slots[id]?.watching }
 
     /// The connection ended (closed, failed or evicted).
     public mutating func ended(_ id: ID) {

@@ -32,10 +32,14 @@ typedef NS_ENUM(NSInteger, XSChannelResult) {
     XSChannelNoOutcome,
     /// (Patient exchanges, not final) no answer yet: still trying.
     XSChannelWaiting,
+    /// (Watches, final) the watch that answered is over: XSide closed it (its 5 min, or a newer
+    /// one), the network went, no line for XSWatchKeepAliveTimeout, a line didn't check out, or
+    /// the app closed it.
+    XSChannelWatchEnded,
 };
 
-/// Called on the main queue; `final` is NO for a refresh's `accepted` (the outcome follows) and for
-/// `XSChannelWaiting`.
+/// Called on the main queue; `final` is NO for a refresh's `accepted` (the outcome follows), for
+/// `XSChannelWaiting`, and for each line of a watch (until `XSChannelWatchEnded`).
 typedef void (^XSChannelHandler)(XSChannelResult result, NSDictionary *_Nullable reply, BOOL final);
 
 /// One request: browse for XSide, try each one found until one answers with a signed reply.
@@ -46,7 +50,13 @@ typedef void (^XSChannelHandler)(XSChannelResult result, NSDictionary *_Nullable
 /// Keeps retrying the XSides found (every XSRetryDelay) until one answers or `findTimeout`
 /// passes, and says `XSChannelWaiting` once after XSWaitingNotice. For requests the person made.
 @property (nonatomic) BOOL patient;
+/// A watch (device feedback 4): after its first signed reply, the connection stays open and each
+/// later line is delivered (not final) once XSOpenWatchLine accepts it; the first one that doesn't,
+/// a silence of XSWatchKeepAliveTimeout, or the connection's end finishes it (XSChannelWatchEnded).
+@property (nonatomic) BOOL watches;
 - (void)start;
+/// Ends it now (the app left the foreground): closes the connection; the handler gets the end.
+- (void)cancel;
 @end
 
 /// Exchanges in flight, kept alive until they finish.
@@ -76,6 +86,9 @@ static NSMutableSet<XSChannelExchange *> *XSExchanges;
     BOOL _denied;
     BOOL _sawRejected;
     BOOL _finished;
+    BOOL _watching;          // a watch that answered: later lines are watch lines
+    int64_t _seq;            // the last watch line taken
+    CFAbsoluteTime _lastLine; // when the last watch line came
 }
 
 - (instancetype)initWithBody:(NSDictionary *)body findTimeout:(NSTimeInterval)findTimeout
@@ -99,6 +112,13 @@ static NSMutableSet<XSChannelExchange *> *XSExchanges;
     if (!XSExchanges) XSExchanges = [NSMutableSet set];
     [XSExchanges addObject:self];
     dispatch_async(_queue, ^{ [self browse]; });
+}
+
+- (void)cancel {
+    dispatch_async(_queue, ^{
+        if (self->_watching) [self finish:XSChannelWatchEnded reply:nil];
+        else [self finish:XSChannelNotFound reply:nil];
+    });
 }
 
 - (void)deliver:(XSChannelResult)result reply:(NSDictionary *)reply final:(BOOL)final {
@@ -160,7 +180,7 @@ static BOOL XSIsPolicyDenied(nw_error_t error) {
     });
     nw_browser_start(browser);
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(_findTimeout * NSEC_PER_SEC)), _queue, ^{
-        if (!self->_finished && !self->_accepted) [self finishUnanswered];
+        if (!self->_finished && !self->_accepted && !self->_watching) [self finishUnanswered];
     });
     if (_patient) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(XSWaitingNotice * NSEC_PER_SEC)), _queue, ^{
@@ -233,6 +253,7 @@ static BOOL XSIsPolicyDenied(nw_error_t error) {
     _connection = nil;
     _generation++;
     if (_accepted) { [self finish:XSChannelNoOutcome reply:nil]; return; }
+    if (_watching) { [self finish:XSChannelWatchEnded reply:nil]; return; }
     [self tellWaiting];
     [self tryNext];
     [self scheduleRetry]; // when there was no other one to try
@@ -261,8 +282,34 @@ static BOOL XSIsPolicyDenied(nw_error_t error) {
     });
 }
 
+/// A watch's dead-connection check: no line for XSWatchKeepAliveTimeout ends it.
+- (void)checkKeepAlive:(NSUInteger)generation {
+    if (generation != _generation || _finished) return;
+    CFAbsoluteTime quiet = CFAbsoluteTimeGetCurrent() - _lastLine;
+    if (quiet >= XSWatchKeepAliveTimeout) {
+        NSLog(@"XSide: watch: no line for %.0f s, closed", quiet);
+        [self dropConnection];
+        return;
+    }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((XSWatchKeepAliveTimeout - quiet + 0.5) * NSEC_PER_SEC)), _queue, ^{
+        [self checkKeepAlive:generation];
+    });
+}
+
 - (void)handleLine:(NSData *)line {
     NSDictionary *reply = nil;
+    if (_watching) {
+        // Every line is checked: signed for this watch, the next one. The first that isn't ends it.
+        if (XSOpenWatchLine(line, _secret, _installationID, _nonce, _seq, &reply) != XSReplyOK) {
+            NSLog(@"XSide: watch: a line didn't check out (after %lld), closed", (long long)_seq);
+            [self dropConnection];
+            return;
+        }
+        _seq++;
+        _lastLine = CFAbsoluteTimeGetCurrent();
+        if ([reply[@"type"] isEqual:@"live"]) [self deliver:XSChannelReplied reply:reply final:NO];
+        return;
+    }
     switch (XSOpenReply(line, _secret, _installationID, _nonce, &reply)) {
         case XSReplyUnknownInstallation:
             _sawRejected = YES;
@@ -289,6 +336,18 @@ static BOOL XSIsPolicyDenied(nw_error_t error) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(XSOutcomeTimeout * NSEC_PER_SEC)), _queue, ^{
                 if (generation == self->_generation) [self finish:XSChannelNoOutcome reply:nil];
             });
+            return;
+        }
+        if (_watches && [reply[@"type"] isEqual:@"settings"]) {
+            // The watch's check-in answer: no other XSide is needed; the connection stays open.
+            _watching = YES;
+            _seq = 0;
+            _lastLine = CFAbsoluteTimeGetCurrent();
+            if (_browser) nw_browser_cancel(_browser);
+            _browser = nil;
+            [_pending removeAllObjects];
+            [self deliver:XSChannelReplied reply:reply final:NO];
+            [self checkKeepAlive:_generation];
             return;
         }
     }
@@ -370,7 +429,8 @@ static NSString *XSDescribeFields(NSArray<NSString *> *fields, NSDictionary *s) 
 }
 
 static NSArray<NSString *> *XSAdoptCheckInReply(XSChannelResult result, NSDictionary *reply) {
-    NSDictionary *settings = result == XSChannelReplied && [reply[@"type"] isEqual:@"settings"]
+    // `live`: a watch line, carrying what a check-in's answer carries (device feedback 4).
+    NSDictionary *settings = result == XSChannelReplied && ([reply[@"type"] isEqual:@"settings"] || [reply[@"type"] isEqual:@"live"])
         ? XSSettingsFromJSONObject(reply[@"settings"]) : nil;
     if (!settings) {
         NSLog(@"XSide: sync: no settings in the answer (result %ld, reply %@)", (long)result, reply[@"type"] ?: @"none");
@@ -481,15 +541,17 @@ void XSSendSettings(NSArray<NSString *> *fields, void (^done)(XSPillContent *res
     });
 }
 
-// MARK: - Live updates while the app is in front (device feedback round 2, P3)
+// MARK: - Live updates while the app is in front (device feedback round 2, P3; feedback 4)
 //
-// Polling rather than a connection the Mac keeps open: each check-in is an ordinary signed
-// request (fresh nonce, timestamp in the ±120 s window, signed reply bound to it), so nothing in
-// the channel's security or the server's limits changes, and nothing is ever pushed unasked. A
-// connection held open would need a new, unsolicited reply type and would hold one of the Mac's
-// 16 slots per app in front. Every 15 s (45 s in Low Power Mode) is 4 short connections a minute,
-// well under the server's 20 per minute per address, and stops the moment the app leaves the
-// foreground.
+// A watch first: a signed `watch` request (a check-in that keeps its connection open), on which
+// XSide writes each change made on the Mac the moment it is stored. Every line is checked
+// (XSOpenWatchLine: signed for this installation and this watch's fresh nonce, the next seq), the
+// first one that doesn't check out closes it, and so does a silence of XSWatchKeepAliveTimeout
+// (XSide writes at least every 25 s). XSide closes it after 5 min and another opens at once; the
+// app closes it when it leaves the foreground. While no watch is open (it couldn't open: an older
+// XSide, no slot left, the Mac away), the app polls as before: a signed check-in every 15 s (45 s
+// in Low Power Mode), and it tries the watch again a minute later. Never before the local network
+// was allowed, never in the background.
 
 static NSTimer *XSPollTimer;
 /// The last poll that got no answer: the next waits a minute (the Mac is off or away), so the
@@ -498,18 +560,79 @@ static NSDate *XSPollQuietUntil;
 static const NSTimeInterval XSPollQuietTime = 60;
 /// When the last poll started (a check-in that failed records no check-in date).
 static NSDate *XSLastPoll;
+/// The watch open or opening, nil when none.
+static XSChannelExchange *XSWatch;
+/// No watch before then (nil: whenever): set when one fails, so the app polls meanwhile.
+static NSDate *XSWatchRetryAt;
+static void XSPollNow(void);
+
+/// What the Mac changed, told once (the same pill as a poll's).
+static void XSTellLiveChange(NSArray<NSString *> *byMac, NSString *how) {
+    if (!byMac.count) return;
+    NSLog(@"XSide: %@: live update from the Mac: %@", how, byMac);
+    XSPillContent *pill = XSMacChangePill(byMac);
+    if (pill) XSShowPillWhenFree(pill);
+}
+
+static void XSOpenWatch(void) {
+    XSCheckInRunning = YES; // its first line is a check-in's answer (see XSCheckInEnded)
+    NSDate *opened = NSDate.date;
+    __block BOOL first = YES;
+    __block BOOL answered = NO;
+    NSDictionary *body = XSWatchBody(XSCurrentSettings(), XSLastRefresh(), XSAppVersion());
+    __block __weak XSChannelExchange *weakExchange = nil;
+    XSChannelHandler handler = ^(XSChannelResult result, NSDictionary *reply, BOOL final) {
+        if (first) {
+            first = NO;
+            XSCheckInEnded();
+            answered = result == XSChannelReplied;
+            NSArray<NSString *> *byMac = answered ? XSAdoptCheckInReply(result, reply) : nil;
+            NSLog(@"XSide: watch: %@ (result %ld)", answered ? @"open" : @"not open, polling", (long)result);
+            XSTellLiveChange(byMac, @"watch");
+        } else if (result == XSChannelReplied) {
+            // A change made on the Mac, written on the watch as it was stored.
+            NSArray<NSString *> *byMac = XSAdoptCheckInReply(result, reply);
+            XSTellLiveChange(byMac, @"watch");
+            // Confirmed with an ordinary check-in, so the Mac can say the device has it.
+            if (byMac.count) {
+                XSRunCheckIn(3, NO, ^(XSChannelResult r, NSArray *more) { XSTellLiveChange(more, @"confirm"); });
+            }
+        }
+        if (!final) return;
+        XSChannelExchange *ended = weakExchange;
+        if (ended && XSWatch != ended) return; // closed by the app (left the foreground)
+        XSWatch = nil;
+        NSTimeInterval lived = -[opened timeIntervalSinceNow];
+        NSTimeInterval delay = XSWatchRetryDelay(answered, lived);
+        NSLog(@"XSide: watch: ended after %.0f s (result %ld), next in %.0f s", lived, (long)result, delay);
+        XSWatchRetryAt = [NSDate dateWithTimeIntervalSinceNow:delay];
+        if (delay == 0) dispatch_async(dispatch_get_main_queue(), ^{ XSPollNow(); });
+    };
+    XSChannelExchange *exchange = [[XSChannelExchange alloc] initWithBody:body findTimeout:3 waitsOutcome:NO
+                                                                  handler:handler];
+    weakExchange = exchange;
+    exchange.watches = YES;
+    XSWatch = exchange;
+    [exchange start];
+}
 
 static void XSPollNow(void) {
     if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) {
         XSStopForegroundUpdates();
         return;
     }
+    if (!XSPollTimer) return; // stopped meanwhile
     NSDate *now = NSDate.date;
-    if (XSPollQuietUntil && [now compare:XSPollQuietUntil] == NSOrderedAscending) return;
     if (XSCheckInRunning || XSRefreshRunning) return;
+    if (XSShouldOpenWatch(XSHasChannel(), XSChannelGranted(), XSWatch != nil, XSWatchRetryAt, now)) {
+        XSOpenWatch();
+        return;
+    }
+    if (XSPollQuietUntil && [now compare:XSPollQuietUntil] == NSOrderedAscending) return;
     NSDate *last = XSLastCheckIn();
     if (XSLastPoll && (!last || [XSLastPoll compare:last] == NSOrderedDescending)) last = XSLastPoll;
-    if (!XSShouldPoll(XSHasChannel(), XSChannelGranted(), last, now, NSProcessInfo.processInfo.lowPowerModeEnabled)) return;
+    if (!XSShouldPoll(XSHasChannel(), XSChannelGranted(), last, now, NSProcessInfo.processInfo.lowPowerModeEnabled,
+                      XSWatch != nil)) return;
     XSLastPoll = now;
     XSRunCheckIn(3, NO, ^(XSChannelResult result, NSArray *byMac) {
         if (result != XSChannelReplied || !byMac) {
@@ -518,17 +641,16 @@ static void XSPollNow(void) {
             return;
         }
         XSPollQuietUntil = nil;
-        if (!byMac.count) return;
-        NSLog(@"XSide: poll: live update from the Mac: %@", byMac);
-        XSPillContent *pill = XSMacChangePill(byMac);
-        if (pill) XSShowPillWhenFree(pill);
+        XSTellLiveChange(byMac, @"poll");
     });
 }
 
 void XSStartForegroundUpdates(void) {
     if (XSPollTimer || !XSHasChannel()) return;
     XSPollQuietUntil = nil;
-    // Ticks often and lets XSShouldPoll decide, so Low Power Mode turned on or off applies at once.
+    XSWatchRetryAt = nil;
+    // Ticks often and lets XSShouldOpenWatch / XSShouldPoll decide, so Low Power Mode turned on or
+    // off applies at once and a watch opens within seconds of the return.
     XSPollTimer = [NSTimer scheduledTimerWithTimeInterval:5 repeats:YES block:^(NSTimer *timer) { XSPollNow(); }];
     XSPollTimer.tolerance = 2;
 }
@@ -536,6 +658,10 @@ void XSStartForegroundUpdates(void) {
 void XSStopForegroundUpdates(void) {
     [XSPollTimer invalidate];
     XSPollTimer = nil;
+    // The Mac sees the connection close and stops saying the app is open.
+    XSChannelExchange *watch = XSWatch;
+    XSWatch = nil;
+    [watch cancel];
 }
 
 // MARK: - Refresh from the phone

@@ -68,7 +68,8 @@ struct InAppStep: View {
         return flow.deviceIDs.map { id in
             DeviceSyncLine(deviceID: id, deviceName: model.devices.first { $0.id == id }?.name ?? L("popover.unknownDevice"),
                            installation: record?.installations.first { $0.deviceID == id },
-                           lastSeen: record.flatMap { model.channelSeen[JobKey(recordID: $0.id, deviceID: id)] })
+                           lastSeen: record.flatMap { model.channelSeen[JobKey(recordID: $0.id, deviceID: id)] },
+                           live: record.map { model.isLive(JobKey(recordID: $0.id, deviceID: id)) } ?? false)
         }
     }
 

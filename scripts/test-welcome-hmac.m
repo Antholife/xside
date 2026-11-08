@@ -119,6 +119,58 @@ int main(int argc, const char *argv[]) {
         check(XSCanonicalBase64(@"eyJ0eXBlIjoicmVmcmVzaCJ9") != nil && XSCanonicalBase64(@"eyJ0eXBlIjoicmVmcmVzaCJ9\n") == nil
               && XSCanonicalBase64(@"QQ") == nil, @"canonical base64");
 
+        // Device feedback 4: the watch request, and the lines XSide writes on it.
+        NSDictionary *watchLast = nil;
+        requestCase(fx[@"watchRequest"], secret, XSWatchBody(fixtureSettings(), watchLast, @"2.3.1"), @"watch");
+        NSDictionary *liveEntry = fx[@"liveLine"], *aliveEntry = fx[@"aliveLine"];
+        NSString *wnonce = liveEntry[@"nonce"];
+        NSData *live = [liveEntry[@"line"] dataUsingEncoding:NSUTF8StringEncoding];
+        NSData *alive = [aliveEntry[@"line"] dataUsingEncoding:NSUTF8StringEncoding];
+        NSDictionary *pushed = nil;
+        check(XSOpenWatchLine(live, secret, iid, wnonce, 0, &pushed) == XSReplyOK && [pushed[@"type"] isEqual:@"live"]
+              && [XSSettingValue(XSSettingsFromJSONObject(pushed[@"settings"]) ?: @{}, @"reminder") isEqual:@YES]
+              && [XSSettingsFromJSONObject(pushed[@"settings"])[@"reminder"][@"changedBy"] isEqual:@"mac"],
+              @"watch: live line opens, with the Mac's change");
+        check(XSOpenWatchLine(alive, secret, iid, wnonce, 1, &pushed) == XSReplyOK && [pushed[@"type"] isEqual:@"alive"],
+              @"watch: alive line opens after it");
+        check(XSOpenWatchLine(live, secret, iid, wnonce, 1, NULL) == XSReplyInvalid
+              && XSOpenWatchLine(live, secret, iid, wnonce, 2, NULL) == XSReplyInvalid,
+              @"watch: a replayed line is refused");
+        check(XSOpenWatchLine(alive, secret, iid, wnonce, 0, NULL) == XSReplyInvalid, @"watch: a skipped line is refused");
+        check(XSOpenWatchLine(live, secret, iid, @"another-watch", 0, NULL) == XSReplyInvalid
+              && XSOpenWatchLine(live, secret, @"rec|other", wnonce, 0, NULL) == XSReplyInvalid,
+              @"watch: a line from another watch or installation is refused");
+        NSString *forgedLive = [liveEntry[@"line"] stringByReplacingOccurrencesOfString:liveEntry[@"mac"]
+                                                                             withString:[@"A" stringByAppendingString:[liveEntry[@"mac"] substringFromIndex:1]]];
+        check(XSOpenWatchLine([forgedLive dataUsingEncoding:NSUTF8StringEncoding], secret, iid, wnonce, 0, NULL) == XSReplyInvalid
+              && XSOpenWatchLine(live, hex(@"ff"), iid, wnonce, 0, NULL) == XSReplyInvalid,
+              @"watch: a forged line (wrong MAC, other key) is refused");
+        // A forged line signed with another key: the right shape, the wrong secret.
+        NSData *otherKey = hex(@"ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100");
+        NSData *forgedBody = XSJSONData(@{@"type": @"live", @"seq": @1, @"settings": XSSettingsJSONObject(fixtureSettings())});
+        NSString *forgedMac = [XSHMACSHA256(otherKey, [XSReplySignedString(iid, wnonce, forgedBody) dataUsingEncoding:NSUTF8StringEncoding])
+                               base64EncodedStringWithOptions:0];
+        NSData *forgedLine = XSJSONData(@{@"installationID": iid, @"nonce": wnonce,
+                                          @"body": [forgedBody base64EncodedStringWithOptions:0], @"mac": forgedMac});
+        check(XSOpenWatchLine(forgedLine, secret, iid, wnonce, 0, NULL) == XSReplyInvalid
+              && XSOpenWatchLine(forgedLine, otherKey, iid, wnonce, 0, NULL) == XSReplyOK,
+              @"watch: a line signed with another key is refused (and opens only with that key)");
+        check(XSOpenWatchLine([@"{\"type\":\"rejected\"}" dataUsingEncoding:NSUTF8StringEncoding], secret, iid, wnonce, 0, NULL) == XSReplyInvalid
+              && XSOpenWatchLine([@"{\"seq\":1,\"type\":\"alive\"}" dataUsingEncoding:NSUTF8StringEncoding], secret, iid, wnonce, 0, NULL) == XSReplyInvalid
+              && XSOpenWatchLine(line, secret, iid, nonce, 0, NULL) == XSReplyInvalid,
+              @"watch: unsigned lines, bare rejected and non-watch replies are refused");
+        // A Bool or fractional seq isn't a line number.
+        NSData *(^signedBody)(NSDictionary *) = ^NSData *(NSDictionary *b) {
+            NSData *json = XSJSONData(b);
+            NSString *m = [XSHMACSHA256(secret, [XSReplySignedString(iid, wnonce, json) dataUsingEncoding:NSUTF8StringEncoding])
+                           base64EncodedStringWithOptions:0];
+            return XSJSONData(@{@"installationID": iid, @"nonce": wnonce, @"body": [json base64EncodedStringWithOptions:0], @"mac": m});
+        };
+        check(XSOpenWatchLine(signedBody(@{@"type": @"alive", @"seq": @YES}), secret, iid, wnonce, 0, NULL) == XSReplyInvalid
+              && XSOpenWatchLine(signedBody(@{@"type": @"alive", @"seq": @1.5}), secret, iid, wnonce, 0, NULL) == XSReplyInvalid
+              && XSOpenWatchLine(signedBody(@{@"type": @"alive", @"seq": @1}), secret, iid, wnonce, 0, NULL) == XSReplyOK,
+              @"watch: seq must be the next integer");
+
         // Nonces.
         check(XSNonceValid(@"n1") && XSNonceValid(@"a-b_C9") && !XSNonceValid(@"") && !XSNonceValid(@"a|b")
               && !XSNonceValid([@"" stringByPaddingToLength:65 withString:@"a" startingAtIndex:0]), @"nonce validation");
@@ -341,11 +393,21 @@ int main(int argc, const char *argv[]) {
         // (less often in Low Power Mode), only once the local network is allowed, and not right
         // after another check-in.
         check(XSForegroundPollInterval(NO) == 15 && XSForegroundPollInterval(YES) == 45, @"poll: 15 s, 45 s in Low Power Mode");
-        check(XSShouldPoll(YES, YES, nil, at(0), NO) && XSShouldPoll(YES, YES, at(-15), at(0), NO)
-              && !XSShouldPoll(YES, YES, at(-10), at(0), NO) && !XSShouldPoll(YES, YES, at(-30), at(0), YES)
-              && XSShouldPoll(YES, YES, at(-45), at(0), YES), @"poll: not again right after a check-in");
-        check(!XSShouldPoll(NO, YES, nil, at(0), NO) && !XSShouldPoll(YES, NO, nil, at(0), NO),
+        check(XSShouldPoll(YES, YES, nil, at(0), NO, NO) && XSShouldPoll(YES, YES, at(-15), at(0), NO, NO)
+              && !XSShouldPoll(YES, YES, at(-10), at(0), NO, NO) && !XSShouldPoll(YES, YES, at(-30), at(0), YES, NO)
+              && XSShouldPoll(YES, YES, at(-45), at(0), YES, NO), @"poll: not again right after a check-in");
+        check(!XSShouldPoll(NO, YES, nil, at(0), NO, NO) && !XSShouldPoll(YES, NO, nil, at(0), NO, NO),
               @"poll: never without the channel or before the local network was allowed");
+
+        // Device feedback 4: a watch instead of the 15 s poll.
+        check(!XSShouldPoll(YES, YES, nil, at(0), NO, YES) && !XSShouldPoll(YES, YES, at(-600), at(0), NO, YES),
+              @"watch: no poll while a watch is open or opening");
+        check(XSShouldOpenWatch(YES, YES, NO, nil, at(0)) && XSShouldOpenWatch(YES, YES, NO, at(0), at(0))
+              && !XSShouldOpenWatch(YES, YES, NO, at(1), at(0)) && !XSShouldOpenWatch(YES, YES, YES, nil, at(0))
+              && !XSShouldOpenWatch(NO, YES, NO, nil, at(0)) && !XSShouldOpenWatch(YES, NO, NO, nil, at(0)),
+              @"watch: opened with the channel, once allowed, one at a time, after its retry time");
+        check(XSWatchRetryDelay(YES, 300) == 0 && XSWatchRetryDelay(YES, 19) == 60 && XSWatchRetryDelay(NO, 300) == 60
+              && XSWatchKeepAliveTimeout > 25, @"watch: again at once after a good one, a minute after a failed one");
 
         // Device feedback 3, E1: XSide's quick actions are static Info.plist items again (written
         // on the Mac); the library only handles them, and finds them in the Info.plist.

@@ -151,9 +151,22 @@ NSDictionary<NSString *, NSString *> *XSChangeTexts(NSArray<NSString *> *fields,
 /// Seconds between two check-ins while the app is in front: 15, or 45 in Low Power Mode.
 NSTimeInterval XSForegroundPollInterval(BOOL lowPower);
 /// A check-in is due now: the app talks to XSide (`channel`), the local network was allowed
-/// (`granted`: polling never makes iOS ask), and the last check-in (any kind) is at least one
+/// (`granted`: polling never makes iOS ask), no watch is open or opening (`watching`: XSide writes
+/// its changes on it, device feedback 4), and the last check-in (any kind) is at least one
 /// interval old.
-BOOL XSShouldPoll(BOOL channel, BOOL granted, NSDate *_Nullable lastCheckIn, NSDate *now, BOOL lowPower);
+BOOL XSShouldPoll(BOOL channel, BOOL granted, NSDate *_Nullable lastCheckIn, NSDate *now, BOOL lowPower, BOOL watching);
+
+// MARK: Watch while the app is in front (device feedback 4)
+
+/// No line (live or alive: XSide writes one at least every 25 s) for this long: the watch is dead,
+/// the phone closes it.
+extern const NSTimeInterval XSWatchKeepAliveTimeout;
+/// A watch should be opened now: channel, local network allowed (never makes iOS ask), none open
+/// or opening, and the retry time (`retryAt`, nil: none) passed.
+BOOL XSShouldOpenWatch(BOOL channel, BOOL granted, BOOL watching, NSDate *_Nullable retryAt, NSDate *now);
+/// Seconds before the next watch after one ended: 0 when it had answered and lasted at least 20 s,
+/// else 60 (the app polls meanwhile).
+NSTimeInterval XSWatchRetryDelay(BOOL answered, NSTimeInterval lived);
 
 /// The title of XSide's row in the app's Settings.bundle page (`root`: its Root.plist), as XSide
 /// wrote it at signing: plain text in the installation's language, the key of the translations

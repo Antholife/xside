@@ -755,7 +755,7 @@
 "appSettings.device" = "Appareil";
 "appSettings.perDevice" = "Installée sur %ld appareils : chacun a ses propres réglages du module. « Fonctionnalités XSide » vaut pour l'app sur tous.";
 "whatsNew.110.live.title" = "En direct, app ouverte";
-"whatsNew.110.live.text" = "Un réglage changé sur le Mac arrive dans l'app ouverte en quelques secondes, sans la relancer, avec une seule bulle qui dit ce qui a changé (« rafraîchissement automatique réactivé depuis XSide sur ton Mac »). Seulement quand l'app est à l'écran, plus rarement en mode Économie d'énergie.";
+"whatsNew.110.live.text" = "Un réglage changé sur le Mac, ou une pause, arrive aussitôt dans l'app ouverte, sans la relancer, avec une seule bulle qui dit ce qui a changé (« rafraîchissement automatique réactivé depuis XSide sur ton Mac »). L'app garde une connexion signée avec XSide tant qu'elle est à l'écran, et la ferme quand tu la quittes.";
 "whatsNew.110.appPause.title" = "Mettre une app en pause un moment";
 "whatsNew.110.appPause.text" = "Le menu … d'une app dans le panneau : Mettre en pause pendant 2 heures, 1 jour ou jusqu'à ce que tu reprennes. La pause d'une app reprend toute seule à la fin.";
 "whatsNew.110.cli.title" = "Nouvelles commandes xside";

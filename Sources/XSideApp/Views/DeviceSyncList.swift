@@ -10,6 +10,8 @@ struct DeviceSyncLine: Identifiable {
     let installation: Installation?
     /// The Mac's last sight of it in this run (see `AppModel.channelSeen`).
     var lastSeen: Date? = nil
+    /// The app is open there now (`AppModel.liveInstallations`, observed: the line flips by itself).
+    var live = false
     var id: String { deviceID }
 }
 
@@ -63,7 +65,7 @@ private struct DeviceSyncRow: View {
     }
 
     private var status: ReachabilityStatus? {
-        line.installation.map { ReachabilityStatus.of(installation: $0, now: now, lastSeen: line.lastSeen) }
+        line.installation.map { ReachabilityStatus.of(installation: $0, now: now, lastSeen: line.lastSeen, watching: line.live) }
     }
 
     /// Green while the app is open (changes arrive live), paler when it is reachable at its next
