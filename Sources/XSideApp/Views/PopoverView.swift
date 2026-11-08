@@ -21,6 +21,7 @@ private struct PopoverContent: View {
     /// Closes the popover: every action that leads elsewhere (window, web page) does.
     @Environment(\.closePopover) private var dismiss
     @Environment(\.reopenPopover) private var reopen
+    @Environment(\.openSettings) private var openSettings
     @AppStorage(JourneyStep.completedKey) private var journeyCompleted = false
     @State private var isDropTargeted = false
 
@@ -185,9 +186,12 @@ private struct PopoverContent: View {
                                    onResume: { resume(entry) },
                                    onRemoveFromList: { removeFromList(entry, deviceName: group.name) },
                                    onXSideSettings: {
+                                       // Settings > Mes apps, on this app.
+                                       model.settingsApp = entry.id
+                                       model.settingsPane = .apps
                                        dismiss()
-                                       openWindow(id: AppSettingsWindow.id, value: entry.id)
                                        NSApp.activate()
+                                       openSettings()
                                    })
                         }
                     }

@@ -63,15 +63,6 @@ struct XSideApp: App {
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
 
-        // "Réglages XSide…" of an app on a device (its row's menu), one window per installation.
-        WindowGroup(L("appSettings.window"), id: AppSettingsWindow.id, for: JobKey.self) { $key in
-            AppSettingsWindowRoot(model: model, key: key)
-        }
-        .windowStyle(.hiddenTitleBar)
-        .windowResizability(.contentSize)
-        .windowBackgroundDragBehavior(.enabled)
-        .defaultPosition(.center)
-        .restorationBehavior(.disabled)
 
         Settings {
             SettingsView(model: model)
@@ -210,12 +201,14 @@ struct MenuBarLabel: View {
                     model.settingsPane = pane
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1) { NSApp.activate(); openSettings() }
                 }
-                // Debug-only: XSIDE_OPEN_APP_SETTINGS=1 opens "Réglages XSide…" of the first app at launch.
+                // Debug-only: XSIDE_OPEN_APP_SETTINGS=1 opens Settings > Mes apps on the first app at launch.
                 if ProcessInfo.processInfo.environment["XSIDE_OPEN_APP_SETTINGS"] == "1" {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                         guard let record = model.records.first, let installation = record.installations.first else { return }
-                        openWindow(id: AppSettingsWindow.id, value: JobKey(recordID: record.id, deviceID: installation.deviceID))
+                        model.settingsApp = JobKey(recordID: record.id, deviceID: installation.deviceID)
+                        model.settingsPane = .apps
                         NSApp.activate()
+                        openSettings()
                     }
                 }
                 #endif

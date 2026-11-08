@@ -35,6 +35,22 @@ struct InAppSettingsSection: View {
                     .toggleStyle(.xside)
                     .controlSize(.small)
                 }
+                // Why one would turn it off, said where it can't be missed (device feedback 2026-11-08).
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: "lightbulb.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color(nsColor: .systemOrange))
+                        .accessibilityHidden(true)
+                    Text(L("inApp.features.tip"))
+                        .font(.system(size: 11.5, weight: .medium))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(Color(nsColor: .systemOrange).opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .padding(.horizontal, 10)
+                .padding(.bottom, 10)
             }
             if !hasFeatures {
                 Label(L("inApp.features.off"), systemImage: "minus.circle")
@@ -313,29 +329,37 @@ struct InAppRow<Accessory: View>: View {
     }
 }
 
-/// "Modifiable ensuite sur l'iPhone : Réglages > Apps > <app> > Réglages XSide", highlighted.
+/// Where to change these settings later on the iPhone, highlighted: the long press on the app's
+/// icon and the Settings path ("Réglages > Apps > YouTube > Réglages XSide"), the two ways shown
+/// alike (device feedback 2026-11-08). `appName`: the app's name, or `inApp.where.anyApp`.
 struct WhereBox: View {
     let appName: String
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "iphone.gen3")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Theme.brand)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(L("inApp.where", appName))
-                    .font(.system(size: 12, weight: .medium))
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(L("inApp.where.alt"))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
+        VStack(alignment: .leading, spacing: 6) {
+            Text(L("inApp.where.title"))
+                .font(.system(size: 12, weight: .semibold))
+                .fixedSize(horizontal: false, vertical: true)
+            way(symbol: "hand.tap.fill", text: L("inApp.where.alt"))
+            way(symbol: "gearshape.fill", text: L("inApp.where", appName))
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .background(Theme.violet.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.violet.opacity(0.25)))
         .accessibilityElement(children: .combine)
+    }
+
+    private func way(symbol: String, text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.brand)
+                .frame(width: 16)
+                .accessibilityHidden(true)
+            Text(text)
+                .font(.system(size: 12, weight: .medium))
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }

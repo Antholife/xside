@@ -157,6 +157,8 @@ final class AppModel {
 
     /// The page Settings shows: set before opening it (a signing problem opens on its fix).
     var settingsPane = SettingsPane.general
+    /// The app Settings > Mes apps shows (set by the "…" menu of a row); nil: the first one.
+    var settingsApp: JobKey?
     /// Runs every tool with `DEVELOPER_DIR` set to the Xcode in use (see `resolveXcode`).
     private let runner: ProcessRunner
     /// Without the override: what `xcode-select -p` itself points to.

@@ -11,7 +11,7 @@ enum AppLinks {
 
 /// The pages of the Settings window.
 enum SettingsPane: String, CaseIterable, Identifiable {
-    case general, refresh, install, inApp, notifications, signing, updates, logs, about
+    case general, refresh, install, inApp, apps, notifications, signing, updates, logs, about
     var id: String { rawValue }
 
     var title: String {
@@ -20,6 +20,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .refresh: L("settings.pane.refresh")
         case .install: L("settings.pane.install")
         case .inApp: L("settings.pane.inApp")
+        case .apps: L("settings.pane.apps")
         case .signing: L("settings.signing")
         case .notifications: L("settings.notifications")
         case .updates: L("updates.title")
@@ -34,6 +35,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .refresh: "arrow.clockwise"
         case .install: "square.and.arrow.down.fill"
         case .inApp: "apps.iphone"
+        case .apps: "square.grid.2x2.fill"
         case .signing: "hammer.fill"
         case .notifications: "bell.badge.fill"
         case .updates: "arrow.triangle.2.circlepath"
@@ -75,10 +77,14 @@ struct SettingsView: View {
             .frame(maxHeight: .infinity)
             .background(.background.secondary)
             Divider()
-            SettingsPage(model: model, pane: model.settingsPane)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Group {
+                // Its own list and scrolling, not a Form.
+                if model.settingsPane == .apps { AppsSettingsPage(model: model) }
+                else { SettingsPage(model: model, pane: model.settingsPane) }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(width: 720, height: 500)
+        .frame(width: 900, height: 560)
         .navigationTitle(model.settingsPane.title)
         .id(language)
         // While something fails, re-check every 5 s so a fix in Xcode shows up here by itself.
@@ -165,6 +171,7 @@ private struct SettingsPage: View {
             case .refresh: refreshPage
             case .install: installPage
             case .inApp: InAppDefaultsPage()
+            case .apps: EmptyView() // shown by SettingsView (see AppsSettingsPage)
             case .signing:
                 Section { SigningHero(model: model) }
                 SigningSettingsSection(model: model)
