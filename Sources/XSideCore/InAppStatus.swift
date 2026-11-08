@@ -1,7 +1,7 @@
 import Foundation
 
 /// Whether the app on a device talks to XSide through the local network channel, as the Mac
-/// knows it from the check-ins (shown per device in the install window and "Réglages XSide…").
+/// knows it from the check-ins (shown per device in the install window and Settings > Mes apps).
 public enum ReachabilityStatus: Equatable, Sendable {
     /// Checked in recently: the app checks in at each launch, a Mac change arrives at its next opening.
     case joinable(lastSeen: Date)

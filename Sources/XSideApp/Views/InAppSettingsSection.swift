@@ -6,7 +6,7 @@ import XSideCore
 typealias InAppEdit = @Sendable (InAppSettings) -> InAppSettings
 
 /// The XSide-in-app options, each explained, with a preview where there's something to see:
-/// what the install window's step ③ and the per-app "Réglages XSide…" window show. Every change
+/// what the install window's step ③ and Settings > Mes apps show. Every change
 /// goes through `edit`, stamped by the Mac now.
 struct InAppSettingsSection: View {
     let settings: InAppSettings

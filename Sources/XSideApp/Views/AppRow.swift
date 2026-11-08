@@ -27,7 +27,7 @@ struct AppRow: View {
     let onStopRefreshing: () -> Void
     let onResume: () -> Void
     let onRemoveFromList: () -> Void
-    /// Opens the app's "Réglages XSide…" window for this device.
+    /// Opens Settings > Mes apps on this app and device.
     let onXSideSettings: () -> Void
 
     private var isPaused: Bool { entry.installation.refreshPaused }

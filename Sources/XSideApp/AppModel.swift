@@ -1904,7 +1904,7 @@ final class AppModel {
         onInstallationRemoved?(RefreshJob(recordID: recordID, deviceID: deviceID))
     }
 
-    /// Changes one installation's XSide-in-app settings from the Mac ("Réglages XSide…"). They
+    /// Changes one installation's XSide-in-app settings from the Mac (Settings > Mes apps). They
     /// reach the app at its next check-in or signing.
     func editInApp(_ key: JobKey, _ transform: @escaping @Sendable (InAppSettings) -> InAppSettings) async {
         do {

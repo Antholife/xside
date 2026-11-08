@@ -437,7 +437,7 @@ public actor AppLibrary {
         return change
     }
 
-    /// Changes an installation's in-app settings from the Mac ("Réglages XSide…"), on the values
+    /// Changes an installation's in-app settings from the Mac (Settings > Mes apps), on the values
     /// stored now (seeded with the Mac defaults, `reminder`, for older state). `transform` stamps
     /// what it changes; "automatic refresh" is left as it was (it goes with the pause, through
     /// `setRefreshPaused`). Throws `recordNotFound` when the installation is gone.
