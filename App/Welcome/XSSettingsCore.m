@@ -210,6 +210,28 @@ NSDate *XSRowChangeDate(NSDate *fileModified, NSDate *lastLooked, NSDate *now) {
     return date;
 }
 
+NSDate *XSPrefsDateForLoad(NSDate *atStart, NSDate *live, BOOL firstLoad) {
+    return firstLoad ? atStart : live;
+}
+
+NSString *XSSettingsRowTitle(id root) {
+    if (![root isKindOfClass:NSDictionary.class]) return nil;
+    id items = root[@"PreferenceSpecifiers"];
+    if (![items isKindOfClass:NSArray.class]) return nil;
+    for (id item in items) {
+        if (![item isKindOfClass:NSDictionary.class]) continue;
+        if (![item[@"Key"] isEqual:@"io.github.xside.settings.pane"]) continue;
+        id title = item[@"Title"];
+        return [title isKindOfClass:NSString.class] && [title length] ? title : nil;
+    }
+    return nil;
+}
+
+NSString *XSSettingsRowTable(id root) {
+    id table = [root isKindOfClass:NSDictionary.class] ? root[@"StringsTable"] : nil;
+    return [table isKindOfClass:NSString.class] && [table length] ? table : @"Root";
+}
+
 const NSUInteger XSMaxShortcuts = 4;
 
 NSArray<NSString *> *XSShortcutNamesFitting(NSUInteger staticCount, NSUInteger appDynamicCount) {

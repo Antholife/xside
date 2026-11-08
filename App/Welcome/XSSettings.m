@@ -18,6 +18,11 @@ static NSString *const XSPendingFailureKey = @"io.github.xside.welcome.pendingFa
 static NSString *const XSLastExpiryKey = @"io.github.xside.welcome.lastExpiry";
 static NSString *const XSChannelGrantedKey = @"io.github.xside.welcome.channelGranted";
 static NSString *const XSNetworkExplainedKey = @"io.github.xside.welcome.networkExplained";
+/// The "changed on phone" flags, also saved (mega review minor 4): settings can first be loaded
+/// during a background launch (the wrapped setShortcutItems:), and a process killed before it
+/// became active would otherwise lose the news, so the change would never be told.
+static NSString *const XSAutoRefreshChangedKey = @"io.github.xside.welcome.autoRefreshChangedOnPhone";
+static NSString *const XSOtherChangedKey = @"io.github.xside.welcome.otherChangedOnPhone";
 /// When the library last looked at the iOS Settings rows (saved when the app leaves).
 static NSString *const XSLastLookedKey = @"io.github.xside.welcome.rowsLookedAt";
 
@@ -48,6 +53,16 @@ static NSDate *XSDefaultsModified(void) {
     NSDate *date = nil;
     if (![file getResourceValue:&date forKey:NSURLContentModificationDateKey error:NULL]) return nil;
     return date;
+}
+
+/// The preferences file date when the library loaded, and whether a load used it yet (mega review
+/// minor 1). Guarded by XSLock().
+static NSDate *XSDefaultsModifiedAtStart;
+static BOOL XSLoadedOnce;
+
+void XSNoteStartDefaultsDate(void) {
+    NSDate *date = XSDefaultsModified();
+    @synchronized (XSLock()) { XSDefaultsModifiedAtStart = date; }
 }
 
 void XSNoteLeaving(void) {
@@ -104,14 +119,22 @@ BOOL XSLoadSettings(void) {
             if (value) rows[f] = value;
         }
         NSDate *now = NSDate.date;
-        NSDate *when = XSRowChangeDate(XSDefaultsModified(), XSLastLooked(), now);
+        NSDate *fileDate = XSPrefsDateForLoad(XSDefaultsModifiedAtStart, XSDefaultsModified(), !XSLoadedOnce);
+        XSLoadedOnce = YES;
+        NSDate *when = XSRowChangeDate(fileDate, XSLastLooked(), now);
         XSLookedAt = now;
         NSDictionary *noticed = XSSettingsNoticingRowChanges(local, rows, shadow, when);
         // Restamped fields (a new date, even when the value is back to what it was) are told.
         for (NSString *f in XSSettingFields()) {
             if ([noticed[f] isEqual:local[f]]) continue;
-            if ([f isEqualToString:@"autoRefresh"]) XSAutoRefreshChangedOnPhone = YES;
-            else XSOtherChangedOnPhone = YES;
+            NSLog(@"[XSide] %@ changed in iOS Settings, dated %@ (file at start %@)", f, when, XSDefaultsModifiedAtStart);
+            if ([f isEqualToString:@"autoRefresh"]) {
+                XSAutoRefreshChangedOnPhone = YES;
+                [d setBool:YES forKey:XSAutoRefreshChangedKey];
+            } else {
+                XSOtherChangedOnPhone = YES;
+                [d setBool:YES forKey:XSOtherChangedKey];
+            }
         }
         local = noticed;
         NSDictionary *merged = XSSettingsMerge(local, payload);
@@ -127,16 +150,20 @@ BOOL XSLoadSettings(void) {
 
 BOOL XSTakeAutoRefreshChangedOnPhone(void) {
     @synchronized (XSLock()) {
-        BOOL changed = XSAutoRefreshChangedOnPhone;
+        NSUserDefaults *d = XSDefaults();
+        BOOL changed = XSAutoRefreshChangedOnPhone || [d boolForKey:XSAutoRefreshChangedKey];
         XSAutoRefreshChangedOnPhone = NO;
+        if ([d objectForKey:XSAutoRefreshChangedKey]) [d removeObjectForKey:XSAutoRefreshChangedKey];
         return changed;
     }
 }
 
 BOOL XSTakeSettingsChangedOnPhone(void) {
     @synchronized (XSLock()) {
-        BOOL changed = XSOtherChangedOnPhone;
+        NSUserDefaults *d = XSDefaults();
+        BOOL changed = XSOtherChangedOnPhone || [d boolForKey:XSOtherChangedKey];
         XSOtherChangedOnPhone = NO;
+        if ([d objectForKey:XSOtherChangedKey]) [d removeObjectForKey:XSOtherChangedKey];
         return changed;
     }
 }

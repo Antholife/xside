@@ -232,10 +232,27 @@ static void XSHidePillWindow(UIWindow *window, BOOL gone) {
 }
 @end
 
+/// An answer that came while the app was in the background, for its return (main queue).
+static XSPillContent *XSKeptAnswer;
+static NSDate *XSKeptAnswerAt;
+
 static void XSShowPillAttempt(XSPillContent *content, int attempt) {
     UIWindowScene *scene = XSScene();
     if (!scene) {
-        if (attempt + 1 >= XSPillMaxAttempts) return;
+        if (attempt + 1 >= XSPillMaxAttempts) {
+            // Mega review minor 3: the result of an exchange whose busy pill ("Envoi de tes
+            // réglages…", "En attente du Mac…") is still up, and no scene to show it in: the
+            // spinner would stay until another pill. Hidden now; the result is kept for the return
+            // like an answer (XSShowKeptAnswer), if it is a final one.
+            if (XSPillWindow && XSPillOnScreen.busy) {
+                XSHidePillWindow(XSPillWindow, NO);
+                if (content.duration > 0) {
+                    XSKeptAnswer = content;
+                    XSKeptAnswerAt = NSDate.date;
+                }
+            }
+            return;
+        }
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             XSShowPillAttempt(content, attempt + 1);
         });
@@ -250,10 +267,6 @@ static void XSShowPillAttempt(XSPillContent *content, int attempt) {
     XSPillOnScreen = content;
     window.hidden = NO; // never key: the app keeps its keyboard and focus
 }
-
-/// An answer that came while the app was in the background, for its return (main queue).
-static XSPillContent *XSKeptAnswer;
-static NSDate *XSKeptAnswerAt;
 
 void XSShowPill(XSPillContent *content) {
     if (!XSShowsPill(XSCurrentSettings(), content.answer)) return; // "Aucun": only answers to the person

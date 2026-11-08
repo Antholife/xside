@@ -48,6 +48,10 @@ NSString *XSDate(NSDate *date);
 NSString *XSReasonText(NSString *_Nullable reasonKey, BOOL french);
 /// "Réglages > Apps > <app>" (iOS 18+) or "Réglages > <app>".
 NSString *XSSettingsPath(void);
+/// XSide's row on the app's page in iOS Settings, as iOS shows it: the title written at signing
+/// (in the installation's language when the app has no lproj, which may differ from the texts
+/// here), translated from the app's Settings.bundle like iOS does (mega review minor 5).
+NSString *XSSettingsRowShown(void);
 
 // MARK: UI
 
@@ -92,6 +96,9 @@ BOOL XSTakeAutoRefreshChangedOnPhone(void);
 BOOL XSTakeSettingsChangedOnPhone(void);
 /// The app goes to the background: a change found in iOS Settings later was made after now.
 void XSNoteLeaving(void);
+/// Captures the app's preferences file date, from the library's constructor: before any of the
+/// app's code writes its preferences (mega review minor 1, see XSPrefsDateForLoad).
+void XSNoteStartDefaultsDate(void);
 /// Adopts settings XSide sent (merged field by field). Main thread.
 void XSAdoptSettings(NSDictionary *settings);
 /// A change made on the phone by the dylib itself (e.g. turning automatic refresh back on).

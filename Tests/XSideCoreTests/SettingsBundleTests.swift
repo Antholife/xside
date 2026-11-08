@@ -225,7 +225,9 @@ struct SettingsBundleTests {
         #expect(fr["Last refresh"] == "Dernier rafraîchissement")
         let footer = try #require(fr.keys.first { $0.hasPrefix("✦ Installed with XSide") })
         #expect(fr[footer]?.hasPrefix("✦ Installée avec XSide\n• Rafraîchie automatiquement depuis ton Mac\n• ") == true)
-        #expect(en[footer]?.contains("\n• Your choices apply on this iPhone right away\n") == true)
+        // Mega review minor 8: the same footer is written for an iPad, so it names neither.
+        #expect(en[footer]?.contains("\n• Your choices apply on this device right away\n") == true)
+        #expect(fr[footer]?.contains("\n• Tes choix s'appliquent tout de suite sur cet appareil\n") == true)
         #expect(fr[footer]?.hasSuffix("github.com/Antholife/xside") == true)
         #expect(Set(fr.keys) == Set(en.keys))
     }

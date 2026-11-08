@@ -143,7 +143,7 @@ static void XSHideWindow(void) {
 - (UIView *)settingsHint {
     UIFont *font = XSScaledFont(13, UIFontWeightRegular);
     // XSide's page sits under the app's own (one row there opens it).
-    NSString *path = [XSSettingsPath() stringByAppendingString:[self t:@" > Réglages XSide" en:@" > XSide Settings"]];
+    NSString *path = [NSString stringWithFormat:@"%@ > %@", XSSettingsPath(), XSSettingsRowShown()];
     NSString *text = [NSString stringWithFormat:[self t:@"Ces infos restent dans %@" en:@"These details stay in %@"], path];
     if (XSHasShortcuts()) {
         text = [text stringByAppendingString:[self t:@", et à un appui long sur l'icône de l'app."
@@ -855,6 +855,7 @@ static void XSReturn(void) {
 }
 
 __attribute__((constructor)) static void XSideWelcomeInit(void) {
+    XSNoteStartDefaultsDate(); // before the app writes its own preferences at launch
     XSInstallShortcuts(); // before UIApplicationMain sets the app's delegates
     __block id observer = nil;
     observer = [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification

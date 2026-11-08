@@ -65,7 +65,7 @@ extension SettingsSection {
             // iOS shows the footer as plain grey text: a list made of lines.
             ("footer", "✦ Installée avec XSide\n"
                 + "• Rafraîchie automatiquement depuis ton Mac\n"
-                + "• Tes choix s'appliquent tout de suite sur cet iPhone\n"
+                + "• Tes choix s'appliquent tout de suite sur cet appareil\n"
                 + "• XSide sur ton Mac en est informé à la prochaine connexion "
                 + "(« Rafraîchissement automatique » ne change qu'à ce moment-là)\n"
                 + "github.com/Antholife/xside"),
@@ -85,7 +85,7 @@ extension SettingsSection {
             ("language.automatic", "Automatic"), ("language.fr", "Français"), ("language.en", "English"),
             ("footer", "✦ Installed with XSide\n"
                 + "• Refreshed automatically from your Mac\n"
-                + "• Your choices apply on this iPhone right away\n"
+                + "• Your choices apply on this device right away\n"
                 + "• XSide on your Mac learns them at the next connection "
                 + "(\"Automatic refresh\" only changes then)\n"
                 + "github.com/Antholife/xside"),

@@ -214,6 +214,23 @@ int main(int argc, const char *argv[]) {
               @"row change: never after now");
         check([XSRowChangeDate(at(0), at(3), at(9)) isEqual:at(3)] && [XSRowChangeDate(at(0), nil, at(9)) isEqual:at(0)]
               && [XSRowChangeDate(at(0), at(20), at(9)) isEqual:at(9)], @"row change: never before the library last looked");
+        // Mega review minor 1: the first load of a run uses the file date captured when the library
+        // loaded, before the app wrote its own preferences at launch; later loads the live one.
+        check([XSPrefsDateForLoad(at(2), at(8), YES) isEqual:at(2)] && [XSPrefsDateForLoad(at(2), at(8), NO) isEqual:at(8)],
+              @"prefs date: captured at start for the first load, live after");
+        check(XSPrefsDateForLoad(nil, at(8), YES) == nil && [XSPrefsDateForLoad(nil, at(8), NO) isEqual:at(8)],
+              @"prefs date: no file at start means no change made while closed");
+        // Mega review minor 5: the row's title as written at signing (the Mac's language when the
+        // app has no lproj), read from the app's Settings.bundle, so the hint quotes what iOS shows.
+        NSDictionary *page = @{@"StringsTable": @"Main", @"PreferenceSpecifiers": @[
+            @{@"Type": @"PSGroupSpecifier", @"Title": @"App"},
+            @{@"Type": @"PSChildPaneSpecifier", @"Title": @"Réglages XSide", @"File": @"XSide",
+              @"Key": @"io.github.xside.settings.pane"}]};
+        check([XSSettingsRowTitle(page) isEqual:@"Réglages XSide"] && [XSSettingsRowTable(page) isEqual:@"Main"],
+              @"settings row: title and table from the app's page");
+        check(XSSettingsRowTitle(@{@"PreferenceSpecifiers": @[@{@"Title": @"Other", @"Key": @"x"}]}) == nil
+              && XSSettingsRowTitle(nil) == nil && XSSettingsRowTitle(@"junk") == nil
+              && [XSSettingsRowTable(@{}) isEqual:@"Root"], @"settings row: none without XSide's, Root by default");
         // A return from the background checks in too (the Mac's change must reach a running app),
         // but not again within a few seconds of the last one.
         check(XSShouldCheckInOnReturn(NO, NO, nil, at(0)) && XSShouldCheckInOnReturn(NO, NO, at(-60), at(0))

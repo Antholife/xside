@@ -198,6 +198,16 @@ NSString *XSSettingsPath(void) {
                 : [NSString stringWithFormat:XST(@"Réglages > %@", @"Settings > %@"), XSAppName()];
 }
 
+NSString *XSSettingsRowShown(void) {
+    NSString *path = [NSBundle.mainBundle pathForResource:@"Settings" ofType:@"bundle"];
+    NSBundle *settings = path ? [NSBundle bundleWithPath:path] : nil;
+    NSString *rootPath = [settings pathForResource:@"Root" ofType:@"plist"];
+    NSDictionary *root = rootPath ? [NSDictionary dictionaryWithContentsOfFile:rootPath] : nil;
+    NSString *title = XSSettingsRowTitle(root);
+    if (!title) return XST(@"Réglages XSide", @"XSide Settings");
+    return [settings localizedStringForKey:title value:title table:XSSettingsRowTable(root)];
+}
+
 // MARK: - UI
 
 UIWindowScene *XSScene(void) {
@@ -280,15 +290,16 @@ void XSOpenAppSettings(void) {
     //   app report another bundle id (e.g. com.google.ios.youtube) can make Settings look for an app
     //   that isn't installed. There, the app's page is asked for by its real id first
     //   ("App-prefs:<id>", Settings' own deep link, not a documented API), "app-settings:" if refused.
-    // XSide's own page (the child pane) is asked for first, by the real id and the row's id
-    // ("App-prefs:<id>&path=io.github.xside.settings.pane", undocumented: device feedback round 1,
-    // B5). iOS only says whether Settings opened, not whether it found the page: if it ignores the
-    // path, the app's page shows, as before.
+    // Only there, XSide's own page (the child pane) is asked for first, by the real id and the
+    // row's id ("App-prefs:<id>&path=io.github.xside.settings.pane", undocumented: device feedback
+    // round 1, B5). iOS only says whether Settings opened, not whether it found the page, so an
+    // app whose id isn't faked keeps the documented route (mega review minor 6): if Settings
+    // ignored both the path and the id, it would show its root with no way to fall back.
     NSURL *standard = [NSURL URLWithString:UIApplicationOpenSettingsURLString];
     NSString *faked = XSRealBundleIDIfFaked();
     NSString *real = XSInfo()[@"CFBundleIdentifier"];
     NSURL *byID = faked ? [NSURL URLWithString:[@"App-prefs:" stringByAppendingString:faked]] : nil;
-    NSURL *pane = [real isKindOfClass:NSString.class] && [real length] && XSHasSettingsSection()
+    NSURL *pane = faked && [real isKindOfClass:NSString.class] && [real length] && XSHasSettingsSection()
         ? [NSURL URLWithString:XSSettingsPaneURLString(real)] : nil;
     void (^fallback)(void) = ^{
         if (!byID) { if (standard) XSOpenSettingsURL(standard, YES); return; }

@@ -299,6 +299,20 @@ static BOOL XSIsPolicyDenied(nw_error_t error) {
 // MARK: - Check-in at launch
 
 static BOOL XSCheckInRunning;
+/// An "Rafraîchissement automatique" change to tell once the running check-in ends (mega review
+/// minor 2: that check-in may have been built before the change was loaded, so it can't be
+/// trusted to carry it).
+static BOOL XSTellQueued;
+static void XSTellAutoRefreshChangeNow(void);
+
+/// The running check-in (or tell) is over: a tell that waited for it goes now, after the caller
+/// adopted the reply (dispatched, so it runs after the rest of the caller's handler).
+static void XSCheckInEnded(void) {
+    XSCheckInRunning = NO;
+    if (!XSTellQueued) return;
+    XSTellQueued = NO;
+    dispatch_async(dispatch_get_main_queue(), ^{ XSTellAutoRefreshChangeNow(); });
+}
 static XSPillContent *XSUnansweredPill(XSChannelResult result);
 
 /// "XSide : réglages mis à jour depuis ton Mac": a tap (or Voir) opens XSide's page in iOS
@@ -307,7 +321,7 @@ static XSPillContent *XSMacUpdatePill(void) {
     BOOL fr = XSFrench();
     XSPillContent *c = [XSPillContent new];
     c.lead = fr ? @"Réglages mis à jour depuis ton Mac" : @"Settings updated from your Mac";
-    c.hint = fr ? @"Touche pour les voir dans Réglages XSide." : @"Tap to see them in XSide Settings.";
+    c.hint = [NSString stringWithFormat:fr ? @"Touche pour les voir dans %@." : @"Tap to see them in %@.", XSSettingsRowShown()];
     c.duration = 6;
     c.buttonTitle = fr ? @"Voir" : @"See";
     c.action = ^{ XSOpenAppSettings(); };
@@ -343,7 +357,7 @@ static void XSRunCheckIn(NSTimeInterval find, BOOL anyway, void (^handler)(XSCha
     NSDictionary *body = XSCheckInBody(XSCurrentSettings(), XSLastRefresh(), XSAppVersion());
     [[[XSChannelExchange alloc] initWithBody:body findTimeout:find waitsOutcome:NO
                                      handler:^(XSChannelResult result, NSDictionary *reply, BOOL final) {
-        XSCheckInRunning = NO;
+        XSCheckInEnded();
         handler(result, XSAdoptCheckInReply(result, reply));
     }] start];
 }
@@ -633,8 +647,9 @@ static void XSStartRefreshExchange(void) {
         } else if ([type isEqual:@"busy"]) {
             XSShowAnswer(XSPill(french ? @"XSide la rafraîchit déjà, ou vient de le faire"
                                      : @"XSide is already refreshing it, or just did",
-                              french ? @"Une demande depuis l'iPhone toutes les 10 minutes au plus. Réessaie un peu plus tard."
-                                     : @"One request from the phone every 10 minutes at most. Try again a little later.",
+                              [NSString stringWithFormat:french ? @"Une demande depuis l'%@ toutes les 10 minutes au plus. Réessaie un peu plus tard."
+                                                                : @"One request from the %@ every 10 minutes at most. Try again a little later.",
+                                                         XSDeviceKind()],
                               XSPillToneNeutral, 6));
         } else if ([type isEqual:@"deviceUnreachable"]) {
             NSString *device = XSDeviceKind();
@@ -661,8 +676,6 @@ static void XSStartRefreshExchange(void) {
     }) start];
 }
 
-static void XSTellAutoRefreshChangeNow(void);
-
 void XSTellAutoRefreshChange(void) {
     if (!XSHasChannel()) return; // no link with XSide yet: the next signing carries it
     // The first time, the "Réseau local" page comes first (this browses: iOS asks).
@@ -670,22 +683,23 @@ void XSTellAutoRefreshChange(void) {
 }
 
 static void XSTellAutoRefreshChangeNow(void) {
-    if (XSCheckInRunning) return; // that check-in already carries the change
+    if (XSCheckInRunning) { XSTellQueued = YES; return; } // told once it ends (mega review minor 2)
     XSCheckInRunning = YES;
     BOOL on = XSSettingBool(XSCurrentSettings(), @"autoRefresh");
     NSDictionary *body = XSCheckInBody(XSCurrentSettings(), XSLastRefresh(), XSAppVersion());
     [XSPatientExchange(body, NO, ^(XSChannelResult result, NSDictionary *reply, BOOL final) {
         BOOL fr = XSFrench();
         if (result == XSChannelWaiting) { XSShowWaitingPill(NO); return; }
-        XSCheckInRunning = NO;
+        XSCheckInEnded();
         NSDictionary *settings = result == XSChannelReplied && [reply[@"type"] isEqual:@"settings"]
             ? XSSettingsFromJSONObject(reply[@"settings"]) : nil;
         if (!settings) {
             XSPillContent *c = result == XSChannelReplied
                 ? XSPill(fr ? @"XSide n'a pas pu enregistrer le changement" : @"XSide couldn't record the change", nil, XSPillToneOrange, 8)
                 : XSUnansweredPill(result);
-            c.hint = c.hint ?: (fr ? @"Changé sur l'iPhone : XSide l'appliquera à la prochaine connexion."
-                                   : @"Changed on this iPhone: XSide will apply it at the next connection.");
+            c.hint = c.hint ?: [NSString stringWithFormat:fr ? @"Changé sur l'%@ : XSide l'appliquera à la prochaine connexion."
+                                                             : @"Changed on this %@: XSide will apply it at the next connection.",
+                                XSDeviceKind()];
             XSShowPill(c);
             return;
         }
@@ -712,8 +726,9 @@ static void XSResumeAutoRefresh(void) {
         if (result == XSChannelWaiting) { XSShowWaitingPill(YES); return; }
         if (result != XSChannelReplied) {
             XSPillContent *c = XSUnansweredPill(result);
-            c.hint = c.hint ?: (fr ? @"Réactivé sur l'iPhone : XSide le saura à la prochaine connexion."
-                                   : @"Turned on here: XSide will know at the next connection.");
+            c.hint = c.hint ?: [NSString stringWithFormat:fr ? @"Réactivé sur l'%@ : XSide le saura à la prochaine connexion."
+                                                             : @"On again on this %@: XSide will know at the next connection.",
+                                XSDeviceKind()];
             XSShowAnswer(c);
             return;
         }

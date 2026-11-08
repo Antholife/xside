@@ -57,6 +57,12 @@ BOOL XSKeptAnswerStillFresh(NSDate *_Nullable keptAt, NSDate *now);
 /// change came after) and no later than `now`. Without a file date: `now`.
 NSDate *XSRowChangeDate(NSDate *_Nullable fileModified, NSDate *_Nullable lastLooked, NSDate *now);
 
+/// The preferences file date to date row changes by (mega review minor 1): for the first load of
+/// a run, the one captured when the library loaded (`atStart`), before the app and its SDKs write
+/// their own preferences at launch, which would date a change made while it was closed at launch;
+/// nil then means no file, so nothing was changed in iOS Settings. Later loads: the `live` one.
+NSDate *_Nullable XSPrefsDateForLoad(NSDate *_Nullable atStart, NSDate *_Nullable live, BOOL firstLoad);
+
 /// Back from the background: check in with XSide (pulling what changed on the Mac meanwhile)
 /// unless the last check-in was less than `XSReturnCheckInInterval` ago and there is nothing to
 /// tell (`changed`: settings changed in iOS Settings; `pending`: a refresh outcome still unknown).
@@ -109,6 +115,13 @@ BOOL XSNeedsNetworkExplanation(BOOL channel, BOOL granted, BOOL explained, NSDic
 /// XSide's own page in iOS Settings, asked by the app's real bundle id: Settings' undocumented
 /// "App-prefs:<id>&path=<specifier id>" (the child pane row's id, written by SettingsBundle).
 NSString *XSSettingsPaneURLString(NSString *bundleID);
+
+/// The title of XSide's row in the app's Settings.bundle page (`root`: its Root.plist), as XSide
+/// wrote it at signing: plain text in the installation's language, the key of the translations
+/// in the app's languages. nil when the page has none (mega review minor 5).
+NSString *_Nullable XSSettingsRowTitle(id _Nullable root);
+/// The strings table iOS reads the page's titles from: its StringsTable, else "Root".
+NSString *XSSettingsRowTable(id _Nullable root);
 
 // MARK: Quick actions (final review Important 1)
 
