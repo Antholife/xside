@@ -832,6 +832,8 @@ static void XSReturn(void) {
     if (XSTakeRefreshOnLaunch()) XSWhenForeground(0.5, ^{ XSRequestRefresh(); });
     BOOL changed = XSLoadSettings();
     XSUpdateShortcuts();
+    // The answer to a Refresh that came while the person was away (final review minor 6).
+    XSWhenForeground(0.3, ^{ XSShowKeptAnswer(); });
     if (changed) {
         NSDate *expiry = XSExpirationDate();
         if (expiry) XSScheduleReminder(expiry, NO);

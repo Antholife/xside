@@ -459,9 +459,13 @@ static XSPillContent *XSUnansweredPill(XSChannelResult result) {
             return c;
         }
         case XSChannelUnknownInstallation:
+            // The Mac also refuses a request more than 2 minutes off its own clock, with the same
+            // answer: the date and time are a possible cause (final review minor 5).
             return XSPill(fr ? @"XSide sur ton Mac ne reconnaît pas cette app" : @"XSide on your Mac doesn't know this app",
-                          fr ? @"Rafraîchis-la une fois depuis XSide sur le Mac qui l'a installée."
-                             : @"Refresh it once from XSide on the Mac that installed it.", XSPillToneOrange, 8);
+                          [NSString stringWithFormat:fr
+                              ? @"Vérifie que la date et l'heure de cet %@ et du Mac sont à l'heure (réglage automatique). Sinon, rafraîchis-la une fois depuis XSide sur le Mac qui l'a installée."
+                              : @"Check that the date and time of this %@ and of the Mac are right (set automatically). Otherwise, refresh it once from XSide on the Mac that installed it.",
+                           XSDeviceKind()], XSPillToneOrange, 10);
         default:
             return XSPill(fr ? @"Mac introuvable : XSide est-il ouvert, sur le même Wi-Fi ?"
                              : @"Mac not found: is XSide open, on the same Wi-Fi?", nil, XSPillToneOrange, 8);

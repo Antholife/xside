@@ -251,9 +251,34 @@ static void XSShowPillAttempt(XSPillContent *content, int attempt) {
     window.hidden = NO; // never key: the app keeps its keyboard and focus
 }
 
+/// An answer that came while the app was in the background, for its return (main queue).
+static XSPillContent *XSKeptAnswer;
+static NSDate *XSKeptAnswerAt;
+
 void XSShowPill(XSPillContent *content) {
     if (!XSShowsPill(XSCurrentSettings(), content.answer)) return; // "Aucun": only answers to the person
-    dispatch_async(dispatch_get_main_queue(), ^{ XSShowPillAttempt(content, 0); });
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (content.answer) {
+            BOOL onScreen = UIApplication.sharedApplication.applicationState != UIApplicationStateBackground;
+            if (XSKeepsAnswerForReturn(onScreen, content.duration)) {
+                XSKeptAnswer = content;
+                XSKeptAnswerAt = NSDate.date;
+                return;
+            }
+            XSKeptAnswer = nil; // a newer answer replaces it
+        }
+        XSShowPillAttempt(content, 0);
+    });
+}
+
+void XSShowKeptAnswer(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        XSPillContent *kept = XSKeptAnswer;
+        BOOL fresh = XSKeptAnswerStillFresh(XSKeptAnswerAt, NSDate.date);
+        XSKeptAnswer = nil;
+        XSKeptAnswerAt = nil;
+        if (kept && fresh) XSShowPill(kept);
+    });
 }
 
 void XSShowPillWhenFree(XSPillContent *content) {
@@ -371,9 +396,13 @@ XSPillContent *XSLaunchPillContent(NSDate *expiry) {
     XSPillContent *c = [XSPillContent new];
 
     // A refresh asked from this phone failed, or was never heard of, while the app was away (its
-    // notification may have gone unseen). It answers the person's own request: only "Aucun" hides it.
+    // notification may have gone unseen). It answers the person's own request: shown even with "Aucun".
     NSString *failure = XSTakePendingFailure();
-    if (failure && ![XSDerivedLevel(s) isEqual:@"none"]) return XSPendingPillContent(failure);
+    if (failure) {
+        XSPillContent *pending = XSPendingPillContent(failure);
+        pending.answer = YES; // shown even with "Aucun" (ledger ruling)
+        return pending;
+    }
 
     if (!XSSettingBool(s, @"autoRefresh")) {
         // Spec "Late pill when paused": never "XSide couldn't refresh it", under the same switches.

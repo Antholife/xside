@@ -195,6 +195,14 @@ NSString *XSSettingsPaneURLString(NSString *bundleID) {
     return [NSString stringWithFormat:@"App-prefs:%@&path=io.github.xside.settings.pane", bundleID];
 }
 
+BOOL XSKeepsAnswerForReturn(BOOL onScreen, NSTimeInterval duration) { return !onScreen && duration > 0; }
+
+const NSTimeInterval XSKeptAnswerLifetime = 10 * 60;
+
+BOOL XSKeptAnswerStillFresh(NSDate *keptAt, NSDate *now) {
+    return keptAt && [now timeIntervalSinceDate:keptAt] <= XSKeptAnswerLifetime;
+}
+
 NSDate *XSRowChangeDate(NSDate *fileModified, NSDate *lastLooked, NSDate *now) {
     NSDate *date = fileModified ?: now;
     if (lastLooked && [date compare:lastLooked] == NSOrderedAscending) date = lastLooked;

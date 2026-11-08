@@ -31,6 +31,9 @@ typedef NS_ENUM(NSInteger, XSPillTone) { XSPillToneNeutral, XSPillToneOrange, XS
 /// Shows `content`, replacing any pill on screen. Waits a few seconds for a foreground scene.
 /// Nothing with every message off ("Aucun"), unless it is an answer (XSShowsPill).
 void XSShowPill(XSPillContent *content);
+/// An answer to a Refresh that came while the app was in the background (XSShowPill keeps it):
+/// shown now, if still recent. On return from the background.
+void XSShowKeptAnswer(void);
 /// The same, without cutting short a pill already on screen (the launch pill, a refresh's): it
 /// waits until that one is gone (30 s at most, then it is dropped). Only one waits, the newest; a
 /// pill shown this way replaces another shown this way at once (sending → sent).

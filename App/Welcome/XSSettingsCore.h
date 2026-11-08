@@ -41,6 +41,15 @@ NSDictionary *XSSettingsSetting(NSDictionary *s, NSString *field, id value, NSDa
 /// itself (e.g. the Mac's, adopted from a check-in reply) are therefore never re-stamped.
 NSDictionary *XSSettingsNoticingRowChanges(NSDictionary *local, NSDictionary *rows, NSDictionary *shadow, NSDate *now);
 
+/// An answer to a Refresh (busy, paused, Mac not found…) that arrives while the app is not on
+/// screen (the person left during the wait) is kept and shown at the return, instead of being
+/// lost (final review minor 6): only a final one (`duration` > 0; a pill in progress isn't), and
+/// only within `XSKeptAnswerLifetime` of its arrival. `onScreen`: the app isn't in the background
+/// (an iOS alert over it, e.g. the local network prompt, still counts as on screen).
+BOOL XSKeepsAnswerForReturn(BOOL onScreen, NSTimeInterval duration);
+extern const NSTimeInterval XSKeptAnswerLifetime;
+BOOL XSKeptAnswerStillFresh(NSDate *_Nullable keptAt, NSDate *now);
+
 /// When a change found in the iOS Settings rows was made (final review minor 1): iOS Settings
 /// writes the app's preferences file when the person changes a row, so the file's modification
 /// date (`fileModified`) is the best clue; the app writing its own preferences since only moves it

@@ -199,6 +199,13 @@ int main(int argc, const char *argv[]) {
         check([adopted[@"autoRefresh"] isEqual:field(@YES, XSMillis(at(20)), @"mac")], @"the Mac's newer resume wins on the phone");
         NSDictionary *again = XSSettingsNoticingRowChanges(adopted, values(adopted), values(adopted), at(30));
         check([again isEqual:adopted], @"adopted values written to the rows are not re-stamped as the phone's");
+        // Final review minor 6: an answer to a Refresh that came while the person was away is shown
+        // on return, if still recent; a pill still in progress (no duration) is not kept.
+        check(XSKeepsAnswerForReturn(NO, 8) && !XSKeepsAnswerForReturn(YES, 8) && !XSKeepsAnswerForReturn(NO, 0),
+              @"answer kept for the return only when away, and only a final one");
+        check(XSKeptAnswerStillFresh(at(0), at(XSKeptAnswerLifetime)) && !XSKeptAnswerStillFresh(at(0), at(XSKeptAnswerLifetime + 1))
+              && !XSKeptAnswerStillFresh(nil, at(0)), @"kept answer: shown within its lifetime only");
+
         // Final review minor 1: a change made in iOS Settings while the app was closed is dated by
         // the preferences file's modification (iOS Settings writes it then), kept between the last
         // time the library looked at the rows and now; without a file date, now.
