@@ -191,7 +191,8 @@ private func plist(_ app: URL) throws -> [String: Any] {
         let inApp = InAppSettings.defaults(reminder: false, at: Self.when)
         let facts = InstallationFacts(installationID: "rec-9|dev-9", channelSecret: Data(repeating: 9, count: 32),
                                       inApp: inApp, firstInstalledAt: Self.when.addingTimeInterval(-500),
-                                      appVersion: "4.2", lastRefreshOutcome: nil, lastCheckIn: nil)
+                                      appVersion: "4.2", lastRefreshOutcome: nil, lastCheckIn: nil,
+                                      signedAt: Self.when.addingTimeInterval(30))
         f.settings = { _, facts in
             SettingsSection(titleKey: "t", footerKey: nil,
                             rows: [.value(titleKey: "v", key: "version", defaultValue: facts?.appVersion ?? "none")],
@@ -203,6 +204,7 @@ private func plist(_ app: URL) throws -> [String: Any] {
         #expect(welcome["installationID"] as? String == "rec-9|dev-9")
         #expect(welcome["channelSecret"] as? Data == Data(repeating: 9, count: 32))
         #expect(welcome["installedAt"] as? Date == Self.when.addingTimeInterval(-500))
+        #expect(welcome["signedAt"] as? Date == Self.when.addingTimeInterval(30)) // "Rafraîchie le" on the phone
         #expect(welcome["reminder"] as? Int == 0)
         let data = try Data(contentsOf: app.appendingPathComponent("Settings.bundle/Root.plist"))
         let root = try #require(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])

@@ -96,6 +96,11 @@ int main(int argc, const char *argv[]) {
         check(status == XSReplyOK && [body[@"type"] isEqual:@"settings"], @"reply: opens");
         NSDictionary *settings = XSSettingsFromJSONObject(body[@"settings"]);
         check(settings && sameSettings(settings, fixtureSettings()), @"reply: settings read back");
+        NSDictionary *outcome = XSRefreshOutcomeFromJSONObject(body[@"lastRefresh"]);
+        check(outcome && XSMillis(outcome[@"at"]) == 1799995000250 && [outcome[@"succeeded"] isEqual:@NO]
+              && [outcome[@"reasonKey"] isEqual:@"deviceLocked"], @"reply: refresh outcome read back");
+        check(XSRefreshOutcomeFromJSONObject(@{@"at": @1, @"succeeded": @1}) == nil
+              && XSRefreshOutcomeFromJSONObject(@{@"succeeded": @YES}) == nil, @"refresh outcome: malformed refused");
         NSMutableData *withNewline = [line mutableCopy];
         [withNewline appendBytes:"\n" length:1];
         check(XSOpenReply(withNewline, secret, iid, nonce, NULL) == XSReplyOK, @"reply: with its newline");

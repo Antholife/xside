@@ -38,6 +38,7 @@ static NSDictionary *XSPayloadSettings(void) {
 }
 
 /// Saves `settings` and writes their values into the iOS Settings rows (and the shadow copy).
+/// Only what changed is written: a write posts a defaults-change notification inside the app.
 static void XSStore(NSDictionary *settings) {
     NSUserDefaults *d = XSDefaults();
     NSMutableDictionary *shadow = [NSMutableDictionary dictionary];
@@ -48,8 +49,8 @@ static void XSStore(NSDictionary *settings) {
         NSString *key = [XSRowPrefix stringByAppendingString:f];
         if (![[d objectForKey:key] isEqual:value]) [d setObject:value forKey:key];
     }
-    [d setObject:settings forKey:XSStoredKey];
-    [d setObject:shadow forKey:XSShadowKey];
+    if (![[d objectForKey:XSStoredKey] isEqual:settings]) [d setObject:settings forKey:XSStoredKey];
+    if (![[d objectForKey:XSShadowKey] isEqual:shadow]) [d setObject:shadow forKey:XSShadowKey];
     XSCached = settings;
 }
 
@@ -112,6 +113,11 @@ NSTimeInterval XSReminderLead(void) {
     return (h > 0 && h <= 48 ? h : 24) * 3600.0;
 }
 
+NSDate *XSSignedAt(void) {
+    id value = XSPayload()[@"signedAt"];
+    return [value isKindOfClass:NSDate.class] ? value : XSProfileCreationDate();
+}
+
 NSString *XSInstallationID(void) {
     id value = XSPayload()[@"installationID"];
     return [value isKindOfClass:NSString.class] && [value length] ? value : nil;
@@ -142,14 +148,39 @@ void XSRecordCheckIn(NSDate *at) {
     XSWriteStatusRows(nil);
 }
 
-void XSSetPendingFailure(NSString *reasonKey) {
-    [XSDefaults() setObject:reasonKey forKey:XSPendingFailureKey];
+void XSSetPendingFailure(NSString *reasonKey, NSDate *at) {
+    [XSDefaults() setObject:@{@"reasonKey": reasonKey, @"at": at} forKey:XSPendingFailureKey];
 }
 
+/// The pending state, if any: {reasonKey, at}.
+static NSDictionary *XSPending(void) {
+    id pending = [XSDefaults() objectForKey:XSPendingFailureKey];
+    if (![pending isKindOfClass:NSDictionary.class] || ![pending[@"reasonKey"] isKindOfClass:NSString.class]) return nil;
+    return pending;
+}
+
+NSString *XSPendingFailure(void) { return XSPending()[@"reasonKey"]; }
+
 NSString *XSTakePendingFailure(void) {
-    id key = [XSDefaults() objectForKey:XSPendingFailureKey];
+    NSString *key = XSPendingFailure();
     [XSDefaults() removeObjectForKey:XSPendingFailureKey];
-    return [key isKindOfClass:NSString.class] ? key : nil;
+    return key;
+}
+
+void XSAdoptRefreshOutcome(NSDictionary *outcome) {
+    NSDate *at = outcome[@"at"];
+    if (![at isKindOfClass:NSDate.class]) return;
+    BOOL succeeded = [outcome[@"succeeded"] boolValue];
+    NSString *reason = [outcome[@"reasonKey"] isKindOfClass:NSString.class] ? outcome[@"reasonKey"] : @"unknown";
+    NSDate *known = XSLastRefresh()[@"at"];
+    if (!known || [at compare:known] == NSOrderedDescending) XSRecordRefresh(succeeded, reason, at);
+    // A refresh the phone asked for and never heard of: this is its answer if it ended after the
+    // request (with the channel's 2 min of clock difference).
+    NSDictionary *pending = XSPending();
+    if (![pending[@"reasonKey"] isEqual:XSNoOutcomeKey] || ![pending[@"at"] isKindOfClass:NSDate.class]) return;
+    if ([at timeIntervalSinceDate:pending[@"at"]] < -120) return;
+    if (succeeded) [XSDefaults() removeObjectForKey:XSPendingFailureKey];
+    else XSSetPendingFailure(reason, at);
 }
 
 void XSNoteSignature(NSDate *expiry) {
@@ -158,7 +189,7 @@ void XSNoteSignature(NSDate *expiry) {
     if ([last isKindOfClass:NSDate.class] && ![last isEqualToDate:expiry]) {
         // A new signature: XSide refreshed (or updated) the app, whatever asked for it.
         [d removeObjectForKey:XSPendingFailureKey];
-        XSRecordRefresh(YES, nil, XSProfileCreationDate() ?: NSDate.date);
+        XSRecordRefresh(YES, nil, XSSignedAt() ?: NSDate.date);
     }
     [d setObject:expiry forKey:XSLastExpiryKey];
 }
@@ -182,8 +213,8 @@ void XSWriteStatusRows(NSDate *expiry) {
     BOOL fr = XSDeviceFrench();
     NSMutableDictionary<NSString *, NSString *> *rows = [NSMutableDictionary dictionary];
     if (expiry) rows[@"validUntil"] = XSRowDate(expiry, YES);
-    NSDate *created = XSProfileCreationDate();
-    if (created) rows[@"refreshedOn"] = XSRowDate(created, YES);
+    NSDate *signedAt = XSSignedAt();
+    if (signedAt) rows[@"refreshedOn"] = XSRowDate(signedAt, YES);
     id installed = XSPayload()[@"installedAt"];
     if ([installed isKindOfClass:NSDate.class]) rows[@"installedOn"] = XSRowDate(installed, NO);
     id checkIn = [XSDefaults() objectForKey:XSLastCheckInKey];

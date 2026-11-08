@@ -347,6 +347,7 @@ public struct Resigner: Sendable {
         p.installationID = facts.installationID
         p.channelSecret = facts.channelSecret
         p.installedAt = facts.firstInstalledAt
+        p.signedAt = facts.signedAt
         return p
     }
 

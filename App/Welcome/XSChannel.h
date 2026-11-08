@@ -10,8 +10,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// pill, and a failure that arrives later in a notification. Main thread.
 void XSRequestRefresh(void);
 
-/// The silent check-in at launch (≤ 3 s): sends this phone's settings and last refresh, adopts
-/// the merged settings XSide answers. Only once the local network was allowed. Main thread.
-void XSCheckIn(void);
+/// The silent check-in (≤ 3 s): sends this phone's settings and last refresh, adopts the merged
+/// settings and the refresh outcome XSide answers. Only once the local network was allowed.
+/// `done` (main queue) runs in every case, after the answer if any. Main thread.
+void XSCheckIn(void (^_Nullable done)(void));
 
 NS_ASSUME_NONNULL_END

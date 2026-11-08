@@ -84,6 +84,8 @@ void XSSetDeviceSetting(NSString *field, id value);
 /// Refresh threshold (hours) and reminder lead (seconds) from the payload.
 NSInteger XSThresholdHours(void);
 NSTimeInterval XSReminderLead(void);
+/// When XSide signed this app (payload `signedAt`), else the profile's creation date.
+NSDate *_Nullable XSSignedAt(void);
 /// The channel credentials from the payload; nil when the app has none.
 NSString *_Nullable XSInstallationID(void);
 NSData *_Nullable XSChannelSecret(void);
@@ -91,10 +93,16 @@ NSData *_Nullable XSChannelSecret(void);
 NSDictionary *_Nullable XSLastRefresh(void);
 void XSRecordRefresh(BOOL succeeded, NSString *_Nullable reasonKey, NSDate *at);
 void XSRecordCheckIn(NSDate *at);
-/// A refresh the person asked for failed while the app was not on screen: said by the next
-/// launch's pill. Cleared when read, or when a new signature arrives.
-void XSSetPendingFailure(NSString *reasonKey);
+/// The pending-state key of a refresh XSide accepted but whose outcome never reached the phone.
+static NSString *const XSNoOutcomeKey = @"noOutcome";
+/// A refresh the person asked for failed (a reason key) or was never heard of (XSNoOutcomeKey)
+/// while the app was not on screen: said by the next launch's pill. Cleared when taken, or by a
+/// new signature; a check-in answer turns a "noOutcome" into the real result.
+void XSSetPendingFailure(NSString *reasonKey, NSDate *at);
+NSString *_Nullable XSPendingFailure(void);
 NSString *_Nullable XSTakePendingFailure(void);
+/// An outcome XSide sent with its check-in answer ({at, succeeded, reasonKey?}).
+void XSAdoptRefreshOutcome(NSDictionary *outcome);
 /// Notes the app's signature at launch: a new one counts as a successful refresh.
 void XSNoteSignature(NSDate *expiry);
 /// Rewrites the read-only rows (dates, connection, last refresh) in the device's locale.

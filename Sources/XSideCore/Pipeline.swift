@@ -451,7 +451,7 @@ public actor SideloadPipeline {
             firstInstalledAt: previous.map { $0.firstInstalledAt ?? $0.installedAt } ?? date,
             appVersion: appVersion,
             lastRefreshOutcome: RefreshOutcome(at: date, succeeded: true),
-            lastCheckIn: previous?.lastCheckIn)
+            lastCheckIn: previous?.lastCheckIn, signedAt: date)
     }
 
     /// Resolves a library-relative path, refusing anything that escapes the library root.

@@ -82,6 +82,9 @@ import CryptoKit
                              reminder: f(false, 1_799_999_003_000, .mac), language: f(.fr, 1_799_999_004_000, .device),
                              autoRefresh: f(true, 1_799_999_005_007, .mac))
     }()
+    /// The outcome the Mac sends back with the check-in's settings (a failure the phone missed).
+    static let fixtureOutcome = RefreshOutcome(at: Date(timeIntervalSince1970: 1_799_995_000.25), succeeded: false,
+                                               reasonKey: "deviceLocked")
     static let fixtureCheckIn = ChannelRequest.checkIn(
         settings: fixtureSettings,
         lastRefresh: RefreshOutcome(at: Date(timeIntervalSince1970: 1_799_990_000.5), succeeded: false, reasonKey: "refresh.reason.offline"),
@@ -130,7 +133,7 @@ import CryptoKit
         FixtureFile(secretHex: fixtureSecretHex,
                     refreshRequest: try requestEntry(.refresh, nonce: "n1"),
                     checkInRequest: try requestEntry(fixtureCheckIn, nonce: "n2-checkin"),
-                    settingsReply: try replyEntry(.settings(fixtureSettings), nonce: "n2-checkin"))
+                    settingsReply: try replyEntry(.settings(fixtureSettings, lastRefresh: fixtureOutcome), nonce: "n2-checkin"))
     }
     static var fixtureURL: URL {
         URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/channel-fixture.json")
@@ -159,7 +162,7 @@ import CryptoKit
         let c = try ChannelEnvelope.decode(line: Data(onDisk.checkInRequest.line.utf8))
         #expect(c.open(secret: secret, now: Self.fixtureNow, seen: &seen) == Self.fixtureCheckIn)
         let rep = try ChannelReplyEnvelope.decode(line: Data(onDisk.settingsReply.line.utf8))
-        #expect(rep.open(secret: secret, expectedInstallationID: Self.fixtureID, expectedNonce: "n2-checkin") == .settings(Self.fixtureSettings))
+        #expect(rep.open(secret: secret, expectedInstallationID: Self.fixtureID, expectedNonce: "n2-checkin") == .settings(Self.fixtureSettings, lastRefresh: Self.fixtureOutcome))
     }
 
     @Test func regenerateFixtureOnDemand() throws {
@@ -284,12 +287,18 @@ import CryptoKit
 
     @Test func repliesRoundTrip() throws {
         let s = InAppSettings.defaults(reminder: false, at: now)
-        let all: [ChannelReply] = [.settings(s), .accepted, .refreshed, .failed(reasonKey: "r"), .busy,
+        let all: [ChannelReply] = [.settings(s), .settings(s, lastRefresh: RefreshOutcome(at: now, succeeded: false, reasonKey: "k")),
+                                   .accepted, .refreshed, .failed(reasonKey: "r"), .busy,
                                    .deviceUnreachable, .paused(by: .mac), .paused(by: .device), .rejected]
         for r in all {
             #expect(try ChannelReply.decode(body: r.encodedBody()) == r)
         }
         #expect(String(decoding: try ChannelReply.paused(by: .mac).encodedBody(), as: UTF8.self) == #"{"by":"mac","type":"paused"}"#)
+        // The outcome is optional: absent from the JSON when nil, and older replies still decode.
+        let plain = String(decoding: try ChannelReply.settings(s).encodedBody(), as: UTF8.self)
+        #expect(!plain.contains("lastRefresh"))
+        let withOutcome = String(decoding: try ChannelReply.settings(s, lastRefresh: RefreshOutcome(at: now, succeeded: true)).encodedBody(), as: UTF8.self)
+        #expect(withOutcome.contains(#""lastRefresh":{"at":1800000000000,"succeeded":true}"#))
     }
 
     @Test func requestsRoundTripAndUseFlatJSON() throws {

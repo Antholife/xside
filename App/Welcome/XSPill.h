@@ -30,4 +30,13 @@ void XSShowPill(XSPillContent *content);
 /// nil when the settings say nothing should show.
 XSPillContent *_Nullable XSLaunchPillContent(NSDate *expiry);
 
+/// The pill for a pending state (a failure reason key, or XSNoOutcomeKey), with Rafraîchir.
+XSPillContent *XSPendingPillContent(NSString *key);
+/// Shows (and clears) the pending state now, if the app is on screen and "Aucun" isn't set.
+void XSShowPendingPill(void);
+
+/// Under "Essentiels" with the reminder on and notifications never asked: once, a pill that says
+/// why and asks on OK. Otherwise runs `otherwise` (main queue).
+void XSOfferNotificationsIfNeeded(void (^otherwise)(void));
+
 NS_ASSUME_NONNULL_END

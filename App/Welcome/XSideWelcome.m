@@ -606,20 +606,34 @@ static void XSLaunch(void) {
     } else {
         // Turned off: counted as announced all the same, so it doesn't come back later.
         if (isNew) XSMarkAnnounced(expiry);
-        XSPillContent *pill = XSLaunchPillContent(expiry);
-        if (pill) XSShowPill(pill);
+        void (^pill)(void) = ^{
+            XSPillContent *content = XSLaunchPillContent(expiry);
+            if (content) XSShowPill(content);
+            else XSOfferNotificationsIfNeeded(^{});
+        };
+        // A refresh asked from here was never heard of: XSide is asked first (≤ 3 s), so the pill
+        // tells how it really went.
+        if ([XSPendingFailure() isEqual:XSNoOutcomeKey] && XSChannelGranted()) {
+            XSCheckIn(pill);
+            return;
+        }
+        pill();
     }
     // Off the launch's way; silent, and only once the local network was allowed.
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ XSCheckIn(); });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ XSCheckIn(nil); });
 }
 
-/// Back from the background (not a launch: no pill): changes made meanwhile in iOS Settings apply
-/// now, and XSide hears of them when it can be reached.
+/// Back from the background (not a launch: no validity pill): changes made meanwhile in iOS
+/// Settings apply now, and XSide hears of them when it can be reached.
 static void XSReturn(void) {
-    if (!XSLoadSettings()) return;
-    NSDate *expiry = XSExpirationDate();
-    if (expiry) XSScheduleReminder(expiry, NO);
-    XSCheckIn();
+    BOOL changed = XSLoadSettings();
+    if (changed) {
+        NSDate *expiry = XSExpirationDate();
+        if (expiry) XSScheduleReminder(expiry, NO);
+    }
+    // A refresh asked from here that failed or went unheard while the app was away: said now,
+    // after asking XSide how it went.
+    if (changed || XSPendingFailure()) XSCheckIn(^{ XSShowPendingPill(); });
 }
 
 __attribute__((constructor)) static void XSideWelcomeInit(void) {

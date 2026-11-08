@@ -121,6 +121,7 @@ static BOOL XSIsPolicyDenied(nw_error_t error) {
     nw_browser_set_browse_results_changed_handler(browser, ^(nw_browse_result_t old, nw_browse_result_t current, bool batchComplete) {
         if (self->_finished) return;
         if (!old && current) {
+            self->_denied = NO; // results only come once the local network is allowed
             nw_endpoint_t endpoint = nw_browse_result_copy_endpoint(current);
             if (endpoint) [self->_pending addObject:endpoint];
             // Results only come once the person allowed the local network.
@@ -131,6 +132,7 @@ static BOOL XSIsPolicyDenied(nw_error_t error) {
     nw_browser_set_state_changed_handler(browser, ^(nw_browser_state_t state, nw_error_t error) {
         if (self->_finished) return;
         if (XSIsPolicyDenied(error)) self->_denied = YES;
+        else if (state == nw_browser_state_ready) self->_denied = NO; // allowed meanwhile
         if (state == nw_browser_state_failed && !self->_connection && self->_pending.count == 0) [self finishUnanswered];
     });
     nw_browser_start(browser);
@@ -242,21 +244,29 @@ static BOOL XSIsPolicyDenied(nw_error_t error) {
 
 static BOOL XSCheckInRunning;
 
-void XSCheckIn(void) {
-    if (XSCheckInRunning || !XSChannelGranted() || !XSInstallationID() || !XSChannelSecret()) return;
+void XSCheckIn(void (^done)(void)) {
+    if (XSCheckInRunning || !XSChannelGranted() || !XSInstallationID() || !XSChannelSecret()) {
+        if (done) dispatch_async(dispatch_get_main_queue(), done);
+        return;
+    }
     XSCheckInRunning = YES;
     NSDictionary *body = XSCheckInBody(XSCurrentSettings(), XSLastRefresh(), XSAppVersion());
     // Silent and short (spec: ≤ 3 s): nothing is shown, whatever happens.
     [[[XSChannelExchange alloc] initWithBody:body findTimeout:3 waitsOutcome:NO
                                      handler:^(XSChannelResult result, NSDictionary *reply, BOOL final) {
         XSCheckInRunning = NO;
-        if (result != XSChannelReplied || ![reply[@"type"] isEqual:@"settings"]) return;
-        NSDictionary *settings = XSSettingsFromJSONObject(reply[@"settings"]);
-        if (!settings) return;
-        XSAdoptSettings(settings);
-        XSRecordCheckIn(NSDate.date);
-        NSDate *expiry = XSExpirationDate();
-        if (expiry) XSScheduleReminder(expiry, NO); // the reminder switch or level may have changed
+        NSDictionary *settings = result == XSChannelReplied && [reply[@"type"] isEqual:@"settings"]
+            ? XSSettingsFromJSONObject(reply[@"settings"]) : nil;
+        if (settings) {
+            XSAdoptSettings(settings);
+            XSRecordCheckIn(NSDate.date);
+            // How the last refresh went, as XSide knows it (it may have ended while the app was away).
+            NSDictionary *outcome = XSRefreshOutcomeFromJSONObject(reply[@"lastRefresh"]);
+            if (outcome) XSAdoptRefreshOutcome(outcome);
+            NSDate *expiry = XSExpirationDate();
+            if (expiry) XSScheduleReminder(expiry, NO); // the reminder switch or level may have changed
+        }
+        if (done) done();
     }] start];
 }
 
@@ -302,7 +312,7 @@ static void XSTellFailure(NSString *reasonKey) {
     if (UIApplication.sharedApplication.applicationState == UIApplicationStateActive) {
         XSShowPill(XSPill(text, nil, XSPillToneOrange, 8));
     } else {
-        XSSetPendingFailure(reasonKey ?: @"unknown");
+        XSSetPendingFailure(reasonKey ?: @"unknown", NSDate.date);
     }
     UNUserNotificationCenter *center = XSCenter();
     [center getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings *settings) {
@@ -330,6 +340,11 @@ static void XSEndRefreshTask(void) {
     [UIApplication.sharedApplication endBackgroundTask:XSRefreshTask];
 }
 
+/// When XSide accepted the refresh in progress (what its later outcome is matched against).
+static NSDate *XSAcceptedAt;
+
+static void XSStartRefresh(void);
+
 void XSRequestRefresh(void) {
     if (XSRefreshRunning) return;
     BOOL fr = XSFrench();
@@ -340,6 +355,33 @@ void XSRequestRefresh(void) {
         return;
     }
     XSRefreshRunning = YES;
+    if ([XSSettingValue(XSCurrentSettings(), @"level") isEqual:@"none"]) { XSStartRefresh(); return; } // "Aucun": never ask
+    // A failure is told by a notification: the first Refresh is the moment to ask for them,
+    // saying why, before the request (one iOS prompt at a time).
+    [XSCenter() getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings *settings) {
+        BOOL ask = settings.authorizationStatus == UNAuthorizationStatusNotDetermined;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!ask) { XSStartRefresh(); return; }
+            BOOL french = XSFrench();
+            XSPillContent *why = XSPill(french ? @"Autorise les notifications" : @"Allow notifications",
+                                        french ? @"XSide s'en sert pour te dire si le rafraîchissement échoue."
+                                               : @"XSide uses them to tell you if the refresh fails.", XSPillToneNeutral, 0);
+            XSShowPill(why);
+            [XSCenter() requestAuthorizationWithOptions:UNAuthorizationOptionAlert | UNAuthorizationOptionSound
+                                      completionHandler:^(BOOL granted, NSError *error) {
+                NSLog(@"[XSide] notifications: asked before a refresh, granted %d, error %@", granted, error);
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    NSDate *expiry = XSExpirationDate();
+                    if (granted && expiry) XSScheduleReminder(expiry, NO);
+                    XSStartRefresh();
+                });
+            }];
+        });
+    }];
+}
+
+static void XSStartRefresh(void) {
+    BOOL fr = XSFrench();
     XSPillContent *asking = XSPill(fr ? @"Demande à XSide sur ton Mac…" : @"Asking XSide on your Mac…",
                                    fr ? @"L'app va se fermer quelques secondes pendant le rafraîchissement."
                                       : @"The app will close for a few seconds while it refreshes.", XSPillToneNeutral, 0);
@@ -355,12 +397,20 @@ void XSRequestRefresh(void) {
             XSRefreshRunning = NO;
             XSEndRefreshTask();
         }
+        if (result == XSChannelNoOutcome) {
+            // Accepted, then silence (app suspended, connection lost, 2 min passed). A success
+            // replaces the app, whose new signature clears this; otherwise it must not vanish:
+            // remembered, and XSide asked at once how it went.
+            XSSetPendingFailure(XSNoOutcomeKey, XSAcceptedAt ?: NSDate.date);
+            XSCheckIn(^{ XSShowPendingPill(); });
+            return;
+        }
         if (result != XSChannelReplied) {
-            // NoOutcome: accepted, then silence. Success closes the app anyway; nothing to add.
-            if (result != XSChannelNoOutcome) XSShowPill(XSUnansweredPill(result));
+            XSShowPill(XSUnansweredPill(result));
             return;
         }
         if ([type isEqual:@"accepted"]) {
+            XSAcceptedAt = NSDate.date;
             XSShowPill(XSPill(french ? @"Demande envoyée, l'app va se fermer quelques secondes"
                                      : @"Request sent, the app will close for a few seconds", nil, XSPillToneNeutral, 6));
             // Keeps the connection a little if the person leaves the app, to hear a failure.

@@ -247,7 +247,7 @@ final class AppModel {
         let now = Date()
         let outcome = facts?.lastRefreshOutcome
         return SettingsSection.xside(
-            validUntil: profile.expirationDate.formatted(style), refreshedOn: now.formatted(style),
+            validUntil: profile.expirationDate.formatted(style), refreshedOn: (facts?.signedAt ?? now).formatted(style),
             version: facts?.appVersion ?? "—",
             installedOn: (facts?.firstInstalledAt ?? now).formatted(style),
             connection: facts?.lastCheckIn.map { "✓ " + $0.formatted(style) } ?? "—",

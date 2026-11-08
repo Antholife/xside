@@ -177,3 +177,15 @@ NSDictionary *XSSettingsFromJSONObject(id json) {
     }
     return result;
 }
+
+NSDictionary *XSRefreshOutcomeFromJSONObject(id json) {
+    if (![json isKindOfClass:NSDictionary.class]) return nil;
+    id at = json[@"at"], succeeded = json[@"succeeded"], reason = json[@"reasonKey"];
+    if (![at isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)at) == CFBooleanGetTypeID()) return nil;
+    long long ms = [at longLongValue];
+    if (ms < 0 || ms > XSMaxMillis || [at doubleValue] != (double)ms) return nil;
+    if (![succeeded isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)succeeded) != CFBooleanGetTypeID()) return nil;
+    NSMutableDictionary *outcome = [@{@"at": XSDateFromMillis(ms), @"succeeded": [succeeded boolValue] ? @YES : @NO} mutableCopy];
+    if ([reason isKindOfClass:NSString.class]) outcome[@"reasonKey"] = reason;
+    return outcome;
+}

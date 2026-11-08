@@ -55,6 +55,10 @@ NSDictionary *XSSettingsJSONObject(NSDictionary *s);
 /// Settings from a channel JSON object; nil unless every field is present and valid.
 NSDictionary *_Nullable XSSettingsFromJSONObject(id _Nullable json);
 
+/// A refresh outcome from a channel JSON object ({"at":ms,"succeeded":bool,"reasonKey":…}) as
+/// {at (NSDate), succeeded (NSNumber), reasonKey (optional)}; nil if malformed.
+NSDictionary *_Nullable XSRefreshOutcomeFromJSONObject(id _Nullable json);
+
 /// Integer epoch milliseconds, clamped to 1970...3000 (the channel's accepted range).
 int64_t XSMillis(NSDate *date);
 NSDate *XSDateFromMillis(int64_t ms);

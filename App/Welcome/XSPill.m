@@ -240,6 +240,65 @@ static XSPillContent *XSRefreshablePill(XSPillContent *c) {
     return c;
 }
 
+XSPillContent *XSPendingPillContent(NSString *key) {
+    BOOL fr = XSFrench();
+    XSPillContent *c = [XSPillContent new];
+    if ([key isEqualToString:XSNoOutcomeKey]) {
+        c.lead = fr ? @"Le rafraîchissement demandé n'a pas donné de nouvelles" : @"No news of the refresh you asked for";
+        c.hint = fr ? @"XSide n'a pas répondu à temps. Regarde XSide sur ton Mac, ou redemande."
+                    : @"XSide didn't answer in time. Check XSide on your Mac, or ask again.";
+    } else {
+        c.lead = fr ? @"Le dernier rafraîchissement demandé a échoué" : @"The refresh you asked for failed";
+        NSString *reason = XSReasonText(key, fr);
+        c.hint = [[reason substringToIndex:1].uppercaseString stringByAppendingString:[reason substringFromIndex:1]];
+    }
+    c.tone = XSPillToneOrange;
+    c.duration = 8;
+    return XSRefreshablePill(c);
+}
+
+void XSShowPendingPill(void) {
+    if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return; // next launch
+    if ([XSSettingValue(XSCurrentSettings(), @"level") isEqual:@"none"]) return;
+    NSString *key = XSTakePendingFailure();
+    if (key) XSShowPill(XSPendingPillContent(key));
+}
+
+static NSString *const XSNotificationsExplainedKey = @"io.github.xside.welcome.notificationsExplained";
+
+void XSOfferNotificationsIfNeeded(void (^otherwise)(void)) {
+    // Under "Essentiels" the install sheet (which asks today) never shows: once, a pill says why
+    // and asks on OK. Never under "Aucun", never twice, never when iOS already has an answer.
+    NSDictionary *s = XSCurrentSettings();
+    BOOL wanted = [XSSettingValue(s, @"level") isEqual:@"essentials"] && XSSchedulesReminder(s)
+        && ![XSDefaults() boolForKey:XSNotificationsExplainedKey];
+    if (!wanted) { otherwise(); return; }
+    [XSCenter() getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings *settings) {
+        BOOL ask = settings.authorizationStatus == UNAuthorizationStatusNotDetermined;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!ask) { otherwise(); return; }
+            [XSDefaults() setBool:YES forKey:XSNotificationsExplainedKey];
+            BOOL fr = XSFrench();
+            XSPillContent *c = [XSPillContent new];
+            c.lead = fr ? @"XSide te prévient avant l'expiration" : @"XSide reminds you before it expires";
+            c.hint = fr ? @"Autorise les notifications pour recevoir ce rappel." : @"Allow notifications to get this reminder.";
+            c.duration = 10;
+            c.buttonTitle = @"OK";
+            c.action = ^{
+                [XSCenter() requestAuthorizationWithOptions:UNAuthorizationOptionAlert | UNAuthorizationOptionSound
+                                          completionHandler:^(BOOL granted, NSError *error) {
+                    NSLog(@"[XSide] notifications: asked from the pill, granted %d, error %@", granted, error);
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        NSDate *expiry = XSExpirationDate();
+                        if (granted && expiry) XSScheduleReminder(expiry, NO);
+                    });
+                }];
+            };
+            XSShowPill(c);
+        });
+    }];
+}
+
 XSPillContent *XSLaunchPillContent(NSDate *expiry) {
     NSDictionary *s = XSCurrentSettings();
     NSTimeInterval left = expiry.timeIntervalSinceNow;
@@ -255,17 +314,10 @@ XSPillContent *XSLaunchPillContent(NSDate *expiry) {
     NSString *device = XSDeviceKind();
     XSPillContent *c = [XSPillContent new];
 
-    // A refresh asked from this phone failed while the app was away (its notification may have
-    // gone unseen). It answers the person's own request, so only "Aucun" hides it.
+    // A refresh asked from this phone failed, or was never heard of, while the app was away (its
+    // notification may have gone unseen). It answers the person's own request: only "Aucun" hides it.
     NSString *failure = XSTakePendingFailure();
-    if (failure && ![XSSettingValue(s, @"level") isEqual:@"none"]) {
-        c.lead = fr ? @"Le dernier rafraîchissement demandé a échoué" : @"The refresh you asked for failed";
-        NSString *reason = XSReasonText(failure, fr);
-        c.hint = [[reason substringToIndex:1].uppercaseString stringByAppendingString:[reason substringFromIndex:1]];
-        c.tone = XSPillToneOrange;
-        c.duration = 8;
-        return XSRefreshablePill(c);
-    }
+    if (failure && ![XSSettingValue(s, @"level") isEqual:@"none"]) return XSPendingPillContent(failure);
 
     if (!XSSettingBool(s, @"autoRefresh")) {
         // Spec "Late pill when paused": never "XSide couldn't refresh it", under the same switches.

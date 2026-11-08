@@ -33,14 +33,17 @@ import CryptoKit
 // dates are integer epoch milliseconds (1800000000000); nils are omitted.
 //   ChannelRequest: {"type":"refresh"} | {"type":"setAutoRefresh","on":true}
 //                 | {"type":"checkIn","settings":{...},"lastRefresh":{...},"appVersion":"1.2"}
-//   ChannelReply:   {"type":"settings","settings":{...}} | {"type":"accepted"} | {"type":"refreshed"}
+//   ChannelReply:   {"type":"settings","settings":{...},"lastRefresh":{...}} | {"type":"accepted"} | {"type":"refreshed"}
 //                 | {"type":"failed","reasonKey":"..."} | {"type":"busy"} | {"type":"deviceUnreachable"}
 //                 | {"type":"paused","by":"mac"|"device"} | {"type":"rejected"}
 //
 // Exchanges (XSide's side: ChannelHandler, ChannelServer). One request per connection; XSide
 // closes the connection after its last line.
-// - checkIn -> settings(merged): the phone's settings merged with the Mac's, field by field (dates
-//   more than 120 s ahead of the Mac's clock count as "now"). The phone adopts them.
+// - checkIn -> settings(merged, lastRefresh): the phone's settings merged with the Mac's, field by
+//   field (dates more than 120 s ahead of the Mac's clock count as "now"). The phone adopts them.
+//   lastRefresh (optional, omitted when unknown; same shape as in checkIn) is the newest refresh
+//   outcome XSide knows for the installation, so a phone that was suspended while a refresh it
+//   asked for ended still learns how it went.
 // - setAutoRefresh(on) -> settings(...): the installation's settings with autoRefresh stamped by
 //   the device; the Mac pauses or resumes its refreshes.
 // - refresh -> TWO lines when it starts: `accepted` at once, then `refreshed` or
@@ -106,7 +109,8 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
 
 /// XSide's answer to a request.
 public enum ChannelReply: Codable, Equatable, Sendable {
-    case settings(InAppSettings)
+    /// The installation's settings and, when known, its newest refresh outcome.
+    case settings(InAppSettings, lastRefresh: RefreshOutcome? = nil)
     /// Refresh queued; the app will be replaced, so it closes.
     case accepted
     case refreshed
@@ -117,12 +121,14 @@ public enum ChannelReply: Codable, Equatable, Sendable {
     case paused(by: ChangeOrigin)
     case rejected
 
-    private enum CodingKeys: String, CodingKey { case type, settings, reasonKey, by }
+    private enum CodingKeys: String, CodingKey { case type, settings, lastRefresh, reasonKey, by }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         switch try c.decode(String.self, forKey: .type) {
-        case "settings": self = .settings(try c.decode(InAppSettings.self, forKey: .settings))
+        case "settings":
+            self = .settings(try c.decode(InAppSettings.self, forKey: .settings),
+                             lastRefresh: try c.decodeIfPresent(RefreshOutcome.self, forKey: .lastRefresh))
         case "accepted": self = .accepted
         case "refreshed": self = .refreshed
         case "failed": self = .failed(reasonKey: try c.decode(String.self, forKey: .reasonKey))
@@ -138,9 +144,10 @@ public enum ChannelReply: Codable, Equatable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case let .settings(s):
+        case let .settings(s, lastRefresh):
             try c.encode("settings", forKey: .type)
             try c.encode(s, forKey: .settings)
+            try c.encodeIfPresent(lastRefresh, forKey: .lastRefresh)
         case .accepted: try c.encode("accepted", forKey: .type)
         case .refreshed: try c.encode("refreshed", forKey: .type)
         case let .failed(key):

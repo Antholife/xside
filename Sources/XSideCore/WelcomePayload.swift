@@ -12,6 +12,7 @@ import Foundation
 ///   `changedAt` a plist date and `changedBy` "mac" or "device"
 /// - `installationID` (String), `channelSecret` (plist data, 32 bytes): the channel credentials
 /// - `installedAt` (plist date): first install of the app on this device
+/// - `signedAt` (plist date): when this signing happened (the phone's "Rafraîchie le" row)
 ///
 /// Optional parts missing from the payload are left out of the dictionary.
 public struct WelcomePayload: Sendable, Equatable {
@@ -21,15 +22,18 @@ public struct WelcomePayload: Sendable, Equatable {
     public var installationID: String?
     public var channelSecret: Data?
     public var installedAt: Date?
+    public var signedAt: Date?
 
     public init(thresholdHours: Int, reminderLeadHours: Int, inApp: InAppSettings,
-                installationID: String? = nil, channelSecret: Data? = nil, installedAt: Date? = nil) {
+                installationID: String? = nil, channelSecret: Data? = nil, installedAt: Date? = nil,
+                signedAt: Date? = nil) {
         self.thresholdHours = thresholdHours
         self.reminderLeadHours = reminderLeadHours
         self.inApp = inApp
         self.installationID = installationID
         self.channelSecret = channelSecret
         self.installedAt = installedAt
+        self.signedAt = signedAt
     }
 
     /// The property list value of `XSideWelcome`.
@@ -55,6 +59,7 @@ public struct WelcomePayload: Sendable, Equatable {
         if let installationID { result["installationID"] = installationID }
         if let channelSecret { result["channelSecret"] = channelSecret }
         if let installedAt { result["installedAt"] = installedAt }
+        if let signedAt { result["signedAt"] = signedAt }
         return result
     }
 }

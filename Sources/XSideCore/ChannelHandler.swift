@@ -77,7 +77,9 @@ public enum ChannelHandler {
             let newer = reported.flatMap { r in
                 (installation.lastRefreshOutcome.map { r.at > $0.at } ?? true) ? r : nil
             }
-            return (.settings(merged), .merged(merged, checkIn: now, outcome: newer))
+            // What the installation will hold once stored: the phone's report if newer, else the Mac's.
+            return (.settings(merged, lastRefresh: newer ?? installation.lastRefreshOutcome),
+                    .merged(merged, checkIn: now, outcome: newer))
         case .refresh:
             // Paused before XSide recorded who did it: only the Mac could pause then.
             if installation.refreshPaused { return (.paused(by: installation.pausedBy ?? .mac), .none) }
@@ -192,9 +194,11 @@ public struct InstallationFacts: Sendable, Equatable {
     /// This signing's own outcome (the app carrying it is only on the device if it succeeds).
     public var lastRefreshOutcome: RefreshOutcome?
     public var lastCheckIn: Date?
+    /// When this signing happened ("Rafraîchie le" on the phone).
+    public var signedAt: Date?
 
     public init(installationID: String, channelSecret: Data, inApp: InAppSettings, firstInstalledAt: Date,
-                appVersion: String?, lastRefreshOutcome: RefreshOutcome?, lastCheckIn: Date?) {
+                appVersion: String?, lastRefreshOutcome: RefreshOutcome?, lastCheckIn: Date?, signedAt: Date? = nil) {
         self.installationID = installationID
         self.channelSecret = channelSecret
         self.inApp = inApp
@@ -202,5 +206,6 @@ public struct InstallationFacts: Sendable, Equatable {
         self.appVersion = appVersion
         self.lastRefreshOutcome = lastRefreshOutcome
         self.lastCheckIn = lastCheckIn
+        self.signedAt = signedAt
     }
 }

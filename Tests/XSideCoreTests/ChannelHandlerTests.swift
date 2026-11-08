@@ -28,8 +28,27 @@ import Foundation
                                                     installation: installation(inApp: mac), now: now, reminder: true)
         let merged = InAppSettings.merge(mac, phone)
         #expect(merged.refreshCard.value == false && merged.language.value == .fr)
-        #expect(reply == .settings(merged))
+        #expect(reply == .settings(merged, lastRefresh: phoneOutcome))
         #expect(update == .merged(merged, checkIn: now, outcome: phoneOutcome))
+    }
+
+    /// The phone learns how a refresh it asked for ended, even if it was suspended meanwhile:
+    /// the check-in answer carries the newest outcome the Mac knows (its own or the phone's).
+    @Test func checkInReplyCarriesTheNewestRefreshOutcome() {
+        let s = InAppSettings.defaults(reminder: true, at: now.addingTimeInterval(-3600))
+        let failed = RefreshOutcome(at: now.addingTimeInterval(-120), succeeded: false, reasonKey: "deviceLocked")
+        func reply(_ phone: RefreshOutcome?) -> ChannelReply {
+            ChannelHandler.handle(.checkIn(settings: s, lastRefresh: phone, appVersion: nil),
+                                  installation: installation(inApp: s, outcome: failed), now: now, reminder: true).reply
+        }
+        #expect(reply(nil) == .settings(s, lastRefresh: failed))
+        #expect(reply(RefreshOutcome(at: now.addingTimeInterval(-500), succeeded: true)) == .settings(s, lastRefresh: failed))
+        let newer = RefreshOutcome(at: now.addingTimeInterval(-5), succeeded: true)
+        #expect(reply(newer) == .settings(s, lastRefresh: newer))
+        // Nothing known on either side: no outcome in the answer.
+        let (none, _) = ChannelHandler.handle(.checkIn(settings: s, lastRefresh: nil, appVersion: nil),
+                                              installation: installation(inApp: s), now: now, reminder: true)
+        #expect(none == .settings(s))
     }
 
     /// A phone whose clock runs far ahead must not pin its values forever.
@@ -40,7 +59,7 @@ import Foundation
         let future = RefreshOutcome(at: now.addingTimeInterval(86_400), succeeded: true)
         let (reply, update) = ChannelHandler.handle(.checkIn(settings: phone, lastRefresh: future, appVersion: nil),
                                                     installation: installation(inApp: mac), now: now, reminder: true)
-        guard case let .settings(merged) = reply else { Issue.record("no settings"); return }
+        guard case let .settings(merged, _) = reply else { Issue.record("no settings"); return }
         #expect(merged.reminder == Field(value: false, changedAt: now, changedBy: .device))
         #expect(merged.level.changedAt == now.addingTimeInterval(100))
         #expect(update == .merged(merged, checkIn: now, outcome: RefreshOutcome(at: now, succeeded: true)))
@@ -93,7 +112,7 @@ import Foundation
     @Test func setAutoRefreshFromTheDeviceRecordsTheOrigin() {
         let (offReply, off) = ChannelHandler.handle(.setAutoRefresh(false), installation: installation(), now: now, reminder: true)
         #expect(off == .paused(true, by: .device))
-        guard case let .settings(s) = offReply else { Issue.record("no settings"); return }
+        guard case let .settings(s, _) = offReply else { Issue.record("no settings"); return }
         #expect(s.autoRefresh == Field(value: false, changedAt: now, changedBy: .device))
         let (_, on) = ChannelHandler.handle(.setAutoRefresh(true),
                                             installation: installation(paused: true, pausedBy: .mac), now: now, reminder: true)
@@ -118,7 +137,7 @@ import Foundation
         var old = installation()
         old.inApp = nil
         let (reply, _) = ChannelHandler.handle(.setAutoRefresh(false), installation: old, now: now, reminder: false)
-        guard case let .settings(s) = reply else { Issue.record("no settings"); return }
+        guard case let .settings(s, _) = reply else { Issue.record("no settings"); return }
         #expect(s.reminder.value == false)
     }
 
