@@ -11,6 +11,13 @@ static const int XSPolicyDenied = -65570; // kDNSServiceErr_PolicyDenied: local 
 static const NSTimeInterval XSFirstLineTimeout = 5;
 /// XSide sends the refresh outcome within 2 min of `accepted`; a little more for the network.
 static const NSTimeInterval XSOutcomeTimeout = 125;
+/// A request the person made waits this long for the Mac (macOS may be asking whether XSide may
+/// accept incoming connections: nothing gets through until it's answered).
+static const NSTimeInterval XSPatientTimeout = 20;
+/// Between two rounds of connection attempts, when every XSide found failed to answer.
+static const NSTimeInterval XSRetryDelay = 2;
+/// After this long without an answer, the person is told what the wait is about.
+static const NSTimeInterval XSWaitingNotice = 3;
 
 typedef NS_ENUM(NSInteger, XSChannelResult) {
     /// A signed reply from XSide (`reply`).
@@ -23,9 +30,12 @@ typedef NS_ENUM(NSInteger, XSChannelResult) {
     XSChannelUnknownInstallation,
     /// A refresh was accepted, then no outcome came (the connection closed or 2 min passed).
     XSChannelNoOutcome,
+    /// (Patient exchanges, not final) no answer yet: still trying.
+    XSChannelWaiting,
 };
 
-/// Called on the main queue; `final` is NO only for a refresh's `accepted`, which the outcome follows.
+/// Called on the main queue; `final` is NO for a refresh's `accepted` (the outcome follows) and for
+/// `XSChannelWaiting`.
 typedef void (^XSChannelHandler)(XSChannelResult result, NSDictionary *_Nullable reply, BOOL final);
 
 /// One request: browse for XSide, try each one found until one answers with a signed reply.
@@ -33,6 +43,9 @@ typedef void (^XSChannelHandler)(XSChannelResult result, NSDictionary *_Nullable
 @interface XSChannelExchange : NSObject
 - (instancetype)initWithBody:(NSDictionary *)body findTimeout:(NSTimeInterval)findTimeout
               waitsOutcome:(BOOL)waitsOutcome handler:(XSChannelHandler)handler;
+/// Keeps retrying the XSides found (every XSRetryDelay) until one answers or `findTimeout`
+/// passes, and says `XSChannelWaiting` once after XSWaitingNotice. For requests the person made.
+@property (nonatomic) BOOL patient;
 - (void)start;
 @end
 
@@ -50,6 +63,11 @@ static NSMutableSet<XSChannelExchange *> *XSExchanges;
     nw_browser_t _browser;
     nw_connection_t _connection;
     NSMutableArray *_pending; // nw_endpoint_t found and not tried yet
+    NSMutableArray *_found;   // every nw_endpoint_t found, to try again (patient)
+    NSMutableArray *_refused; // those that answered "rejected": not tried again
+    nw_endpoint_t _current;   // the one being tried
+    BOOL _retryScheduled;
+    BOOL _toldWaiting;
     NSString *_nonce;
     NSMutableData *_buffer;
     NSUInteger _generation; // bumped when a connection is dropped: its late callbacks are ignored
@@ -71,6 +89,8 @@ static NSMutableSet<XSChannelExchange *> *XSExchanges;
         _secret = XSChannelSecret();
         _queue = dispatch_queue_create("io.github.xside.welcome.channel", DISPATCH_QUEUE_SERIAL);
         _pending = [NSMutableArray array];
+        _found = [NSMutableArray array];
+        _refused = [NSMutableArray array];
     }
     return self;
 }
@@ -123,7 +143,10 @@ static BOOL XSIsPolicyDenied(nw_error_t error) {
         if (!old && current) {
             self->_denied = NO; // results only come once the local network is allowed
             nw_endpoint_t endpoint = nw_browse_result_copy_endpoint(current);
-            if (endpoint) [self->_pending addObject:endpoint];
+            if (endpoint) {
+                [self->_pending addObject:endpoint];
+                [self->_found addObject:endpoint];
+            }
             // Results only come once the person allowed the local network.
             dispatch_async(dispatch_get_main_queue(), ^{ XSSetChannelGranted(); });
         }
@@ -139,12 +162,42 @@ static BOOL XSIsPolicyDenied(nw_error_t error) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(_findTimeout * NSEC_PER_SEC)), _queue, ^{
         if (!self->_finished && !self->_accepted) [self finishUnanswered];
     });
+    if (_patient) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(XSWaitingNotice * NSEC_PER_SEC)), _queue, ^{
+            [self tellWaiting];
+        });
+    }
+}
+
+/// Once, while nothing answered yet: the person sees why it takes a while.
+- (void)tellWaiting {
+    if (!_patient) return;
+    if (_finished || _answered || _toldWaiting) return;
+    _toldWaiting = YES;
+    [self deliver:XSChannelWaiting reply:nil final:NO];
+}
+
+/// Patient: every XSide found failed to answer; another round in a moment (never a tight loop:
+/// one round at a time, XSRetryDelay apart, until the overall timeout).
+- (void)scheduleRetry {
+    if (!_patient || _retryScheduled || _finished || _connection || _pending.count) return;
+    _retryScheduled = YES;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(XSRetryDelay * NSEC_PER_SEC)), _queue, ^{
+        self->_retryScheduled = NO;
+        if (self->_finished || self->_connection || self->_pending.count) return;
+        for (id endpoint in self->_found) {
+            if (![self->_refused containsObject:endpoint]) [self->_pending addObject:endpoint];
+        }
+        NSLog(@"[XSide] channel: trying again (%lu)", (unsigned long)self->_pending.count);
+        [self tryNext];
+    });
 }
 
 - (void)tryNext {
     if (_finished || _connection || _pending.count == 0) return;
     nw_endpoint_t endpoint = _pending.firstObject;
     [_pending removeObjectAtIndex:0];
+    _current = endpoint;
     _nonce = XSNewNonce();
     NSData *line = XSSealRequest(_body, _installationID, _secret, XSMillis(NSDate.date), _nonce);
     if (!line) { [self finish:XSChannelNotFound reply:nil]; return; }
@@ -180,7 +233,9 @@ static BOOL XSIsPolicyDenied(nw_error_t error) {
     _connection = nil;
     _generation++;
     if (_accepted) { [self finish:XSChannelNoOutcome reply:nil]; return; }
+    [self tellWaiting];
     [self tryNext];
+    [self scheduleRetry]; // when there was no other one to try
 }
 
 - (void)receiveOn:(nw_connection_t)connection generation:(NSUInteger)generation {
@@ -211,6 +266,7 @@ static BOOL XSIsPolicyDenied(nw_error_t error) {
     switch (XSOpenReply(line, _secret, _installationID, _nonce, &reply)) {
         case XSReplyUnknownInstallation:
             _sawRejected = YES;
+            if (_current) [_refused addObject:_current]; // this XSide doesn't know us: not asked again
             [self dropConnection];
             return;
         case XSReplyInvalid:
@@ -271,6 +327,27 @@ void XSCheckIn(void (^done)(void)) {
 }
 
 // MARK: - Refresh from the phone
+
+/// An exchange the person asked for: patient (macOS may be asking whether XSide may accept the
+/// connection), a little longer the first time (iOS asks for the local network while browsing).
+static XSChannelExchange *XSPatientExchange(NSDictionary *body, BOOL waitsOutcome, XSChannelHandler handler) {
+    NSTimeInterval find = XSChannelGranted() ? XSPatientTimeout : 30;
+    XSChannelExchange *exchange = [[XSChannelExchange alloc] initWithBody:body findTimeout:find
+                                                             waitsOutcome:waitsOutcome handler:handler];
+    exchange.patient = YES;
+    return exchange;
+}
+
+/// "XSide : en attente du Mac…": no answer after a few seconds, still trying.
+static void XSShowWaitingPill(void) {
+    BOOL fr = XSFrench();
+    XSPillContent *c = [XSPillContent new];
+    c.lead = fr ? @"En attente du Mac…" : @"Waiting for the Mac…";
+    c.hint = fr ? @"Accepte la connexion sur ton Mac si macOS le demande."
+                : @"Accept the connection on your Mac if macOS asks.";
+    c.busy = YES;
+    XSShowPill(c);
+}
 
 static XSPillContent *XSPill(NSString *lead, NSString *hint, XSPillTone tone, NSTimeInterval duration) {
     XSPillContent *c = [XSPillContent new];
@@ -387,12 +464,10 @@ static void XSStartRefresh(void) {
                                       : @"The app will close for a few seconds while it refreshes.", XSPillToneNeutral, 0);
     asking.busy = YES;
     XSShowPill(asking);
-    // The first time, iOS asks for the local network while browsing: time to read and answer.
-    NSTimeInterval find = XSChannelGranted() ? 8 : 30;
-    [[[XSChannelExchange alloc] initWithBody:XSRefreshBody() findTimeout:find waitsOutcome:YES
-                                     handler:^(XSChannelResult result, NSDictionary *reply, BOOL final) {
+    [XSPatientExchange(XSRefreshBody(), YES, ^(XSChannelResult result, NSDictionary *reply, BOOL final) {
         BOOL french = XSFrench();
         NSString *type = reply[@"type"];
+        if (result == XSChannelWaiting) { XSShowWaitingPill(); return; }
         if (final) {
             XSRefreshRunning = NO;
             XSEndRefreshTask();
@@ -452,15 +527,15 @@ static void XSStartRefresh(void) {
             XSShowPill(XSPill(french ? @"XSide n'a pas pu lancer le rafraîchissement" : @"XSide couldn't start the refresh",
                               nil, XSPillToneOrange, 6));
         }
-    }] start];
+    }) start];
 }
 
 /// "Réactiver" after a refresh refused as paused: on at once on the phone, then told to XSide.
 static void XSResumeAutoRefresh(void) {
     XSSetDeviceSetting(@"autoRefresh", @YES);
-    [[[XSChannelExchange alloc] initWithBody:XSSetAutoRefreshBody(YES) findTimeout:8 waitsOutcome:NO
-                                     handler:^(XSChannelResult result, NSDictionary *reply, BOOL final) {
+    [XSPatientExchange(XSSetAutoRefreshBody(YES), NO, ^(XSChannelResult result, NSDictionary *reply, BOOL final) {
         BOOL fr = XSFrench();
+        if (result == XSChannelWaiting) { XSShowWaitingPill(); return; }
         if (result != XSChannelReplied) {
             XSPillContent *c = XSUnansweredPill(result);
             c.hint = c.hint ?: (fr ? @"Réactivé sur l'iPhone : XSide le saura à la prochaine connexion."
@@ -475,5 +550,5 @@ static void XSResumeAutoRefresh(void) {
         c.buttonTitle = fr ? @"Rafraîchir" : @"Refresh";
         c.action = ^{ XSRequestRefresh(); };
         XSShowPill(c);
-    }] start];
+    }) start];
 }

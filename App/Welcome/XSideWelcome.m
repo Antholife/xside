@@ -583,6 +583,9 @@ void XSScheduleReminder(NSDate *expiry, BOOL askIfNeeded) {
 /// allow it), else the pill; never both (spec §1).
 static void XSLaunch(void) {
     XSLoadSettings(); // what the person changed in iOS Settings applies from this launch on
+    // Asked from iOS Settings: the same as the Refresh quick action, once the app is on screen
+    // (its pills replace the launch pill).
+    if (XSTakeRefreshOnLaunch()) XSWhenForeground(1.0, ^{ XSRequestRefresh(); });
     NSDate *expiry = XSExpirationDate();
     if (!expiry) return;
     XSNoteSignature(expiry);
@@ -624,6 +627,8 @@ static void XSLaunch(void) {
 /// Back from the background (not a launch: no validity pill): changes made meanwhile in iOS
 /// Settings apply now, and XSide hears of them when it can be reached.
 static void XSReturn(void) {
+    // Coming back from iOS Settings right after turning it on is the usual way to use it.
+    if (XSTakeRefreshOnLaunch()) XSWhenForeground(0.5, ^{ XSRequestRefresh(); });
     BOOL changed = XSLoadSettings();
     if (changed) {
         NSDate *expiry = XSExpirationDate();

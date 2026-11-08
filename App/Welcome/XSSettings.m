@@ -197,6 +197,16 @@ void XSNoteSignature(NSDate *expiry) {
     [d setObject:expiry forKey:XSLastExpiryKey];
 }
 
+BOOL XSTakeRefreshOnLaunch(void) {
+    // "Rafraîchir à la prochaine ouverture": an action, not a setting (not synced, not reported).
+    NSUserDefaults *d = XSDefaults();
+    NSString *key = [XSRowPrefix stringByAppendingString:@"refreshOnLaunch"];
+    id on = [d objectForKey:key];
+    if (![on isKindOfClass:NSNumber.class] || ![on boolValue]) return NO;
+    [d setObject:@NO forKey:key]; // back off in iOS Settings: one press, one refresh
+    return YES;
+}
+
 BOOL XSChannelGranted(void) { return [XSDefaults() boolForKey:XSChannelGrantedKey]; }
 void XSSetChannelGranted(void) { [XSDefaults() setBool:YES forKey:XSChannelGrantedKey]; }
 

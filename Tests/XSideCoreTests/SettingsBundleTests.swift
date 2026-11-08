@@ -154,8 +154,12 @@ struct SettingsBundleTests {
         let items = try childItems(app)
         let p = "io.github.xside.settings."
         func item(_ key: String) throws -> [String: Any] { try #require(items.first { $0["Key"] as? String == p + key }) }
-        #expect(items.count == 13)
-        #expect(items.dropFirst().prefix(6).allSatisfy { $0["Type"] as? String == "PSTitleValueSpecifier" })
+        #expect(items.count == 14)
+        // First, the one action iOS Settings can offer: a switch the app turns back off at launch.
+        #expect(items[1]["Key"] as? String == p + "refreshOnLaunch")
+        #expect(items[1]["Type"] as? String == "PSToggleSwitchSpecifier")
+        #expect(items[1]["DefaultValue"] as? Bool == false)
+        #expect(items.dropFirst(2).prefix(6).allSatisfy { $0["Type"] as? String == "PSTitleValueSpecifier" })
         #expect(try item("connection")["DefaultValue"] as? String == "—")
         #expect(try item("version")["DefaultValue"] as? String == "1.2")
         for key in ["showValidity", "alertLate", "refreshCard", "reminder", "autoRefresh"] {
@@ -182,6 +186,8 @@ struct SettingsBundleTests {
         let p = "io.github.xside.settings."
         #expect(fr[p + "title.group"] == "Réglages XSide")
         #expect(fr[p + "title.connection"] == "Connexion au Mac")
+        #expect(fr[p + "title.refreshOnLaunch"] == "Rafraîchir à la prochaine ouverture")
+        #expect(en[p + "title.refreshOnLaunch"] == "Refresh at next launch")
         #expect(fr[p + "title.lastRefresh"] == "Dernier rafraîchissement")
         #expect(fr.keys.allSatisfy { !$0.hasPrefix(p + "level") && $0 != p + "title.level" })
         #expect(fr[p + "footer"]?.hasPrefix("✦ Installée avec XSide\n• Rafraîchie automatiquement depuis ton Mac\n• ") == true)

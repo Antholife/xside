@@ -7,6 +7,7 @@ extension SettingsSection {
     /// device's. The toggles and choices start at `inApp`'s values (the installation's), else the
     /// defaults. Row keys, read and written by the dylib in the app's defaults under
     /// `io.github.xside.settings.<key>`:
+    /// refreshOnLaunch (boolean action: the dylib turns it back off and refreshes at launch);
     /// validUntil, refreshedOn, version, installedOn, connection, lastRefresh (read-only text);
     /// showValidity, alertLate, refreshCard, reminder (booleans; "Messages XSide" is derived from
     /// them, see `InAppSettings.derivedLevel`),
@@ -22,6 +23,9 @@ extension SettingsSection {
                     values: values, defaultValue: current)
         }
         let rows: [Row] = [
+            // An action, not a setting (iOS Settings can't run one): the app turns it back off at
+            // its next launch and asks XSide for a refresh. Never synced with the Mac.
+            .toggle(titleKey: title("refreshOnLaunch"), key: "refreshOnLaunch", defaultValue: false),
             .value(titleKey: title("validUntil"), key: "validUntil", defaultValue: validUntil),
             .value(titleKey: title("refreshedOn"), key: "refreshedOn", defaultValue: refreshedOn),
             .value(titleKey: title("version"), key: "version", defaultValue: version),
@@ -47,6 +51,7 @@ extension SettingsSection {
             ("title.group", "Réglages XSide"),
             ("title.validUntil", "Valable jusqu'au"), ("title.refreshedOn", "Rafraîchie le"),
             ("title.version", "Version"), ("title.installedOn", "Installée le"),
+            ("title.refreshOnLaunch", "Rafraîchir à la prochaine ouverture"),
             ("title.connection", "Connexion au Mac"), ("title.lastRefresh", "Dernier rafraîchissement"),
             ("title.showValidity", "Afficher la validité à l'ouverture"),
             ("title.alertLate", "Alerter si pas rafraîchie"),
@@ -67,6 +72,7 @@ extension SettingsSection {
             ("title.group", "XSide Settings"),
             ("title.validUntil", "Valid until"), ("title.refreshedOn", "Last refreshed"),
             ("title.version", "Version"), ("title.installedOn", "Installed on"),
+            ("title.refreshOnLaunch", "Refresh at next launch"),
             ("title.connection", "Connection to the Mac"), ("title.lastRefresh", "Last refresh"),
             ("title.showValidity", "Show validity when opening"),
             ("title.alertLate", "Alert if not refreshed"),

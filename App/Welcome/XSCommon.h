@@ -110,6 +110,8 @@ void XSAdoptRefreshOutcome(NSDictionary *outcome);
 void XSNoteSignature(NSDate *expiry);
 /// Rewrites the read-only rows (dates, connection, last refresh) in the device's locale.
 void XSWriteStatusRows(NSDate *_Nullable expiry);
+/// The "Rafraîchir à la prochaine ouverture" switch was on: turns it back off and returns YES.
+BOOL XSTakeRefreshOnLaunch(void);
 /// The person allowed the local network once (after tapping Refresh): checking in at launch is fine.
 BOOL XSChannelGranted(void);
 void XSSetChannelGranted(void);
