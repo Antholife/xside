@@ -43,7 +43,7 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 - *Settings > Build & contribute* installs the `xside` command right from its terminal card (or says where it is), as *General* does.
 - The install progress matches what really happens: the module step shows as skipped (not ticked) for an app installed as is, the install step says when the app is deleted from the device first, and the list under the module step tells what is written into the app now and what the module does once the app opens.
 - "XSide in the apps" is now **"XSide module in the apps"** (Settings page, install step 3, What's New).
-- *Settings > My apps* lists each app once; an app installed on several devices gets one tab per device, since each has its own settings.
+- *Settings > My apps* starts with the device (a segmented control, or a menu with more than three), then that device's apps, then the app's settings: each app on a device has its own settings. No more device tabs on the right.
 - In the app, pills, the first-launch sheet and the card wrap their text and grow instead of being cut or touching the screen's edges; a pill's button sits under its text.
 - Existing apps get their per-app values from today's global settings (the global reminder switch becomes each app's reminder; the others start on).
 

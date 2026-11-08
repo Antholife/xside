@@ -554,7 +554,7 @@
 "whatsNew.110.noFeatures.title" = "Install without XSide features";
 "whatsNew.110.noFeatures.text" = "For an app that refuses to launch because it detects a change, install it as it came, per app or for all, after a confirmation that lists what's lost. XSide still refreshes it.";
 "whatsNew.110.appWindow.title" = "My apps, in Settings";
-"whatsNew.110.appWindow.text" = "Settings > My apps lists your apps; pick one to set the XSide module in that app, one tab per device when it is on several, applied at its next refresh or opening. An app's … menu in the panel leads straight there.";
+"whatsNew.110.appWindow.text" = "Settings > My apps: pick the device, then one of its apps, to set the XSide module in the app on that device, applied at its next refresh or opening. An app's ... menu in the panel, or the My apps button, leads there directly.";
 "whatsNew.110.status.title" = "Where each change stands";
 "whatsNew.110.status.text" = "Per device, XSide says whether the iPhone is reachable and whether a change is pending, written or confirmed by the iPhone. It never claims a setting is active before that.";
 "whatsNew.110.panes.title" = "Settings, reorganized";

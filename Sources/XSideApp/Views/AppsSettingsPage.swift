@@ -1,47 +1,29 @@
 import SwiftUI
 import XSideCore
 
-/// Settings > Mes apps: the installed apps, one row per app, and for the one selected its XSide
-/// module options on the right, device by device: settings belong to each installation (app on a
-/// device), so an app on several devices gets one tab per device above its options (device
-/// feedback round 2, M6: the list used to repeat the app under each device's header, which read
-/// as two different apps). Whether the app gets XSide's features at all is the app's, shown the
-/// same on each tab. Replaces the per-app "Réglages XSide…" window (device feedback 2026-11-08); the
-/// "…" menu of a row in the panel opens this page on that app and device (`AppModel.settingsApp`).
-/// Changes are stamped by the Mac and reach the app at its next check-in or signing; "Rafraîchissement
-/// automatique" pauses or resumes it right away.
+/// Settings > Mes apps: the device first, then its apps, then the selected app's XSide module
+/// options on the right (device feedback 3, E6: settings belong to each installation, an app on a
+/// device, so the device is picked first; the per-device tabs on the right are gone). Whether the
+/// app gets XSide's features at all is the app's, the same on every device. The "…" menu of a row
+/// in the panel, and the panel's "Mes apps" button, open this page on that app and device
+/// (`AppModel.settingsApp`). Changes are stamped by the Mac and reach the app at its next
+/// check-in or signing; "Rafraîchissement automatique" pauses or resumes it right away.
 struct AppsSettingsPage: View {
     let model: AppModel
 
-    /// One app and its installations, in the panel's order (by device, then app).
-    struct AppItem: Identifiable {
-        let record: AppRecord
-        var entries: [AppEntry]
-        var id: UUID { record.id }
-    }
+    /// Devices with at least one app, in the panel's order.
+    private var groups: [DeviceGroup] { model.deviceGroups.filter { !$0.apps.isEmpty } }
 
-    /// Every app with at least one installation, each once.
-    private var items: [AppItem] {
-        var result: [AppItem] = []
-        for entry in model.deviceGroups.flatMap(\.apps) {
-            if let i = result.firstIndex(where: { $0.id == entry.record.id }) {
-                result[i].entries.append(entry)
-            } else {
-                result.append(AppItem(record: entry.record, entries: [entry]))
-            }
-        }
-        return result
-    }
-
-    /// The installation shown: the one asked for, else the first.
+    /// The installation shown: the one asked for, else the first device's first app.
     private var selected: AppEntry? {
-        let all = items.flatMap(\.entries)
-        return all.first { $0.id == model.settingsApp } ?? all.first
+        let groups = groups
+        let all = groups.flatMap(\.apps)
+        return all.first { $0.id == model.settingsApp } ?? groups.first?.apps.first
     }
 
     var body: some View {
-        let items = items
-        if items.isEmpty {
+        let groups = groups
+        if groups.isEmpty {
             VStack(spacing: 8) {
                 Image(systemName: "square.grid.2x2")
                     .font(.system(size: 28))
@@ -54,12 +36,18 @@ struct AppsSettingsPage: View {
             .padding(40)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
+            let entry = selected
+            let group = groups.first { $0.id == entry?.installation.deviceID } ?? groups[0]
             HStack(spacing: 0) {
-                appList(items)
-                    .frame(width: 210)
+                VStack(alignment: .leading, spacing: 0) {
+                    devicePicker(groups, current: group, entry: entry)
+                        .padding([.horizontal, .top], 10)
+                    appList(group, selected: entry)
+                }
+                .frame(width: 210)
                 Divider()
-                if let entry = selected, let item = items.first(where: { $0.id == entry.record.id }) {
-                    AppSettingsContent(model: model, entry: entry, siblings: item.entries)
+                if let entry {
+                    AppSettingsContent(model: model, entry: entry)
                         .id(entry.id)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -67,55 +55,67 @@ struct AppsSettingsPage: View {
         }
     }
 
-    private func appList(_ items: [AppItem]) -> some View {
+    /// The devices: segmented up to three, a menu beyond; the device's name alone when it's the only one.
+    @ViewBuilder private func devicePicker(_ groups: [DeviceGroup], current: DeviceGroup, entry: AppEntry?) -> some View {
+        if groups.count == 1 {
+            Label(current.name, systemImage: (current.kind == .iPad ? "ipad" : "iphone"))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        } else {
+            let binding = Binding(get: { current.id }, set: { id in
+                guard let group = groups.first(where: { $0.id == id }), let first = group.apps.first else { return }
+                // The same app on that device when it has it, else its first.
+                model.settingsApp = (group.apps.first { $0.record.id == entry?.record.id } ?? first).id
+            })
+            if groups.count <= 3 {
+                Picker(L("appSettings.device"), selection: binding) {
+                    ForEach(groups) { Text($0.name).tag($0.id) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            } else {
+                Picker(L("appSettings.device"), selection: binding) {
+                    ForEach(groups) { Label($0.name, systemImage: ($0.kind == .iPad ? "ipad" : "iphone")).tag($0.id) }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+            }
+        }
+    }
+
+    private func appList(_ group: DeviceGroup, selected: AppEntry?) -> some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 2) {
-                ForEach(items) { item in
-                    AppListRow(model: model, item: item, isSelected: item.id == selected?.record.id) {
-                        // Stays on the device shown when the app has it, else its first.
-                        let device = selected?.installation.deviceID
-                        model.settingsApp = (item.entries.first { $0.installation.deviceID == device } ?? item.entries[0]).id
+                ForEach(group.apps) { entry in
+                    AppListRow(model: model, entry: entry, isSelected: entry.id == selected?.id) {
+                        model.settingsApp = entry.id
                     }
                 }
             }
             .padding(10)
-            .reportsPaneHeight("list")
+            .reportsPaneHeight("list", adding: 40) // the device picker above
         }
         .scrollBounceBehavior(.basedOnSize)
     }
 }
 
-/// One app in the list: icon, name, and its devices when it's on several (paused ones marked).
+/// One app of the device: icon and name.
 private struct AppListRow: View {
     let model: AppModel
-    let item: AppsSettingsPage.AppItem
+    let entry: AppEntry
     let isSelected: Bool
     let action: () -> Void
     @State private var isHovering = false
 
-    private var deviceNames: String {
-        item.entries.map { entry in
-            model.deviceGroups.first { $0.id == entry.installation.deviceID }?.name ?? L("popover.unknownDevice")
-        }.formatted(.list(type: .and))
-    }
-
     var body: some View {
         Button(action: action) {
             HStack(spacing: 9) {
-                AppIconView(icon: model.icons.image(for: item.record),
-                            isPaused: item.entries.allSatisfy(\.installation.refreshPaused), size: 24)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(item.record.options.displayName ?? item.record.displayName)
-                        .font(.system(size: 13))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                    if item.entries.count > 1 {
-                        Text(deviceNames)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
-                }
+                AppIconView(icon: model.icons.image(for: entry.record), isPaused: entry.installation.refreshPaused, size: 24)
+                Text(entry.record.options.displayName ?? entry.record.displayName)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 8)
@@ -135,8 +135,6 @@ private struct AppListRow: View {
 private struct AppSettingsContent: View {
     let model: AppModel
     let entry: AppEntry
-    /// Every installation of the app (this one included): one tab each when there are several.
-    let siblings: [AppEntry]
 
     private var appName: String { entry.record.options.displayName ?? entry.record.displayName }
     private var deviceName: String {
@@ -156,7 +154,12 @@ private struct AppSettingsContent: View {
             header
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 12) {
-                    if siblings.count > 1 { devicePicker }
+                    if entry.record.installations.count > 1 {
+                        Text(L("appSettings.perDevice", entry.record.installations.count))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     InAppSettingsSection(
                         settings: settings, appName: appName,
                         hasFeatures: Binding(get: { hasFeatures }, set: { on in
@@ -185,29 +188,6 @@ private struct AppSettingsContent: View {
                 .reportsPaneHeight("detail", adding: 64) // the header above
             }
             .scrollBounceBehavior(.basedOnSize)
-        }
-    }
-
-    private func name(of e: AppEntry) -> String {
-        model.devices.first { $0.id == e.installation.deviceID }?.name
-            ?? model.deviceGroups.first { $0.id == e.installation.deviceID }?.name
-            ?? L("popover.unknownDevice")
-    }
-
-    /// One tab per device: its settings are its own.
-    private var devicePicker: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Picker(L("appSettings.device"), selection: Binding(get: { entry.id }, set: { model.settingsApp = $0 })) {
-                ForEach(siblings) { e in
-                    Text(name(of: e)).tag(e.id)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            Text(L("appSettings.perDevice", siblings.count))
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

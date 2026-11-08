@@ -554,7 +554,7 @@
 "whatsNew.110.noFeatures.title" = "Installer sans les fonctionnalités XSide";
 "whatsNew.110.noFeatures.text" = "Pour une app qui refuse de se lancer parce qu'elle détecte une modification : installe-la telle quelle, app par app ou pour toutes, après une confirmation qui liste ce qui est perdu. XSide continue de la rafraîchir.";
 "whatsNew.110.appWindow.title" = "Mes apps, dans les Réglages";
-"whatsNew.110.appWindow.text" = "Réglages > Mes apps liste tes apps ; choisis-en une pour régler le module XSide dans l'app, un onglet par appareil quand elle est sur plusieurs, appliqué à son prochain rafraîchissement ou à sa prochaine ouverture. Le menu … d'une app dans le panneau y mène directement.";
+"whatsNew.110.appWindow.text" = "Réglages > Mes apps : choisis l'appareil, puis l'une de ses apps, pour régler le module XSide dans l'app sur cet appareil, appliqué à son prochain rafraîchissement ou à sa prochaine ouverture. Le menu … d'une app dans le panneau, ou le bouton Mes apps, y mène directement.";
 "whatsNew.110.status.title" = "Où en est chaque changement";
 "whatsNew.110.status.text" = "Appareil par appareil, XSide dit si l'iPhone est joignable et si un changement est en attente, écrit ou confirmé par l'iPhone. Il ne prétend jamais qu'un réglage est actif avant.";
 "whatsNew.110.panes.title" = "Réglages réorganisés";
