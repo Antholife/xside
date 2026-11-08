@@ -53,10 +53,12 @@ public struct Resigner: Sendable {
     private let runner: CommandRunning
     /// The welcome popup's iOS library (XSide.app's resource), nil when this build has none.
     private let welcomeDylib: URL?
-    /// The section added to the app's iOS Settings page, built from the profile it's signed with.
-    private let settingsSection: (@Sendable (ProvisioningProfile) -> SettingsSection)?
+    /// The section added to the app's iOS Settings page, built from the profile it's signed with
+    /// and the installation's facts (nil when the caller has none).
+    private let settingsSection: (@Sendable (ProvisioningProfile, InstallationFacts?) -> SettingsSection)?
     /// Written as the Info.plist key `XSideWelcome`, which the library reads at launch (keys in
-    /// `WelcomePayload`). Nil: no payload.
+    /// `WelcomePayload`). Nil: no payload. The installation's own values (settings, channel
+    /// credentials, first install date) come from the `facts` given to `resign`, not from here.
     private let welcome: @Sendable (ProvisioningProfile) -> WelcomePayload?
     private static let codesign = "/usr/bin/codesign"
     private static let logger = Log("resign")
@@ -64,7 +66,7 @@ public struct Resigner: Sendable {
     static let welcomeLoadPath = "@executable_path/Frameworks/\(welcomeName)"
 
     public init(runner: CommandRunning, welcomeDylib: URL? = nil,
-                settingsSection: (@Sendable (ProvisioningProfile) -> SettingsSection)? = nil,
+                settingsSection: (@Sendable (ProvisioningProfile, InstallationFacts?) -> SettingsSection)? = nil,
                 welcome: @escaping @Sendable (ProvisioningProfile) -> WelcomePayload? = { _ in nil }) {
         self.runner = runner
         self.welcomeDylib = welcomeDylib
@@ -73,9 +75,10 @@ public struct Resigner: Sendable {
     }
 
     /// Unpacks `ipa` into `workDir`, rewrites it and signs it inside-out. Returns the signed `.app`.
+    /// `facts`: the installation's own values, written into the payload and the Settings section.
     public func resign(ipa: URL, workDir: URL, bundleID: String, options: InstallOptions,
                        iconURL: URL?, profileURL: URL, profile: ProvisioningProfile,
-                       identitySHA1: String, otherBundleIDs: Set<String> = [],
+                       identitySHA1: String, otherBundleIDs: Set<String> = [], facts: InstallationFacts? = nil,
                        onSigning: @Sendable () async -> Void = {}) async throws -> URL {
         let fm = FileManager.default
         try fm.createDirectory(at: workDir, withIntermediateDirectories: true)
@@ -109,12 +112,13 @@ public struct Resigner: Sendable {
         // The library first: the payload, Bonjour keys and quick actions mean nothing without it
         // (quick actions nothing handles would be a regression), so they follow its outcome.
         let hasLibrary = features && addWelcomePopup(to: app, executable: executableURL)
-        try editInfoPlist(app: app, bundleID: bundleID, options: options,
-                          payload: hasLibrary ? welcome(profile) : nil, features: hasLibrary)
+        let payload = hasLibrary ? welcome(profile).map { Self.payload($0, with: facts) } : nil
+        try editInfoPlist(app: app, bundleID: bundleID, options: options, payload: payload, features: hasLibrary)
         if let iconURL { try await applyIcon(iconURL, to: app, workDir: workDir) }
-        if features, let settingsSection {
+        // The section's switches are read by the library: without it they'd do nothing.
+        if hasLibrary, let settingsSection {
             // Never fails the install: the app keeps its page as it was.
-            do { try SettingsBundle.add(settingsSection(profile), to: app) } catch {
+            do { try SettingsBundle.add(settingsSection(profile, facts), to: app) } catch {
                 Self.logger.notice("settings section skipped: \(String(describing: error))")
             }
         }
@@ -332,6 +336,18 @@ public struct Resigner: Sendable {
             guard inside(lexical, app.standardizedFileURL.pathComponents) || inside(lexical, root),
                   inside(resolved, root) else { throw bad(url.lastPathComponent) }
         }
+    }
+
+    /// `payload` with the installation's own values: the secret the app gets is always the one
+    /// the pipeline stores.
+    static func payload(_ payload: WelcomePayload, with facts: InstallationFacts?) -> WelcomePayload {
+        guard let facts else { return payload }
+        var p = payload
+        p.inApp = facts.inApp
+        p.installationID = facts.installationID
+        p.channelSecret = facts.channelSecret
+        p.installedAt = facts.firstInstalledAt
+        return p
     }
 
     // MARK: - Info.plist

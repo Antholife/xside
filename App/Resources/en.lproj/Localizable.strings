@@ -564,12 +564,6 @@
 "whatsNew.104.changelog.text" = "The update window shows what changed in the new version, neatly laid out.";
 "whatsNew.104.more.text" = "The panel's buttons show their labels on hover again, \"Open Xcode\" tells you how to reach the accounts (⌘ + comma), and a beta Xcode needs its license accepted.";
 
-/* Section added to the app page in the iOS Settings app */
-"settings.ios.title" = "Installed with XSide";
-"settings.ios.footer" = "XSide refreshes it automatically from your Mac. github.com/Antholife/xside";
-"settings.ios.validUntil" = "Valid until";
-"settings.ios.signedOn" = "Last refreshed";
-
 /* Report a problem (GitHub issue) */
 "report.button" = "Report a Problem…";
 "report.attach" = "📎 Drag here the XSide-logs-….zip file XSide just saved on your Desktop (the full log, with your apps' names). Device names, serial numbers, account and team are masked in it.";

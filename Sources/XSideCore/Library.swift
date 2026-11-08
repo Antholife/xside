@@ -362,18 +362,95 @@ public actor AppLibrary {
     }
 
     /// Pauses (or resumes) XSide's refreshes of one installation, without touching the device.
-    /// Returns false when there was no such installation, or it was already in that state.
+    /// `by`: who did it (the Mac panel, or the phone through the channel), recorded with the
+    /// installation's "automatic refresh" setting so the app learns of it. Returns false when there
+    /// was no such installation, or it was already in that state.
     @discardableResult
-    public func setRefreshPaused(_ paused: Bool, recordID: UUID, deviceID: String) throws -> Bool {
+    public func setRefreshPaused(_ paused: Bool, recordID: UUID, deviceID: String,
+                                 by origin: ChangeOrigin = .mac, at date: Date = Date()) throws -> Bool {
         let index = try indexOf(recordID)
         guard let i = items[index].installations.firstIndex(where: { $0.deviceID == deviceID }),
               items[index].installations[i].refreshPaused != paused else { return false }
         let previous = items
-        items[index].installations[i].refreshPaused = paused
-        // Resuming: no retry delay left over from before the pause, a due app goes at once.
-        if !paused { items[index].installations[i].lastAttempt = nil }
+        Self.applyPause(paused, by: origin, at: date, to: &items[index].installations[i])
         do { try save() } catch { items = previous; throw error }
         return true
+    }
+
+    private static func applyPause(_ paused: Bool, by origin: ChangeOrigin, at date: Date,
+                                   to installation: inout Installation) {
+        installation.refreshPaused = paused
+        installation.pausedBy = paused ? origin : nil
+        installation.inApp = installation.inApp?.setting(\.autoRefresh, to: !paused, at: date, by: origin)
+        // Resuming: no retry delay left over from before the pause, a due app goes at once.
+        if !paused { installation.lastAttempt = nil }
+    }
+
+    /// Stores a check-in from the phone: the merged settings, its date and (when given) the
+    /// phone's newer refresh outcome. When the merged "automatic refresh" disagrees with the pause,
+    /// the pause follows it (a change made on the phone while the Mac couldn't be told). Returns
+    /// the new pause state when it changed, nil otherwise.
+    @discardableResult
+    public func applyCheckIn(_ settings: InAppSettings, checkIn: Date, outcome: RefreshOutcome?,
+                             recordID: UUID, deviceID: String) throws -> Bool? {
+        let index = try indexOf(recordID)
+        guard let i = items[index].installations.firstIndex(where: { $0.deviceID == deviceID }) else {
+            throw XSideError.recordNotFound
+        }
+        let previous = items
+        var installation = items[index].installations[i]
+        installation.inApp = settings
+        installation.lastCheckIn = checkIn
+        if let outcome { installation.lastRefreshOutcome = outcome }
+        var change: Bool?
+        if installation.refreshPaused == settings.autoRefresh.value {
+            let paused = !settings.autoRefresh.value
+            installation.refreshPaused = paused
+            installation.pausedBy = paused ? settings.autoRefresh.changedBy : nil
+            if !paused { installation.lastAttempt = nil }
+            change = paused
+        }
+        items[index].installations[i] = installation
+        do { try save() } catch { items = previous; throw error }
+        return change
+    }
+
+    /// Gives every installation saved without XSide-in-app settings (older state) the Mac
+    /// defaults (see `Installation.seededInApp`). Returns how many were seeded.
+    @discardableResult
+    public func seedInAppSettings(reminder: Bool, at date: Date) throws -> Int {
+        let previous = items
+        var seeded = 0
+        for r in items.indices {
+            for i in items[r].installations.indices where items[r].installations[i].inApp == nil {
+                items[r].installations[i].inApp = items[r].installations[i].seededInApp(reminder: reminder, at: date)
+                seeded += 1
+            }
+        }
+        guard seeded > 0 else { return 0 }
+        do { try save() } catch { items = previous; throw error }
+        return seeded
+    }
+
+    /// The installation whose channel id (`ChannelEnvelope.installationID`) is exactly `channelID`.
+    public func installation(channelID: String) -> (recordID: UUID, installation: Installation)? {
+        for record in items {
+            for installation in record.installations
+            where ChannelEnvelope.installationID(recordID: record.id, deviceID: installation.deviceID) == channelID {
+                return (record.id, installation)
+            }
+        }
+        return nil
+    }
+
+    /// Records a successful signing, keeping what arrived through the channel meanwhile (see
+    /// `Installation.keepingChannelState`). Same rules as `upsert`. Returns what was stored.
+    public func recordSigning(_ installation: Installation, for id: UUID, requireExisting: Bool) throws -> Installation {
+        let index = try indexOf(id)
+        let current = items[index].installations.first { $0.deviceID == installation.deviceID }
+        let stored = current.map { installation.keepingChannelState(of: $0) } ?? installation
+        try upsert(stored, for: id, requireExisting: requireExisting)
+        return stored
     }
 
     /// Forgets a device: drops its installations from every record and deletes the records left

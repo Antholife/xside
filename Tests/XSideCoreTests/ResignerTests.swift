@@ -27,7 +27,7 @@ private struct Fixture {
     let work: URL, ipa: URL, profileURL: URL
     let fake: FakeRunner
     var welcomeDylib: URL?
-    var settings: (@Sendable (ProvisioningProfile) -> SettingsSection)?
+    var settings: (@Sendable (ProvisioningProfile, InstallationFacts?) -> SettingsSection)?
     var payload: WelcomePayload?
     var resigner: Resigner {
         let payload = payload
@@ -81,9 +81,11 @@ private func fixture(encrypted: Bool = false, extensions: [String] = ["PlugIns",
     return Fixture(work: try work ?? tempDir("work"), ipa: ipa, profileURL: profileURL, fake: fake)
 }
 
-private func run(_ f: Fixture, options: InstallOptions = InstallOptions(), iconURL: URL? = nil) async throws -> URL {
+private func run(_ f: Fixture, options: InstallOptions = InstallOptions(), iconURL: URL? = nil,
+                 facts: InstallationFacts? = nil) async throws -> URL {
     try await f.resigner.resign(ipa: f.ipa, workDir: f.work, bundleID: "com.example.new", options: options,
-                                iconURL: iconURL, profileURL: f.profileURL, profile: makeProfile(), identitySHA1: "FAKESHA1")
+                                iconURL: iconURL, profileURL: f.profileURL, profile: makeProfile(), identitySHA1: "FAKESHA1",
+                                facts: facts)
 }
 
 private func plist(_ app: URL) throws -> [String: Any] {
@@ -105,8 +107,9 @@ private func plist(_ app: URL) throws -> [String: Any] {
     }
 
     @Test func addsTheXSideSectionToTheSettingsPage() async throws {
-        var f = try await fixture()
-        f.settings = { profile in
+        var f = try await fixture(executable: FakeIPA.paddedMachO(padding: 256))
+        f.welcomeDylib = try welcomeDylib()
+        f.settings = { profile, _ in
             SettingsSection(titleKey: "t", footerKey: nil,
                             rows: [.value(titleKey: "v", key: "validUntil", defaultValue: profile.uuid)],
                             strings: ["fr": ["t": "Installée avec XSide", "v": "Valable jusqu'au"]])
@@ -178,6 +181,43 @@ private func plist(_ app: URL) throws -> [String: Any] {
         #expect(settings["language"]?["changedAt"] as? Date == Self.when.addingTimeInterval(60))
     }
 
+    /// The installation's own values replace whatever the Mac-wide payload carried, so the secret
+    /// in the app is always the one the pipeline stores.
+    @Test func installationFactsGoIntoThePayloadAndTheSection() async throws {
+        var f = try await fixture(executable: FakeIPA.paddedMachO(padding: 256))
+        f.welcomeDylib = try welcomeDylib()
+        f.payload = WelcomePayload(thresholdHours: 72, reminderLeadHours: 12,
+                                   inApp: InAppSettings.defaults(reminder: true, at: Self.when))
+        let inApp = InAppSettings.defaults(reminder: false, at: Self.when)
+        let facts = InstallationFacts(installationID: "rec-9|dev-9", channelSecret: Data(repeating: 9, count: 32),
+                                      inApp: inApp, firstInstalledAt: Self.when.addingTimeInterval(-500),
+                                      appVersion: "4.2", lastRefreshOutcome: nil, lastCheckIn: nil)
+        f.settings = { _, facts in
+            SettingsSection(titleKey: "t", footerKey: nil,
+                            rows: [.value(titleKey: "v", key: "version", defaultValue: facts?.appVersion ?? "none")],
+                            strings: [:])
+        }
+        let app = try await run(f, facts: facts)
+        let welcome = try #require(try plist(app)["XSideWelcome"] as? [String: Any])
+        #expect(welcome["thresholdHours"] as? Int == 72)
+        #expect(welcome["installationID"] as? String == "rec-9|dev-9")
+        #expect(welcome["channelSecret"] as? Data == Data(repeating: 9, count: 32))
+        #expect(welcome["installedAt"] as? Date == Self.when.addingTimeInterval(-500))
+        #expect(welcome["reminder"] as? Int == 0)
+        let data = try Data(contentsOf: app.appendingPathComponent("Settings.bundle/Root.plist"))
+        let root = try #require(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+        let items = try #require(root["PreferenceSpecifiers"] as? [[String: Any]])
+        #expect(items.last?["DefaultValue"] as? String == "4.2")
+    }
+
+    /// The section's switches mean nothing without the library that reads them.
+    @Test func noSettingsSectionWithoutTheDylib() async throws {
+        var f = try await fixture()
+        f.settings = { _, _ in SettingsSection.xside(validUntil: "a", refreshedOn: "b", version: "1", installedOn: "c") }
+        let app = try await run(f)
+        #expect(!FileManager.default.fileExists(atPath: app.appendingPathComponent("Settings.bundle").path))
+    }
+
     @Test func noPayloadMeansNoXSideWelcomeKey() async throws {
         let f = try await fixture()
         let info = try plist(try await run(f))
@@ -219,7 +259,7 @@ private func plist(_ app: URL) throws -> [String: Any] {
         var f = try await fixture(executable: original)
         f.welcomeDylib = try welcomeDylib()
         f.payload = Self.payload()
-        f.settings = { _ in SettingsSection.xside(validUntil: "a", refreshedOn: "b", version: "1", installedOn: "c") }
+        f.settings = { _, _ in SettingsSection.xside(validUntil: "a", refreshedOn: "b", version: "1", installedOn: "c") }
         let app = try await run(f, options: InstallOptions(withoutXSideFeatures: true))
         let fm = FileManager.default
         #expect(!fm.fileExists(atPath: app.appendingPathComponent("Frameworks/XSideWelcome.dylib").path))
@@ -242,10 +282,11 @@ private func plist(_ app: URL) throws -> [String: Any] {
     }
 
     @Test func settingsPageProblemsDontFailTheInstall() async throws {
-        var f = try await fixture { app in
+        var f = try await fixture(executable: FakeIPA.paddedMachO(padding: 256)) { app in
             try Data("x".utf8).write(to: app.appendingPathComponent("Settings.bundle"))
         }
-        f.settings = { _ in SettingsSection(titleKey: "T", footerKey: nil, rows: [], strings: [:]) }
+        f.welcomeDylib = try welcomeDylib()
+        f.settings = { _, _ in SettingsSection(titleKey: "T", footerKey: nil, rows: [], strings: [:]) }
         let app = try await run(f)
         #expect(try Data(contentsOf: app.appendingPathComponent("Settings.bundle")) == Data("x".utf8))
     }

@@ -38,6 +38,8 @@ private actor CallLog {
                 _ profileURL: URL, _ profile: ProvisioningProfile) {
         resignArgs.append((ipa, workDir, bundleID, icon, profileURL, profile))
     }
+    private(set) var facts: [InstallationFacts?] = []
+    func fact(_ f: InstallationFacts?) { facts.append(f) }
     private(set) var uninstalls: [(bundleID: String, deviceID: String)] = []
     /// Install ("install:<device>") and uninstall ("uninstall:<device>") calls, in call order.
     private(set) var deviceCalls: [String] = []
@@ -76,8 +78,10 @@ private struct FakeResigner: Resigning {
     let log: CallLog
     func resign(ipa: URL, workDir: URL, bundleID: String, options: InstallOptions, iconURL: URL?,
                 profileURL: URL, profile: ProvisioningProfile, identitySHA1: String,
-                otherBundleIDs: Set<String>, onSigning: @Sendable () async -> Void) async throws -> URL {
+                otherBundleIDs: Set<String>, facts: InstallationFacts?,
+                onSigning: @Sendable () async -> Void) async throws -> URL {
         await log.resign(ipa, workDir, bundleID, iconURL, profileURL, profile)
+        await log.fact(facts)
         await onSigning()
         // Simulate unpacking into the work dir.
         let app = workDir.appendingPathComponent("Payload/Demo.app", isDirectory: true)
@@ -172,12 +176,14 @@ private struct Fixture {
     }
 
     func pipeline(provisioner: FakeProvisioner? = nil, installer: FakeInstaller? = nil,
-                  now: @escaping @Sendable () -> Date = { fixedNow }) -> SideloadPipeline {
+                  now: @escaping @Sendable () -> Date = { fixedNow },
+                  inAppDefaults: (@Sendable (Date) -> InAppSettings)? = nil) -> SideloadPipeline {
         SideloadPipeline(library: library,
                          provisioner: provisioner ?? FakeProvisioner(log: log),
                          resigner: FakeResigner(log: log),
                          installer: installer ?? FakeInstaller(log: log),
-                         workRoot: workRoot, now: now)
+                         workRoot: workRoot, now: now,
+                         inAppDefaults: inAppDefaults ?? { InAppSettings.defaults(reminder: true, at: $0) })
     }
 
     func cleanup() { try? FileManager.default.removeItem(at: tmp) }
@@ -197,7 +203,12 @@ struct PipelineTests {
         #expect(result == Installation(deviceID: "dev-1", installedAt: fixedNow, expiresAt: expiry,
                                        lastAttempt: fixedNow, lastErrorKey: nil,
                                        signedBundleID: "com.example.demo.TEAM123456",
-                                       signingIdentitySHA1: "FAKESHA1", teamID: "TEAM123456", appVersion: "1.0"))
+                                       signingIdentitySHA1: "FAKESHA1", teamID: "TEAM123456", appVersion: "1.0",
+                                       inApp: InAppSettings.defaults(reminder: true, at: fixedNow),
+                                       firstInstalledAt: fixedNow,
+                                       lastRefreshOutcome: RefreshOutcome(at: fixedNow, succeeded: true),
+                                       channelSecret: result.channelSecret))
+        #expect(result.channelSecret?.count == 32)
         let stored = try #require(await f.library.records().first?.installations.first)
         #expect(stored.deviceID == "dev-1")
         #expect(stored.expiresAt == expiry)
@@ -1099,5 +1110,90 @@ struct PipelineChainCancellationTests {
         _ = try await c.value
         #expect(await f.log.provisionUDIDs.count == 2) // A and C; B never ran
         #expect(await f.log.installs.count == 2)
+    }
+}
+
+// MARK: - XSide in the app (Task 4)
+
+@Suite struct PipelineChannelTests {
+    @Test func secretRotatesAtEachSigning() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let pipeline = f.pipeline()
+        let first = try await pipeline.install(recordID: f.record.id, device: device(), env: env)
+        let second = try await pipeline.install(recordID: f.record.id, device: device(), env: env, refresh: true)
+        let a = try #require(first.channelSecret), b = try #require(second.channelSecret)
+        #expect(a.count == 32 && b.count == 32 && a != b)
+        // What was written into the app is what XSide keeps.
+        let facts = await f.log.facts.compactMap { $0 }
+        #expect(facts.map(\.channelSecret) == [a, b])
+        #expect(facts.allSatisfy { $0.installationID == ChannelEnvelope.installationID(recordID: f.record.id, deviceID: "dev-1") })
+        #expect(try #require(await f.library.records().first?.installations.first).channelSecret == b)
+    }
+
+    /// The app still on the device holds the previous secret.
+    @Test func failedSigningKeepsThePreviousSecret() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let first = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
+        let failing = f.pipeline(installer: FakeInstaller(log: f.log, error: XSideError.deviceUnavailable))
+        await #expect(throws: XSideError.self) {
+            _ = try await failing.install(recordID: f.record.id, device: device(), env: env, refresh: true)
+        }
+        let stored = try #require(await f.library.records().first?.installations.first)
+        #expect(stored.channelSecret == first.channelSecret)
+        #expect(stored.lastRefreshOutcome == RefreshOutcome(at: fixedNow, succeeded: false,
+                                                            reasonKey: XSideError.deviceUnavailable.key))
+    }
+
+    @Test func firstInstallDateIsKeptAndSettingsSeeded() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let later = fixedNow.addingTimeInterval(86_400)
+        let clock = TestClock(fixedNow)
+        let pipeline = f.pipeline(now: { clock.now }, inAppDefaults: { InAppSettings.defaults(reminder: false, at: $0) })
+        let first = try await pipeline.install(recordID: f.record.id, device: device(), env: env)
+        #expect(first.firstInstalledAt == fixedNow)
+        #expect(first.inApp == InAppSettings.defaults(reminder: false, at: fixedNow))
+        clock.now = later
+        let second = try await pipeline.install(recordID: f.record.id, device: device(), env: env, refresh: true)
+        #expect(second.firstInstalledAt == fixedNow)
+        #expect(second.inApp == first.inApp) // kept, not reseeded
+        let facts = try #require(await f.log.facts.last ?? nil)
+        #expect(facts.firstInstalledAt == fixedNow && facts.appVersion == "1.0")
+        #expect(facts.inApp == first.inApp)
+        #expect(facts.lastRefreshOutcome == RefreshOutcome(at: later, succeeded: true))
+    }
+
+    /// Installed by an older XSide: no settings, no first-install date.
+    @Test func olderInstallationsGetTheirSettingsAtSigning() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let old = fixedNow.addingTimeInterval(-3 * 86_400)
+        try await f.library.upsert(Installation(deviceID: "dev-1", installedAt: old, expiresAt: expiry.addingTimeInterval(-1)),
+                                   for: f.record.id)
+        let result = try await f.pipeline(inAppDefaults: { InAppSettings.defaults(reminder: false, at: $0) })
+            .install(recordID: f.record.id, device: device(), env: env, refresh: true)
+        #expect(result.inApp == InAppSettings.defaults(reminder: false, at: fixedNow))
+        #expect(result.firstInstalledAt == old) // the earliest date XSide knows it was there
+    }
+
+    /// Reinstalling clears a pause: the setting the app gets says so.
+    @Test func reinstallTurnsAutomaticRefreshBackOn() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let pipeline = f.pipeline()
+        _ = try await pipeline.install(recordID: f.record.id, device: device(), env: env)
+        try await f.library.setRefreshPaused(true, recordID: f.record.id, deviceID: "dev-1", by: .device,
+                                             at: fixedNow.addingTimeInterval(-1))
+        let result = try await pipeline.install(recordID: f.record.id, device: device(), env: env)
+        #expect(result.inApp?.autoRefresh == Field(value: true, changedAt: fixedNow, changedBy: .mac))
+        #expect(!result.refreshPaused && result.pausedBy == nil)
+        #expect(await f.log.facts.last??.inApp.autoRefresh.value == true)
+    }
+}
+
+private final class TestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Date
+    init(_ date: Date) { value = date }
+    var now: Date {
+        get { lock.lock(); defer { lock.unlock() }; return value }
+        set { lock.lock(); value = newValue; lock.unlock() }
     }
 }

@@ -37,6 +37,12 @@
 	<string>15.0</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_xside._tcp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>XSide listens on your local network so the apps it installed can ask it to refresh them.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSServices</key>

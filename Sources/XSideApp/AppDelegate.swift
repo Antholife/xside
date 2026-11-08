@@ -107,6 +107,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static var handledRequests: Set<String> = []
     private static var lastReplies: [String: [String: String]] = [:]
 
+    func applicationWillTerminate(_ notification: Notification) {
+        Self.model?.stopChannel() // the apps stop seeing XSide on the network at once
+    }
+
     func applicationDidBecomeActive(_ notification: Notification) {
         Self.model?.forgetUnreadyXcodes()
     }

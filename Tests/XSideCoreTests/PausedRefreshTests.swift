@@ -102,8 +102,9 @@ struct PausedRefreshTests {
         #expect(try await lib.setRefreshPaused(true, recordID: rec.id, deviceID: "a"))
         #expect(try await lib.setRefreshPaused(true, recordID: rec.id, deviceID: "a") == false) // already paused
         var stored = try #require(await AppLibrary(root: root).records().first?.installations.first) // persisted
-        #expect(stored.refreshPaused)
+        #expect(stored.refreshPaused && stored.pausedBy == .mac)
         stored.refreshPaused = false
+        stored.pausedBy = nil
         #expect(stored == installation) // nothing else changed
 
         #expect(try await lib.setRefreshPaused(false, recordID: rec.id, deviceID: "a"))

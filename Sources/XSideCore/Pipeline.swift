@@ -13,7 +13,7 @@ public protocol Resigning: Sendable {
     /// must never be granted.
     func resign(ipa: URL, workDir: URL, bundleID: String, options: InstallOptions,
                 iconURL: URL?, profileURL: URL, profile: ProvisioningProfile,
-                identitySHA1: String, otherBundleIDs: Set<String>,
+                identitySHA1: String, otherBundleIDs: Set<String>, facts: InstallationFacts?,
                 onSigning: @Sendable () async -> Void) async throws -> URL
 }
 
@@ -168,6 +168,9 @@ public actor SideloadPipeline {
     private let now: @Sendable () -> Date
     /// The Mac runs a macOS beta: failures with a release Xcode are explained as such.
     private let macIsBeta: Bool
+    /// XSide-in-app settings for an installation that has none yet (new, or saved by an older
+    /// XSide), stamped with the given date.
+    private let inAppDefaults: @Sendable (Date) -> InAppSettings
     private let provisioningLock = AsyncLock()
 
     /// Last queued job per device id. Read and replaced without any `await` in between, so the
@@ -177,7 +180,9 @@ public actor SideloadPipeline {
 
     public init(library: AppLibrary, provisioner: any Provisioning, resigner: any Resigning,
                 installer: any Installing, workRoot: URL,
-                now: @escaping @Sendable () -> Date, macIsBeta: Bool = false) {
+                now: @escaping @Sendable () -> Date, macIsBeta: Bool = false,
+                inAppDefaults: @escaping @Sendable (Date) -> InAppSettings = { InAppSettings.defaults(reminder: true, at: $0) }) {
+        self.inAppDefaults = inAppDefaults
         self.library = library
         self.provisioner = provisioner
         self.resigner = resigner
@@ -364,12 +369,14 @@ public actor SideloadPipeline {
                     ids.insert(other.signedBundleID)
                     for i in other.installations { if let id = i.signedBundleID { ids.insert(id) } }
                 }
+            let facts = signingFacts(recordID: recordID, deviceID: device.id, previous: previous,
+                                     appVersion: record.options.version ?? record.version, at: now())
             // The job's tools all use the Xcode of the environment it started with.
             let app = try await CommandEnvironment.withDeveloperDir(current.developerDir) { [resigner] in
                 try await resigner.resign(
                     ipa: ipa, workDir: workDir, bundleID: bundleID, options: record.options,
                     iconURL: icon, profileURL: provisioned.url, profile: provisioned.profile,
-                    identitySHA1: current.identitySHA1, otherBundleIDs: others,
+                    identitySHA1: current.identitySHA1, otherBundleIDs: others, facts: facts,
                     onSigning: {
                         await progress(.signing)
                         Self.logger.info("\(what): signing")
@@ -382,12 +389,17 @@ public actor SideloadPipeline {
             }
 
             let date = now()
-            let installation = Installation(deviceID: device.id, installedAt: date,
-                                            expiresAt: provisioned.profile.expirationDate,
-                                            lastAttempt: date, lastErrorKey: nil, signedBundleID: bundleID,
-                                            signingIdentitySHA1: current.identitySHA1, teamID: current.teamID,
-                                            appVersion: record.options.version ?? record.version)
-            try await library.upsert(installation, for: recordID, requireExisting: previous != nil)
+            // The secret written into the app becomes the installation's only now: had the install
+            // failed, the app still on the device would hold the previous one, which is kept.
+            let signed = Installation(deviceID: device.id, installedAt: date,
+                                      expiresAt: provisioned.profile.expirationDate,
+                                      lastAttempt: date, lastErrorKey: nil, signedBundleID: bundleID,
+                                      signingIdentitySHA1: current.identitySHA1, teamID: current.teamID,
+                                      appVersion: facts.appVersion, inApp: facts.inApp,
+                                      firstInstalledAt: facts.firstInstalledAt,
+                                      lastRefreshOutcome: facts.lastRefreshOutcome,
+                                      channelSecret: facts.channelSecret, lastCheckIn: facts.lastCheckIn)
+            let installation = try await library.recordSigning(signed, for: recordID, requireExisting: previous != nil)
             Self.logger.notice("\(what): done, expires \(installation.expiresAt.formatted(.iso8601))")
             return installation
         } catch let unavailable as EnvironmentUnavailable {
@@ -416,12 +428,32 @@ public actor SideloadPipeline {
                     """)
             }
             if var failed = previous {
-                failed.lastAttempt = now()
+                let date = now()
+                failed.lastAttempt = date
                 failed.lastErrorKey = (explained as? XSideError)?.key ?? "unknown"
+                failed.lastRefreshOutcome = RefreshOutcome(at: date, succeeded: false, reasonKey: failed.lastErrorKey)
                 try? await library.upsert(failed, for: recordID, requireExisting: true)
             }
             throw explained
         }
+    }
+
+    /// What this signing writes into the app: a new channel secret (each signing rotates it), the
+    /// installation's settings (seeded for a new or older installation; automatic refresh on,
+    /// since the result is never paused), its first install date (set once) and this signing's
+    /// outcome.
+    private nonisolated func signingFacts(recordID: UUID, deviceID: String, previous: Installation?,
+                                          appVersion: String?, at date: Date) -> InstallationFacts {
+        var inApp = previous?.inApp ?? inAppDefaults(date)
+        if !inApp.autoRefresh.value { inApp = inApp.setting(\.autoRefresh, to: true, at: date, by: .mac) }
+        return InstallationFacts(
+            installationID: ChannelEnvelope.installationID(recordID: recordID, deviceID: deviceID),
+            channelSecret: ChannelEnvelope.newSecret(), inApp: inApp,
+            // Saved by an older XSide: the earliest date it is known to have been there.
+            firstInstalledAt: previous.map { $0.firstInstalledAt ?? $0.installedAt } ?? date,
+            appVersion: appVersion,
+            lastRefreshOutcome: RefreshOutcome(at: date, succeeded: true),
+            lastCheckIn: previous?.lastCheckIn)
     }
 
     /// Resolves a library-relative path, refusing anything that escapes the library root.

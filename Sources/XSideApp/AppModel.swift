@@ -221,7 +221,8 @@ final class AppModel {
                                settingsSection: Self.featuresOff ? nil : Self.settingsSection,
                                welcome: { _ in AppModel.welcomePayload() }),
             installer: Installer(runner: runner),
-            workRoot: paths.jobsWork, now: { Date() }, macIsBeta: XcodeLauncher.macIsBeta)
+            workRoot: paths.jobsWork, now: { Date() }, macIsBeta: XcodeLauncher.macIsBeta,
+            inAppDefaults: { AppModel.inAppDefaults(at: $0) })
         // An update waits while an install or a refresh runs (`release` retries it after).
         updater.isBusy = { [unowned self] in !self.claims.isEmpty || self.install?.isRunning == true }
         Task { await start() }
@@ -238,23 +239,39 @@ final class AppModel {
     }
 
     /// The "Réglages XSide" section of the app's page in the iOS Settings app, translated by iOS
-    /// from the strings XSide writes. Written at each install and refresh. (The pipeline will feed
-    /// it the installation's own settings; until then, the defaults.)
-    nonisolated static func settingsSection(_ profile: ProvisioningProfile) -> SettingsSection {
+    /// from the strings XSide writes. Written at each install and refresh, from the installation's
+    /// own values (`facts`, given by the pipeline). The texts are the Mac's; the library rewrites
+    /// them in the device's language at launch.
+    nonisolated static func settingsSection(_ profile: ProvisioningProfile, _ facts: InstallationFacts?) -> SettingsSection {
         let style = Date.FormatStyle(date: .abbreviated, time: .shortened).locale(appLocale)
-        let now = Date().formatted(style)
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
-        return SettingsSection.xside(validUntil: profile.expirationDate.formatted(style), refreshedOn: now,
-                                     version: version, installedOn: now,
-                                     inApp: InAppSettings.defaults(reminder: setting(deviceReminderKey), at: Date()))
+        let now = Date()
+        let outcome = facts?.lastRefreshOutcome
+        return SettingsSection.xside(
+            validUntil: profile.expirationDate.formatted(style), refreshedOn: now.formatted(style),
+            version: facts?.appVersion ?? "—",
+            installedOn: (facts?.firstInstalledAt ?? now).formatted(style),
+            connection: facts?.lastCheckIn.map { "✓ " + $0.formatted(style) } ?? "—",
+            lastRefresh: outcome.map { ($0.succeeded ? "✓ " : "✕ ") + $0.at.formatted(style) } ?? "—",
+            inApp: facts?.inApp ?? inAppDefaults(at: now))
+    }
+
+    /// XSide-in-app settings of an installation that has none yet: the Mac defaults, the reminder
+    /// following the global "Reminder on the device" setting.
+    nonisolated static func inAppDefaults(at date: Date) -> InAppSettings {
+        InAppSettings.defaults(reminder: setting(deviceReminderKey), at: date)
     }
 
     // MARK: - Startup
 
     private func start() async {
+        // Installations saved by an older XSide get their XSide-in-app settings (the Mac defaults).
+        do { try await library.seedInAppSettings(reminder: Self.setting(Self.deviceReminderKey), at: Date()) } catch {
+            Self.logger.error("seeding in-app settings failed: \(String(describing: error))")
+        }
         await reloadRecords()
         refreshDevices()
         await probeEnvironment()
+        startChannel()
     }
 
     // MARK: Welcome journey
@@ -951,15 +968,173 @@ final class AppModel {
     /// Starts a refresh of one row unless it is already running. Returns false when nothing started.
     @discardableResult
     func refreshNow(_ job: RefreshJob, automatic: Bool = false) -> Bool {
+        startRefresh(job, automatic: automatic) != nil
+    }
+
+    /// `refreshNow`, returning the running job: its value is the error it failed with, nil on
+    /// success. Nil when nothing started.
+    private func startRefresh(_ job: RefreshJob, automatic: Bool) -> Task<(any Error)?, Never>? {
         let key = JobKey(recordID: job.recordID, deviceID: job.deviceID)
         guard signingEnvironment != nil, jobs[key] == nil, !removingDevices.contains(job.deviceID),
-              !isPaused(job), let device = devices.first(where: { $0.id == job.deviceID }) else { return false }
+              !isPaused(job), let device = devices.first(where: { $0.id == job.deviceID }) else { return nil }
         claim(key) // before the task starts, so the row can't be claimed twice
-        Task {
+        return Task {
             defer { release(key) }
-            try? await run(key: key, device: device, refresh: true, automatic: automatic)
+            do {
+                try await run(key: key, device: device, refresh: true, automatic: automatic)
+                return nil
+            } catch {
+                return error
+            }
         }
-        return true
+    }
+
+    // MARK: - Local network channel (the apps talk to XSide)
+
+    @ObservationIgnored private var channelServer: ChannelServer?
+    /// Nonces of the requests accepted lately, so none can be replayed (all installations).
+    @ObservationIgnored private var channelNonces = NonceCache()
+    private static let channelLogger = Log("channel")
+    /// How long a refresh asked from the phone keeps its connection waiting for the outcome.
+    private static let refreshOutcomeWait: Duration = .seconds(120)
+
+    /// Publishes the channel on the local network while XSide runs (not in the debug mode that
+    /// installs apps without XSide's features: they have nothing to talk with).
+    private func startChannel() {
+        guard channelServer == nil, !Self.featuresOff else { return }
+        let server = ChannelServer { [weak self] line, send in
+            await self?.handleChannelLine(line, send: send)
+        }
+        channelServer = server
+        server.start()
+    }
+
+    func stopChannel() {
+        channelServer?.stop()
+        channelServer = nil
+    }
+
+    /// One request from an app (see `ChannelHandler`): only the installation that signed it can be
+    /// read or changed, and only its settings, pause and refresh.
+    private func handleChannelLine(_ line: Data, send: @escaping ChannelServer.Send) async {
+        guard let envelope = try? ChannelEnvelope.decode(line: line) else {
+            Self.channelLogger.info("channel: malformed request ignored")
+            return
+        }
+        let found = await library.installation(channelID: envelope.installationID)
+        let now = Date()
+        let received = ChannelHandler.receive(line: line, now: now, nonces: &channelNonces) { id in
+            id == envelope.installationID ? found?.installation.channelSecret : nil
+        }
+        guard case let .request(installationID, nonce, request) = received, let found,
+              let secret = found.installation.channelSecret else {
+            Self.channelLogger.notice("channel: request rejected (unknown installation, bad signature, stale or replayed)")
+            await send(ChannelHandler.rejectedLine)
+            return
+        }
+        let job = RefreshJob(recordID: found.recordID, deviceID: found.installation.deviceID)
+        let reply: (ChannelReply) async -> Void = { answer in
+            do {
+                await send(try ChannelHandler.replyLine(answer, installationID: installationID, requestNonce: nonce, secret: secret))
+            } catch {
+                Self.channelLogger.error("channel: reply not sealed: \(String(describing: error))")
+            }
+        }
+        let (answer, update) = ChannelHandler.handle(request, installation: found.installation, now: now)
+        Self.channelLogger.notice("channel: \(Self.describe(request)) from \(job.deviceID) for \(found.recordID)")
+        switch update {
+        case .none:
+            await reply(answer)
+        case let .merged(settings, checkIn, outcome):
+            do {
+                let change = try await library.applyCheckIn(settings, checkIn: checkIn, outcome: outcome,
+                                                             recordID: job.recordID, deviceID: job.deviceID)
+                await reloadRecords()
+                if let paused = change { pauseChanged(job, paused: paused) }
+            } catch {
+                Self.channelLogger.error("channel: check-in not stored: \(String(describing: error))")
+            }
+            await reply(answer) // the phone's view is right either way
+        case let .paused(paused, by):
+            do {
+                if try await library.setRefreshPaused(paused, recordID: job.recordID, deviceID: job.deviceID, by: by, at: now) {
+                    await reloadRecords()
+                    pauseChanged(job, paused: paused)
+                }
+            } catch {
+                Self.channelLogger.error("channel: pause not stored: \(String(describing: error))")
+            }
+            await reply(answer)
+        case .refreshRequested:
+            switch refreshFromDevice(job) {
+            case .failure(let refusal):
+                Self.channelLogger.notice("channel: refresh not started: \(Self.describe(refusal.reply))")
+                await reply(refusal.reply)
+            case .success(let task):
+                await reply(.accepted)
+                if let outcome = await waitForOutcome(task) { await reply(outcome) }
+            }
+        }
+    }
+
+    private struct Refusal: Error { let reply: ChannelReply }
+
+    /// A refresh asked from the phone: the normal manual refresh, or why it can't start.
+    private func refreshFromDevice(_ job: RefreshJob) -> Result<Task<(any Error)?, Never>, Refusal> {
+        let key = JobKey(recordID: job.recordID, deviceID: job.deviceID)
+        if jobs[key] != nil { return .failure(Refusal(reply: .busy)) }
+        guard let device = devices.first(where: { $0.id == job.deviceID }), device.isAvailable,
+              !removingDevices.contains(job.deviceID) else { return .failure(Refusal(reply: .deviceUnreachable)) }
+        guard signingEnvironment != nil else {
+            return .failure(Refusal(reply: .failed(reasonKey: environmentError?.key ?? XSideError.xcodeMissing.key)))
+        }
+        guard let task = startRefresh(job, automatic: false) else { return .failure(Refusal(reply: .busy)) }
+        return .success(task)
+    }
+
+    /// The refresh's outcome line, or nil when it takes longer than the phone waits.
+    private func waitForOutcome(_ task: Task<(any Error)?, Never>) async -> ChannelReply? {
+        final class Once {
+            var continuation: CheckedContinuation<ChannelReply?, Never>?
+            func resume(_ value: ChannelReply?) {
+                continuation?.resume(returning: value)
+                continuation = nil
+            }
+        }
+        let once = Once()
+        return await withCheckedContinuation { continuation in
+            once.continuation = continuation
+            Task { @MainActor in
+                let error = await task.value
+                once.resume(error.map { .failed(reasonKey: ($0 as? XSideError)?.key ?? "unknown") } ?? .refreshed)
+            }
+            Task { @MainActor in
+                try? await Task.sleep(for: Self.refreshOutcomeWait)
+                once.resume(nil)
+            }
+        }
+    }
+
+    /// The pause changed from the phone: reminders and notification state follow, as from the panel.
+    private func pauseChanged(_ job: RefreshJob, paused: Bool) {
+        if paused { onInstallationRemoved?(job) } else { onRefreshResumed?(job) }
+    }
+
+    private static func describe(_ request: ChannelRequest) -> String {
+        switch request {
+        case .checkIn: "check-in"
+        case .refresh: "refresh"
+        case .setAutoRefresh(let on): "automatic refresh \(on ? "on" : "off")"
+        }
+    }
+
+    private static func describe(_ reply: ChannelReply) -> String {
+        switch reply {
+        case .busy: "busy"
+        case .deviceUnreachable: "device unreachable"
+        case .failed(let key): "failed (\(key))"
+        default: "\(reply)"
+        }
     }
 
     /// Records a failed attempt on an unreachable device without running the pipeline: the row
@@ -1760,14 +1935,15 @@ final class AppModel {
     /// The reminder the installed app shows itself, the day before it expires (written into the
     /// app at each install and refresh).
     nonisolated static let deviceReminderKey = "deviceReminder"
-    /// What the welcome library reads in each app (see `WelcomePayload`).
+    /// What the welcome library reads in each app (see `WelcomePayload`): the Mac-wide part; the
+    /// installation's own values are filled in at signing (`Resigner.payload(_:with:)`).
     nonisolated static func welcomePayload() -> WelcomePayload {
         let defaults = UserDefaults.standard
         let threshold = RefreshPlanner.threshold(daysBefore: defaults.integer(forKey: "refreshDaysBefore"),
                                                  debugDays: defaults.double(forKey: "debugThresholdDays"))
         return WelcomePayload(thresholdHours: Int(threshold / 3600),
                               reminderLeadHours: Int(RefreshPolicy.reminderLead(threshold: threshold) / 3600),
-                              inApp: InAppSettings.defaults(reminder: setting(deviceReminderKey), at: Date()))
+                              inApp: inAppDefaults(at: Date()))
     }
 
     /// The notification when XSide forgets an app deleted from its device.

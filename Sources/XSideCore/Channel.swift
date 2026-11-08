@@ -36,6 +36,25 @@ import CryptoKit
 //   ChannelReply:   {"type":"settings","settings":{...}} | {"type":"accepted"} | {"type":"refreshed"}
 //                 | {"type":"failed","reasonKey":"..."} | {"type":"busy"} | {"type":"deviceUnreachable"}
 //                 | {"type":"paused","by":"mac"|"device"} | {"type":"rejected"}
+//
+// Exchanges (XSide's side: ChannelHandler, ChannelServer). One request per connection; XSide
+// closes the connection after its last line.
+// - checkIn -> settings(merged): the phone's settings merged with the Mac's, field by field (dates
+//   more than 120 s ahead of the Mac's clock count as "now"). The phone adopts them.
+// - setAutoRefresh(on) -> settings(...): the installation's settings with autoRefresh stamped by
+//   the device; the Mac pauses or resumes its refreshes.
+// - refresh -> TWO lines when it starts: `accepted` at once, then `refreshed` or
+//   `failed(reasonKey)` when the job ends (the connection stays open up to 2 min; after that it is
+//   closed without the second line, and the success closes the app anyway). One line when it
+//   can't start: `paused(by)` (automatic refresh off for this installation), `busy` (a job is
+//   already running on it), `deviceUnreachable` (the Mac can't see the device), or
+//   `failed(reasonKey)` (e.g. Xcode isn't usable).
+// - A request that doesn't authenticate (unknown installation id, wrong MAC, outside the window,
+//   replayed nonce, unreadable body) gets the bare, UNSIGNED line `{"type":"rejected"}` (not an
+//   envelope: nothing is ever signed for an unauthenticated request). The phone must not act on it
+//   beyond "this Mac doesn't know me" (e.g. try another XSide on the network, or report it).
+// - A line that isn't an envelope at all, longer than 64 KB, or not complete within 10 s: the
+//   connection is closed without a reply.
 
 public enum ChannelError: Error, Equatable { case invalidNonce, invalidTimestamp }
 
