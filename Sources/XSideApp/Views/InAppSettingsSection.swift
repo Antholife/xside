@@ -199,17 +199,8 @@ struct MessagesMenu: View {
     let pick: (MessageLevel) -> Void
 
     var body: some View {
-        Menu(level.label) {
-            ForEach([MessageLevel.all, .essentials, .none], id: \.self) { choice in
-                Button {
-                    pick(choice)
-                } label: {
-                    if choice == level { Label(choice.label, systemImage: "checkmark") } else { Text(choice.label) }
-                }
-            }
-        }
-        .fixedSize()
-        .controlSize(.small)
+        XSidePopup(title: level.label, accessibilityLabel: L("inApp.messages"),
+                   choices: [MessageLevel.all, .essentials, .none], selected: level, label: \.label, pick: pick)
     }
 }
 
@@ -218,12 +209,70 @@ struct LanguagePicker: View {
     let pick: (MessageLanguage) -> Void
 
     var body: some View {
-        Picker(L("inApp.language"), selection: Binding(get: { language }, set: { pick($0) })) {
-            ForEach([MessageLanguage.automatic, .fr, .en], id: \.self) { Text($0.label).tag($0) }
+        XSidePopup(title: language.label, accessibilityLabel: L("inApp.language"),
+                   choices: [MessageLanguage.automatic, .fr, .en], selected: language, label: \.label, pick: pick)
+    }
+}
+
+/// XSide's popup menu (device feedback 2026-11-08: the system's grey popup looked foreign next
+/// to the brand switches): the current choice, then a small brand-gradient box with the chevrons,
+/// like `XSideSwitch`. The menu itself is the system's, with a checkmark on the current choice.
+struct XSidePopup<Choice: Hashable>: View {
+    let title: String
+    let accessibilityLabel: String
+    let choices: [Choice]
+    let selected: Choice
+    let label: KeyPath<Choice, String>
+    let pick: (Choice) -> Void
+
+    var body: some View {
+        Menu {
+            ForEach(choices, id: \.self) { choice in
+                Button {
+                    pick(choice)
+                } label: {
+                    if choice == selected { Label(choice[keyPath: label], systemImage: "checkmark") }
+                    else { Text(choice[keyPath: label]) }
+                }
+            }
+        } label: {
+            Text(title)
         }
-        .labelsHidden()
+        .menuStyle(.button)
+        .menuIndicator(.hidden)
+        .buttonStyle(XSidePopupStyle())
         .fixedSize()
-        .controlSize(.small)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityValue(title)
+    }
+}
+
+/// The look of `XSidePopup`: a soft rounded field, the label, and the brand chevron box.
+struct XSidePopupStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 6) {
+            configuration.label
+                .font(.system(size: 12))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 16, height: 16)
+                .background(Theme.brand, in: RoundedRectangle(cornerRadius: 4.5, style: .continuous))
+                .accessibilityHidden(true)
+        }
+        .padding(.leading, 9)
+        .padding(.trailing, 3)
+        .frame(minHeight: 22)
+        .background(Color.primary.opacity(configuration.isPressed ? 0.12 : 0.06),
+                    in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .strokeBorder(Theme.violet.opacity(0.3), lineWidth: 0.5))
+        .opacity(isEnabled ? 1 : 0.45)
+        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 }
 
