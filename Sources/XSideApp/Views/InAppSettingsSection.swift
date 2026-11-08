@@ -23,9 +23,6 @@ struct InAppSettingsSection: View {
     var isDisabled = false
     /// Two columns (features, status and where to find them | the options): the install window.
     var columns = false
-    /// Non-nil when an installation of the app has XSide's module: the confirmation offers
-    /// deleting it from the device first and reports the choice here before turning features off.
-    var setDeleteFirst: ((Bool) -> Void)?
 
     @State private var confirmingNoFeatures = false
 
@@ -54,8 +51,7 @@ struct InAppSettingsSection: View {
         }
         .disabled(isDisabled)
         .sheet(isPresented: $confirmingNoFeatures) {
-            NoFeaturesConfirmation(appName: appName, offersDeleteFirst: setDeleteFirst != nil) { deleteFirst in
-                setDeleteFirst?(deleteFirst)
+            NoFeaturesConfirmation(appName: appName) {
                 hasFeatures = false
             }
         }

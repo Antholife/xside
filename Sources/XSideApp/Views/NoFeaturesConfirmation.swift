@@ -7,15 +7,8 @@ import XSideCore
 struct NoFeaturesConfirmation: View {
     /// nil: the Mac-wide setting.
     let appName: String?
-    /// Offers deleting the app from the device first (an installation of it has XSide's module):
-    /// iOS keeps XSide's quick actions across an update, and nothing is left in the app to remove
-    /// them. Never for every app at once: one checkbox must not wipe every app's data.
-    var offersDeleteFirst = false
-    /// Called with the "delete first" choice (always false when not offered).
-    let confirm: (_ deleteFirst: Bool) -> Void
+    let confirm: () -> Void
     @Environment(\.dismiss) private var dismiss
-    /// Off by default: deleting loses the app's data on the device.
-    @State private var deleteFirst = false
 
     private static let items: [(symbol: String, key: String)] = [
         ("rectangle.portrait.bottomhalf.inset.filled", "noFeatures.item.sheet"),
@@ -54,29 +47,12 @@ struct NoFeaturesConfirmation: View {
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            // Mega review Important 1: said whether or not iOS turns out to keep them.
-            Text(L("noFeatures.quickStay"))
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            if offersDeleteFirst {
-                Toggle(isOn: $deleteFirst) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(L("noFeatures.deleteFirst")).font(.system(size: 12))
-                        Text(L("noFeatures.deleteFirst.note"))
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .toggleStyle(.checkbox)
-            }
             HStack {
                 Spacer()
                 Button(L("install.cancel")) { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Button(L("noFeatures.confirm")) {
-                    confirm(offersDeleteFirst && deleteFirst)
+                    confirm()
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)

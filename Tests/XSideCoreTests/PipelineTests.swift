@@ -1244,76 +1244,20 @@ struct PipelineChainCancellationTests {
         #expect(ok.withoutXSideFeatures == nil)
     }
 
-    /// Mega review Important 1: XSide's quick actions are dynamic items iOS keeps across an
-    /// update, and an app installed without the module has nothing left to remove them. When the
-    /// person opted in, an installation that had the module is deleted from the device first
-    /// (after signing, so nothing is lost if signing fails), then installed as it came. Once.
-    @Test func optInDeletesTheAppFirstWhenTheModuleGoes() async throws {
+    /// Device feedback 3, E1: XSide's quick actions are static Info.plist items again, so they go
+    /// with the module when the app is reinstalled without it; nothing is deleted from the device
+    /// first. Options saved with the former opt-in ("deleteFirstWithoutFeatures") still load and
+    /// only update the app.
+    @Test func goingWithoutFeaturesOnlyUpdatesTheApp() async throws {
         let f = try await Fixture(); defer { f.cleanup() }
         _ = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
-        var options = f.record.options
-        options.withoutXSideFeatures = true
-        options.deleteFirstWithoutFeatures = true
+        let options = try JSONDecoder().decode(InstallOptions.self, from: Data(
+            #"{"withoutXSideFeatures":true,"deleteFirstWithoutFeatures":true}"#.utf8))
         try await f.library.setOptions(options, for: f.record.id)
         let bare = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env, refresh: true)
-        #expect(await f.log.deviceCalls == ["install:dev-1", "uninstall:dev-1", "install:dev-1"])
-        #expect(await f.log.uninstalls.first?.bundleID == bare.signedBundleID)
         #expect(bare.withoutXSideFeatures == true)
-        // Already without the module: nothing more to clear.
-        _ = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env, refresh: true)
-        #expect(await f.log.deviceCalls == ["install:dev-1", "uninstall:dev-1", "install:dev-1", "install:dev-1"])
-    }
-
-    /// Default off: the app's data on the device is kept, so the app is only updated.
-    @Test func withoutOptInTheAppIsOnlyUpdated() async throws {
-        let f = try await Fixture(); defer { f.cleanup() }
-        _ = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
-        var options = f.record.options
-        options.withoutXSideFeatures = true
-        try await f.library.setOptions(options, for: f.record.id)
-        _ = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
         #expect(await f.log.uninstalls.isEmpty)
-    }
-
-    /// A first install, or one where the features stay, never deletes anything.
-    @Test func optInIgnoredWithoutAModuleToClear() async throws {
-        let f = try await Fixture(); defer { f.cleanup() }
-        var options = f.record.options
-        options.withoutXSideFeatures = true
-        options.deleteFirstWithoutFeatures = true
-        try await f.library.setOptions(options, for: f.record.id)
-        _ = try await f.pipeline().install(recordID: f.record.id, device: device("dev-2", udid: "UDID-2"), env: env)
-        options.withoutXSideFeatures = false
-        try await f.library.setOptions(options, for: f.record.id)
-        _ = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
-        _ = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
-        #expect(await f.log.uninstalls.isEmpty)
-    }
-
-    /// The deletion failing never fails the install: the app is updated, the items may stay.
-    @Test func failedDeletionStillInstalls() async throws {
-        let f = try await Fixture(); defer { f.cleanup() }
-        _ = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
-        var options = f.record.options
-        options.withoutXSideFeatures = true
-        options.deleteFirstWithoutFeatures = true
-        try await f.library.setOptions(options, for: f.record.id)
-        let failing = FailingUninstaller(log: f.log)
-        let bare = try await SideloadPipeline(library: f.library, provisioner: FakeProvisioner(log: f.log),
-                                              resigner: FakeResigner(log: f.log), installer: failing,
-                                              workRoot: f.workRoot, now: { fixedNow })
-            .install(recordID: f.record.id, device: device(), env: env)
-        #expect(bare.withoutXSideFeatures == true)
         #expect(await f.log.deviceCalls == ["install:dev-1", "install:dev-1"])
-    }
-
-    /// Old options load with the opt-in off.
-    @Test func deleteFirstDefaultsOff() throws {
-        let o = try JSONDecoder().decode(InstallOptions.self, from: Data(#"{"withoutXSideFeatures":true}"#.utf8))
-        #expect(o.deleteFirstWithoutFeatures == false)
-        var on = InstallOptions(); on.deleteFirstWithoutFeatures = true
-        let back = try JSONDecoder().decode(InstallOptions.self, from: JSONEncoder().encode(on))
-        #expect(back.deleteFirstWithoutFeatures)
     }
 
     /// Reinstalling clears a pause: the setting the app gets says so.
@@ -1331,12 +1275,6 @@ struct PipelineChainCancellationTests {
 }
 
 /// Paused from the phone while it installs, then fails.
-private struct FailingUninstaller: Installing {
-    let log: CallLog
-    func install(app: URL, deviceID: String) async throws { await log.install(app, deviceID) }
-    func uninstall(bundleID: String, deviceID: String) async throws { throw XSideError.uninstallFailed("busy") }
-}
-
 private struct PausingInstaller: Installing {
     let library: AppLibrary
     let recordID: UUID

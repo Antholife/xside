@@ -230,7 +230,7 @@ struct InstallSheet: View {
                 // One device: the header shows the ring, the steps follow, nothing else.
                 InstallProgressView(timeline: StepTimeline(steps: steps, stage: stage, skipped: flow.skippedRunSteps), showsBar: false,
                                     activePercent: model.runPercent(flow), activeSince: model.runStepStarted(flow),
-                                    withoutXSideFeatures: flow.runWithoutXSideFeatures, deletesFirst: deletesFirst)
+                                    withoutXSideFeatures: flow.runWithoutXSideFeatures)
             case .running:
                 DeviceRunList(model: model, flow: flow, steps: steps)
             case .editing:
@@ -239,8 +239,7 @@ struct InstallSheet: View {
                 if let failure = flow.failure {
                     InstallProgressView(timeline: StepTimeline(steps: steps, stage: failure.stage, failed: true,
                                                                skipped: flow.skippedRunSteps),
-                                        failureMessage: failure.message, withoutXSideFeatures: flow.runWithoutXSideFeatures,
-                                        deletesFirst: deletesFirst)
+                                        failureMessage: failure.message, withoutXSideFeatures: flow.runWithoutXSideFeatures)
                     ExportLogsLink(model: model)
                 } else if case .editing(let error?) = flow.phase {
                     ErrorText(error)
@@ -256,7 +255,7 @@ struct InstallSheet: View {
                 } else {
                     InstallProgressView(timeline: StepTimeline(
                         steps: steps, current: flow.wifiCheck != nil ? .wifiCheck : nil, skipped: skippedSteps),
-                        withoutXSideFeatures: flow.runWithoutXSideFeatures, deletesFirst: deletesFirst)
+                        withoutXSideFeatures: flow.runWithoutXSideFeatures)
                     Label(L("install.success", flow.runs.first?.name ?? ""), systemImage: "checkmark.circle.fill")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(Color(nsColor: .systemGreen))
@@ -322,7 +321,6 @@ struct InstallSheet: View {
     }
 
     /// One device: the app is deleted there before it's installed.
-    private var deletesFirst: Bool { flow.runs.first.map { flow.deletesFirst.contains($0.deviceID) } ?? false }
 
     private func name(of deviceID: String?) -> String? {
         flow.runs.first { $0.deviceID == deviceID }?.name
@@ -879,8 +877,7 @@ private struct DeviceRunList: View {
                                      checkingWifi: flow.wifiCheck != nil && flow.wifiDeviceID == run.deviceID)
                         if case .running(let stage) = run.status {
                             InstallProgressView(timeline: StepTimeline(steps: steps, stage: stage, skipped: flow.skippedRunSteps),
-                                                withoutXSideFeatures: flow.runWithoutXSideFeatures,
-                                                deletesFirst: flow.deletesFirst.contains(run.deviceID))
+                                                withoutXSideFeatures: flow.runWithoutXSideFeatures)
                                 .padding(.leading, 28)
                         }
                     }

@@ -530,7 +530,7 @@
 "whatsNew.110.level.title" = "All, Essentials or None";
 "whatsNew.110.level.text" = "On the Mac, one choice sets how much XSide shows in an app: everything, only the alerts, or nothing (not even the first-install window).";
 "whatsNew.110.quick.title" = "Touch and hold the icon";
-"whatsNew.110.quick.text" = "Touch and hold an app's icon: XSide Settings, Refresh now, Report a problem, once the app has been opened. They take only the places the app's own actions leave (iOS shows 4).";
+"whatsNew.110.quick.text" = "Touch and hold an app's icon: XSide Settings, Refresh now, Report a problem, right from the install. They come after the app's own quick actions written in the app (iOS shows 4).";
 "whatsNew.110.phone.title" = "Refresh from the iPhone";
 "whatsNew.110.phone.text" = "Ask XSide to refresh an app from the app itself, over your local network. The channel is signed and private to each app: nobody else on the network can use it.";
 "whatsNew.110.pause.title" = "Pause from the iPhone";
@@ -690,9 +690,6 @@
 "noFeatures.whenApp" = "Applies when it's installed or next refreshed.";
 "noFeatures.whenAll" = "Applies at each app's next refresh, except apps that made their own choice.";
 "noFeatures.confirm" = "Install without XSide";
-"noFeatures.quickStay" = "iOS may keep XSide's quick actions on the icon until the app is deleted and reinstalled (or sets its own). Pressing one then just opens the app.";
-"noFeatures.deleteFirst" = "Delete the app from the device first, so they go too";
-"noFeatures.deleteFirst.note" = "The app's data on the device is lost (accounts, downloads, settings). Done once, just before its next install or refresh.";
 "settings.pane.refresh" = "Refreshing";
 "settings.pane.install" = "Installing";
 "settings.pane.inApp" = "XSide module in the apps";
@@ -709,7 +706,7 @@
 "popover.pausedDevice.expiresToday" = "Stopped from the device · expires today";
 "install.step.welcomeSkipped" = "XSide module: skipped (installed as is)";
 "install.feature.pill" = "The validity at launch, and an alert if it wasn't refreshed";
-"install.feature.quick" = "Touch and hold the icon: XSide Settings, Refresh now, Report a problem, in the places the app leaves free";
+"install.feature.quick" = "Touch and hold the icon: XSide Settings, Refresh now, Report a problem, after the app's own";
 
 "appSettings.subtitle" = "on %@";
 "appSettings.note" = "Changes reach the app at its next connection to XSide, or at its next refresh.";
@@ -741,7 +738,6 @@
 "install.feature.module" = "The XSide module, loaded by the app each time it opens";
 "install.feature.network" = "What it needs to talk to your Mac over the local network (Bonjour)";
 "install.feature.atLaunch" = "Then, in the app, the module shows";
-"install.step.deleteThenInstall" = "Deleting the app from the device, then installing";
 "build.cli.install" = "Install the command";
 "build.cli.installed" = "Command installed (in %@): type xside in the Terminal.";
 "popover.pausedAll.expired" = "All refreshes paused · expired";

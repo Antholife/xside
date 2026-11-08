@@ -233,8 +233,8 @@ private func plist(_ app: URL) throws -> [String: Any] {
         #expect(info["XSideWelcome"] == nil)
     }
 
-    /// Bonjour and the usage text; no static quick action (the library adds them as dynamic items,
-    /// final review Important 1), and no lproj folder created in the app (Important 2).
+    /// Bonjour, the usage text and XSide's three static quick actions (device feedback 3, E1), and
+    /// no lproj folder created in the app (final review Important 2).
     @Test func infoPlistGetsBonjourAndUsageWithTheDylib() async throws {
         var f = try await fixture(executable: FakeIPA.paddedMachO(padding: 256))
         f.welcomeDylib = try welcomeDylib()
@@ -242,7 +242,8 @@ private func plist(_ app: URL) throws -> [String: Any] {
         let info = try plist(app)
         #expect(info["NSBonjourServices"] as? [String] == ["_xside._tcp"])
         #expect(info["NSLocalNetworkUsageDescription"] as? String == "XSide asks your Mac to refresh this app.")
-        #expect(info["UIApplicationShortcutItems"] == nil)
+        #expect((info["UIApplicationShortcutItems"] as? [[String: Any]])?.compactMap { $0["UIApplicationShortcutItemType"] as? String }
+                == ["io.github.xside.shortcut.settings", "io.github.xside.shortcut.refresh", "io.github.xside.shortcut.report"])
         #expect(f.resigner.hasXSideLibrary(app))
         let lprojs = try FileManager.default.contentsOfDirectory(atPath: app.path).filter { $0.hasSuffix(".lproj") }
         #expect(lprojs.isEmpty)

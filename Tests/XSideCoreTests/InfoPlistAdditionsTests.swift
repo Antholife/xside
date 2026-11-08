@@ -18,21 +18,66 @@ import Foundation
         #expect(again["fr"]?["NSLocalNetworkUsageDescription"] == nil)
     }
 
-    /// Final review Important 1: XSide's quick actions are dynamic (set by the library in the slots
-    /// the app leaves, after its own dynamic ones), so the Info.plist gets none, and those of an
-    /// earlier signing are taken out. The app's own static items stay as they were.
-    @Test func noStaticShortcutItemsAreAdded() {
+    /// Device feedback 3, E1 (Anthony's ruling, reverses final review Important 1): XSide's quick
+    /// actions are static Info.plist items again, so they show from the install, after the app's
+    /// own static ones and only in the slots those leave. A re-sign replaces those of an earlier
+    /// signing instead of doubling them.
+    @Test func shortcutItemsAreAddedKeepingTheAppsOwn() {
         let theirs: [String: Any] = ["UIApplicationShortcutItemType": "com.app.search", "UIApplicationShortcutItemTitle": "Search"]
         let earlier: [String: Any] = ["UIApplicationShortcutItemType": "io.github.xside.shortcut.settings",
                                       "UIApplicationShortcutItemTitle": "io.github.xside.shortcut.settings.title"]
         var plist: [String: Any] = ["UIApplicationShortcutItems": [theirs, earlier]]
+        InfoPlistAdditions.apply(to: &plist)
+        InfoPlistAdditions.apply(to: &plist) // a re-sign doesn't duplicate
+        let items = plist["UIApplicationShortcutItems"] as? [[String: Any]] ?? []
+        #expect(items.map { $0["UIApplicationShortcutItemType"] as? String } == [
+            "com.app.search", "io.github.xside.shortcut.settings",
+            "io.github.xside.shortcut.refresh", "io.github.xside.shortcut.report"])
+        #expect(items.dropFirst().map { $0["UIApplicationShortcutItemIconSymbolName"] as? String }
+                == ["gearshape", "arrow.clockwise", "ladybug"])
+    }
+
+    /// iOS shows 4 quick actions at most: XSide fills what the app's static items leave,
+    /// "Réglages XSide" lasting longest.
+    @Test(arguments: [(0, 3), (1, 3), (2, 2), (3, 1), (4, 0), (6, 0)])
+    func onlyTheFreeSlotsAreUsed(appItems: Int, added: Int) {
+        let theirs = (0..<appItems).map { ["UIApplicationShortcutItemType": "com.app.\($0)", "UIApplicationShortcutItemTitle": "T"] }
+        var plist: [String: Any] = ["UIApplicationShortcutItems": theirs]
         let strings = InfoPlistAdditions.apply(to: &plist)
         let items = plist["UIApplicationShortcutItems"] as? [[String: Any]] ?? []
-        #expect(items.map { $0["UIApplicationShortcutItemType"] as? String } == ["com.app.search"])
-        #expect(strings.values.allSatisfy { $0.keys.allSatisfy { !$0.contains("shortcut") } })
-        var empty: [String: Any] = [:]
-        InfoPlistAdditions.apply(to: &empty)
-        #expect(empty["UIApplicationShortcutItems"] == nil)
+        let ours = items.compactMap { $0["UIApplicationShortcutItemType"] as? String }.filter { $0.hasPrefix("io.github.xside.shortcut.") }
+        #expect(ours == Array(["settings", "refresh", "report"].prefix(added)).map { "io.github.xside.shortcut.\($0)" })
+        #expect(items.count == appItems + added)
+        #expect((strings["fr"] ?? [:]).filter { $0.key != "NSLocalNetworkUsageDescription" }.count == added)
+    }
+
+    /// The titles are plain text in the installation's language (what shows when the app has no
+    /// localization: XSide adds no lproj, final review Important 2); the app's own lprojs get the
+    /// translations, keyed by that plain text as iOS looks them up.
+    @Test func shortcutTitlesArePlainTextTranslatedByKey() {
+        var plist: [String: Any] = [:]
+        let strings = InfoPlistAdditions.apply(to: &plist, language: "fr")
+        let titles = (plist["UIApplicationShortcutItems"] as? [[String: Any]] ?? []).compactMap { $0["UIApplicationShortcutItemTitle"] as? String }
+        #expect(titles == ["Réglages XSide", "Rafraîchir maintenant", "Signaler un problème"])
+        #expect(titles.map { strings["en"]?[$0] } == ["XSide Settings", "Refresh now", "Report a problem"])
+        #expect(titles.map { strings["fr"]?[$0] } == titles)
+        var english: [String: Any] = [:]
+        InfoPlistAdditions.apply(to: &english)
+        #expect((english["UIApplicationShortcutItems"] as? [[String: Any]])?.first?["UIApplicationShortcutItemTitle"] as? String == "XSide Settings")
+    }
+
+    /// Without XSide features nothing of XSide's stays: items of an earlier signing are removed.
+    @Test func removingLeavesOnlyTheAppsItems() {
+        let theirs: [String: Any] = ["UIApplicationShortcutItemType": "com.app.search"]
+        var plist: [String: Any] = ["UIApplicationShortcutItems": [theirs, ["UIApplicationShortcutItemType": "io.github.xside.shortcut.refresh"]]]
+        InfoPlistAdditions.removeShortcuts(from: &plist)
+        #expect((plist["UIApplicationShortcutItems"] as? [[String: Any]])?.count == 1)
+        var only: [String: Any] = ["UIApplicationShortcutItems": [["UIApplicationShortcutItemType": "io.github.xside.shortcut.refresh"]]]
+        InfoPlistAdditions.removeShortcuts(from: &only)
+        #expect(only["UIApplicationShortcutItems"] == nil)
+        var none: [String: Any] = [:]
+        InfoPlistAdditions.removeShortcuts(from: &none)
+        #expect(none.isEmpty)
     }
 
     /// Final review Important 2: the plain value is the text in the installation's language (it is

@@ -296,27 +296,16 @@ NSString *XSSettingsRowTable(id root) {
     return [table isKindOfClass:NSString.class] && [table length] ? table : @"Root";
 }
 
-const NSUInteger XSMaxShortcuts = 4;
-
-NSArray<NSString *> *XSShortcutNamesFitting(NSUInteger staticCount, NSUInteger appDynamicCount) {
-    NSArray *names = @[@"settings", @"refresh", @"report"];
-    NSUInteger taken = staticCount + appDynamicCount;
-    NSUInteger free = taken >= XSMaxShortcuts ? 0 : XSMaxShortcuts - taken;
-    return [names subarrayWithRange:NSMakeRange(0, MIN(free, names.count))];
-}
-
 BOOL XSIsXSideShortcutType(id type) {
     return [type isKindOfClass:NSString.class] && [type hasPrefix:@"io.github.xside.shortcut."];
 }
 
-NSUInteger XSAppStaticShortcutCount(id infoItems) {
-    if (![infoItems isKindOfClass:NSArray.class]) return 0;
-    NSUInteger count = 0;
+BOOL XSInfoHasXSideShortcut(id infoItems) {
+    if (![infoItems isKindOfClass:NSArray.class]) return NO;
     for (id item in infoItems) {
-        if (![item isKindOfClass:NSDictionary.class]) continue;
-        if (!XSIsXSideShortcutType(item[@"UIApplicationShortcutItemType"])) count++;
+        if ([item isKindOfClass:NSDictionary.class] && XSIsXSideShortcutType(item[@"UIApplicationShortcutItemType"])) return YES;
     }
-    return count;
+    return NO;
 }
 
 BOOL XSIsLate(NSTimeInterval timeLeft, NSInteger thresholdHours) {

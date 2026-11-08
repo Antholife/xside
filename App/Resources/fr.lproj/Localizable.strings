@@ -530,7 +530,7 @@
 "whatsNew.110.level.title" = "Tous, Essentiels ou Aucun";
 "whatsNew.110.level.text" = "Sur le Mac, un seul choix règle ce qu'XSide affiche dans une app : tout, seulement les alertes, ou rien (pas même la fenêtre de première installation).";
 "whatsNew.110.quick.title" = "Appui long sur l'icône";
-"whatsNew.110.quick.text" = "Appui long sur l'icône d'une app : Réglages XSide, Rafraîchir maintenant, Signaler un problème, une fois l'app ouverte. Seulement aux places que les actions de l'app laissent libres (iOS en montre 4).";
+"whatsNew.110.quick.text" = "Appui long sur l'icône d'une app : Réglages XSide, Rafraîchir maintenant, Signaler un problème, dès l'installation. Elles viennent après les actions rapides inscrites dans l'app (iOS en montre 4).";
 "whatsNew.110.phone.title" = "Rafraîchir depuis l'iPhone";
 "whatsNew.110.phone.text" = "Demande à XSide de rafraîchir une app depuis l'app elle-même, sur ton réseau local. Le canal est signé et propre à chaque app : personne d'autre sur le réseau ne peut s'en servir.";
 "whatsNew.110.pause.title" = "Mettre en pause depuis l'iPhone";
@@ -690,9 +690,6 @@
 "noFeatures.whenApp" = "S'applique à son installation ou à son prochain rafraîchissement.";
 "noFeatures.whenAll" = "S'applique au prochain rafraîchissement de chaque app, sauf celles qui ont fait leur propre choix.";
 "noFeatures.confirm" = "Installer sans XSide";
-"noFeatures.quickStay" = "iOS peut garder les actions rapides de XSide sur l'icône jusqu'à ce que l'app soit supprimée puis réinstallée (ou qu'elle définisse les siennes). En toucher une ouvre alors simplement l'app.";
-"noFeatures.deleteFirst" = "Supprimer d'abord l'app de l'appareil, pour qu'elles partent aussi";
-"noFeatures.deleteFirst.note" = "Les données de l'app sur l'appareil sont perdues (comptes, téléchargements, réglages). Fait une seule fois, juste avant sa prochaine installation ou son prochain rafraîchissement.";
 "settings.pane.refresh" = "Rafraîchissement";
 "settings.pane.install" = "Installation";
 "settings.pane.inApp" = "Module XSide dans les apps";
@@ -709,7 +706,7 @@
 "popover.pausedDevice.expiresToday" = "Arrêté depuis l'appareil · expire aujourd'hui";
 "install.step.welcomeSkipped" = "Module XSide : ignoré (installation telle quelle)";
 "install.feature.pill" = "La validité à l'ouverture, et une alerte si elle n'a pas été rafraîchie";
-"install.feature.quick" = "Appui long sur l'icône : Réglages XSide, Rafraîchir maintenant, Signaler un problème, dans les places que l'app laisse libres";
+"install.feature.quick" = "Appui long sur l'icône : Réglages XSide, Rafraîchir maintenant, Signaler un problème, après celles de l'app";
 
 "appSettings.subtitle" = "sur %@";
 "appSettings.note" = "Les changements partent vers l'app à sa prochaine connexion à XSide, ou à son prochain rafraîchissement.";
@@ -741,7 +738,6 @@
 "install.feature.module" = "Le module XSide, chargé par l'app à chaque ouverture";
 "install.feature.network" = "Ce qu'il lui faut pour parler à ton Mac par le réseau local (Bonjour)";
 "install.feature.atLaunch" = "Puis, dans l'app, le module affiche";
-"install.step.deleteThenInstall" = "Suppression de l'app de l'appareil, puis installation";
 "build.cli.install" = "Installer la commande";
 "build.cli.installed" = "Commande installée (dans %@) : tape xside dans le Terminal.";
 "popover.pausedAll.expired" = "Tous les rafraîchissements en pause · expirée";

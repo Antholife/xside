@@ -62,13 +62,6 @@ struct InAppStep: View {
         flow.draft.name.isEmpty ? flow.info?.name ?? flow.ipa.deletingPathExtension().lastPathComponent : flow.draft.name
     }
 
-    /// A checked device has the app with XSide's module: going without it may leave XSide's quick
-    /// actions on the icon, so the confirmation offers deleting the app first.
-    private var hasModule: Bool {
-        let record = model.records.first { $0.id == flow.existing?.id }
-        return record?.installations.contains { flow.deviceIDs.contains($0.deviceID) && $0.withoutXSideFeatures != true } ?? false
-    }
-
     /// The checked devices; those where the app already is show their status.
     private var lines: [DeviceSyncLine] {
         let record = model.records.first { $0.id == flow.existing?.id }
@@ -85,12 +78,10 @@ struct InAppStep: View {
                 settings: flow.inApp, appName: appName,
                 hasFeatures: Binding(get: { !flow.withoutXSideFeatures }, set: { on in
                     flow.draft.withoutXSideFeatures = !on
-                    if on { flow.draft.deleteFirstWithoutFeatures = false }
                 }),
                 edit: { change in flow.editInApp(change) },
                 statuses: flow.existing == nil ? [] : lines,
-                columns: true,
-                setDeleteFirst: hasModule ? { flow.draft.deleteFirstWithoutFeatures = $0 } : nil)
+                columns: true)
         }
     }
 }

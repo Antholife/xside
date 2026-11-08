@@ -18,14 +18,6 @@ public struct InstallOptions: Codable, Equatable, Sendable {
     /// made no choice and follows the Mac's default (see `resolvedWithoutXSideFeatures`), which
     /// the pipeline resolves before signing.
     public var withoutXSideFeatures: Bool?
-    /// Opted in when confirming "without XSide features" (default off): an installation that had
-    /// XSide's module is deleted from the device before it's installed without it, because XSide's
-    /// quick actions are dynamic items iOS keeps across an update and nothing would be left in the
-    /// app to remove them. Deleting loses the app's data on the device, hence the explicit opt-in.
-    /// Not used by the resigner; the pipeline applies it once per installation (see
-    /// `SideloadPipeline.deletesFirst`).
-    public var deleteFirstWithoutFeatures: Bool = false
-
     public init(displayName: String? = nil, customBundleID: String? = nil, version: String? = nil,
                 iconPath: String? = nil, fileSharing: Bool = false, iPadFullScreen: Bool = false,
                 proMotion: Bool = false, minimumOSVersion: String? = nil, shareKeychain: Bool = false,
@@ -55,7 +47,6 @@ public struct InstallOptions: Codable, Equatable, Sendable {
         minimumOSVersion = try c.decodeIfPresent(String.self, forKey: .minimumOSVersion)
         shareKeychain = try c.decodeIfPresent(Bool.self, forKey: .shareKeychain) ?? false
         withoutXSideFeatures = try c.decodeIfPresent(Bool.self, forKey: .withoutXSideFeatures)
-        deleteFirstWithoutFeatures = try c.decodeIfPresent(Bool.self, forKey: .deleteFirstWithoutFeatures) ?? false
     }
 }
 
@@ -405,6 +396,7 @@ public struct Resigner: Sendable {
         plist["XSideWelcome"] = nil
         if let payload { plist["XSideWelcome"] = payload.plist }
         let strings = features ? InfoPlistAdditions.apply(to: &plist, language: language) : [:]
+        if !features { InfoPlistAdditions.removeShortcuts(from: &plist) }
         try write(plist, format: format, to: url)
         // Never fails the install: untranslated texts are the worst outcome. Only the app's own
         // lprojs get them (no folder created: final review Important 2).

@@ -2,14 +2,13 @@
 
 #import "XSCommon.h"
 
-/// Wraps the app's quick-action entry points and its setShortcutItems:, in an app XSide signed
-/// with its features.
+/// Wraps the app's quick-action entry points, when XSide added quick actions to the app.
 /// Called from the library's constructor, before UIApplicationMain sets the delegates.
 void XSInstallShortcuts(void);
 
-/// XSide's quick actions are on the app's icon now (none when the app's own items take the 4 slots).
+/// XSide added quick actions to this app's icon (none when the app already had 4).
 BOOL XSHasShortcuts(void);
 
-/// Puts XSide's quick actions in the slots the app's own items leave, in the current language
-/// (at launch and on each return: the app may have changed its items, the person the language).
-void XSUpdateShortcuts(void);
+/// Takes out the dynamic items an earlier build of XSide set (iOS keeps dynamic items across
+/// updates, and XSide's are static now: they would show twice). The app's own items are kept.
+void XSRemoveLeftoverShortcuts(void);

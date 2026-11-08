@@ -16,7 +16,6 @@ struct InstallProgressView: View {
     var withoutXSideFeatures = false
     /// The app is deleted from the device before it's installed (the module goes, opted in): the
     /// install step says so.
-    var deletesFirst = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -45,7 +44,7 @@ struct InstallProgressView: View {
             HStack(spacing: 8) {
                 indicator(status)
                     .frame(width: 16, height: 16)
-                Text(step.label(withoutXSideFeatures: withoutXSideFeatures, deletesFirst: deletesFirst))
+                Text(step.label(withoutXSideFeatures: withoutXSideFeatures))
                     .font(.system(size: 13, weight: status == .active || status == .waiting || status == .failed ? .semibold : .regular))
                     .foregroundStyle(titleStyle(status))
                     .lineLimit(2)
@@ -97,7 +96,7 @@ struct InstallProgressView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(L("install.progress.accessibility", index, timeline.total,
-                              step.label(withoutXSideFeatures: withoutXSideFeatures, deletesFirst: deletesFirst), status.label))
+                              step.label(withoutXSideFeatures: withoutXSideFeatures), status.label))
     }
 
     private func titleStyle(_ status: StepStatus) -> HierarchicalShapeStyle {
@@ -135,13 +134,13 @@ private struct XSideFeaturesList: View {
         ("puzzlepiece.extension.fill", "install.feature.module"),
         ("gearshape.fill", "install.feature.settings"),
         ("wifi", "install.feature.network"),
+        ("hand.tap.fill", "install.feature.quick"),
     ]
     private static let atLaunch: [(symbol: String, key: String)] = [
         ("rectangle.portrait.bottomhalf.inset.filled", "install.feature.sheet"),
         ("rectangle.topthird.inset.filled", "install.feature.pill"),
         ("rectangle.bottomthird.inset.filled", "install.feature.banner"),
         ("bell.badge.fill", "install.feature.reminder"),
-        ("hand.tap.fill", "install.feature.quick"),
     ]
 
     var body: some View {
@@ -204,11 +203,9 @@ extension ProgressStep {
         }
     }
 
-    /// The module step says it's skipped when the app goes without XSide's features; the install
-    /// step says when the app is deleted from the device first.
-    func label(withoutXSideFeatures: Bool, deletesFirst: Bool = false) -> String {
+    /// The module step says it's skipped when the app goes without XSide's features.
+    func label(withoutXSideFeatures: Bool) -> String {
         if self == .welcome && withoutXSideFeatures { return L("install.step.welcomeSkipped") }
-        if self == .installing && deletesFirst { return L("install.step.deleteThenInstall") }
         return label
     }
 }

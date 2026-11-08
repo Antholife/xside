@@ -664,7 +664,7 @@ private struct InAppDefaultsPage: View {
             }
         }
         .sheet(isPresented: $confirmingNoFeatures) {
-            NoFeaturesConfirmation(appName: nil) { _ in withoutFeatures = true }
+            NoFeaturesConfirmation(appName: nil) { withoutFeatures = true }
         }
     }
 

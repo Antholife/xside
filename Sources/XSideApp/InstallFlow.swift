@@ -85,9 +85,6 @@ final class InstallFlow {
     /// The steps the last run passes over: the module step when the app goes without XSide's
     /// features (shown as skipped, not ticked: device feedback round 2, M4).
     var skippedRunSteps: Set<ProgressStep> { runWithoutXSideFeatures ? [.welcome] : [] }
-    /// Devices where the last run deletes the app before installing it (the module goes and the
-    /// person chose to delete it first), judged when the run started: the install step says so.
-    var deletesFirst: Set<String> = []
     /// Record this `.ipa` was imported into during this flow: later devices install it as is.
     var importedRecordID: UUID?
 
@@ -238,8 +235,6 @@ struct OptionsDraft: Equatable {
     var minOS = ""
     /// The app's own choice (nil: the Mac's default), see `InstallOptions.withoutXSideFeatures`.
     var withoutXSideFeatures: Bool?
-    /// See `InstallOptions.deleteFirstWithoutFeatures`.
-    var deleteFirstWithoutFeatures = false
 
     init() {}
 
@@ -254,7 +249,6 @@ struct OptionsDraft: Equatable {
         shareKeychain = o.shareKeychain
         minOS = o.minimumOSVersion ?? ""
         withoutXSideFeatures = o.withoutXSideFeatures
-        deleteFirstWithoutFeatures = o.deleteFirstWithoutFeatures
     }
 
     var options: InstallOptions {
@@ -262,12 +256,10 @@ struct OptionsDraft: Equatable {
             let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
             return t.isEmpty ? nil : t
         }
-        var o = InstallOptions(displayName: clean(name), customBundleID: clean(bundleID), version: clean(version),
+        return InstallOptions(displayName: clean(name), customBundleID: clean(bundleID), version: clean(version),
                                iconPath: iconPath, fileSharing: fileSharing, iPadFullScreen: iPadFullScreen,
                                proMotion: proMotion, minimumOSVersion: clean(minOS), shareKeychain: shareKeychain,
                                withoutXSideFeatures: withoutXSideFeatures)
-        o.deleteFirstWithoutFeatures = deleteFirstWithoutFeatures
-        return o
     }
 }
 

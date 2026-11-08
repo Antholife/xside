@@ -316,18 +316,14 @@ int main(int argc, const char *argv[]) {
         check(!XSShouldPoll(NO, YES, nil, at(0), NO) && !XSShouldPoll(YES, NO, nil, at(0), NO),
               @"poll: never without the channel or before the local network was allowed");
 
-        // Final review Important 1: XSide's quick actions are dynamic and only take the slots the
-        // app leaves (iOS shows 4: the app's static ones, then its dynamic ones).
-        check([XSShortcutNamesFitting(0, 0) isEqual:(@[@"settings", @"refresh", @"report"])], @"quick actions: all three in an empty menu");
-        check([XSShortcutNamesFitting(0, 3) isEqual:@[@"settings"]] && [XSShortcutNamesFitting(2, 0) isEqual:(@[@"settings", @"refresh"])] && [XSShortcutNamesFitting(1, 1) isEqual:(@[@"settings", @"refresh"])]
-              && XSShortcutNamesFitting(0, 4).count == 0 && XSShortcutNamesFitting(3, 1).count == 0
-              && XSShortcutNamesFitting(4, 3).count == 0, @"quick actions: only the slots the app's static and dynamic items leave");
+        // Device feedback 3, E1: XSide's quick actions are static Info.plist items again (written
+        // on the Mac); the library only handles them, and finds them in the Info.plist.
         check(XSIsXSideShortcutType(@"io.github.xside.shortcut.refresh") && !XSIsXSideShortcutType(@"com.app.search")
               && !XSIsXSideShortcutType(nil) && !XSIsXSideShortcutType(@3), @"quick actions: XSide's types");
-        id infoItems = @[@{@"UIApplicationShortcutItemType": @"com.app.new"}, @{@"UIApplicationShortcutItemType": @"io.github.xside.shortcut.settings"},
-                         @"junk", @{@"UIApplicationShortcutItemType": @"com.app.search"}];
-        check(XSAppStaticShortcutCount(infoItems) == 2 && XSAppStaticShortcutCount(nil) == 0 && XSAppStaticShortcutCount(@"x") == 0,
-              @"quick actions: the app's static items counted, XSide's left out");
+        id infoItems = @[@{@"UIApplicationShortcutItemType": @"com.app.new"}, @"junk",
+                         @{@"UIApplicationShortcutItemType": @"io.github.xside.shortcut.settings"}];
+        check(XSInfoHasXSideShortcut(infoItems) && !XSInfoHasXSideShortcut(@[@{@"UIApplicationShortcutItemType": @"com.app.new"}])
+              && !XSInfoHasXSideShortcut(nil) && !XSInfoHasXSideShortcut(@"x"), @"quick actions: XSide's found in the Info.plist items");
 
         // JSON round trip of the settings.
         check(sameSettings(XSSettingsFromJSONObject(XSSettingsJSONObject(fixtureSettings())) ?: @{}, fixtureSettings()),
