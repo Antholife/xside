@@ -154,7 +154,9 @@ struct SettingsView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(width: 900, height: height)
+        // Mes apps has three columns: wider, so its list and the app's settings both fit (device
+        // feedback 5, G2).
+        .frame(width: model.settingsPane == .apps ? 990 : 900, height: height)
         .environment(\.reportPaneHeight) { [pane = model.settingsPane] part, value in
             // Small moves (a hover, a line wrapping differently) don't resize the window.
             if abs((paneHeights[pane]?[part] ?? 0) - value) >= 2 { paneHeights[pane, default: [:]][part] = value }

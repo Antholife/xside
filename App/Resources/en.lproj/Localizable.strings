@@ -12,6 +12,7 @@
 "popover.installCard.accessibility" = "%1$@, %2$@, %3$ld%%";
 "popover.settings" = "Settings";
 "popover.myApps" = "My apps";
+"popover.myApps.help" = "Open Settings > My apps";
 "popover.quit" = "Quit";
 "popover.appIDsRemaining" = "~%d/10 App IDs free this week";
 "popover.unreachableHint" = "Not found on this network: plug it in with USB or join the same Wi-Fi as this Mac.";
@@ -753,6 +754,14 @@
 "popover.pausedAll.expired" = "All refreshes paused · expired";
 "popover.pausedAll.expiresToday" = "All refreshes paused · expires today";
 "appSettings.device" = "Device";
+"appSettings.appsOnDevice" = "Apps on this device";
+"appSettings.deviceItem" = "%1$@ (%2$ld)";
+"appSettings.appCount.one" = "1 app";
+"appSettings.appCount" = "%ld apps";
+"appSettings.row.version" = "v%@";
+"appSettings.row.expiresIn" = "Expires in %ld d";
+"appSettings.row.expiresToday" = "Expires today";
+"appSettings.row.paused" = "Paused";
 "appSettings.perDevice" = "Installed on %ld devices: each has its own module settings. “XSide features” applies to the app on all of them.";
 "whatsNew.110.live.title" = "Live while the app is open";
 "whatsNew.110.live.text" = "A setting changed on the Mac, or a pause, reaches the open app at once, without relaunching it, in a single bar that says what changed (\"automatic refresh turned back on from XSide on your Mac\"). The app keeps a signed connection to XSide while it is on screen, and closes it when you leave it.";

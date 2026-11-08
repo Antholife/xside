@@ -154,6 +154,15 @@ private struct PopoverContent: View {
                 Placeholder(symbol: "iphone.slash", text: L("popover.noDevice"))
             }
         } else {
+            // Settings > Mes apps directly (device feedback 3, E9), on the app and device last
+            // shown there (else the first device's first app). Heads the list it manages, so the
+            // footer keeps its earlier buttons and the version on one line (feedback 5, G1).
+            MyAppsHeader {
+                model.settingsPane = .apps
+                dismiss()
+                NSApp.activate()
+                openSettings()
+            }
             ForEach(groups) { group in
                 VStack(alignment: .leading, spacing: 2) {
                     DeviceCard(group: group,
@@ -502,14 +511,6 @@ private struct PopoverFooter: View {
                         NSApp.activate()
                         openSettings()
                     }
-                    // Settings > Mes apps directly (device feedback 3, E9), on the app and device
-                    // last shown there (else the first device's first app).
-                    IconTile(symbol: "square.grid.2x2.fill", help: L("popover.myApps")) {
-                        model.settingsPane = .apps
-                        dismiss()
-                        NSApp.activate()
-                        openSettings()
-                    }
                     IconTile(symbol: "sparkles", help: L("whatsNew.window")) {
                         dismiss()
                         openWindow.presentWhatsNew()
@@ -576,6 +577,39 @@ private struct AppIDStrip: View {
         }
         .padding(.horizontal, 4)
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// The device list's heading, "Mes apps ›": opens Settings > Mes apps (device feedback 5, G1).
+private struct MyAppsHeader: View {
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: "square.grid.2x2.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                Text(L("popover.myApps"))
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .bold))
+                    .opacity(isHovering ? 1 : 0.6)
+            }
+            .foregroundStyle(isHovering ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(.secondary))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(isHovering ? AnyShapeStyle(Theme.violet.opacity(0.14)) : AnyShapeStyle(Color.clear)))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .hoverBubble(L("popover.myApps.help"), alignment: .leading, below: true)
+        .accessibilityLabel(L("popover.myApps.help"))
+        .animation(.easeOut(duration: 0.12), value: isHovering)
+        .padding(.leading, 2)
+        .padding(.bottom, -4)
     }
 }
 

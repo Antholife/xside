@@ -12,6 +12,7 @@
 "popover.installCard.accessibility" = "%1$@, %2$@, %3$ld %%";
 "popover.settings" = "Réglages";
 "popover.myApps" = "Mes apps";
+"popover.myApps.help" = "Ouvrir Réglages > Mes apps";
 "popover.quit" = "Quitter";
 "popover.appIDsRemaining" = "~%d/10 App ID libres cette semaine";
 "popover.unreachableHint" = "Introuvable sur ce réseau : branche-le en USB ou connecte-le au même Wi-Fi que ce Mac.";
@@ -753,6 +754,14 @@
 "popover.pausedAll.expired" = "Tous les rafraîchissements en pause · expirée";
 "popover.pausedAll.expiresToday" = "Tous les rafraîchissements en pause · expire aujourd'hui";
 "appSettings.device" = "Appareil";
+"appSettings.appsOnDevice" = "Apps sur cet appareil";
+"appSettings.deviceItem" = "%1$@ (%2$ld)";
+"appSettings.appCount.one" = "1 app";
+"appSettings.appCount" = "%ld apps";
+"appSettings.row.version" = "v%@";
+"appSettings.row.expiresIn" = "Expire dans %ld j";
+"appSettings.row.expiresToday" = "Expire aujourd'hui";
+"appSettings.row.paused" = "En pause";
 "appSettings.perDevice" = "Installée sur %ld appareils : chacun a ses propres réglages du module. « Fonctionnalités XSide » vaut pour l'app sur tous.";
 "whatsNew.110.live.title" = "En direct, app ouverte";
 "whatsNew.110.live.text" = "Un réglage changé sur le Mac, ou une pause, arrive aussitôt dans l'app ouverte, sans la relancer, avec une seule bulle qui dit ce qui a changé (« rafraîchissement automatique réactivé depuis XSide sur ton Mac »). L'app garde une connexion signée avec XSide tant qu'elle est à l'écran, et la ferme quand tu la quittes.";

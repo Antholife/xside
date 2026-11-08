@@ -2,10 +2,11 @@ import SwiftUI
 import XSideCore
 
 /// Settings > Mes apps: the device first, then its apps, then the selected app's XSide module
-/// options on the right (device feedback 3, E6: settings belong to each installation, an app on a
+/// options on the right (device feedback 3, E6, laid out again in feedback 5, G2: a device card
+/// that opens a menu of the devices, then the device's apps with version and validity; settings belong to each installation, an app on a
 /// device, so the device is picked first; the per-device tabs on the right are gone). Whether the
 /// app gets XSide's features at all is the app's, the same on every device. The "…" menu of a row
-/// in the panel, and the panel's "Mes apps" button, open this page on that app and device
+/// in the panel, and the "Mes apps" heading of the panel's list, open this page on that app and device
 /// (`AppModel.settingsApp`). Changes are stamped by the Mac and reach the app at its next
 /// check-in or signing; "Rafraîchissement automatique" pauses or resumes it right away.
 struct AppsSettingsPage: View {
@@ -40,11 +41,18 @@ struct AppsSettingsPage: View {
             let group = groups.first { $0.id == entry?.installation.deviceID } ?? groups[0]
             HStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 0) {
-                    devicePicker(groups, current: group, entry: entry)
-                        .padding([.horizontal, .top], 10)
+                    DeviceChooser(groups: groups, current: group) { picked in
+                        guard let first = picked.apps.first else { return }
+                        // The same app on that device when it has it, else its first.
+                        model.settingsApp = (picked.apps.first { $0.record.id == entry?.record.id } ?? first).id
+                    }
+                    .padding([.horizontal, .top], 12)
+                    .padding(.bottom, 4)
                     appList(group, selected: entry)
                 }
-                .frame(width: 210)
+                .frame(width: Self.listWidth)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .background(.background.secondary.opacity(0.5))
                 Divider()
                 if let entry {
                     AppSettingsContent(model: model, entry: entry)
@@ -55,52 +63,129 @@ struct AppsSettingsPage: View {
         }
     }
 
-    /// The devices: segmented up to three, a menu beyond; the device's name alone when it's the only one.
-    @ViewBuilder private func devicePicker(_ groups: [DeviceGroup], current: DeviceGroup, entry: AppEntry?) -> some View {
-        if groups.count == 1 {
-            Label(current.name, systemImage: (current.kind == .iPad ? "ipad" : "iphone"))
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-        } else {
-            let binding = Binding(get: { current.id }, set: { id in
-                guard let group = groups.first(where: { $0.id == id }), let first = group.apps.first else { return }
-                // The same app on that device when it has it, else its first.
-                model.settingsApp = (group.apps.first { $0.record.id == entry?.record.id } ?? first).id
-            })
-            if groups.count <= 3 {
-                Picker(L("appSettings.device"), selection: binding) {
-                    ForEach(groups) { Text($0.name).tag($0.id) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-            } else {
-                Picker(L("appSettings.device"), selection: binding) {
-                    ForEach(groups) { Label($0.name, systemImage: ($0.kind == .iPad ? "ipad" : "iphone")).tag($0.id) }
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-            }
-        }
-    }
+    /// The middle column: wide enough for "iPhone Duo de Anthony" on one line beside its icon
+    /// (device feedback 5, G2). `SettingsView` widens the window on this page to fit it.
+    static let listWidth: CGFloat = 260
 
     private func appList(_ group: DeviceGroup, selected: AppEntry?) -> some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 2) {
+                Text(L("appSettings.appsOnDevice"))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.top, 8)
+                    .padding(.bottom, 4)
                 ForEach(group.apps) { entry in
                     AppListRow(model: model, entry: entry, isSelected: entry.id == selected?.id) {
                         model.settingsApp = entry.id
                     }
                 }
             }
-            .padding(10)
-            .reportsPaneHeight("list", adding: 40) // the device picker above
+            .padding(.horizontal, 12)
+            .padding(.bottom, 12)
+            .reportsPaneHeight("list", adding: 84) // the device chooser above
         }
         .scrollBounceBehavior(.basedOnSize)
     }
 }
 
-/// One app of the device: icon and name.
+/// The device whose apps are listed: a card with its icon, full name and app count. With several
+/// devices it opens a menu of them (device feedback 5, G2: the segmented control clipped long
+/// names and overflowed its column).
+private struct DeviceChooser: View {
+    let groups: [DeviceGroup]
+    let current: DeviceGroup
+    let choose: (DeviceGroup) -> Void
+
+    var body: some View {
+        if groups.count == 1 {
+            DeviceChooserLabel(group: current, isMenu: false)
+                .accessibilityElement(children: .combine)
+        } else {
+            Menu {
+                ForEach(groups) { group in
+                    Button {
+                        choose(group)
+                    } label: {
+                        // A checkmark on the device shown, its icon on the others.
+                        Label(L("appSettings.deviceItem", group.name, group.apps.count),
+                              systemImage: group.id == current.id ? "checkmark" : symbol(group))
+                    }
+                }
+            } label: {
+                DeviceChooserLabel(group: current, isMenu: true)
+            }
+            .menuStyle(.button)
+            .buttonStyle(DeviceChooserStyle())
+            .menuIndicator(.hidden)
+            .accessibilityLabel(L("appSettings.device"))
+            .accessibilityValue(current.name)
+        }
+    }
+
+    private func symbol(_ group: DeviceGroup) -> String { group.kind == .iPad ? "ipad" : "iphone" }
+}
+
+private struct DeviceChooserLabel: View {
+    let group: DeviceGroup
+    let isMenu: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: group.kind == .iPad ? "ipad" : "iphone")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 28, height: 28)
+                .background(Theme.brand, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(group.name)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(L(group.apps.count == 1 ? "appSettings.appCount.one" : "appSettings.appCount", group.apps.count))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            if isMenu {
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
+    }
+}
+
+/// The chooser card's hover and press, like the panel's tiles.
+private struct DeviceChooserStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        DeviceChooserBody(configuration: configuration)
+    }
+}
+
+private struct DeviceChooserBody: View {
+    let configuration: ButtonStyleConfiguration
+    @State private var isHovering = false
+
+    var body: some View {
+        configuration.label
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Theme.violet.opacity(isHovering ? 0.08 : 0)).allowsHitTesting(false))
+            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .onHover { isHovering = $0 }
+            .animation(.easeOut(duration: 0.12), value: isHovering)
+    }
+}
+
+/// One app of the device: icon, name, version and validity, and a badge while it's paused.
 private struct AppListRow: View {
     let model: AppModel
     let entry: AppEntry
@@ -108,19 +193,48 @@ private struct AppListRow: View {
     let action: () -> Void
     @State private var isHovering = false
 
+    private var caption: String {
+        let validity = Validity(expiresAt: entry.installation.expiresAt, now: Date())
+        let expiry = validity.isExpired ? L("popover.expired")
+            : Calendar.current.isDateInToday(validity.expiresAt) ? L("appSettings.row.expiresToday")
+            : L("appSettings.row.expiresIn", validity.daysLeft)
+        let version = entry.installation.appVersion ?? entry.record.options.version ?? entry.record.version
+        return version.map { L("appSettings.row.version", $0) + " · " + expiry } ?? expiry
+    }
+
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 9) {
-                AppIconView(icon: model.icons.image(for: entry.record), isPaused: entry.installation.refreshPaused, size: 24)
-                Text(entry.record.options.displayName ?? entry.record.displayName)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
+            HStack(spacing: 10) {
+                AppIconView(icon: model.icons.image(for: entry.record), isPaused: entry.installation.refreshPaused, size: 30)
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(entry.record.options.displayName ?? entry.record.displayName)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                        // Beside the name: the caption keeps the row's width.
+                        if entry.installation.refreshPaused {
+                            Text(L("appSettings.row.paused"))
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(Color(nsColor: .systemOrange))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 1)
+                                .background(Color(nsColor: .systemOrange).opacity(0.15), in: Capsule())
+                                .fixedSize()
+                        }
+                    }
+                    Text(caption)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
+            .padding(.vertical, 6)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(isSelected ? AnyShapeStyle(Theme.violet.opacity(0.28))
                                  : isHovering ? AnyShapeStyle(Theme.hoverFill) : AnyShapeStyle(.clear)))
             .contentShape(Rectangle())
