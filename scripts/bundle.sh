@@ -22,6 +22,28 @@ cp "$BIN" "$APP/Contents/MacOS/XSide"
 # "XSide" are the same name on a case-insensitive disk.
 mkdir -p "$APP/Contents/Helpers"
 cp "$BIN_DIR/xside" "$APP/Contents/Helpers/xside"
+# Third-party components built from pinned source (scripts/*.env, scripts/fetch-pinned.sh). Each adds
+# a section to Acknowledgements.txt: "<name> <tag> (<short SHA>) <repo URL>", then its LICENSE verbatim.
+ACK="$APP/Contents/Resources/Acknowledgements.txt"
+: > "$ACK"
+# zstd: the decompression-only helper for .deb members and repo indexes.
+. scripts/zstd.env
+UNZSTD_STATUS=0
+scripts/build-unzstd.sh >/dev/null || UNZSTD_STATUS=$?
+if [ "$UNZSTD_STATUS" = 0 ]; then
+    cp build/zstd/xside-unzstd "$APP/Contents/Helpers/xside-unzstd"
+    {
+        echo "zstd $ZSTD_TAG (${ZSTD_COMMIT:0:7}) ${ZSTD_REPO%.git}"
+        echo
+        cat build/zstd-src/LICENSE
+        [ -f build/zstd-src/NOTICE ] && { echo; cat build/zstd-src/NOTICE; }
+        echo
+    } >> "$ACK"
+elif [ "$UNZSTD_STATUS" = 3 ]; then
+    echo "warning: building without the zstd helper (no source); release.sh will refuse this build" >&2
+else
+    exit "$UNZSTD_STATUS"
+fi
 cp App/Info.plist "$APP/Contents/Info.plist"
 # The debug bundle gets its own identity: its defaults, notifications and permissions stay apart
 # from the release app's.
@@ -107,6 +129,7 @@ for helper in "$SPARKLE"/Versions/B/XPCServices/*.xpc "$SPARKLE"/Versions/B/Auto
 done
 codesign -s - --force "${SIGN_OPTIONS[@]+"${SIGN_OPTIONS[@]}"}" "$SPARKLE"
 codesign -s - --force "${SIGN_OPTIONS[@]+"${SIGN_OPTIONS[@]}"}" "$APP/Contents/Helpers/xside"
+[ -f "$APP/Contents/Helpers/xside-unzstd" ] && codesign -s - --force "${SIGN_OPTIONS[@]+"${SIGN_OPTIONS[@]}"}" "$APP/Contents/Helpers/xside-unzstd"
 codesign -s - --force "${SIGN_OPTIONS[@]+"${SIGN_OPTIONS[@]}"}" --entitlements App/XSide.entitlements "$APP"
 plutil -lint "$APP/Contents/Info.plist"
 codesign --verify --deep --strict "$APP"

@@ -47,6 +47,14 @@ done
 # CloudKit weakly linked: hooked before the app runs, even in an app that doesn't link it.
 otool -l "$ICLOUD" | grep -A2 LC_LOAD_WEAK_DYLIB | grep -q '/CloudKit.framework/CloudKit' \
     || { echo "$ICLOUD doesn't link CloudKit weakly" >&2; exit 1; }
+# The zstd decoder (.deb members, repo indexes): both architectures, and its BSD licence shipped.
+UNZSTD="$APP/Contents/Helpers/xside-unzstd"
+[ -f "$UNZSTD" ] || { echo "No $UNZSTD (zstd source missing?): not releasing without it" >&2; exit 1; }
+[ "$(lipo -archs "$UNZSTD" 2>/dev/null | tr ' ' '\n' | sort | tr '\n' ' ')" = "arm64 x86_64 " ] \
+    || { echo "$UNZSTD is not an x86_64 + arm64 binary" >&2; exit 1; }
+grep -q "^zstd v" "$APP/Contents/Resources/Acknowledgements.txt" 2>/dev/null \
+    && grep -q "BSD License" "$APP/Contents/Resources/Acknowledgements.txt" \
+    || { echo "Acknowledgements.txt has no zstd section: not releasing without it" >&2; exit 1; }
 ZIP="build/release/XSide-$TAG.zip"
 mkdir -p build/release
 rm -f "$ZIP"
