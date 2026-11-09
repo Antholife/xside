@@ -108,11 +108,10 @@ enum SnapshotRenderer {
                     if suffix == "-shared" {
                         model.dependencyErrors = ["com.opa334.altlist": L("deps.error.notFound.github", "AltList")]
                     }
-                    render(VStack(alignment: .leading, spacing: 14) {
-                        StepBar(flow: step)
-                        InstallTweaksSection(model: model, flow: step)
-                    }
-                    .padding(20).frame(width: InstallWindow.width).background(Color(nsColor: .windowBackgroundColor)),
+                    // The whole window: the footer says why « Suivant » waits (device round 2, items 3 and 6).
+                    step.phase = .editing(error: nil)
+                    render(InstallSheet(model: model, flow: step, close: {})
+                        .frame(width: InstallWindow.width).background(Color(nsColor: .windowBackgroundColor)),
                            dark: dark, to: out.appendingPathComponent("tweaks\(suffix)-\(language)-\(scheme).png"))
                 }
                 let empty = sample.flow()
@@ -132,6 +131,25 @@ enum SnapshotRenderer {
                 }, remove: { _ in }, removeUnused: {}, done: {})
                     .background(Color(nsColor: .windowBackgroundColor)),
                        dark: dark, to: out.appendingPathComponent("downloads-\(language)-\(scheme).png"))
+                // Settings > Tweaks: every app's downloads, on their own page (device round 2, item 8).
+                model.downloadUsage = sample.downloads
+                model.settingsPane = .tweaks
+                render(SettingsView(model: model).background(Color(nsColor: .windowBackgroundColor)),
+                       dark: dark, to: out.appendingPathComponent("settings-tweaks-\(language)-\(scheme).png"))
+                model.settingsPane = .apps
+                // The menu-bar icon: plain, then with its red dot (device round 2, item 13).
+                if let glyph = MenuBarLabel.glyph {
+                    render(HStack(spacing: 24) {
+                        Image(nsImage: glyph).resizable().frame(width: 72, height: 72)
+                        Image(nsImage: MenuBarLabel.badged(glyph)).resizable().frame(width: 72, height: 72)
+                        Text(model.attentionDescription).font(.system(size: 12)).frame(width: 260, alignment: .leading)
+                    }
+                    .padding(20).background(Color(nsColor: .windowBackgroundColor)),
+                           dark: dark, to: out.appendingPathComponent("menubar-badge-\(language)-\(scheme).png"))
+                }
+                // The panel's hover bubbles where they land (device round 2, items 11 and 14).
+                render(bubbles.background(Color(nsColor: .windowBackgroundColor)),
+                       dark: dark, to: out.appendingPathComponent("panel-bubbles-\(language)-\(scheme).png"))
                 // One device, no tweak: « Aucun ».
                 let single = sample.flow()
                 single.deviceIDs = [sample.deviceIDs[1]]
@@ -144,6 +162,43 @@ enum SnapshotRenderer {
         }
         print("snapshots written to \(out.path)")
         return 0
+    }
+
+    /// The panel's tiles as outlines and each one's bubble where `PanelBubble` puts it: « Tout
+    /// rafraîchir » below its tile, the footer's above theirs, all inside the 340 pt panel.
+    @MainActor private static var bubbles: some View {
+        let tiles: [(String, CGRect, HorizontalAlignment, Bool)] = [
+            (L("popover.tile.refreshAll.help", 3), CGRect(x: 96, y: 12, width: 76, height: 54), .trailing, true),
+            (L("popover.settings"), CGRect(x: 12, y: 150, width: 32, height: 28), .leading, false),
+            (L("whatsNew.window"), CGRect(x: 50, y: 150, width: 32, height: 28), .center, false),
+            (L("settings.github"), CGRect(x: 88, y: 150, width: 32, height: 28), .center, false),
+            (L("popover.reportBug"), CGRect(x: 126, y: 150, width: 32, height: 28), .center, false),
+            (L("popover.about"), CGRect(x: 164, y: 150, width: 32, height: 28), .center, false),
+            (L("popover.quit"), CGRect(x: 296, y: 150, width: 32, height: 28), .trailing, false),
+        ]
+        return VStack(spacing: 12) {
+            ForEach(Array(tiles.enumerated()), id: \.offset) { _, tile in
+                let (text, rect, alignment, below) = tile
+                ZStack(alignment: .topLeading) {
+                    Rectangle().strokeBorder(Color.secondary.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                        .frame(width: PanelBubble.panelWidth, height: 110)
+                    RoundedRectangle(cornerRadius: 8).fill(Theme.violet.opacity(0.25))
+                        .frame(width: rect.width, height: 28)
+                        .offset(x: rect.minX, y: below ? 10 : 70)
+                    PanelBubble.label(text)
+                        .fixedSize()
+                        .alignmentGuide(.leading) { d in
+                            let desired: CGFloat = alignment == .leading ? rect.minX
+                                : alignment == .trailing ? rect.maxX - d.width : rect.midX - d.width / 2
+                            return -(desired + PanelBubble.shift(text, anchor: rect, alignment: alignment))
+                        }
+                        .offset(y: below ? 44 : 30)
+                }
+                .frame(width: PanelBubble.panelWidth, height: 110, alignment: .topLeading)
+                .clipped()
+            }
+        }
+        .padding(20)
     }
 
     /// The Duo option: recommended (own scene delegate), not a Duo, already compatible, recommended
@@ -270,11 +325,11 @@ enum SnapshotRenderer {
                 draft(Self.tweak(4, "Rocket for Instagram", version: "2.4", author: "Rocket", bundles: [app],
                                  depends: [[DebDependency(package: "ws.hbang.common", relation: ">=", version: "1.11")],
                                            [DebDependency(package: "libroot")], [altlistNeed]]),
-                      on: [], [iPhone: .compatible, iPad: .compatible]),
+                      on: both, [iPhone: .compatible, iPad: .compatible]),
                 draft(Self.tweak(5, "ReelsBlock", version: "1.0", author: "Nora", bundles: ["com.burbn.instagram"]),
-                      on: [iPhone], [iPhone: .incompatible(.madeForAnotherApp(["com.burbn.instagram"])),
-                                     iPad: .incompatible(.madeForAnotherApp(["com.burbn.instagram"]))],
-                      forced: [iPhone: .compatible, iPad: .compatible], force: [iPhone]),
+                      on: [], [iPhone: .incompatible(.madeForAnotherApp(["com.burbn.instagram"])),
+                               iPad: .incompatible(.madeForAnotherApp(["com.burbn.instagram"]))],
+                      forced: [iPhone: .compatible, iPad: .compatible]),
                 draft(Self.tweak(6, "Spotlight Shortcuts", version: "2.0", author: nil, bundles: ["com.apple.springboard"]),
                       on: [], [iPhone: .incompatible(.needsJailbreak("com.apple.springboard")),
                                iPad: .incompatible(.needsJailbreak("com.apple.springboard"))]),
@@ -341,9 +396,13 @@ enum SnapshotRenderer {
             let other = Self.tweak(12, "Shorts Remover", version: "2.0", author: nil, bundles: ["com.google.ios.youtube"])
             let lib = Self.tweak(13, "Alderis", version: "1.2", author: "hbang", bundles: nil, entry: false)
             let added = Self.tweak(14, "YouPiP", version: "1.8", author: "PoomSmart", bundles: [video.originalBundleID])
-            video.tweaks = [ok, other, lib, added]
+            // « À régler »: AltList missing; « Pas compatibles »: SpringBoard only.
+            let needs = Self.tweak(15, "YTLite", version: "5.0", author: "dayanch96", bundles: [video.originalBundleID],
+                                   depends: [[DebDependency(package: "com.opa334.altlist", relation: ">=", version: "1.0")]])
+            let springboard = Self.tweak(16, "Spotlight Shortcuts", version: "2.0", author: nil, bundles: ["com.apple.springboard"])
+            video.tweaks = [ok, other, lib, added, needs, springboard]
             video.installations[1].tweaks = [TweakUse(id: ok.id), TweakUse(id: other.id, force: true), TweakUse(id: lib.id),
-                                             TweakUse(id: added.id)]
+                                             TweakUse(id: added.id), TweakUse(id: needs.id), TweakUse(id: springboard.id, enabled: false)]
             video.installations[1].signedChoices?.tweaks = [ok.id, other.id, lib.id]
             video.installations[1].signedChoices?.forcedTweaks = [other.id]
             video.installations[1].tweakResults = [ok.id: .injected(converted: false), other.id: .skipped(.noRoom)]

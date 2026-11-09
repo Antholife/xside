@@ -94,7 +94,7 @@ struct MenuBarLabel: View {
 
     /// The template glyph from the bundle's `MenuBarIcon.pdf`; falls back to an SF Symbol when it
     /// isn't bundled (e.g. under `swift run`).
-    private static let glyph: NSImage? = {
+    static let glyph: NSImage? = {
         let image = NSImage(named: "MenuBarIcon")
             ?? NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: "XSide")
         image?.isTemplate = true
