@@ -36,6 +36,34 @@ import Foundation
         #expect(w.flag(recordID: record, deviceID: device)?.fileName == "Demo-2.ips")
     }
 
+    /// Device round 2: the crash a fix answered (« Désactiver ce tweak ») came back 52 s later as
+    /// a « new » crash « after a crash fix », read again by the look that checks the fix (its
+    /// window reaches back a minute, the install's two). It never comes back; a newer one does.
+    @Test func theCrashAFixAnsweredIsNotRaisedAgain() {
+        var w = CrashWatch()
+        let crash = t0.addingTimeInterval(60)
+        #expect(raise(&w, "Tweak-1.ips", crashAt: crash))
+        w.fixStarted(recordID: record, deviceID: device)
+        let reinstalled = crash.addingTimeInterval(63)
+        w.installed(recordID: record, deviceID: device, at: reinstalled)
+        w.launchSeen(recordID: record, deviceID: device, at: reinstalled) // XSide opened it: the flag went
+        let again = w.raise(recordID: record, deviceID: device, fileName: "Tweak-1.ips", diagnosis: diagnosis(at: crash),
+                            installedAt: reinstalled, now: reinstalled.addingTimeInterval(5),
+                            inUseSince: crash.addingTimeInterval(52))
+        #expect(!again)
+        let newer = w.raise(recordID: record, deviceID: device, fileName: "Tweak-2.ips",
+                            diagnosis: diagnosis(at: reinstalled.addingTimeInterval(3)), installedAt: reinstalled,
+                            now: reinstalled.addingTimeInterval(8), inUseSince: crash.addingTimeInterval(52))
+        #expect(newer)
+        // Kept across a save.
+        let data = try! JSONEncoder().encode(w)
+        var back = try! JSONDecoder().decode(CrashWatch.self, from: data)
+        back.dismiss(recordID: record, deviceID: device) // the newer flag gone: only `answered` stops it
+        let reread = back.raise(recordID: record, deviceID: device, fileName: "Tweak-1.ips", diagnosis: diagnosis(at: crash),
+                                installedAt: reinstalled, now: reinstalled.addingTimeInterval(9))
+        #expect(!reread)
+    }
+
     @Test func aCrashBeforeTheInstallIsNotFlagged() {
         var w = CrashWatch()
         let r5 = raise(&w, "Old.ips", crashAt: t0.addingTimeInterval(-3600))

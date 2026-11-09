@@ -353,6 +353,14 @@
 "journey.xcode.using" = "XSide uses %@. You can pick another one in Settings.";
 
 "menuBar.attention" = "XSide: something needs your attention";
+"menuBar.attention.expired" = "an app expired";
+"menuBar.attention.certificate" = "signing no longer works (certificate or account)";
+"menuBar.attention.crash" = "an app stopped";
+"menuBar.attention.expiringSoon" = "an app expires soon without a successful refresh";
+"menuBar.attention.refreshFailed" = "a refresh failed";
+"menuBar.attention.tweakProblem" = "a tweak was left out at signing";
+"menuBar.attention.setupCheck" = "the setup check failed";
+"menuBar.attention.libraryIssue" = "the library couldn't be fully read";
 "install.field.shareKeychain" = "Keychain shared with %@";
 
 "settings.xcode.betaNotReady" = "Xcode beta found, but not ready yet: open it once to accept its license.";

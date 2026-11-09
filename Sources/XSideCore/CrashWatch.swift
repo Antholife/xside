@@ -101,6 +101,9 @@ public struct CrashWatch: Codable, Equatable, Sendable {
     /// The last run each installation's module reported as crashed (its `since`): looked at once.
     /// Optional: older files have none.
     private var reportedRuns: [String: Date]?
+    /// Crash files a crash fix answered, by installation: never raised again (the look that
+    /// checks the fix reaches back a minute and read it again). Optional: older files have none.
+    private var answered: [String: Set<String>]?
 
     public init() {}
 
@@ -147,7 +150,7 @@ public struct CrashWatch: Codable, Equatable, Sendable {
         markSeen(fileName: fileName, deviceID: deviceID, at: now)
         let key = Self.key(recordID: recordID, deviceID: deviceID)
         let date = diagnosis.date ?? now
-        guard dismissed[key]?.contains(fileName) != true,
+        guard dismissed[key]?.contains(fileName) != true, answered?[key]?.contains(fileName) != true,
               date >= installedAt.addingTimeInterval(-Self.installSlack) else { return false }
         if let inUseSince {
             guard date >= inUseSince.addingTimeInterval(-Self.runSlack) else { return false }
@@ -198,6 +201,14 @@ public struct CrashWatch: Codable, Equatable, Sendable {
         dismissed[key, default: []].insert(flag.fileName)
     }
 
+    /// A crash fix starts for the installation's flagged crash: that file is answered.
+    public mutating func fixStarted(recordID: UUID, deviceID: String) {
+        let key = Self.key(recordID: recordID, deviceID: deviceID)
+        guard let file = flags[key]?.fileName else { return }
+        answered = answered ?? [:]
+        answered?[key, default: []].insert(file)
+    }
+
     /// The app was seen running at `date` (a check-in, or still up after XSide opened it): a flag
     /// for an earlier crash goes, unless it stopped while in use (`duringUse`: running again is
     /// expected then). True when a flag went.
@@ -235,6 +246,7 @@ public struct CrashWatch: Codable, Equatable, Sendable {
         dismissed[key] = nil
         lastLaunch[key] = nil
         reportedRuns?[key] = nil
+        answered?[key] = nil
     }
 
     /// The device is gone from XSide.
@@ -244,6 +256,7 @@ public struct CrashWatch: Codable, Equatable, Sendable {
         for key in dismissed.keys where key.hasSuffix(suffix) { dismissed[key] = nil }
         for key in lastLaunch.keys where key.hasSuffix(suffix) { lastLaunch[key] = nil }
         reportedRuns = reportedRuns?.filter { !$0.key.hasSuffix(suffix) }
+        answered = answered?.filter { !$0.key.hasSuffix(suffix) }
         seen[deviceID] = nil
         lastScan[deviceID] = nil
     }
@@ -259,6 +272,7 @@ public struct CrashWatch: Codable, Equatable, Sendable {
         dismissed = dismissed.filter { keys.contains($0.key) }
         lastLaunch = lastLaunch.filter { keys.contains($0.key) }
         if let runs = reportedRuns { reportedRuns = runs.filter { keys.contains($0.key) } }
+        if let a = answered { answered = a.filter { keys.contains($0.key) } }
     }
 }
 

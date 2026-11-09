@@ -115,16 +115,17 @@ struct MenuBarLabel: View {
         return image
     }()
 
-    /// The glyph, with a small orange (warning) or red (critical) dot when something needs a look.
+    /// The glyph, with a small red dot when something needs a look (device round 2, item 13: red
+    /// whatever the reason; the description says which).
     /// `working`: the phone alone, the arrow being animated over it.
     private func icon(_ attention: AppModel.Attention?, working: Bool = false) -> Image {
         guard let glyph = working ? Self.phoneGlyph : Self.glyph else {
             return Image(systemName: "arrow.triangle.2.circlepath")
         }
-        guard let attention else { return Image(nsImage: glyph) }
-        let key = "\(attention == .critical ? "critical" : "warning").\(colorScheme == .dark ? "dark" : "light").\(working)"
+        guard attention != nil else { return Image(nsImage: glyph) }
+        let key = "dot.\(colorScheme == .dark ? "dark" : "light").\(working)"
         if let cached = Self.badgeCache[key] { return Image(nsImage: cached) }
-        let image = Self.badged(glyph, critical: attention == .critical)
+        let image = Self.badged(glyph)
         Self.badgeCache[key] = image
         return Image(nsImage: image)
     }
@@ -135,7 +136,7 @@ struct MenuBarLabel: View {
     /// Not a template (the dot keeps its color): the glyph is drawn in the menu bar's text color,
     /// resolved at draw time for its light or dark look, with a gap cut around the dot.
     /// Nonisolated: AppKit may run the drawing handler off the main thread.
-    private nonisolated static func badged(_ glyph: NSImage, critical: Bool) -> NSImage {
+    nonisolated static func badged(_ glyph: NSImage) -> NSImage {
         // The handler only uses this copy, never the main actor's image.
         let mask = glyph.copy() as! NSImage
         let image = NSImage(size: mask.size, flipped: false) { rect in
@@ -146,7 +147,7 @@ struct MenuBarLabel: View {
             NSGraphicsContext.current?.compositingOperation = .destinationOut
             NSBezierPath(ovalIn: dot.insetBy(dx: -1.5, dy: -1.5)).fill()
             NSGraphicsContext.current?.compositingOperation = .sourceOver
-            (critical ? NSColor.systemRed : NSColor.systemOrange).setFill()
+            NSColor.systemRed.setFill()
             NSBezierPath(ovalIn: dot).fill()
             return true
         }
@@ -190,7 +191,7 @@ struct MenuBarLabel: View {
         // Static image: the turning arrow while XSide works is a Core Animation layer laid over
         // the button (`MenuBarSpinner`), never a per-frame label update.
         icon(model.attention, working: model.activitySummary != nil)
-            .accessibilityLabel(model.activitySummary ?? (model.attention == nil ? "XSide" : L("menuBar.attention")))
+            .accessibilityLabel(model.activitySummary ?? model.attentionDescription)
             .help(model.activitySummary ?? "XSide")
             .onChange(of: model.activitySummary != nil, initial: true) { _, working in
                 appDelegate.setWorking(working)

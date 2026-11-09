@@ -353,6 +353,14 @@
 "journey.xcode.using" = "XSide utilise %@. Tu peux en choisir un autre dans les réglages.";
 
 "menuBar.attention" = "XSide : quelque chose demande ton attention";
+"menuBar.attention.expired" = "une app a expiré";
+"menuBar.attention.certificate" = "la signature ne marche plus (certificat ou compte)";
+"menuBar.attention.crash" = "une app s'est arrêtée";
+"menuBar.attention.expiringSoon" = "une app expire bientôt sans rafraîchissement réussi";
+"menuBar.attention.refreshFailed" = "un rafraîchissement a échoué";
+"menuBar.attention.tweakProblem" = "un tweak a été laissé de côté à la signature";
+"menuBar.attention.setupCheck" = "la vérification de l'installation a échoué";
+"menuBar.attention.libraryIssue" = "la bibliothèque n'a pas pu être lue en entier";
 "install.field.shareKeychain" = "Trousseau partagé avec %@";
 
 "settings.xcode.betaNotReady" = "Xcode bêta trouvé, mais pas encore prêt : ouvre-le une fois pour accepter sa licence.";

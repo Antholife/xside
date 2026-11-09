@@ -512,18 +512,33 @@ final class BackgroundEngine {
 
     /// A crash XSide hadn't told about (the model dedups by crash file), unless turned off in
     /// Settings or for that device, or the install window on screen already shows it.
+    /// Every outcome is logged (device round 2, item 12: a crash box with no notification and
+    /// nothing in the log to say why).
     private func notifyCrash(_ key: JobKey, flag: CrashFlag) {
-        guard AppModel.setting(AppModel.notifyCrashKey), model.devicePrefs.notifies(key.deviceID),
-              let record = model.records.first(where: { $0.id == key.recordID }) else { return }
+        let what = "crash notification (\(flag.fileName)) on \(key.deviceID)"
+        guard AppModel.setting(AppModel.notifyCrashKey) else {
+            Self.logger.notice("\(what): not sent, « Me prévenir quand une app s'arrête » is off"); return
+        }
+        guard model.devicePrefs.notifies(key.deviceID) else {
+            Self.logger.notice("\(what): not sent, notifications are off for this device"); return
+        }
+        guard let record = model.records.first(where: { $0.id == key.recordID }) else {
+            Self.logger.notice("\(what): not sent, the app is no longer in XSide"); return
+        }
         if model.isInstallWindowOpen, let flow = model.install,
-           flow.runs.contains(where: { $0.deviceID == key.deviceID && $0.crash?.fileName == flag.fileName }) { return }
+           flow.runs.contains(where: { $0.deviceID == key.deviceID && $0.crash?.fileName == flag.fileName }) {
+            Self.logger.notice("\(what): not sent, the install window on screen shows it"); return
+        }
         let appName = Self.appName(record)
         let cause = CrashWording(flag.diagnosis, app: appName).title
         let device = deviceName(key.deviceID)
         Task { [notifier] in
-            guard await notifier.canDeliver() else { return }
-            await notifier.crashFound(appName: appName, deviceName: device, cause: cause, duringUse: flag.duringUse == true,
-                                      job: RefreshJob(recordID: key.recordID, deviceID: key.deviceID))
+            let delivery = await notifier.prepareDelivery()
+            guard delivery.deliverable else { Self.logger.notice("\(what): not sent, \(delivery.reason)"); return }
+            let posted = await notifier.crashFound(appName: appName, deviceName: device, cause: cause,
+                                                   duringUse: flag.duringUse == true,
+                                                   job: RefreshJob(recordID: key.recordID, deviceID: key.deviceID))
+            Self.logger.notice("\(what): \(posted ? "sent" : "refused by macOS")")
         }
     }
 

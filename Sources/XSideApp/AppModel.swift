@@ -1001,25 +1001,35 @@ final class AppModel {
     /// The library warning was acknowledged in the popover (for this launch; Settings keeps it).
     private(set) var libraryIssueDismissed = false
 
-    /// Critical: an app expired, or the environment broke after setup. Warning: an app close to
-    /// expiry whose last attempt failed, or the library couldn't be fully read.
+    /// Why the dot is there (the icon's accessibility description), in `MenuBarAttention` order.
+    private(set) var attentionReasons: [MenuBarAttention.Reason] = []
+
+    /// Critical: an app expired, or the environment broke after setup. Warning: a crash shown on
+    /// a row, a failed refresh (urgent close to expiry), a tweak the last signing left out, a
+    /// failed setup check, or a library that couldn't be fully read (`MenuBarAttention`).
     func updateAttention() {
-        let now = Date()
         let setupDone = UserDefaults.standard.bool(forKey: JourneyStep.completedKey)
-        let expired = ExpiryWatch.hasExpired(records, now: now)
-        let updated: Attention?
         // A failed check of the setup (a system tool erred) says nothing is missing: a warning.
         let broken = setupDone && environmentFailed && environmentError?.isSetupCheckFailure != true
         let checkFailed = setupDone && environmentError?.isSetupCheckFailure == true
-        if expired || broken {
-            updated = .critical
-        } else if ExpiryWatch.needsAttention(records, now: now, threshold: BackgroundEngine.threshold)
-                    || (library.loadIssue != nil && !libraryIssueDismissed) || checkFailed {
-            updated = .warning
-        } else {
-            updated = nil
+        let reasons = MenuBarAttention.reasons(
+            records: records, now: Date(), threshold: BackgroundEngine.threshold,
+            flaggedCrashes: crashFlags.count,
+            environment: broken ? .certificate : checkFailed ? .checkFailed : .ok,
+            libraryIssue: library.loadIssue != nil && !libraryIssueDismissed)
+        if reasons != attentionReasons { attentionReasons = reasons }
+        let updated: Attention? = switch MenuBarAttention.level(of: reasons) {
+        case .critical?: .critical
+        case .warning?: .warning
+        case nil: nil
         }
         if updated != attention { attention = updated }
+    }
+
+    /// The menu-bar icon's accessibility description: what needs a look.
+    var attentionDescription: String {
+        guard !attentionReasons.isEmpty else { return "XSide" }
+        return L("menuBar.attention") + " — " + attentionReasons.map { L($0.stringKey) }.joined(separator: ", ")
     }
 
     func dismissLibraryIssue() {
@@ -2676,7 +2686,10 @@ final class AppModel {
         let before = crashWatch
         let result = change(&crashWatch)
         guard crashWatch != before else { return result }
-        if crashFlags != crashWatch.flags { crashFlags = crashWatch.flags }
+        if crashFlags != crashWatch.flags {
+            crashFlags = crashWatch.flags
+            updateAttention() // the menu-bar dot shows a crash, and goes once it is dealt with
+        }
         #if DEBUG
         if SnapshotRenderer.folder != nil { return result }
         #endif
@@ -2958,6 +2971,8 @@ final class AppModel {
     func perform(_ action: CrashAction, on key: JobKey, allDevices: Bool = false, diagnosis: CrashDiagnosis? = nil) async -> Bool {
         guard let record = records.first(where: { $0.id == key.recordID }),
               let installation = record.installations.first(where: { $0.deviceID == key.deviceID }) else { return false }
+        // The crash it answers never comes back as a new one (the look after the fix reads it again).
+        changeCrashWatch { $0.fixStarted(recordID: key.recordID, deviceID: key.deviceID) }
         switch action {
         case .reinstallWithoutXSide:
             if allDevices {

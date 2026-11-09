@@ -101,6 +101,30 @@ final class Notifier: NSObject {
         return Self.isDeliverable(await center.notificationSettings())
     }
 
+    /// Before a notification the person asked for (a crash): whether macOS will show it, and why
+    /// not. Never asked yet (a debug build, or the journey skipped it): the one-time system prompt
+    /// comes now, with the event that needs it, instead of the notification being dropped
+    /// silently (device round 2, item 12).
+    func prepareDelivery() async -> (deliverable: Bool, reason: String) {
+        guard let center else { return (true, "no app bundle: logged only") }
+        var settings = await center.notificationSettings()
+        if settings.authorizationStatus == .notDetermined {
+            do {
+                let granted = try await center.requestAuthorization(options: [.alert, .sound])
+                Self.logger.notice("notification authorization asked before a crash notification: granted=\(granted)")
+            } catch {
+                Self.logger.error("notification authorization failed: \(String(describing: error))")
+            }
+            settings = await center.notificationSettings()
+        }
+        if Self.isDeliverable(settings) { return (true, "allowed") }
+        switch settings.authorizationStatus {
+        case .notDetermined: return (false, "macOS permission never given")
+        case .denied: return (false, "turned off in System Settings > Notifications")
+        default: return (false, "alert style None in System Settings > Notifications")
+        }
+    }
+
     /// Authorized, with banners or alerts: with alert style "None" nothing pops up (at most a
     /// silent entry in Notification Center), so a cause notified then would go unseen.
     nonisolated static func isDeliverable(_ settings: UNNotificationSettings) -> Bool {
@@ -252,7 +276,8 @@ final class Notifier: NSObject {
     /// XSide found that an app stopped at launch (a crash it hadn't told about): the cause in a few
     /// words; a click opens the crash window on it. One per crash (the caller dedups by file).
     /// `duringUse`: it stopped while in use, not at launch.
-    func crashFound(appName: String, deviceName: String, cause: String, duringUse: Bool = false, job: RefreshJob) async {
+    @discardableResult
+    func crashFound(appName: String, deviceName: String, cause: String, duringUse: Bool = false, job: RefreshJob) async -> Bool {
         let content = UNMutableNotificationContent()
         content.title = L(duringUse ? "notification.crash.inUse.title" : "notification.crash.title", appName)
         content.body = L("notification.crash.body", deviceName, cause)
@@ -261,13 +286,15 @@ final class Notifier: NSObject {
         content.userInfo = [Self.recordKey: job.recordID.uuidString, Self.deviceKey: job.deviceID]
         guard let center else {
             Self.logger.notice("would notify: \(content.title)")
-            return
+            return true
         }
         do {
             try await center.add(UNNotificationRequest(identifier: "crash.\(job.recordID.uuidString).\(job.deviceID)",
                                                        content: content, trigger: nil))
+            return true
         } catch {
             Self.logger.error("notification failed: \(String(describing: error))")
+            return false
         }
     }
 
