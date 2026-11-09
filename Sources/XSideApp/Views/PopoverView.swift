@@ -43,7 +43,8 @@ private struct PopoverContent: View {
             PopoverFooter(model: model, appIDsRemaining: nil, showsSettings: false)
         }
         .padding(12)
-        .frame(width: 340)
+        .frame(width: PanelBubble.panelWidth)
+        .coordinateSpace(.named(PanelBubble.space))
         .background(PopoverTint())
     }
 
@@ -90,7 +91,8 @@ private struct PopoverContent: View {
             PopoverFooter(model: model, appIDsRemaining: model.appIDsRemaining, appIDReleases: model.appIDReleases)
         }
         .padding(12)
-        .frame(width: 340)
+        .frame(width: PanelBubble.panelWidth)
+        .coordinateSpace(.named(PanelBubble.space))
         .background(PopoverTint())
         .overlay { if isDropTargeted { DropHighlight() } }
         .dropDestination(for: URL.self) { urls, _ in
@@ -536,10 +538,6 @@ private struct PopoverFooter: View {
                         dismiss()
                         openWindow.presentWhatsNew()
                     }
-                    IconTile(symbol: "doc.text.magnifyingglass", help: L("logs.exportLink")) {
-                        dismiss()
-                        DispatchQueue.main.async { Diagnostics.export(model: model) }
-                    }
                     IconTile(image: .githubMark, help: L("settings.github")) {
                         dismiss()
                         NSWorkspace.shared.open(AppLinks.repository)
@@ -547,6 +545,14 @@ private struct PopoverFooter: View {
                     IconTile(symbol: "ladybug.fill", help: L("popover.reportBug")) {
                         dismiss()
                         Diagnostics.reportIssue(model: model) // a filled-in issue and the logs archive
+                    }
+                    // Last of the row (device round 2, item 15; « Exporter les journaux » went:
+                    // « Signaler un bug » brings the logs).
+                    IconTile(symbol: "info.circle.fill", help: L("popover.about")) {
+                        model.settingsPane = .about
+                        dismiss()
+                        NSApp.activate()
+                        openSettings()
                     }
                 }
                 Spacer()
@@ -708,6 +714,7 @@ private struct IconTile: View {
     let action: () -> Void
     @State private var isHovering = false
     @State private var showsTip = false
+    @State private var frame: CGRect = .zero
 
     init(symbol: String, help: String, tipAlignment: HorizontalAlignment = .center, action: @escaping () -> Void) {
         self.init(image: Image(systemName: symbol), help: help, tipAlignment: tipAlignment, action: action)
@@ -733,22 +740,16 @@ private struct IconTile: View {
         .buttonStyle(.plain)
         // System tooltips don't show in a popover: a bubble above the tile after a short pause.
         // Its own (one hover tracking per tile: the hoverBubble modifier would add a second).
+        // Kept inside the panel (device round 2, item 14: « Exporter les journaux » spilled out).
         .overlay(alignment: Alignment(horizontal: tipAlignment, vertical: .top)) {
             if showsTip {
-                Text(help)
-                    .font(.system(size: 11, weight: .medium))
-                    .fixedSize()
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5))
-                    .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
-                    .offset(y: -30)
+                PanelBubble.label(help)
+                    .offset(x: PanelBubble.shift(help, anchor: frame, alignment: tipAlignment), y: -30)
                     .transition(.opacity.combined(with: .offset(y: 4)))
                     .allowsHitTesting(false)
             }
         }
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(PanelBubble.space)) } action: { frame = $0 }
         .onHover { isHovering = $0 }
         .zIndex(showsTip ? 1 : 0)
         .task(id: isHovering) {
@@ -776,27 +777,22 @@ private struct HoverBubble: ViewModifier {
     let below: Bool
     @State private var isHovering = false
     @State private var shows = false
+    @State private var frame: CGRect = .zero
 
     func body(content: Content) -> some View {
         content
             .overlay(alignment: Alignment(horizontal: alignment, vertical: below ? .bottom : .top)) {
                 if shows {
-                    Text(text)
-                        .font(.system(size: 11, weight: .medium))
-                        .multilineTextAlignment(.leading)
-                        .frame(maxWidth: 240, alignment: .leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5))
-                        .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
+                    // Its own width (it wrapped word by word in the tile's width: « Tout rafraîchir »,
+                    // device round 2, item 11), inside the panel.
+                    PanelBubble.label(text)
                         .alignmentGuide(below ? .bottom : .top) { d in below ? d[.top] - 6 : d[.bottom] + 6 }
+                        .offset(x: PanelBubble.shift(text, anchor: frame, alignment: alignment))
                         .transition(.opacity)
                         .allowsHitTesting(false)
                 }
             }
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(PanelBubble.space)) } action: { frame = $0 }
             .zIndex(shows ? 1 : 0)
             .onHover { isHovering = $0 }
             .task(id: isHovering) {
@@ -805,6 +801,42 @@ private struct HoverBubble: ViewModifier {
                 if !Task.isCancelled { shows = true }
             }
             .animation(.easeOut(duration: 0.15), value: shows)
+    }
+}
+
+/// The panel's hover bubbles: their text at its own width (up to 240 pt, wrapping beyond) and
+/// moved back inside the panel when lined up with their control would cross its edge
+/// (`BubblePlacement`). Panel coordinates: the panel's root names its space `space`.
+@MainActor enum PanelBubble {
+    static let space = "xside.panel"
+    static let panelWidth: CGFloat = 340
+    private static let padding: CGFloat = 8
+
+    static func textWidth(_ text: String) -> CGFloat {
+        let natural = text.split(separator: "\n").map { (String($0) as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 11, weight: .medium)]).width }.max() ?? 0
+        return BubblePlacement.textWidth(natural: natural)
+    }
+
+    static func label(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11, weight: .medium))
+            .multilineTextAlignment(.leading)
+            .frame(width: textWidth(text), alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, padding)
+            .padding(.vertical, 4)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
+    }
+
+    /// The shift that keeps `text`'s bubble inside the panel, against a control at `anchor`.
+    static func shift(_ text: String, anchor: CGRect, alignment: HorizontalAlignment) -> CGFloat {
+        guard anchor.width > 0 else { return 0 }
+        let a: BubblePlacement.Alignment = alignment == .leading ? .leading : alignment == .trailing ? .trailing : .center
+        return BubblePlacement.shift(anchorMinX: anchor.minX, anchorWidth: anchor.width,
+                                     bubbleWidth: textWidth(text) + 2 * padding, alignment: a, panelWidth: panelWidth)
     }
 }
 
