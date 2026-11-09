@@ -42,8 +42,8 @@ struct TweakClassifierTests {
                          classes: Set<String>? = nil, frameworks: Set<String>? = nil,
                          appFiles: (@Sendable (String) -> Bool)? = nil,
                          elleKit: Bool = true, support: Bool = true, libhooker: Bool = false,
-                         system: (@Sendable (String) -> Bool)? = nil) -> TweakContext {
-        TweakContext(originalBundleID: "com.example.app", executableName: "Example", appClassNames: classes,
+                         system: (@Sendable (String) -> Bool)? = nil, executable: String? = "Example") -> TweakContext {
+        TweakContext(originalBundleID: "com.example.app", executableName: executable, appClassNames: classes,
                      appLinkedFrameworks: frameworks, appFiles: appFiles, deviceOS: deviceOS,
                      elleKitAvailable: elleKit, supportAvailable: support, elleKitHasLibhooker: libhooker,
                      isSystemLibrary: system ?? TweakClassifier.systemLibraries(sdk: nil),
@@ -413,9 +413,19 @@ struct TweakClassifierTests {
         let p = package([entry(linked: ["/usr/lib/libcolorpicker.dylib", "/usr/lib/libz.1.dylib"])])
         #expect(verdict(p, context(system: system)) == .incompatible(.needsJailbreak("libcolorpicker.dylib")))
         #expect(verdict(package([entry(linked: ["/usr/lib/libz.1.dylib"])]), context(system: system)) == .compatible)
+        #expect(verdict(package([entry(linked: ["/usr/lib/libunknownthing.dylib"])]), context(system: system))
+                == .incompatible(.missingDependency("libunknownthing.dylib")))
 
+        // Without an SDK, only the shipped list of iOS's /usr/lib names counts as system.
         let noSDK = TweakClassifier.systemLibraries(sdk: nil)
-        #expect(noSDK("/usr/lib/libcolorpicker.dylib"))
+        for lib in ["/usr/lib/libobjc.A.dylib", "/usr/lib/libSystem.B.dylib", "/usr/lib/libc++.1.dylib", "/usr/lib/libz.1.dylib",
+                    "/usr/lib/libsqlite3.dylib", "/usr/lib/system/libsystem_kernel.dylib", "/usr/lib/swift/libswiftCore.dylib",
+                    "/System/Library/Frameworks/UIKit.framework/UIKit"] {
+            #expect(noSDK(lib), "\(lib)")
+        }
+        #expect(!noSDK("/usr/lib/libcolorpicker.dylib"))
+        #expect(!noSDK("/usr/lib/libunknownthing.dylib"))
+        #expect(!noSDK("/usr/lib/TweakInject/libobjc.A.dylib"))
         #expect(!noSDK("/usr/lib/libsubstrate.dylib"))
         #expect(!noSDK("/Library/Frameworks/Cephei.framework/Cephei"))
         #expect(!noSDK("/var/jb/usr/lib/libz.dylib"))
@@ -424,8 +434,119 @@ struct TweakClassifierTests {
     }
 
     @Test func libraryPackageIsCompatible() {
-        #expect(verdict(package([library("usr/lib/libfoo.dylib", linked: [Self.substrate])])) == .compatible)
+        #expect(verdict(package([library("usr/lib/libfoo.dylib", linked: ["/usr/lib/libobjc.A.dylib"])])) == .compatible)
         #expect(verdict(package([], kind: .bundle, extraFiles: ["Example.bundle/icon.png"])) == .compatible)
+    }
+
+    @Test func libraryPackagesAreClassifiedByTheirOwnBinaries() {
+        #expect(verdict(package([library("usr/lib/libfoo.dylib", linked: [Self.substrate])])) == .converted([.hookingLibrary]))
+        let arm64e = TweakBinary(path: "usr/lib/libfoo.dylib", isEntry: false, filter: nil, slices: [slice("arm64e")], linked: [],
+                                 mentionsJailbreakPaths: false, imageName: "libfoo.dylib")
+        #expect(verdict(package([arm64e])) == .incompatible(.wrongArchitecture(["arm64e"])))
+        #expect(verdict(package([library("usr/lib/libfoo.dylib", linked: ["/usr/lib/libactivator.dylib"])]))
+                == .incompatible(.needsJailbreak("Activator")))
+    }
+
+    @Test func aProvidersProblemIsTheTweaksProblem() {
+        let arm64eCephei = package([TweakBinary(path: String(Self.cephei.dropFirst()), isEntry: false, filter: nil,
+                                                slices: [slice("arm64e")], linked: [], mentionsJailbreakPaths: false,
+                                                imageName: "Cephei")],
+                                   id: "ws.hbang.common", origin: .embedded, packageID: "ws.hbang.common", name: "Cephei", version: "2.0")
+        let p = package([entry(linked: [Self.cephei])], depends: [dep("ws.hbang.common")])
+        #expect(verdict(p, context(embedded: [arm64eCephei])) == .incompatible(.wrongArchitecture(["arm64e"])))
+
+        let jbLib = package([library("usr/lib/libfoo.dylib", linked: ["/usr/lib/librocketbootstrap.dylib"])], id: "eeeeeeeeeeeeeeee",
+                            packageID: "com.foo", name: "Foo")
+        let q = package([entry(linked: ["/usr/lib/libfoo.dylib"])], depends: [dep("com.foo")])
+        #expect(verdict(q, context(others: [jbLib])) == .incompatible(.needsJailbreak("RocketBootstrap")))
+        // Two packages depending on each other never loop.
+        let a = package([library("usr/lib/liba.dylib", linked: ["/usr/lib/libb.dylib"])], id: "aaaaaaaaaaaaaaaa", packageID: "com.a",
+                        name: "A", depends: [dep("com.b")])
+        let b = package([library("usr/lib/libb.dylib", linked: ["/usr/lib/liba.dylib"])], id: "bbbbbbbbbbbbbbbb", packageID: "com.b",
+                        name: "B", depends: [dep("com.a")])
+        let r = package([entry(linked: ["/usr/lib/liba.dylib"])], depends: [dep("com.a")])
+        #expect(verdict(r, context(others: [a, b])) == .converted([.dependency("A")]))
+    }
+
+    @Test func jailbreakOnlyPackagesTheyAddedStillNeedAJailbreak() {
+        let rb = package([library("usr/lib/librocketbootstrap.dylib")], id: "ffffffffffffffff",
+                         packageID: "com.rpetrich.rocketbootstrap", name: "RocketBootstrap")
+        let p = package([entry(linked: ["/usr/lib/librocketbootstrap.dylib"])], depends: [dep("com.rpetrich.rocketbootstrap")])
+        let c = context(others: [rb])
+        #expect(verdict(p, c) == .incompatible(.needsJailbreak("RocketBootstrap")))
+        #expect(TweakClassifier.dependencies(p, c).map(\.1) == [.jailbreakOnly("RocketBootstrap")])
+        #expect(TweakClassifier.resolution(p, c).isEmpty)
+        // Undeclared, rootful or rootless (@rpath, app facts unknown): still named.
+        #expect(verdict(package([entry(linked: ["/usr/lib/librocketbootstrap.dylib"])]), c) == .incompatible(.needsJailbreak("RocketBootstrap")))
+        #expect(verdict(package([entry(linked: ["@rpath/librocketbootstrap.dylib"])])) == .incompatible(.needsJailbreak("RocketBootstrap")))
+        #expect(verdict(package([entry(linked: ["@rpath/libhooker.dylib"])])) == .incompatible(.needsJailbreak("libhooker.dylib")))
+        #expect(verdict(package([entry(linked: ["@rpath/libhooker.dylib"])]), context(libhooker: true)) == .converted([.hookingLibrary]))
+    }
+
+    @Test func libhookerDependsNeedsElleKitsLibhooker() {
+        let p = package([entry()], depends: [dep("org.coolstar.libhooker")])
+        #expect(verdict(p) == .incompatible(.needsJailbreak("libhooker")))
+        #expect(TweakClassifier.dependencies(p, context()).map(\.1) == [.jailbreakOnly("libhooker")])
+        #expect(verdict(p, context(libhooker: true)) == .compatible)
+        #expect(TweakClassifier.dependencies(p, context(libhooker: true)).map(\.1) == [.notNeeded])
+    }
+
+    @Test func firmwareInsideAnAlternativesGroup() {
+        let p = package([entry()], depends: [[DebDependency(package: "firmware", relation: ">=", version: "18.0"),
+                                               DebDependency(package: "firmware", relation: "<<", version: "16.0")]])
+        #expect(verdict(p) == .incompatible(.iOSVersion(required: "18.0", device: "17.5")))
+        #expect(verdict(p, context(deviceOS: "15.0")) == .compatible)
+        #expect(verdict(p, context(deviceOS: "18.1")) == .compatible)
+        let bad = package([entry()], depends: [[DebDependency(package: "firmware", unparseable: true),
+                                                 DebDependency(package: "firmware", relation: "<<", version: "16.0")]])
+        #expect(verdict(bad) == .incompatible(.unreadableRequirement("iOS")))
+    }
+
+    @Test func systemLibrariesAreNeverShadowed() {
+        let shadow = package([library("usr/lib/libobjc.A.dylib")], id: "9999999999999999", packageID: "com.shadow", name: "Shadow")
+        let p = package([entry(linked: ["/usr/lib/libobjc.A.dylib"])], depends: [dep("com.shadow")])
+        #expect(TweakClassifier.resolution(p, context(others: [shadow]))["/usr/lib/libobjc.A.dylib"] == nil)
+        // A package nothing depends on is never searched for a linked library.
+        let lib = package([library("usr/lib/libfoo.dylib")], id: "8888888888888888", packageID: "com.foo", name: "Foo")
+        let q = package([entry(linked: ["/usr/lib/libfoo.dylib"])])
+        #expect(verdict(q, context(others: [lib])) == .incompatible(.missingDependency("libfoo.dylib")))
+        #expect(TweakClassifier.resolution(q, context(others: [lib])).isEmpty)
+    }
+
+    @Test func aFilterProblemNeverHidesAnother() {
+        let other = TweakFilter(bundles: ["com.other.app"])
+        let rb = package([entry(filter: other)], depends: [dep("com.rpetrich.rocketbootstrap")])
+        #expect(verdict(rb) == .incompatible(.needsJailbreak("RocketBootstrap")))
+        #expect(!verdict(rb).canOverride)
+        #expect(TweakClassifier.verdict(rb, context(), overridingFilter: true) == .incompatible(.needsJailbreak("RocketBootstrap")))
+        let noCephei = package([entry(filter: TweakFilter())], depends: [dep("ws.hbang.common")])
+        #expect(verdict(noCephei) == .incompatible(.missingDependency("Cephei")))
+        let unknown = package([entry(filter: other, linked: ["/Library/Frameworks/Unknown.framework/Unknown"])])
+        #expect(verdict(unknown) == .incompatible(.needsJailbreak("Unknown.framework")))
+        #expect(verdict(package([entry(filter: other, linked: [Self.substrate])]), context(elleKit: false))
+                == .incompatible(.missingDependency("ElleKit")))
+
+        // Forced: the 🔧 list that applies once « Injecter quand même » is chosen.
+        let forced = package([entry(filter: other, linked: [Self.substrate])])
+        #expect(verdict(forced) == .incompatible(.madeForAnotherApp(["com.other.app"])))
+        #expect(verdict(forced).canOverride)
+        #expect(TweakClassifier.verdict(forced, context(), overridingFilter: true) == .converted([.hookingLibrary]))
+        #expect(TweakClassifier.verdict(package([entry(filter: TweakFilter())]), context(), overridingFilter: true) == .compatible)
+        let all = TweakClassifier.classify(forced, context())
+        #expect(all.verdict == verdict(forced))
+        #expect(all.verdictOverridingFilter == .converted([.hookingLibrary]))
+        #expect(all.resolution == [Self.substrate: TweakLayout.elleKitLoadPath])
+        #expect(all.providers.isEmpty)
+    }
+
+    @Test func systemProcessFiltersNeedAJailbreakWithUnknownAppFacts() {
+        let exe = package([entry(filter: TweakFilter(executables: ["SpringBoard"]))])
+        #expect(verdict(exe, context(executable: nil)) == .incompatible(.needsJailbreak("SpringBoard")))
+        #expect(verdict(package([entry(filter: TweakFilter(executables: ["Example"]))]), context(executable: nil)) == .compatible)
+        let sb = package([entry(filter: TweakFilter(classes: ["SBIconController", "SBHomeScreenViewController"]))])
+        #expect(verdict(sb, context(classes: nil)) == .incompatible(.needsJailbreak("SBIconController")))
+        #expect(verdict(sb, context(classes: ["AppDelegate"])) == .incompatible(.needsJailbreak("SBIconController")))
+        #expect(verdict(package([entry(filter: TweakFilter(classes: ["SBFoo", "YTPlayerView"]))]), context(classes: nil)) == .compatible)
     }
 
     @Test func deliberatelyEmptyDebIsNothingToInject() {

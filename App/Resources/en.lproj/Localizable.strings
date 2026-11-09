@@ -951,7 +951,7 @@
 "pending.line" = "Change pending: will apply at the app's next refresh on %@";
 "pending.refreshNow" = "Refresh now";
 
-"tweaks.conversion.hookingLibrary" = "Its hooking library (Substrate) is replaced by ElleKit, added to the app";
+"tweaks.conversion.hookingLibrary" = "Its hooking library (Substrate, Substitute or libhooker) is replaced by ElleKit, added to the app";
 "tweaks.conversion.jailbreakPaths" = "Its files are copied into the app and found there instead of the jailbreak's folders";
 "tweaks.conversion.dependency" = "Uses %@, from another tweak you added";
 "tweaks.conversion.dependencyAdded" = "Dependency added: %@";

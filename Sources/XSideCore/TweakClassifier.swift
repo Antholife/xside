@@ -155,17 +155,20 @@ public enum TweakClassifier {
         "nsurlsessiond", "preferences", "mobilesafari", "mobilesms", "mobilephone", "commcenter", "runningboardd",
         "searchd", "sharingd", "mediaremoted", "healthd", "powerd", "wifid", "bluetoothd",
     ]
-    /// `com.apple.<x>` ids that are processes or Apple's own apps, never a framework an app links
-    /// (with the app's frameworks unknown, other `com.apple.<x>` ids are given the benefit of the doubt).
-    static let appleProcessIDs: Set<String> = systemProcesses.union([
-        "mobilemail", "mobilenotes", "camera", "music", "mobileslideshow", "mobiletimer", "maps", "weather",
-        "findmy", "appstore", "mobilecal", "facetime", "reminders", "news", "tv", "podcasts", "shortcuts",
-    ])
-    /// Bundle filters every app loads.
-    static let everyAppBundles: Set<String> = ["com.apple.uikit", "com.apple.foundation", "com.apple.corefoundation"]
+    /// The verdict. With `overridingFilter` (« Injecter quand même »), a filter problem
+    /// (`madeForAnotherApp`, `noFilter`) is ignored and the verdict that then applies is returned,
+    /// with its 🔧 list; every other problem still stands.
+    public static func verdict(_ package: TweakPackage, _ context: TweakContext, overridingFilter: Bool = false) -> TweakVerdict {
+        analyze(package, context).verdict(overridingFilter: overridingFilter)
+    }
 
-    public static func verdict(_ package: TweakPackage, _ context: TweakContext) -> TweakVerdict {
-        analyze(package, context).verdict
+    /// Everything the signing needs about one tweak, computed once.
+    public static func classify(_ package: TweakPackage, _ context: TweakContext) -> TweakClassification {
+        let a = analyze(package, context)
+        return TweakClassification(verdict: a.verdict(overridingFilter: false),
+                                   verdictOverridingFilter: a.verdict(overridingFilter: true),
+                                   resolution: a.resolution,
+                                   providers: context.embedded.filter { a.embeddedUsed.contains($0.id) })
     }
 
     /// Each `Depends` group's satisfied alternative, or its first one.
@@ -173,7 +176,7 @@ public enum TweakClassifier {
         let others = context.others.filter { $0.id != package.id }
         return package.depends.compactMap { group in
             guard let first = group.first else { return nil }
-            let statuses = group.map { alt -> (DebDependency, DependencyStatus) in (alt, status(alt, others, context.embedded)) }
+            let statuses = group.map { alt -> (DebDependency, DependencyStatus) in (alt, status(alt, others, context.embedded, context)) }
             return statuses.first { s in
                 switch s.1 {
                 case .addedByYou, .providedByXSide, .notNeeded: true
@@ -188,7 +191,8 @@ public enum TweakClassifier {
         analyze(package, context).resolution
     }
 
-    /// The embedded packages the signing must copy for this tweak, in `embedded` order.
+    /// The embedded packages the signing must copy for this tweak (also those its providers
+    /// need), in `embedded` order.
     public static func providers(_ package: TweakPackage, _ context: TweakContext) -> [TweakPackage] {
         let used = analyze(package, context).embeddedUsed
         return context.embedded.filter { used.contains($0.id) }
@@ -205,14 +209,22 @@ public enum TweakClassifier {
 
     /// Whether an install name is part of iOS. With an SDK: `/System/…`, `/usr/lib/swift/…`, and any
     /// other `/usr/lib/<x>` only when `<sdk>/usr/lib/<x minus .dylib>.tbd` exists. Without one:
-    /// any absolute path that is neither a hooking library nor a jailbreak's.
+    /// `/System/…`, `/usr/lib/swift/…`, `/usr/lib/system/…` and the `/usr/lib` names in
+    /// `iOSUsrLibNames` (a jailbreak's libraries live in /usr/lib too, so "anything there" won't do).
     public static func systemLibraries(sdk: URL?) -> @Sendable (String) -> Bool {
         @Sendable func plain(_ p: String) -> Bool {
             p.hasPrefix("/") && p.utf8.count <= 1024 && !p.utf8.contains(0)
                 && !p.split(separator: "/", omittingEmptySubsequences: false).contains { $0 == ".." || $0 == "." }
         }
         guard let sdk else {
-            return { p in plain(p) && !isHookingLibrary(p, libhooker: true) && !CrashClassifier.isJailbreakPath(p) }
+            return { p in
+                guard plain(p) else { return false }
+                if p.hasPrefix("/System/") || p.hasPrefix("/usr/lib/swift/") || p.hasPrefix("/usr/lib/system/") { return true }
+                guard p.hasPrefix("/usr/lib/") else { return false }
+                let file = p.dropFirst("/usr/lib/".count)
+                guard !file.contains("/"), let base = file.split(separator: ".").first else { return false }
+                return iOSUsrLibNames.contains(base.lowercased())
+            }
         }
         let root = sdk.standardizedFileURL.path
         return { p in
@@ -226,37 +238,93 @@ public enum TweakClassifier {
         }
     }
 
+    // MARK: known names
+
+    /// First component (before the first `.`) of the file names iOS ships directly in /usr/lib.
+    static let iOSUsrLibNames: Set<String> = [
+        "libsystem", "libobjc", "libobjc-trampolines", "libc++", "libc++abi", "libz", "libsqlite3", "libxml2", "libxslt",
+        "libexslt", "libicucore", "libiconv", "libcharset", "libbz2", "liblzma", "libresolv", "libcompression",
+        "libmobilegestalt", "libnetwork", "libc", "libm", "libdl", "libpthread", "libinfo", "libarchive", "libutil",
+        "libbsm", "libpcap", "libboringssl", "libcoretls", "libcoretls_cfhelpers", "libapple_nghttp2", "libaccessibility",
+        "libmecab", "libcmph", "libenergytrace", "liblangid", "libgcc_s", "libstdc++", "libextension", "libsandbox",
+        "libfosl_dynamic", "libpam", "libmis", "libprequelite", "libcupolicy", "libtailspin", "libate",
+    ]
+
+    /// Libraries only a jailbreak has, by the first component of their file name: their display
+    /// name, or nil to show the file name.
+    static let jailbreakOnlyImages: [String: String?] = [
+        "librocketbootstrap": "RocketBootstrap", "libactivator": "Activator", "libapplist": "AppList",
+        "libmryipc": "libMRYIPC", "libsandy": "libSandy", "libcolorpicker": nil, "libcscolorpicker": nil,
+        "libsparkcolourpicker": nil, "libsparkapplist": nil, "libhooker": nil, "libblackjack": nil, "libpddokdo": nil,
+    ]
+
+    private static func jailbreakOnlyImage(_ path: String) -> String?? {
+        guard let file = path.split(separator: "/").last, let base = file.split(separator: ".").first else { return nil }
+        return jailbreakOnlyImages[base.lowercased()]
+    }
+
+    /// `com.apple.<x>` ids that are processes or Apple's own apps, never a framework an app links
+    /// (with the app's frameworks unknown, other `com.apple.<x>` ids are given the benefit of the doubt).
+    static let appleProcessIDs: Set<String> = systemProcesses.union([
+        "mobilemail", "mobilenotes", "camera", "music", "mobileslideshow", "mobiletimer", "maps", "weather",
+        "findmy", "appstore", "mobilecal", "facetime", "reminders", "news", "tv", "podcasts", "shortcuts",
+        "calculator", "compass", "health", "passbook", "mobilestore", "bridge", "voicememos", "stocks", "tips",
+        "mobileaddressbook", "ibooks", "home", "translate", "measure", "magnifier", "fitness", "freeform",
+    ])
+    /// Bundle filters every app loads.
+    static let everyAppBundles: Set<String> = ["com.apple.uikit", "com.apple.foundation", "com.apple.corefoundation"]
+
+    /// SpringBoard's classes (`SBIconController`…): `SB` and a capital.
+    static func isSpringBoardClass(_ name: String) -> Bool {
+        let u = Array(name.unicodeScalars)
+        return u.count > 2 && u[0] == "S" && u[1] == "B" && ("A"..."Z").contains(u[2])
+    }
+
     // MARK: analysis
 
     private struct Analysis {
+        /// The first problem that isn't about the filter.
         var problem: TweakProblem?
+        /// `madeForAnotherApp` / `noFilter`: overridable, and only reported when nothing else is wrong.
+        var filterProblem: TweakProblem?
         var conversions: [TweakConversion] = []
         var resolution: [String: String] = [:]
         var embeddedUsed: Set<String> = []
-        var early: TweakVerdict?
+        /// Providers (others or embedded) this tweak relies on, in the order first used.
+        var providers: [TweakPackage] = []
 
         mutating func fail(_ p: TweakProblem) { if problem == nil { problem = p } }
+        mutating func failFilter(_ p: TweakProblem) { if filterProblem == nil { filterProblem = p } }
         mutating func convert(_ c: TweakConversion) { if !conversions.contains(c) { conversions.append(c) } }
+        mutating func rely(on p: TweakPackage, embedded: Bool) {
+            if embedded { embeddedUsed.insert(p.id) }
+            if !providers.contains(where: { $0.id == p.id }) { providers.append(p) }
+        }
 
-        var verdict: TweakVerdict {
-            if let early { return early }
+        func verdict(overridingFilter: Bool) -> TweakVerdict {
             if let problem { return .incompatible(problem) }
+            if !overridingFilter, let filterProblem { return .incompatible(filterProblem) }
             return conversions.isEmpty ? .compatible : .converted(conversions)
         }
     }
 
     private enum Source { case own, other, embedded }
 
-    private static func analyze(_ package: TweakPackage, _ context: TweakContext) -> Analysis {
+    /// How deep providers' own providers are checked.
+    private static let maxProviderDepth = 4
+
+    private static func analyze(_ package: TweakPackage, _ context: TweakContext,
+                                visited: Set<String> = [], depth: Int = 0) -> Analysis {
         var a = Analysis()
         let entries = package.entries
-        // 1. No entry.
-        if entries.isEmpty {
-            a.early = !package.binaries.isEmpty || package.kind == .bundle ? .compatible : .incompatible(.nothingToInject)
+        // 1. Nothing to load at all. A library or `.bundle` package goes on with its own binaries.
+        if package.binaries.isEmpty, package.kind != .bundle {
+            a.fail(.nothingToInject)
+            return a
         }
-        // 2. Slices and iOS.
-        for e in entries { checkSlices(e, context, &a) }
-        if !entries.isEmpty {
+        // 2. Slices and iOS, for every binary (libraries get loaded too).
+        for b in package.binaries { checkSlices(b, context, &a) }
+        if !package.binaries.isEmpty {
             let fw = DebControl.firmwareBounds(package.depends)
             if fw.unparseable { a.fail(.unreadableRequirement("iOS")) }
             else if let device = context.deviceOS, !fw.allows(device) {
@@ -264,35 +332,51 @@ public enum TweakClassifier {
             }
         }
         // 3. Filter.
-        for e in entries { if let p = filterProblem(e.filter, context) { a.fail(p) } }
+        for e in entries { checkFilter(e.filter, context, &a) }
 
         // 4. Depends: the person's packages come before XSide's.
-        var others = context.others.filter { $0.id != package.id }
-        var embedded = context.embedded.filter { $0.id != package.id }
-        var chosen: Set<String> = [], rejected: Set<String> = []
+        let usable = { (p: TweakPackage) in p.id != package.id && !isJailbreakOnlyPackage(p) }
+        let others = context.others.filter(usable)
+        var embedded = context.embedded.filter(usable)
+        var chosen: [TweakPackage] = [], rejected: Set<String> = []
         for group in package.depends {
-            dependsGroup(group, others, embedded, &a, &chosen, &rejected)
+            dependsGroup(group, others, embedded, context, &a, &chosen, &rejected)
         }
-        rejected.subtract(chosen)
-        others.removeAll { rejected.contains($0.id) }
+        rejected.subtract(chosen.map(\.id))
+        // Only packages a Depends entry chose are searched for the person's files.
+        let chosenOthers = others.filter { p in chosen.contains { $0.id == p.id } }
         embedded.removeAll { rejected.contains($0.id) }
 
         // 5. Linked names.
         for binary in package.binaries {
-            for name in binary.linked { link(name, package, others, embedded, context, &a) }
+            for name in binary.linked { link(name, package, chosenOthers, embedded, context, &a) }
         }
 
         // 6. Files the tweak reads from the jailbreak's folders.
         if needsPaths(package) {
             if context.supportAvailable { a.convert(.jailbreakPaths) } else { a.fail(.missingDependency("XSideTweakSupport")) }
         }
+
+        // 7. The providers it relies on must load too.
+        let seen = visited.union([package.id])
+        for p in a.providers where !seen.contains(p.id) && depth < maxProviderDepth {
+            let sub = analyze(p, context, visited: seen.union(a.providers.map(\.id)), depth: depth + 1)
+            if let problem = sub.problem, problem != .nothingToInject { a.fail(problem) }
+            a.embeddedUsed.formUnion(sub.embeddedUsed)
+        }
         return a
     }
 
-    private static func checkSlices(_ e: TweakBinary, _ context: TweakContext, _ a: inout Analysis) {
-        guard let s = e.slices.first(where: { $0.arch == "arm64" }) else {
+    private static func isJailbreakOnlyPackage(_ p: TweakPackage) -> Bool {
+        ([p.packageID] + p.provides).contains { id in
+            if case .jailbreakOnly = KnownDependency.role(of: id) { true } else { false }
+        }
+    }
+
+    private static func checkSlices(_ b: TweakBinary, _ context: TweakContext, _ a: inout Analysis) {
+        guard let s = b.slices.first(where: { $0.arch == "arm64" }) else {
             var archs: [String] = []
-            for s in e.slices where !archs.contains(s.arch) { archs.append(s.arch) }
+            for s in b.slices where !archs.contains(s.arch) { archs.append(s.arch) }
             a.fail(.wrongArchitecture(archs))
             return
         }
@@ -309,8 +393,13 @@ public enum TweakClassifier {
         return parts.joined(separator: ", ")
     }
 
-    private static func filterProblem(_ filter: TweakFilter?, _ context: TweakContext) -> TweakProblem? {
-        guard let f = filter else { return nil }    // a dropped dylib or framework: made for this app
+    private static func isSystemTarget(_ t: String) -> Bool {
+        let l = t.lowercased()
+        return l.hasPrefix("com.apple.") || systemProcesses.contains(l) || isSpringBoardClass(t)
+    }
+
+    private static func checkFilter(_ filter: TweakFilter?, _ context: TweakContext, _ a: inout Analysis) {
+        guard let f = filter else { return }    // a dropped dylib or framework: made for this app
         var kinds: [(targets: [String], matches: Bool)] = []
         if !f.bundles.isEmpty {
             let app = context.originalBundleID.lowercased()
@@ -325,20 +414,21 @@ public enum TweakClassifier {
             }))
         }
         if !f.executables.isEmpty {
-            let exe = context.executableName
-            kinds.append((f.executables, exe.map { e in f.executables.contains { $0 == e } } ?? true))
+            // Unknown executable: any non-system one is given the benefit of the doubt.
+            let matches = context.executableName.map { e in f.executables.contains { $0 == e } }
+                ?? f.executables.contains { !systemProcesses.contains($0.lowercased()) }
+            kinds.append((f.executables, matches))
         }
         if !f.classes.isEmpty {
-            kinds.append((f.classes, context.appClassNames.map { names in f.classes.contains { names.contains($0) } } ?? true))
+            let matches = context.appClassNames.map { names in f.classes.contains { names.contains($0) } }
+                ?? f.classes.contains { !isSpringBoardClass($0) }
+            kinds.append((f.classes, matches))
         }
-        guard !kinds.isEmpty else { return .noFilter }
+        guard !kinds.isEmpty else { a.failFilter(.noFilter); return }
         let ok = f.anyMode ? kinds.contains { $0.matches } : kinds.allSatisfy { $0.matches }
-        if ok { return nil }
+        if ok { return }
         let targets = kinds.filter { !$0.matches }.flatMap(\.targets)
-        let system = targets.allSatisfy { t in
-            t.lowercased().hasPrefix("com.apple.") || systemProcesses.contains(t.lowercased())
-        }
-        return system ? .needsJailbreak(targets[0]) : .madeForAnotherApp(targets)
+        if targets.allSatisfy(isSystemTarget) { a.fail(.needsJailbreak(targets[0])) } else { a.failFilter(.madeForAnotherApp(targets)) }
     }
 
     // MARK: dependencies
@@ -369,55 +459,70 @@ public enum TweakClassifier {
         return p.provides.contains(dep.package) && dep.relation == nil
     }
 
-    private static func isNotNeeded(_ dep: DebDependency) -> Bool {
-        switch KnownDependency.role(of: dep.package) {
+    /// `KnownDependency.role`, except libhooker, which only ElleKit with its libhooker layer replaces.
+    private static func role(_ dep: DebDependency, _ context: TweakContext) -> KnownDependency? {
+        if dep.package == "org.coolstar.libhooker", !context.elleKitHasLibhooker { return .jailbreakOnly("libhooker") }
+        return KnownDependency.role(of: dep.package)
+    }
+
+    private static func isNotNeeded(_ role: KnownDependency?) -> Bool {
+        switch role {
         case .hooking, .settings, .ignored: true
         default: false
         }
     }
 
-    private static func status(_ dep: DebDependency, _ others: [TweakPackage], _ embedded: [TweakPackage]) -> DependencyStatus {
-        if isNotNeeded(dep) { return .notNeeded }
+    /// A `firmware` alternative inside a group of several (a lone one is checked with the slices).
+    private static func firmwareProblem(_ dep: DebDependency, _ context: TweakContext) -> TweakProblem? {
+        let b = DebControl.firmwareBounds([[dep]])
+        if b.unparseable { return .unreadableRequirement("iOS") }
+        if let device = context.deviceOS, !b.allows(device) { return .iOSVersion(required: describe(b), device: device) }
+        return nil
+    }
+
+    private static func status(_ dep: DebDependency, _ others: [TweakPackage], _ embedded: [TweakPackage],
+                               _ context: TweakContext) -> DependencyStatus {
+        let r = role(dep, context)
+        if isNotNeeded(r) { return .notNeeded }
+        // Nobody's copy of a jailbreak-only library makes it work without a jailbreak.
+        if case .jailbreakOnly(let n) = r { return .jailbreakOnly(n) }
         if let p = others.first(where: { satisfies($0, dep) }) { return .addedByYou(p.name) }
         if let p = embedded.first(where: { satisfies($0, dep) }) { return .providedByXSide(displayName(p)) }
-        if case .jailbreakOnly(let n) = KnownDependency.role(of: dep.package) { return .jailbreakOnly(n) }
         return .missing(dep)
     }
 
     private enum Outcome { case satisfied(TweakConversion?), unknown, problem(TweakProblem) }
 
     private static func dependsGroup(_ group: [DebDependency], _ others: [TweakPackage], _ embedded: [TweakPackage],
-                                     _ a: inout Analysis, _ chosen: inout Set<String>, _ rejected: inout Set<String>) {
+                                     _ context: TweakContext, _ a: inout Analysis,
+                                     _ chosen: inout [TweakPackage], _ rejected: inout Set<String>) {
         var outcomes: [Outcome] = []
         for dep in group {
-            // Hooking frameworks are always ElleKit; `firmware` was checked with the slices.
-            if isNotNeeded(dep) { outcomes.append(.satisfied(nil)); break }
+            let r = role(dep, context)
+            if dep.package == "firmware", group.count > 1 {
+                if let p = firmwareProblem(dep, context) { outcomes.append(.problem(p)); continue }
+                outcomes.append(.satisfied(nil)); break
+            }
+            // Hooking frameworks are always ElleKit; a lone `firmware` was checked with the slices.
+            if isNotNeeded(r) { outcomes.append(.satisfied(nil)); break }
+            if case .jailbreakOnly(let n) = r { outcomes.append(.problem(.needsJailbreak(n))); continue }
             let matching = (others + embedded).filter { idMatches($0, dep) }
             let theirs = others.first { satisfies($0, dep) }
             let ours = theirs == nil ? embedded.first { satisfies($0, dep) } : nil
             let pick = theirs ?? ours
             for p in matching where p.id != pick?.id { rejected.insert(p.id) }
-            if let theirs {
-                chosen.insert(theirs.id)
-                outcomes.append(.satisfied(.dependency(displayName(theirs))))
-                break
-            }
-            if let ours {
-                chosen.insert(ours.id)
-                a.embeddedUsed.insert(ours.id)
-                outcomes.append(.satisfied(.dependencyAdded(displayName(ours))))
+            if let pick {
+                if !chosen.contains(where: { $0.id == pick.id }) { chosen.append(pick) }
+                a.rely(on: pick, embedded: theirs == nil)
+                outcomes.append(.satisfied(theirs == nil ? .dependencyAdded(displayName(pick)) : .dependency(displayName(pick))))
                 break
             }
             let name = knownName(dep.package) ?? dep.package
             if dep.unparseable { outcomes.append(.problem(.unreadableRequirement(name))); continue }
-            switch KnownDependency.role(of: dep.package) {
-            case .jailbreakOnly(let n): outcomes.append(.problem(.needsJailbreak(n)))
-            case .library(let n): outcomes.append(.problem(.missingDependency(n)))
-            default:
-                // Unknown: a package that matched but in the wrong version is missing; otherwise its
-                // libraries are checked by name below.
-                outcomes.append(matching.isEmpty ? .unknown : .problem(.missingDependency(name)))
-            }
+            if case .library(let n) = r { outcomes.append(.problem(.missingDependency(n))); continue }
+            // Unknown: a package that matched but in the wrong version is missing; otherwise its
+            // libraries are checked by name below.
+            outcomes.append(matching.isEmpty ? .unknown : .problem(.missingDependency(name)))
         }
         if case .satisfied(let c)? = outcomes.last {
             if let c { a.convert(c) }
@@ -448,7 +553,7 @@ public enum TweakClassifier {
     private static func use(_ source: Source, _ p: TweakPackage, file: String, for name: String,
                             conversion: TweakConversion?, _ a: inout Analysis) {
         a.resolution[name] = loadPath(p, file)
-        if source == .embedded { a.embeddedUsed.insert(p.id) }
+        if source != .own { a.rely(on: p, embedded: source == .embedded) }
         if let conversion { a.convert(conversion) }
     }
 
@@ -463,26 +568,11 @@ public enum TweakClassifier {
             }
             return
         }
-        if name.hasPrefix("/System/") && !name.contains("/..") && !name.contains("/./") { return }
         let display = knownLibrary(name) ?? CrashClassifier.libraryName(name)
-
-        // An absolute path one of the packages ships (with `/var/jb` stripped) is theirs, even under
-        // /usr/lib: iOS has no such file there, and without an SDK `isSystemLibrary` can only guess.
-        let stripped = name.hasPrefix("/var/jb/") ? String(name.dropFirst("/var/jb".count)) : name
-        if name.hasPrefix("/") {
-            let rel = String(stripped.dropFirst())
-            let safe = !rel.isEmpty && !rel.utf8.contains(0)
-                && !rel.split(separator: "/", omittingEmptySubsequences: false).contains { $0 == ".." || $0 == "." || $0.isEmpty }
-            if safe {
-                if package.files.contains(rel) { use(.own, package, file: rel, for: name, conversion: .jailbreakPaths, &a); return }
-                for p in others where p.files.contains(rel) {
-                    use(.other, p, file: rel, for: name, conversion: .dependency(displayName(p)), &a); return
-                }
-                for p in embedded where p.files.contains(rel) {
-                    use(.embedded, p, file: rel, for: name, conversion: .dependencyAdded(displayName(p)), &a); return
-                }
-            }
-        }
+        // A library only a jailbreak has, wherever it's looked for (rootful, rootless, @rpath).
+        if let known = jailbreakOnlyImage(name) { a.fail(.needsJailbreak(known ?? display)); return }
+        // iOS's own libraries are never replaced by a package's file.
+        if name.hasPrefix("/System/") && !name.contains("/..") && !name.contains("/./") { return }
         if context.isSystemLibrary(name) { return }
 
         for prefix in ["@rpath/", "@executable_path/", "@loader_path/"] where name.hasPrefix(prefix) {
@@ -498,6 +588,7 @@ public enum TweakClassifier {
             }
             for p in others { if let f = libraryFile(p) { use(.other, p, file: f, for: name, conversion: .dependency(displayName(p)), &a); return } }
             for p in embedded { if let f = libraryFile(p) { use(.embedded, p, file: f, for: name, conversion: .dependencyAdded(displayName(p)), &a); return } }
+            if let known = knownLibrary(name) { a.fail(.missingDependency(known)); return }
             guard let appFiles = context.appFiles else { return }
             let inApp = prefix == "@rpath/" ? "Frameworks/" + x : x
             if !appFiles(inApp) { a.fail(.missingDependency(display)) }
@@ -505,9 +596,23 @@ public enum TweakClassifier {
         }
 
         guard name.hasPrefix("/") else { a.fail(.missingDependency(display)); return }
+        // An absolute path a package ships (with `/var/jb` stripped) is found in its copy.
+        let stripped = name.hasPrefix("/var/jb/") ? String(name.dropFirst("/var/jb".count)) : name
+        let rel = String(stripped.dropFirst())
+        let safe = !rel.isEmpty && !rel.utf8.contains(0)
+            && !rel.split(separator: "/", omittingEmptySubsequences: false).contains { $0 == ".." || $0 == "." || $0.isEmpty }
+        if safe {
+            if package.files.contains(rel) { use(.own, package, file: rel, for: name, conversion: .jailbreakPaths, &a); return }
+            for p in others where p.files.contains(rel) {
+                use(.other, p, file: rel, for: name, conversion: .dependency(displayName(p)), &a); return
+            }
+            for p in embedded where p.files.contains(rel) {
+                use(.embedded, p, file: rel, for: name, conversion: .dependencyAdded(displayName(p)), &a); return
+            }
+        }
         if let known = knownLibrary(name) { a.fail(.missingDependency(known)); return }
-        // Not part of iOS (checked above): under /usr/lib or anywhere else, only a jailbreak has it.
-        if CrashClassifier.isJailbreakPath(name) || stripped.hasPrefix("/usr/lib/") {
+        // Outside /usr/lib and /System: a jailbreak's folder. An unknown /usr/lib name: missing.
+        if CrashClassifier.isJailbreakPath(name) {
             a.fail(.needsJailbreak(display))
         } else {
             a.fail(.missingDependency(display))
@@ -528,4 +633,14 @@ public enum TweakClassifier {
                 && !f.split(separator: "/").dropLast().contains { $0.hasSuffix(".framework") }
         }
     }
+}
+
+/// One tweak's classification for one app and device, computed once.
+public struct TweakClassification: Sendable {
+    public var verdict: TweakVerdict
+    /// What applies once « Injecter quand même » is chosen (filter problem ignored).
+    public var verdictOverridingFilter: TweakVerdict
+    public var resolution: [String: String]
+    /// The embedded packages to copy, in `embedded` order.
+    public var providers: [TweakPackage]
 }

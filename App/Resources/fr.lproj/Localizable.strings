@@ -951,7 +951,7 @@
 "pending.line" = "Changement en attente : s'appliquera au prochain rafraîchissement de l'app sur %@";
 "pending.refreshNow" = "Rafraîchir maintenant";
 
-"tweaks.conversion.hookingLibrary" = "Sa bibliothèque d'injection (Substrate) est remplacée par ElleKit, ajouté à l'app";
+"tweaks.conversion.hookingLibrary" = "Sa bibliothèque d'injection (Substrate, Substitute ou libhooker) est remplacée par ElleKit, ajouté à l'app";
 "tweaks.conversion.jailbreakPaths" = "Ses fichiers sont copiés dans l'app et trouvés là plutôt que dans les dossiers du jailbreak";
 "tweaks.conversion.dependency" = "Utilise %@, venu d'un autre tweak que tu as ajouté";
 "tweaks.conversion.dependencyAdded" = "Dépendance ajoutée : %@";
