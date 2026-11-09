@@ -41,6 +41,15 @@ struct ZstdTests {
         #expect(!FileManager.default.fileExists(atPath: out.path))
     }
 
+    @Test func severalFramesAreConcatenated() async throws {
+        let one = try Data(contentsOf: fixture("hello.zst"))
+        let two = scratch(); let out = scratch()
+        defer { try? FileManager.default.removeItem(at: two); try? FileManager.default.removeItem(at: out) }
+        try (one + one).write(to: two)
+        try await Zstd.decompress(two, to: out, maxBytes: 1 << 20, runner: ProcessRunner())
+        #expect(try String(contentsOf: out, encoding: .utf8) == "hello\nhello\n")
+    }
+
     @Test func truncatedIsMalformed() async throws {
         let data = try Data(contentsOf: fixture("zeros-4MiB.zst"))
         let cut = scratch(); let out = scratch()
@@ -61,5 +70,52 @@ struct ZstdNoHelperTests {
         await #expect(throws: DebError.unsupportedCompression("zstd")) {
             try await Zstd.decompress(out, to: out, maxBytes: 1, runner: ProcessRunner(), helper: nil)
         }
+    }
+
+    private func fakeHelper(_ body: String) throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("fake-unzstd-\(UUID().uuidString)")
+        try Data("#!/bin/sh\n\(body)\n".utf8).write(to: url)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+        return url
+    }
+
+    @Test func aHelperKilledBySigintIsNotTooLarge() async throws {
+        // The runner reports a signal as its number: SIGINT (2) looks like the cap's exit code.
+        let helper = try fakeHelper("kill -INT $$")
+        defer { try? FileManager.default.removeItem(at: helper) }
+        let out = FileManager.default.temporaryDirectory.appendingPathComponent("zstd-\(UUID().uuidString)")
+        await #expect(throws: DebError.malformed("zstd helper failed")) {
+            try await Zstd.decompress(out, to: out, maxBytes: 1, runner: ProcessRunner(), helper: helper)
+        }
+    }
+
+    @Test func exitTwoNeedsTheCapMessage() async throws {
+        let helper = try fakeHelper("exit 2")
+        defer { try? FileManager.default.removeItem(at: helper) }
+        let out = FileManager.default.temporaryDirectory.appendingPathComponent("zstd-\(UUID().uuidString)")
+        await #expect(throws: DebError.malformed("zstd helper failed")) {
+            try await Zstd.decompress(out, to: out, maxBytes: 1, runner: ProcessRunner(), helper: helper)
+        }
+    }
+
+    @Test func aHelperThatNeverEndsTimesOut() async throws {
+        let helper = try fakeHelper("sleep 30")
+        defer { try? FileManager.default.removeItem(at: helper) }
+        let out = FileManager.default.temporaryDirectory.appendingPathComponent("zstd-\(UUID().uuidString)")
+        await #expect(throws: XSideError.self) {
+            try await Zstd.decompress(out, to: out, maxBytes: 1, runner: ProcessRunner(), helper: helper, timeout: .milliseconds(300))
+        }
+    }
+
+    @Test func helperPathInsideAnAppIsFoundFromTheCLI() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("zstd-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let helpers = root.appendingPathComponent("XSide.app/Contents/Helpers")
+        try FileManager.default.createDirectory(at: helpers, withIntermediateDirectories: true)
+        let helper = helpers.appendingPathComponent("xside-unzstd")
+        try Data("#!/bin/sh\n".utf8).write(to: helper)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: helper.path)
+        #expect(Zstd.bundledHelper(near: helpers.appendingPathComponent("xside"))?.lastPathComponent == "xside-unzstd")
+        #expect(Zstd.bundledHelper(near: URL(fileURLWithPath: "/usr/local/bin/xside")) == nil)
     }
 }

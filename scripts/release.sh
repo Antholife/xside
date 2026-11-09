@@ -52,7 +52,9 @@ UNZSTD="$APP/Contents/Helpers/xside-unzstd"
 [ -f "$UNZSTD" ] || { echo "No $UNZSTD (zstd source missing?): not releasing without it" >&2; exit 1; }
 [ "$(lipo -archs "$UNZSTD" 2>/dev/null | tr ' ' '\n' | sort | tr '\n' ' ')" = "arm64 x86_64 " ] \
     || { echo "$UNZSTD is not an x86_64 + arm64 binary" >&2; exit 1; }
-grep -q "^zstd v" "$APP/Contents/Resources/Acknowledgements.txt" 2>/dev/null \
+codesign --verify --strict "$UNZSTD" 2>/dev/null || { echo "$UNZSTD is not code-signed" >&2; exit 1; }
+. scripts/zstd.env
+grep -q "^zstd $ZSTD_TAG (${ZSTD_COMMIT:0:7}) " "$APP/Contents/Resources/Acknowledgements.txt" 2>/dev/null \
     && grep -q "BSD License" "$APP/Contents/Resources/Acknowledgements.txt" \
     || { echo "Acknowledgements.txt has no zstd section: not releasing without it" >&2; exit 1; }
 ZIP="build/release/XSide-$TAG.zip"

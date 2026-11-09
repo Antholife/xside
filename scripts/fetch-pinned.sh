@@ -20,5 +20,8 @@ if ! git -C "$DIR" cat-file -e "$COMMIT^{commit}" 2>/dev/null; then
     fi
 fi
 git -C "$DIR" checkout -q --detach "$COMMIT"
+# A cache that was edited or has extra files is never built.
+git -C "$DIR" reset -q --hard "$COMMIT"
+git -C "$DIR" clean -q -ffdx
 [ "$(git -C "$DIR" rev-parse HEAD)" = "$COMMIT" ] || { echo "error: $NAME source is not at $COMMIT" >&2; exit 1; }
 echo "$DIR"
