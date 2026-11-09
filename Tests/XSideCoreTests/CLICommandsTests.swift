@@ -69,6 +69,13 @@ struct CLICommandsTests {
         guard case .failure = parse("uninstall") else { Issue.record("no app"); return }
     }
 
+    @Test func crashDiagnosis() {
+        #expect(parse("crash YouTube") == .success(.crash(app: "YouTube", device: nil, json: false)))
+        #expect(parse("crash YouTube --device Duo --json") == .success(.crash(app: "YouTube", device: "Duo", json: true)))
+        guard case .failure = parse("crash") else { Issue.record("no app"); return }
+        guard case .failure = parse("crash a b") else { Issue.record("extra word"); return }
+    }
+
     @Test func keepsTheOlderCommands() {
         #expect(parse("refresh --all") == .success(.refreshAll))
         #expect(parse("refresh yt --device Duo") == .success(.refresh(app: "yt", device: "Duo")))

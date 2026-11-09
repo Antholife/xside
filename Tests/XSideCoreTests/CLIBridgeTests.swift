@@ -12,7 +12,9 @@ struct CLIBridgeTests {
                                            .pauseApp(recordID: id, deviceIDs: ["d1"], seconds: 7200),
                                            .pauseApp(recordID: id, deviceIDs: ["d1"], seconds: nil),
                                            .resumeApp(recordID: id, deviceIDs: ["d1", "d2"]),
-                                           .uninstall(recordID: id, deviceIDs: ["d2"]), .report] {
+                                           .uninstall(recordID: id, deviceIDs: ["d2"]), .report,
+                                           .crash(recordID: id, deviceIDs: ["d1"], json: false),
+                                           .crash(recordID: id, deviceIDs: ["d1", "d2"], json: true)] {
             let request = CLIBridge.Request(id: "1", command: command)
             #expect(CLIBridge.Request(userInfo: request.userInfo) == request)
         }

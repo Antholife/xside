@@ -72,7 +72,7 @@ public struct Resigner: Sendable {
     private let textLanguage: @Sendable (InstallationFacts?) -> String
     private static let codesign = "/usr/bin/codesign"
     private static let logger = Log("resign")
-    static let welcomeName = "XSideWelcome.dylib"
+    public static let welcomeName = "XSideWelcome.dylib"
     static let welcomeLoadPath = "@executable_path/Frameworks/\(welcomeName)"
 
     public init(runner: CommandRunning, welcomeDylib: URL? = nil,

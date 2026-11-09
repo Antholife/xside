@@ -109,6 +109,8 @@ public enum CLIInvocation: Equatable, Sendable {
     case uninstall(app: String, device: String?, yes: Bool)
     case logs(follow: Bool)
     case report
+    /// Why the app crashed lately (its newest crash log on the device, explained).
+    case crash(app: String, device: String?, json: Bool)
     case install(path: String)
     case open
 
@@ -192,6 +194,12 @@ public enum CLIInvocation: Equatable, Sendable {
             guard !args.isEmpty else { return .failure(CLIUsageError("which app? (xside uninstall <app> [--device <name>])")) }
             let app = args.removeFirst()
             return done(.uninstall(app: app, device: device, yes: yes))
+        case "crash":
+            let json = flag("--json")
+            guard case .success(let device) = option("--device") else { return .failure(CLIUsageError("--device needs a value")) }
+            guard !args.isEmpty else { return .failure(CLIUsageError("which app? (xside crash <app> [--device <name>])")) }
+            let app = args.removeFirst()
+            return done(.crash(app: app, device: device, json: json))
         default:
             return .failure(CLIUsageError("unknown command \(command)"))
         }

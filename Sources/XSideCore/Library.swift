@@ -133,6 +133,9 @@ public struct AppRecord: Codable, Identifiable, Equatable, Sendable {
     public var version: String?
     /// What the current .ipa supports for the iPhone Duo option. nil in older state.
     public var duo: DuoAppInfo?
+    /// The app's `CFBundleExecutable`: its process name in the device's crash logs. nil in older
+    /// state, until its next import or signing.
+    public var executable: String?
 
     public init(id: UUID, displayName: String, originalBundleID: String, signedBundleID: String,
                 ipaPath: String, options: InstallOptions, installations: [Installation], teamID: String,
@@ -167,6 +170,7 @@ public struct AppRecord: Codable, Identifiable, Equatable, Sendable {
         appIDFirstUse = try c.decodeIfPresent([String: Date].self, forKey: .appIDFirstUse)
         version = try? c.decodeIfPresent(String.self, forKey: .version)
         duo = try? c.decodeIfPresent(DuoAppInfo.self, forKey: .duo)
+        executable = try? c.decodeIfPresent(String.self, forKey: .executable)
     }
 }
 
@@ -295,6 +299,7 @@ public actor AppLibrary {
             items[index].ipaPath = relative
             items[index].version = info.version
             items[index].duo = info.duo
+            items[index].executable = info.executable
             record = items[index]
         } else {
             record = AppRecord(id: id, displayName: info.name, originalBundleID: info.bundleID,
@@ -302,6 +307,7 @@ public actor AppLibrary {
                                options: InstallOptions(), installations: [], teamID: teamID)
             record.version = info.version
             record.duo = info.duo
+            record.executable = info.executable
             items.append(record)
         }
         do { try save() } catch { items = previous; throw error }
@@ -417,6 +423,18 @@ public actor AppLibrary {
         let previous = items
         Self.applyPause(paused, by: origin, at: date, to: &items[index].installations[i])
         items[index].installations[i].pausedUntil = paused ? until : nil
+        do { try save() } catch { items = previous; throw error }
+        return true
+    }
+
+    /// Records the app's executable name (read at a signing, for records imported before it was
+    /// kept). True when it changed (and was saved).
+    @discardableResult
+    public func setExecutable(_ name: String, recordID: UUID) throws -> Bool {
+        let index = try indexOf(recordID)
+        guard !name.isEmpty, items[index].executable != name else { return false }
+        let previous = items
+        items[index].executable = name
         do { try save() } catch { items = previous; throw error }
         return true
     }

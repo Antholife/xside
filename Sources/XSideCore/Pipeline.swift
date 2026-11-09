@@ -429,6 +429,10 @@ public actor SideloadPipeline {
                         Self.logger.info("\(what): signing")
                     })
             }
+            // The process name crash logs go by, for records imported before XSide kept it.
+            if record.executable == nil, let executable = try? IPAInspector.info(of: app).executable {
+                _ = try? await library.setExecutable(executable, recordID: recordID)
+            }
             await progress(.installing)
             Self.logger.info("\(what): installing")
             try await CommandEnvironment.withDeveloperDir(current.developerDir) { [installer] in

@@ -33,6 +33,23 @@ struct LibraryTests {
         #expect(expected.first?.installations == [inst("dev1")])
     }
 
+    /// The process name crash logs go by: kept at import, persisted, filled in later for older
+    /// records (at a signing), and absent from older state without harm.
+    @Test func keepsTheExecutable() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let root = tmp.appendingPathComponent("lib")
+        let lib = AppLibrary(root: root)
+        let rec = try await lib.importIPA(try makeIPA(in: tmp), info: info, teamID: "TEAM123456")
+        #expect(rec.executable == "Demo")
+        #expect(await AppLibrary(root: root).records().first?.executable == "Demo")
+        #expect(try await lib.setExecutable("Demo", recordID: rec.id) == false) // unchanged: not written
+        #expect(try await lib.setExecutable("Demo2", recordID: rec.id))
+        #expect(await AppLibrary(root: root).records().first?.executable == "Demo2")
+        let old = Data(#"[{"id":"\#(UUID().uuidString)","originalBundleID":"com.x","ipaPath":"apps/x/original.ipa"}]"#.utf8)
+        let decoded = try JSONDecoder().decode([AppRecord].self, from: old)
+        #expect(decoded.first?.executable == nil)
+    }
+
     @Test func signedBundleIDUsesTeam() async throws {
         let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
         let lib = AppLibrary(root: tmp.appendingPathComponent("lib"))

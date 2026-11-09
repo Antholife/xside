@@ -33,6 +33,8 @@ public enum CLIBridge {
         case uninstall(recordID: UUID, deviceIDs: [String])
         /// The logs archive written like "Report a problem" does; the answer is its path.
         case report
+        /// The newest crash of the app on those devices, explained (`json`: the answer is JSON).
+        case crash(recordID: UUID, deviceIDs: [String], json: Bool)
     }
 
     /// The longest pause a duration may ask for: "until resumed" is the way past it.
@@ -134,6 +136,8 @@ public enum CLIBridge {
             case .resumeApp(let record, let devices): Self.target("resume-app", id, record, devices)
             case .uninstall(let record, let devices): Self.target("uninstall", id, record, devices)
             case .report: ["id": id, "command": "report"]
+            case .crash(let record, let devices, let json):
+                Self.target("crash", id, record, devices).merging(json ? ["json": "1"] : [:]) { $1 }
             }
         }
 
@@ -160,7 +164,7 @@ public enum CLIBridge {
                 }
             case "resume": self.init(id: id, key: info["key"], command: .resume)
             case "report": self.init(id: id, key: info["key"], command: .report)
-            case "settings", "pause-app", "resume-app", "uninstall":
+            case "settings", "pause-app", "resume-app", "uninstall", "crash":
                 guard let record = info["record"].flatMap(UUID.init(uuidString:)),
                       let devices = info["devices"]?.split(separator: "\n").map(String.init), !devices.isEmpty else { return nil }
                 switch info["command"] {
@@ -180,6 +184,7 @@ public enum CLIBridge {
                         self.init(id: id, key: info["key"], command: .pauseApp(recordID: record, deviceIDs: devices, seconds: nil))
                     }
                 case "resume-app": self.init(id: id, key: info["key"], command: .resumeApp(recordID: record, deviceIDs: devices))
+                case "crash": self.init(id: id, key: info["key"], command: .crash(recordID: record, deviceIDs: devices, json: info["json"] == "1"))
                 default: self.init(id: id, key: info["key"], command: .uninstall(recordID: record, deviceIDs: devices))
                 }
             default: return nil
