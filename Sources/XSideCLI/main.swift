@@ -50,9 +50,27 @@ var arguments = Array(CommandLine.arguments.dropFirst())
     arguments.remove(at: index)
     return true
 }
+/// `--json` on a command that asks XSide (`xside crash --json`): stdout gets only JSON, even on
+/// failure; progress and notes go to stderr.
+nonisolated(unsafe) var jsonOutput = false
+
 func fail(_ message: String) -> Never {
+    if jsonOutput {
+        print(CLIJSONOutput.error(message))
+        fflush(stdout)
+    }
     FileHandle.standardError.write(Data("xside: \(message)\n".utf8))
     exit(1)
+}
+
+/// A progress line: stdout, or stderr when stdout is kept for JSON.
+func progress(_ line: String) {
+    if jsonOutput {
+        FileHandle.standardError.write(Data("\(line)\n".utf8))
+    } else {
+        print(line)
+        fflush(stdout)
+    }
 }
 
 let debug = takeFlag("--debug")
@@ -153,8 +171,7 @@ var isAppRunning: Bool { !NSRunningApplication.runningApplications(withBundleIde
 /// Starts XSide in the background (no window, not brought forward) when it isn't running.
 @MainActor func launchInBackground() {
     guard !isAppRunning, let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return }
-    print("Starting XSide…")
-    fflush(stdout) // before an error printed on stderr
+    progress("Starting XSide…") // flushed: before an error printed on stderr
     let configuration = NSWorkspace.OpenConfiguration()
     configuration.activates = false
     let done = DispatchSemaphore(value: 0)
@@ -198,17 +215,25 @@ var isAppRunning: Bool { !NSRunningApplication.runningApplications(withBundleIde
         // Progress, so a long wait never looks stuck: the app's own words once (after 2 s, so a
         // quick answer prints alone), then a line a minute.
         if let message = workingMessage, !shownWorking, now.timeIntervalSince(askedAt) >= 2 {
-            print(message)
+            progress(message)
             shownWorking = true
             lastProgress = now
         } else if shownWorking, now.timeIntervalSince(lastProgress) >= 60 {
-            print("Still working…")
+            progress("Still working…")
             lastProgress = now
         }
         RunLoop.main.run(until: now.addingTimeInterval(0.1))
         outcome = wait.outcome(at: Date())
     }
     center.removeObserver(observer)
+    if jsonOutput {
+        // Only JSON on stdout, whatever the outcome; the exit code still tells it.
+        print(CLIJSONOutput.document(for: outcome))
+        if case .finished = outcome {} else if let why = CLIJSONOutput.message(for: outcome) {
+            FileHandle.standardError.write(Data("xside: \(why)\n".utf8))
+        }
+        exit(outcome.exitCode)
+    }
     switch outcome {
     case .finished(let reply) where reply.ok:
         print(reply.message)
@@ -397,6 +422,7 @@ case .success(let invocation):
     case .logs(let follow): logs(follow: follow)
     case .report: ask(.report)
     case .crash(let app, let device, let json):
+        jsonOutput = json
         let found = resolve(app, device)
         ask(.crash(recordID: found[0].recordID, deviceIDs: found.map(\.deviceID), json: json))
     case .install(let path):

@@ -124,3 +124,37 @@ struct CLICommandsTests {
         #expect(device.message.contains("ipad"))
     }
 }
+
+/// `--json`: stdout holds one JSON document, whatever happens (review Important 2).
+struct CLIJSONOutputTests {
+    private func object(_ text: String) throws -> [String: Any] {
+        try #require(try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+    }
+
+    @Test func anErrorIsJSON() throws {
+        let doc = try object(CLIJSONOutput.error("no app matches \"x\" \\ (see xside apps)"))
+        #expect(doc["ok"] as? Bool == false)
+        #expect(doc["error"] as? String == "no app matches \"x\" \\ (see xside apps)")
+    }
+
+    @Test func aRepliesJSONIsPrintedAsIs() throws {
+        let rows = "[\n  {\"app\" : \"Demo\", \"error\" : \"unreachable\"}\n]"
+        #expect(CLIJSONOutput.document(fromReply: rows) == rows)
+        #expect(try object(CLIJSONOutput.document(fromReply: "That app is no longer installed there."))["error"] as? String
+            == "That app is no longer installed there.")
+        #expect(try object(CLIJSONOutput.document(fromReply: ""))["ok"] as? Bool == false)
+    }
+
+    @Test func everyOutcomeGivesJSON() throws {
+        typealias Outcome = CLIBridge.Wait.Outcome
+        for outcome: Outcome in [.noAnswer, .stoppedAnswering, .stillWorking, .waiting] {
+            let doc = try object(CLIJSONOutput.document(for: outcome))
+            #expect(doc["ok"] as? Bool == false)
+            #expect((doc["error"] as? String)?.isEmpty == false)
+        }
+        let ok = CLIBridge.Reply(id: "1", ok: true, message: "[]")
+        #expect(CLIJSONOutput.document(for: .finished(ok)) == "[]")
+        let failed = CLIBridge.Reply(id: "1", ok: false, message: "[{\"error\":\"x\"}]")
+        #expect(CLIJSONOutput.document(for: .finished(failed)) == "[{\"error\":\"x\"}]")
+    }
+}

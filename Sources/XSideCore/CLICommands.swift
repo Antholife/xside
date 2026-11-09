@@ -264,3 +264,39 @@ public enum CLIMatch {
         return .success(onDevice)
     }
 }
+
+/// What `xside … --json` prints on stdout: one JSON document, even on failure (progress and
+/// notes go to stderr), so a script can always parse it.
+public enum CLIJSONOutput {
+    /// `{"error": …, "ok": false}`.
+    public static func error(_ message: String) -> String {
+        let data = try? JSONSerialization.data(withJSONObject: ["ok": false, "error": message], options: [.prettyPrinted, .sortedKeys])
+        return data.map { String(decoding: $0, as: UTF8.self) } ?? #"{"ok": false}"#
+    }
+
+    /// XSide's answer when it's JSON already, else that answer as an error document.
+    public static func document(fromReply message: String) -> String {
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty, (try? JSONSerialization.jsonObject(with: Data(trimmed.utf8), options: [.fragmentsAllowed])) != nil,
+           trimmed.first == "[" || trimmed.first == "{" {
+            return message
+        }
+        return error(trimmed.isEmpty ? "XSide gave no answer" : message)
+    }
+
+    /// The document for how a request to XSide ended.
+    public static func document(for outcome: CLIBridge.Wait.Outcome) -> String {
+        if case .finished(let reply) = outcome { return document(fromReply: reply.message) }
+        return error(message(for: outcome) ?? "no answer from XSide")
+    }
+
+    /// Why a request ended without XSide's answer (nil when it answered).
+    public static func message(for outcome: CLIBridge.Wait.Outcome) -> String? {
+        switch outcome {
+        case .finished: nil
+        case .noAnswer, .waiting: "no answer from XSide (is it running and up to date?)"
+        case .stoppedAnswering: "XSide stopped answering while working on it; the outcome is unknown: check its panel or xside apps"
+        case .stillWorking: "XSide is still working on it; check its panel or xside apps"
+        }
+    }
+}
