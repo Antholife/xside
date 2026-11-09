@@ -5,8 +5,10 @@ import Foundation
 /// before its module can say anything:
 /// - every `interval` (2 minutes);
 /// - every `boostedInterval` (15 s) for `boostDuration` (3 minutes) after XSide installed or
-///   opened an app on the device, or heard from one of its apps (a check-in): when a crash is
-///   most likely;
+///   opened an app on the device, or heard from one of its apps for the first time in a while (a
+///   check-in or watch after `checkInGap` without one from that installation): when a crash is
+///   most likely. The check-ins and watches that follow don't renew it: an app with the module
+///   reports a crash itself (its run marker, a watch dropped without a goodbye);
 /// - never while a job (install, refresh, uninstall) runs on the device, nor while a look runs;
 /// - after a look that failed (device locked, out of reach, devicectl busy), the wait doubles at
 ///   each failure in a row, up to `maxBackoff`; a look that works, or a sign of life (boost),
@@ -18,6 +20,8 @@ public struct CrashScanSchedule: Sendable, Equatable {
     public static let boostedInterval: TimeInterval = 15
     public static let boostDuration: TimeInterval = 180
     public static let maxBackoff: TimeInterval = 30 * 60
+    /// An installation silent this long: its next check-in boosts (a new run, most likely).
+    public static let checkInGap: TimeInterval = 10 * 60
 
     private struct Device: Sendable, Equatable {
         var lastStart: Date?
@@ -27,6 +31,8 @@ public struct CrashScanSchedule: Sendable, Equatable {
     }
 
     private var devices: [String: Device] = [:]
+    /// When each installation last checked in (or opened a watch).
+    private var lastCheckIn: [String: Date] = [:]
 
     public init() {}
 
@@ -65,7 +71,7 @@ public struct CrashScanSchedule: Sendable, Equatable {
         devices[deviceID] = d
     }
 
-    /// XSide installed or opened an app on the device, or one of its apps checked in: looks every
+    /// XSide installed or opened an app on the device (or `checkedIn` after a gap): looks every
     /// `boostedInterval` for `boostDuration`, starting with the next tick. The device answers, so
     /// a back-off ends.
     public mutating func boost(deviceID: String, now: Date) {
@@ -75,6 +81,21 @@ public struct CrashScanSchedule: Sendable, Equatable {
         devices[deviceID] = d
     }
 
+    /// An app checked in (or opened a watch): a sign of life, which ends a back-off; it boosts
+    /// only when the installation hadn't checked in for `checkInGap` (or ever, since XSide
+    /// started). Returns whether it boosted.
+    @discardableResult
+    public mutating func checkedIn(installation: String, deviceID: String, now: Date) -> Bool {
+        let previous = lastCheckIn[installation]
+        lastCheckIn[installation] = now
+        if let previous, previous <= now, now.timeIntervalSince(previous) < Self.checkInGap {
+            devices[deviceID, default: Device()].failures = 0
+            return false
+        }
+        boost(deviceID: deviceID, now: now)
+        return true
+    }
+
     public func isBoosted(deviceID: String, now: Date) -> Bool {
         devices[deviceID]?.boostedUntil.map { now < $0 } ?? false
     }
@@ -82,7 +103,10 @@ public struct CrashScanSchedule: Sendable, Equatable {
     public func failures(deviceID: String) -> Int { devices[deviceID]?.failures ?? 0 }
 
     /// The device is gone from XSide.
-    public mutating func forget(deviceID: String) { devices[deviceID] = nil }
+    public mutating func forget(deviceID: String) {
+        devices[deviceID] = nil
+        lastCheckIn = lastCheckIn.filter { !$0.key.hasSuffix("|\(deviceID)") }
+    }
 }
 
 /// How a held watch ended, as the server saw it.

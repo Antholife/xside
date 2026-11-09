@@ -1296,8 +1296,10 @@ final class AppModel {
         if case .checkIn = request { channelPollEvery[key] = request.pollEvery.map(TimeInterval.init) }
         updateLiveInstallations(now: now)
         if request.checkInReport != nil {
-            // An app just checked in: its device's crash logs are looked at more often for a while.
-            crashSchedule.boost(deviceID: key.deviceID, now: now)
+            // The first check-in (or watch) after a gap: a new run, so its device's crash logs are
+            // looked at more often for a while. The ones that follow don't renew it (morning review I2).
+            crashSchedule.checkedIn(installation: CrashWatch.key(recordID: key.recordID, deviceID: key.deviceID),
+                                    deviceID: key.deviceID, now: now)
         }
         // How the app's previous run ended (its module's run marker): a crash is looked for now.
         if let run = request.previousRun {

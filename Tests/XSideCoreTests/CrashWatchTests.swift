@@ -305,7 +305,7 @@ import Foundation
         #expect(s.isDue(deviceID: "OTHER", now: t0.addingTimeInterval(240), busy: false))
     }
 
-    @Test func everyFifteenSecondsForThreeMinutesAfterAnInstallOrACheckIn() {
+    @Test func everyFifteenSecondsForThreeMinutesAfterAnInstall() {
         var s = CrashScanSchedule()
         look(&s, at: 0)
         s.boost(deviceID: dev, now: t0.addingTimeInterval(10))
@@ -323,6 +323,47 @@ import Foundation
         s.boost(deviceID: dev, now: t0.addingTimeInterval(300))
         s.boost(deviceID: dev, now: t0.addingTimeInterval(200))
         #expect(s.isBoosted(deviceID: dev, now: t0.addingTimeInterval(479)))
+    }
+
+    /// Morning review I2: a polling or watching app's check-ins don't keep the 15 s listing on;
+    /// only the first one after a gap boosts.
+    @Test func onlyTheFirstCheckInAfterAGapBoosts() {
+        var s = CrashScanSchedule()
+        let app = "R|\(dev)"
+        look(&s, at: 0)
+        do { let boosted = s.checkedIn(installation: app, deviceID: dev, now: t0.addingTimeInterval(5)); #expect(boosted) }
+        #expect(s.isBoosted(deviceID: dev, now: t0.addingTimeInterval(5)))
+        // Polling every 15 s for an hour: never boosted again past the first 3 minutes.
+        var looks = 0
+        var at: TimeInterval = 15
+        while at <= 3600 {
+            do { let boosted = s.checkedIn(installation: app, deviceID: dev, now: t0.addingTimeInterval(at)); #expect(!boosted) }
+            if look(&s, at: at) { looks += 1 }
+            at += 15
+        }
+        #expect(!s.isBoosted(deviceID: dev, now: t0.addingTimeInterval(3600)))
+        // 3 boosted minutes (~12 looks), then every 2 minutes (~28 looks): far from 240.
+        #expect(looks <= 45)
+        // A watch every 300 s doesn't renew it either.
+        do { let boosted = s.checkedIn(installation: app, deviceID: dev, now: t0.addingTimeInterval(3900)); #expect(!boosted) }
+        // Silent for more than 10 minutes: the next check-in is a new run, boosted.
+        do { let boosted = s.checkedIn(installation: app, deviceID: dev, now: t0.addingTimeInterval(3900 + CrashScanSchedule.checkInGap)); #expect(boosted) }
+        // Another installation's first check-in boosts too.
+        do { let boosted = s.checkedIn(installation: "S|\(dev)", deviceID: dev, now: t0.addingTimeInterval(5000)); #expect(boosted) }
+    }
+
+    @Test func aCheckInWithoutBoostStillEndsABackOff() {
+        var s = CrashScanSchedule()
+        let app = "R|\(dev)"
+        s.checkedIn(installation: app, deviceID: dev, now: t0)
+        s.started(deviceID: dev, now: t0.addingTimeInterval(200))
+        s.finished(deviceID: dev, succeeded: false)
+        #expect(s.failures(deviceID: dev) == 1)
+        do { let boosted = s.checkedIn(installation: app, deviceID: dev, now: t0.addingTimeInterval(210)); #expect(!boosted) }
+        #expect(s.failures(deviceID: dev) == 0)
+        // A forgotten device forgets its installations' check-ins: the next one boosts.
+        s.forget(deviceID: dev)
+        do { let boosted = s.checkedIn(installation: app, deviceID: dev, now: t0.addingTimeInterval(220)); #expect(boosted) }
     }
 
     @Test func neverDuringAJobNorTwiceAtOnce() {
