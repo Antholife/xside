@@ -161,5 +161,32 @@
 			<string> (%2$d converted)</string>
 		</dict>
 	</dict>
+	<key>downloads.usedByCount</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$#@tweaks@ in %2$#@apps@</string>
+		<key>tweaks</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%1$d tweak</string>
+			<key>other</key>
+			<string>%1$d tweaks</string>
+		</dict>
+		<key>apps</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%2$d app</string>
+			<key>other</key>
+			<string>%2$d apps</string>
+		</dict>
+	</dict>
 </dict>
 </plist>

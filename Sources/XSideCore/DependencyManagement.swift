@@ -102,6 +102,19 @@ public struct DownloadUsage: Equatable, Sendable, Identifiable {
 
     public var id: String { sha256 }
     public var isUsed: Bool { !apps.isEmpty }
+
+    public init(sha256: String, packageID: String, version: String, repo: String, repoName: String, size: Int64,
+                downloadedAt: Date, apps: [String], users: [DownloadUser] = []) {
+        self.sha256 = sha256
+        self.packageID = packageID
+        self.version = version
+        self.repo = repo
+        self.repoName = repoName
+        self.size = size
+        self.downloadedAt = downloadedAt
+        self.apps = apps
+        self.users = users
+    }
 }
 
 /// A device's name short enough for a chip: « iPhone Duo de Anthony » → « iPhone Duo »,

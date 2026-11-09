@@ -154,15 +154,17 @@ final class AppModel {
     /// (orange lines in its Tweaks section), and the names being analysed.
     var tweakErrors: [JobKey: [String]] = [:]
     var tweaksBeingAdded: [JobKey: [String]] = [:]
-    /// The « Dépendances » sheet shown (nil: none), why its last action on a dependency failed
-    /// (by package id, an orange line under its row) and the dependencies being added.
-    var dependencySheet: DependencySheet?
+    /// A tweak card's dependencies (by package id): why the last action on one failed (orange
+    /// line), what it did (green line), what is going on now (« Téléchargement depuis … »).
     var dependencyErrors: [String: String] = [:]
     /// A crash fix's refresh, by installation: running, done or failed (the crash box says it).
     var crashFixes: [JobKey: CrashFixState] = [:]
     /// What the last add of a dependency did (by package id, a green line under its row).
     var dependencyNotices: [String: String] = [:]
     var dependenciesBeingAdded: Set<String> = []
+    var dependencyProgress: [String: String] = [:]
+    /// Settings > Mes apps > « Dépendances téléchargées »: the kept downloads (nil: not read yet).
+    var downloadUsage: [DownloadUsage]?
     /// Trusted repos are reached only through this (tests and snapshots never use the network).
     var repoFetcher: any HTTPFetching = URLSessionFetcher()
 
@@ -178,7 +180,8 @@ final class AppModel {
             if oldValue !== install {
                 oldValue?.removeAppIcon()
                 oldValue?.removeTweakStaging()
-                if case .draft? = dependencySheet?.target { closeDependencies() }
+                dependencyErrors = [:]
+                dependencyNotices = [:]
                 dropKeptEmptyRecords()
             }
         }
@@ -313,6 +316,11 @@ final class AppModel {
         liveInstallations = live
         appIDsRemaining = 7
         appIDReleases = [now.addingTimeInterval(2 * 86_400), now.addingTimeInterval(4 * 86_400), now.addingTimeInterval(5 * 86_400)]
+    }
+
+    /// Snapshot harness only: `flow` as the install window's (its tweak cards read it).
+    func showSnapshotFlow(_ flow: InstallFlow?) {
+        install = flow
     }
 
     /// Snapshot harness only: `finding` as a crash XSide found by itself on `key` (row flag and window).

@@ -109,8 +109,6 @@ extension AppModel {
         flow.tweakErrors = []
         guard !urls.isEmpty else { return }
         let staging = tweakStaging(flow)
-        var added: [String] = []
-        defer { openDependenciesIfMissing(added.map { DependencyTarget.draft(tweakID: $0) }) }
         for url in urls {
             let name = url.lastPathComponent
             flow.tweaksBeingAdded.append(name)
@@ -156,7 +154,6 @@ extension AppModel {
                 flow.tweaks.append(draft)
                 syncTweakDevices(flow)
             }
-            added.append(package.id)
         }
         refreshTweakVerdicts(flow)
     }
@@ -289,8 +286,6 @@ extension AppModel {
     func addTweaks(_ urls: [URL], for entry: AppEntry) async {
         let key = entry.id
         tweakErrors[key] = nil
-        var added: [String] = []
-        defer { openDependenciesIfMissing(added.map { DependencyTarget.entry(key, tweakID: $0) }) }
         for url in urls {
             let name = url.lastPathComponent
             tweaksBeingAdded[key, default: []].append(name)
@@ -310,7 +305,6 @@ extension AppModel {
                 }
                 await reloadRecords()
                 guard let current = currentEntry(key) else { continue }
-                added.append(package.id)
                 let verdict = tweakVerdicts(package, for: current).verdict
                 switch verdict {
                 case .incompatible:
@@ -417,6 +411,15 @@ enum TweakText {
         }
     }
 
+    /// « ajoutée par toi », « téléchargée depuis Chariz », « fournie par XSide ».
+    static func origin(_ o: TweakOrigin) -> String {
+        switch o {
+        case .added: L("tweaks.origin.added")
+        case .downloaded(let repo, _, _): L("tweaks.origin.downloaded", TrustedRepos.all.first { $0.id == repo }?.name ?? repo)
+        case .embedded: L("tweaks.origin.embedded")
+        }
+    }
+
     /// Where it loads: its filter's first bundle id, else « Cette app ».
     static func target(_ package: TweakPackage) -> String {
         package.targetBundleID ?? L("tweaks.target.thisApp")
@@ -461,37 +464,7 @@ enum DependencyTarget: Hashable {
     }
 }
 
-struct DependencySheet: Identifiable, Equatable {
-    let target: DependencyTarget
-    var id: DependencyTarget { target }
-}
-
 extension AppModel {
-    /// « Dépendances… », and by itself after adding a tweak with a « Manquante » one.
-    func showDependencies(for target: DependencyTarget) {
-        dependencyErrors = [:]
-        dependencyNotices = [:]
-        dependencySheet = DependencySheet(target: target)
-    }
-
-    func closeDependencies() {
-        dependencySheet = nil
-        dependencyErrors = [:]
-        dependencyNotices = [:]
-    }
-
-    /// The first of `targets` that has a missing dependency, unless a sheet is already shown.
-    func openDependenciesIfMissing(_ targets: [DependencyTarget]) {
-        guard dependencySheet == nil else { return }
-        for target in targets {
-            guard let found = dependencyRows(target) else { continue }
-            if found.rows.contains(where: \.isMissingAnywhere) {
-                showDependencies(for: target)
-                return
-            }
-        }
-    }
-
     /// The tweak and one row per `Depends` group, per device it goes on: each device with the
     /// other tweaks enabled there and its iOS (one status when they all agree). The devices are
     /// those where it is on (all of the window's or the app's when it is on nowhere).
@@ -532,7 +505,8 @@ extension AppModel {
     func addDependencyDeb(_ urls: [URL], for dependency: DebDependency, target: DependencyTarget) async {
         guard let url = urls.first else { return }
         await addingDependency(dependency) {
-            try await self.addDependency(url, origin: .added, for: dependency, target: target)
+            self.dependencyProgress[dependency.package] = L("tweaks.adding", url.lastPathComponent)
+            return try await self.addDependency(url, origin: .added, for: dependency, target: target)
         }
     }
 
@@ -547,12 +521,14 @@ extension AppModel {
             let downloader = DependencyDownloader(library: self.library,
                                                   client: RepoClient(fetcher: self.repoFetcher, runner: self.runner, workDir: work))
             let source: DependencySource
+            self.dependencyProgress[dependency.package] = L("deps.progress.looking", repoName)
             do {
                 source = try await downloader.prepare(dependency, preferredArchitecture: tweak.architecture)
             } catch {
                 throw DependencyFailure(text: Self.downloadErrorText(error, dependency: dependency, repoName: repoName))
             }
             guard self.confirmDownload(source, dependency: dependency) else { return .cancelled("download not confirmed") }
+            self.dependencyProgress[dependency.package] = Self.downloadingText(source)
             let fetched: (file: URL, origin: TweakOrigin)
             do {
                 fetched = try await downloader.fetch(source)
@@ -580,7 +556,10 @@ extension AppModel {
         dependencyErrors[key] = nil
         dependencyNotices[key] = nil
         dependenciesBeingAdded.insert(key)
-        defer { dependenciesBeingAdded.remove(key) }
+        defer {
+            dependenciesBeingAdded.remove(key)
+            dependencyProgress[key] = nil
+        }
         do {
             switch try await work() {
             case .added(let notice):
@@ -622,7 +601,7 @@ extension AppModel {
         var text: String
         if let size = source.size {
             text = L("deps.confirm.text", name + " " + source.version,
-                     ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file),
+                     fileSize(Int64(size)),
                      source.repoName, source.repoURL?.absoluteString ?? "")
         } else {
             text = L("deps.confirm.cached")
@@ -638,7 +617,7 @@ extension AppModel {
     /// `DependencyPlacement` says: where the tweak that needs it is on, and where it unblocks that
     /// tweak (which is turned on there). Says what it did.
     private func addDependency(_ url: URL, origin: TweakOrigin, for dependency: DebDependency,
-                               target: DependencyTarget) async throws -> DependencyOutcome {
+                               target: DependencyTarget, askReplace: Bool = true) async throws -> DependencyOutcome {
         switch target {
         case .draft(let tweakID):
             guard let flow = install, !flow.isRunning else { return .cancelled("the install window closed or started") }
@@ -663,7 +642,7 @@ extension AppModel {
                 flow.tweaks[i].enabledDevices.formUnion(devices)
             } else if let i = flow.tweaks.firstIndex(where: { $0.package.packageID == package.packageID }) {
                 let old = flow.tweaks[i]
-                guard confirmReplace(old: old.package, new: package) else {
+                guard !askReplace || confirmReplace(old: old.package, new: package) else {
                     try? FileManager.default.removeItem(at: directory)
                     return .cancelled("replacement not confirmed")
                 }
@@ -703,7 +682,7 @@ extension AppModel {
                                                                   deviceIDs: listing.filter(plan.dependencyOn.contains),
                                                                   runner: runner, now: Date())
             if let replacing {
-                guard confirmReplace(old: replacing, new: package) else {
+                guard !askReplace || confirmReplace(old: replacing, new: package) else {
                     await reloadRecords()
                     return .cancelled("replacement not confirmed")
                 }
@@ -730,6 +709,121 @@ extension AppModel {
         return text
     }
 
+    /// « Téléchargement depuis Chariz… 208 Ko », or the kept copy.
+    private static func downloadingText(_ source: DependencySource) -> String {
+        guard let size = source.size else { return L("deps.progress.cached") }
+        return L("deps.progress.downloading", source.repoName, fileSize(Int64(size)))
+    }
+
+    // MARK: Dependency cards
+
+    /// The tweaks of the window (step ③) or of the app's pool (Mes apps) that `dependency` is a
+    /// dependency of.
+    func dependents(of dependency: TweakPackage, target: DependencyTarget) -> [TweakPackage] {
+        DependencyRows.dependents(of: dependency, among: pool(target))
+    }
+
+    private func pool(_ target: DependencyTarget) -> [TweakPackage] {
+        switch target {
+        case .draft: install?.tweaks.map(\.package) ?? []
+        case .entry(let key, _): records.first { $0.id == key.recordID }?.tweaks ?? []
+        }
+    }
+
+    /// « Mettre à jour » on a dependency card: only now is the trusted repo asked. A newer version
+    /// that still satisfies what needs it is confirmed, downloaded and put in its place, on the
+    /// same devices; otherwise the card says it is up to date.
+    func updateDependency(_ package: TweakPackage, target: DependencyTarget) async {
+        let wanted = dependents(of: package, target: target).lazy.flatMap { $0.depends.joined() }
+            .first { $0.package == package.packageID || package.provides.contains($0.package) }
+        let dependency = wanted.map { DebDependency(package: package.packageID, relation: $0.relation, version: $0.version) }
+            ?? DebDependency(package: package.packageID)
+        let repoName = TrustedRepos.offering(package.packageID).first?.name ?? package.packageID
+        await addingDependency(dependency) {
+            let work = self.libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: work) }
+            let downloader = DependencyDownloader(library: self.library,
+                                                  client: RepoClient(fetcher: self.repoFetcher, runner: self.runner, workDir: work))
+            self.dependencyProgress[dependency.package] = L("deps.progress.looking", repoName)
+            let offer: RepoOffer?
+            do {
+                offer = try await downloader.update(dependency, installed: package.version ?? "0",
+                                                    preferredArchitecture: package.architecture)
+            } catch {
+                throw DependencyFailure(text: Self.downloadErrorText(error, dependency: dependency, repoName: repoName))
+            }
+            guard let offer else { return .added(L("deps.upToDate", package.name, package.version ?? "?")) }
+            let source = DependencySource.repo(offer)
+            guard self.confirmDownload(source, dependency: dependency) else { return .cancelled("update not confirmed") }
+            self.dependencyProgress[dependency.package] = Self.downloadingText(source)
+            let fetched: (file: URL, origin: TweakOrigin)
+            do {
+                fetched = try await downloader.fetch(source)
+            } catch {
+                throw DependencyFailure(text: Self.downloadErrorText(error, dependency: dependency, repoName: repoName))
+            }
+            // Placed like the version it replaces (the card's own id as the « tweak »).
+            let outcome = try await self.addDependency(fetched.file, origin: fetched.origin, for: dependency,
+                                                       target: target, askReplace: false)
+            if case .added = outcome { return .added(L("deps.updated", package.name, offer.version)) }
+            return outcome
+        }
+    }
+
+    /// « Retirer » on a dependency a tweak still uses: says which tweak becomes ❌ where, and asks.
+    /// True to go on.
+    func confirmRemovingDependency(_ package: TweakPackage, target: DependencyTarget) -> Bool {
+        var broken: [(tweak: String, device: String)] = []
+        switch target {
+        case .draft:
+            guard let flow = install else { return true }
+            for id in flow.deviceIDs {
+                guard flow.tweaks.contains(where: { $0.id == package.id && $0.enabledDevices.contains(id) }) else { continue }
+                let enabled = flow.tweaks.filter { $0.isEnabled(on: id) || $0.id == package.id }.map(\.package)
+                for t in DependencyRows.brokenByRemoving(package, enabled: enabled, context: draftContext(flow, package.id, on: id)) {
+                    broken.append((t.name, deviceName(id)))
+                }
+            }
+        case .entry(let key, _):
+            guard let record = records.first(where: { $0.id == key.recordID }) else { return true }
+            let on = Set((tweakLists(record)[key.deviceID] ?? []).filter(\.enabled).map(\.id))
+            let enabled = (record.tweaks ?? []).filter { on.contains($0.id) }
+            guard on.contains(package.id) else { return true }
+            for t in DependencyRows.brokenByRemoving(package, enabled: enabled, context: entryContext(record, package.id, on: key.deviceID)) {
+                broken.append((t.name, deviceName(key.deviceID)))
+            }
+        }
+        guard !broken.isEmpty else { return true }
+        let alert = NSAlert()
+        alert.messageText = L("deps.remove.title", package.name)
+        alert.informativeText = broken.map { L("deps.remove.breaks", $0.tweak, $0.device) }.joined(separator: "\n")
+        alert.addButton(withTitle: L("tweaks.remove"))
+        alert.addButton(withTitle: L("install.cancel"))
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    func deviceName(_ id: String) -> String {
+        devices.first { $0.id == id }?.name ?? L("popover.unknownDevice")
+    }
+
+    // MARK: Settings > Mes apps > « Dépendances téléchargées »
+
+    func loadDownloadUsage() async {
+        downloadUsage = await library.downloadUsage()
+    }
+
+    func removeKeptDownload(_ sha256: String) async {
+        let removed = await library.removeUnusedDownload(sha256: sha256)
+        Self.logger.notice("kept download \(sha256) \(removed ? "deleted" : "kept (in use)")")
+        await loadDownloadUsage()
+    }
+
+    func removeUnusedDownloads() async {
+        let freed = await library.removeUnusedDownloads()
+        Self.logger.notice("kept downloads: \(freed.count) deleted, \(freed.bytes) bytes freed")
+        await loadDownloadUsage()
+    }
+
     private static func mismatchText(_ match: DependencyMatch) -> String? {
         switch match {
         case .matches: nil
@@ -739,4 +833,9 @@ extension AppModel {
         case .unsuitable(let found, let needed): L("deps.unsuitable", found, needed)
         }
     }
+}
+
+/// « 208 Ko » / « 208 KB », in the app's language.
+func fileSize(_ bytes: Int64) -> String {
+    bytes.formatted(.byteCount(style: .file).locale(Locale(identifier: AppLanguage.current.resolvedCode)))
 }
