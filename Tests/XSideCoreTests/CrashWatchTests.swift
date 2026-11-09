@@ -244,7 +244,9 @@ import Foundation
         #expect(CrashAction.suggested(for: diagnosis(.noSceneSupport, at: nil)) == nil)
         #expect(CrashAction.suggested(for: diagnosis(.codeSignature, at: nil)) == .refresh)
         #expect(CrashAction.suggested(for: diagnosis(.iCloud, at: nil)) == .turnOnICloudSignedOut)
-        #expect(CrashAction.suggested(for: diagnosis(.tweak, at: nil)) == nil)
+        #expect(CrashAction.suggested(for: diagnosis(.tweak, at: nil)) == .disableTweak)
+        #expect(CrashAction.suggested(for: diagnosis(.tweakSupport, at: nil)) == .disableConvertedTweaks)
+        #expect(CrashAction.suggested(for: diagnosis(.bundledLibrary, at: nil)) == nil)
     }
 }
 

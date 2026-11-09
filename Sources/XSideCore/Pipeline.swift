@@ -577,7 +577,10 @@ public actor SideloadPipeline {
                                                                     forcedTweaks: forcedTweaks?.isEmpty == false ? forcedTweaks : nil),
                                       tweaks: tweaks.uses,
                                       tweakResults: report.flatMap { $0.results.isEmpty ? nil : $0.results },
-                                      embeddedDependencies: report.flatMap { $0.embedded.isEmpty ? nil : $0.embedded })
+                                      embeddedDependencies: report.flatMap { $0.embedded.isEmpty ? nil : $0.embedded },
+                                      // Kept until the next signing: a crash names them even once replaced.
+                                      injectedTweaks: report.flatMap { $0.injected.isEmpty ? nil : $0.injected },
+                                      tweakSupportImages: report.flatMap { $0.supportImages.isEmpty ? nil : $0.supportImages })
             // Choices the person changed while this job ran stay for the next signing.
             let installation = try await library.recordSigning(signed, for: recordID, requireExisting: previous != nil,
                                                                startedFrom: record.signingSnapshot(deviceID: device.id))

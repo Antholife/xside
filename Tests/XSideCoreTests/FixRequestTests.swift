@@ -43,6 +43,21 @@ struct FixRequestCrashTests {
         #expect(text.contains("XSideDuoLegacy.dylib  XSAttach + 40"))
     }
 
+    @Test func crashDetailsListTheTweaks() {
+        let alpha = InjectedTweak(id: "0123456789abcdef", name: "Alpha\nEvil", packageID: "com.example.alpha", version: "1.2",
+                                  imageNames: ["Alpha.dylib"],
+                                  conversions: [.hookingLibrary, .jailbreakPaths, .dependencyAdded("Cephei")])
+        let beta = InjectedTweak(id: "fedcba9876543210", name: "Beta", packageID: "com.example.beta", imageNames: ["Beta.dylib"])
+        var f = facts
+        f.tweaks = [alpha, beta].map(TweakCrashFix.reportLine)
+        var d = CrashDiagnosis(cause: .tweakSupport, subject: "Cephei")
+        d.shellCommand = true
+        let text = FixRequest.crashDetails(d, facts: f, secrets: [], appIDs: [])
+        #expect(text.contains("Tweaks: Alpha Evil 1.2 (converted: ElleKit, paths, dependency added: Cephei); Beta"))
+        #expect(text.contains("Shell command: yes"))
+        #expect(FixRequest.crashDetails(d, facts: facts, secrets: [], appIDs: []).contains("Tweaks: none"))
+    }
+
     @Test func detailsKeepNothingPersonal() {
         let d = CrashDiagnosis(cause: .other, subject: "Demo",
                                topFrames: ["/private/var/containers/Bundle/Application/0A1B2C3D-0000-1111-2222-333344445555/Demo.app/Demo com.vendor.app.TEAM123456",

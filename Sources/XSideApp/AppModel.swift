@@ -2683,11 +2683,13 @@ final class AppModel {
     /// The diagnosis of a crash log read from the device, with its log cleaned off the main actor
     /// (it can be megabytes).
     private func finding(_ found: CrashLogFetcher.Found, record: AppRecord, installation: Installation) async -> CrashFinding {
-        let context = CrashContext(moduleName: Resigner.welcomeName,
+        var context = CrashContext(moduleName: Resigner.welcomeName,
                                    // What the last signing applied: a patch that failed isn't in the app.
                                    duoCompatibilityOn: installation.hasDuoCompatibility,
                                    // Asked for but not added by the last signing: it's off in the app.
                                    iCloudSignedOutOn: installation.hasICloudSignedOut)
+        // The tweaks the last signing injected (even a version replaced since) and what supports them.
+        context.addTweaks(of: installation, pool: record.tweaks ?? [])
         let diagnosis = CrashClassifier.classify(found.log, context: context)
         let secrets = [installation.teamID, record.teamID, installation.deviceID].compactMap { $0 }
         let text = found.text
@@ -2893,9 +2895,11 @@ final class AppModel {
     /// The fix a crash suggests (its window, the install window): changes the option and signs
     /// the app again on that device. False when the refresh couldn't start (device away, busy).
     /// `allDevices`: "Reinstall without XSide features" for the app on every device (the others
-    /// at their next signing); otherwise for this device only (morning review M7).
+    /// at their next signing); otherwise for this device only (morning review M7). The tweak fixes
+    /// likewise disable the tweak (`diagnosis.subject`, its image) or the converted tweaks here, or
+    /// on every installation listing them.
     @discardableResult
-    func perform(_ action: CrashAction, on key: JobKey, allDevices: Bool = false) async -> Bool {
+    func perform(_ action: CrashAction, on key: JobKey, allDevices: Bool = false, diagnosis: CrashDiagnosis? = nil) async -> Bool {
         guard let record = records.first(where: { $0.id == key.recordID }),
               let installation = record.installations.first(where: { $0.deviceID == key.deviceID }) else { return false }
         switch action {
@@ -2909,6 +2913,18 @@ final class AppModel {
         case .turnOnICloudSignedOut: await setICloudSignedOut(true, for: AppEntry(record: record, installation: installation))
         case .turnOffICloudSignedOut: await setICloudSignedOut(false, for: AppEntry(record: record, installation: installation))
         case .refresh: break
+        case .disableTweak, .disableConvertedTweaks:
+            let pool = record.tweaks ?? []
+            for other in record.installations where allDevices || other.deviceID == key.deviceID {
+                let uses = action == .disableTweak
+                    ? diagnosis?.subject.flatMap { TweakCrashFix.disablingTweak(image: $0, crashed: installation, in: other, pool: pool) }
+                    : TweakCrashFix.disablingConverted(crashed: installation, in: other, pool: pool)
+                guard let uses else { continue }
+                do { try await library.setTweaks(uses, recordID: key.recordID, deviceID: other.deviceID) } catch {
+                    Self.logger.error("tweak crash fix failed on \(other.deviceID): \(String(describing: error))")
+                }
+            }
+            await reloadRecords()
         }
         return refreshNow(RefreshJob(recordID: key.recordID, deviceID: key.deviceID))
     }

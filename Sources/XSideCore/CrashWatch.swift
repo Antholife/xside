@@ -42,9 +42,14 @@ public enum CrashAction: String, Codable, Sendable, CaseIterable {
     case turnOnICloudSignedOut
     /// The crash is in "Simulate signed-out iCloud"'s library: install again without the option.
     case turnOffICloudSignedOut
+    /// The crash is in a tweak XSide injected: disable it (it stays in the app's pool) and sign again.
+    case disableTweak
+    /// The crash is in what XSide added for converted tweaks (ElleKit, the support library, an
+    /// embedded dependency): disable every converted tweak and sign again.
+    case disableConvertedTweaks
 
-    /// The action the diagnosis suggests, if XSide can do it. A tweak XSide added would be
-    /// removed here; XSide doesn't add tweaks yet, so a tweak crash has no button.
+    /// The action the diagnosis suggests, if XSide can do it. A library the .ipa came with
+    /// (`bundledLibrary`) isn't XSide's to remove: no button.
     public static func suggested(for d: CrashDiagnosis) -> CrashAction? {
         switch d.cause {
         case .xsideModule: return .reinstallWithoutXSide
@@ -55,6 +60,9 @@ public enum CrashAction: String, Codable, Sendable, CaseIterable {
         // Only that option adds the library: going without it is the fix.
         case .iCloudShim: return .turnOffICloudSignedOut
         case .iCloud: return d.iCloudSignedOutOn == true ? nil : .turnOnICloudSignedOut
+        // `.tweak` is only a tweak XSide injected (`CrashContext.tweakNames`).
+        case .tweak: return .disableTweak
+        case .tweakSupport: return .disableConvertedTweaks
         default: return nil
         }
     }

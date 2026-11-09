@@ -33,6 +33,37 @@ public enum TweakResult: Codable, Equatable, Sendable {
     case skipped(TweakSkip)
 }
 
+/// A tweak as one signing injected it: kept with the installation until its next signing, so a
+/// crash still names it after the person replaced the version or dropped it from the pool.
+public struct InjectedTweak: Codable, Equatable, Sendable {
+    /// `TweakPackage.id`.
+    public var id: String
+    public var name: String
+    public var packageID: String
+    public var version: String?
+    /// Its Mach-O files' names, as crash logs name the images.
+    public var imageNames: [String]
+    /// What XSide changed so that it works without a jailbreak. nil: injected as it is.
+    public var conversions: [TweakConversion]?
+
+    public init(id: String, name: String, packageID: String, version: String? = nil, imageNames: [String],
+                conversions: [TweakConversion]? = nil) {
+        self.id = id
+        self.name = name
+        self.packageID = packageID
+        self.version = version
+        self.imageNames = imageNames
+        self.conversions = conversions
+    }
+
+    public init(_ package: TweakPackage, conversions: [TweakConversion]?) {
+        self.init(id: package.id, name: package.name, packageID: package.packageID, version: package.version,
+                  imageNames: package.binaries.map(\.imageName), conversions: conversions)
+    }
+
+    public var converted: Bool { conversions != nil }
+}
+
 public struct Installation: Codable, Equatable, Sendable {
     public var deviceID: String
     public var installedAt: Date
@@ -110,6 +141,12 @@ public struct Installation: Codable, Equatable, Sendable {
     /// Package ids of the dependencies XSide added by itself at the last signing (for the crash
     /// wording). nil: none.
     public var embeddedDependencies: [String]?
+    /// The tweaks the last signing injected (name, version, images, conversions). nil: none, or
+    /// older state (`injectedTweakHistory(pool:)` then reads the pool).
+    public var injectedTweaks: [InjectedTweak]?
+    /// Image names of the libraries the last signing added for converted tweaks: ElleKit, the
+    /// support library, XSide's embedded dependencies. nil: none, or older state.
+    public var tweakSupportImages: [String]?
     /// Tweaks the app on the device has.
     public var injectedTweakCount: Int {
         (tweakResults ?? [:]).values.reduce(0) { n, r in if case .injected = r { n + 1 } else { n } }
@@ -142,7 +179,10 @@ public struct Installation: Codable, Equatable, Sendable {
                 iCloudSignedOutSkippedForModule: Bool? = nil, duoLegacyModule: Bool? = nil,
                 withoutXSideFeaturesHere: Bool? = nil, signedChoices: SigningChoices? = nil,
                 tweaks: [TweakUse]? = nil, tweakResults: [String: TweakResult]? = nil,
-                embeddedDependencies: [String]? = nil) {
+                embeddedDependencies: [String]? = nil, injectedTweaks: [InjectedTweak]? = nil,
+                tweakSupportImages: [String]? = nil) {
+        self.injectedTweaks = injectedTweaks
+        self.tweakSupportImages = tweakSupportImages
         self.tweaks = tweaks
         self.tweakResults = tweakResults
         self.embeddedDependencies = embeddedDependencies
@@ -210,6 +250,8 @@ public struct Installation: Codable, Equatable, Sendable {
         tweaks = try? c.decodeIfPresent([TweakUse].self, forKey: .tweaks)
         tweakResults = try? c.decodeIfPresent([String: TweakResult].self, forKey: .tweakResults)
         embeddedDependencies = try? c.decodeIfPresent([String].self, forKey: .embeddedDependencies)
+        injectedTweaks = try? c.decodeIfPresent([InjectedTweak].self, forKey: .injectedTweaks)
+        tweakSupportImages = try? c.decodeIfPresent([String].self, forKey: .tweakSupportImages)
     }
 }
 

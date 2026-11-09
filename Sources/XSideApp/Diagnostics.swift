@@ -195,6 +195,7 @@ extension AppModel {
                 var text = "    on \(i.deviceID): installed \(i.installedAt.formatted(.iso8601)), expires \(i.expiresAt.formatted(.iso8601))"
                 if i.refreshPaused { text += ", paused" }
                 if let key = i.lastErrorKey { text += ", last error \(key)" }
+                if let tweaks = TweakCrashFix.summary(i, pool: record.tweaks ?? []) { text += ", \(tweaks)" }
                 lines.append(text)
             }
         }

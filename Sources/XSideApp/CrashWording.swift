@@ -33,7 +33,13 @@ struct CrashWording {
         case .missingSymbol:
             explanation = f(base + ".text", app, subject, d.library ?? t("crash.aLibrary"))
             advice = t("crash.cause.missingLibrary" + (d.inApp == true ? ".adviceApp" : ".adviceSystem"))
-        case .tweak, .bundledLibrary:
+        case .tweak, .tweakSupport:
+            // The tweak's own name when XSide knows it ("Alpha 1.2"), else its image's.
+            let text = f(base + ".text", app, d.cause == .tweak ? d.tweakName ?? subject : subject)
+            // Cephei's HBOutputForShellCommand and the like: no shell without a jailbreak.
+            explanation = d.shellCommand == true ? text + " " + t("crash.shellCommand") : text
+            advice = t(base + ".advice")
+        case .bundledLibrary:
             explanation = f(base + ".text", app, subject)
             advice = t(base + ".advice")
         case .other:

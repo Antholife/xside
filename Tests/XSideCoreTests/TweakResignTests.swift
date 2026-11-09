@@ -322,7 +322,8 @@ struct TweakResignTests {
         let commands = try MachOPatcher.loadCommands(data, at: 0)
         let tweakCommand = commands.first { MachOPatcher.dylibName(data, $0) == entryPath(a) }
         #expect(tweakCommand?.cmd == MachOPatcher.loadWeakDylib)
-        #expect(await reports.last == TweakSigningReport(results: [idA: .injected(converted: false)], embedded: []))
+        #expect(await reports.last == TweakSigningReport(results: [idA: .injected(converted: false)], embedded: [],
+                                                         injected: [InjectedTweak(a.package, conversions: nil)]))
         // Nothing needs ElleKit or the support library: neither is there.
         #expect(!exists(app.appendingPathComponent(TweakLayout.folder + "/" + TweakLayout.elleKitName)))
         #expect(!exists(app.appendingPathComponent(TweakLayout.folder + "/" + TweakLayout.supportName)))
@@ -349,6 +350,8 @@ struct TweakResignTests {
         #expect(names.filter { $0 == TweakLayout.elleKitLoadPath }.count == 1)
         #expect(names.firstIndex(of: TweakLayout.elleKitLoadPath)! < names.firstIndex(of: entryPath(a))!)
         #expect(await reports.last?.results == [idA: .injected(converted: true)])
+        #expect(await reports.last?.supportImages == [TweakLayout.elleKitName])
+        #expect(await reports.last?.injected.first?.conversions == [.hookingLibrary])
     }
 
     @Test func noElleKitInThisBuildSkipsTheSubstrateTweakOnly() async throws {
@@ -376,6 +379,11 @@ struct TweakResignTests {
         let report = await reports.last
         #expect(report?.embedded == ["ws.hbang.common"])
         #expect(report?.results == [idA: .injected(converted: true)])
+        // Named for a crash: the tweak with what was converted, and the dependency's image.
+        #expect(report?.injected.map(\.id) == [idA])
+        #expect(report?.injected.first?.converted == true)
+        #expect(report?.injected.first?.conversions?.contains { if case .dependencyAdded = $0 { true } else { false } } == true)
+        #expect(report?.supportImages.contains("Cephei") == true)
     }
 
     @Test func notCopiedWhenNoTweakNeedsIt() async throws {

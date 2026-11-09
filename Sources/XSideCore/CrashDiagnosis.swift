@@ -249,13 +249,20 @@ public struct CrashContext: Equatable, Sendable {
     public var moduleName: String
     /// Tweaks XSide injected into it (file names).
     public var tweakNames: Set<String>
+    /// What XSide added so that converted tweaks work: ElleKit, the support library, the image
+    /// names of the embedded dependencies (Cephei…).
+    public var tweakSupportNames: Set<String>
+    /// The injected tweaks' names for people ("Alpha 1.2"), by image name.
+    public var tweakLabels: [String: String]
     /// The installation has the iPhone Duo option: its SDK raise is what makes iOS ask for scenes.
     public var duoCompatibilityOn: Bool
     /// The installation has "Simulate signed-out iCloud": an iCloud crash is then one it doesn't cover.
     public var iCloudSignedOutOn: Bool
 
-    public init(moduleName: String, tweakNames: Set<String> = [], duoCompatibilityOn: Bool = false,
-                iCloudSignedOutOn: Bool = false) {
+    public init(moduleName: String, tweakNames: Set<String> = [], tweakSupportNames: Set<String> = [],
+                tweakLabels: [String: String] = [:], duoCompatibilityOn: Bool = false, iCloudSignedOutOn: Bool = false) {
+        self.tweakSupportNames = tweakSupportNames
+        self.tweakLabels = tweakLabels
         self.iCloudSignedOutOn = iCloudSignedOutOn
         self.moduleName = moduleName
         self.tweakNames = tweakNames
@@ -266,7 +273,7 @@ public struct CrashContext: Equatable, Sendable {
 /// The plain cause of a crash; the app words it (`crash.cause.<rawValue>.*`).
 public enum CrashCause: String, Codable, Sendable, CaseIterable {
     case noSceneSupport, missingLibrary, missingSymbol, jailbreakLibrary, codeSignature, xsideModule, duoLegacyModule, iCloudShim
-    case tweak, bundledLibrary
+    case tweak, tweakSupport, bundledLibrary
     case iCloud, outOfMemory, launchTimeout, hang, other
 }
 
@@ -282,6 +289,11 @@ public struct CrashDiagnosis: Codable, Equatable, Sendable {
     public var duoCompatibilityOn: Bool
     /// The installation had "Simulate signed-out iCloud" on (nil in older crash files: off).
     public var iCloudSignedOutOn: Bool?
+    /// tweak: its name for people ("Alpha 1.2"), when XSide knows it (nil in older crash files).
+    public var tweakName: String?
+    /// tweak/tweakSupport: it crashed running a shell command (`/var/jb/bin/sh`…), which an app
+    /// can't do without a jailbreak. nil: not seen (or older crash files).
+    public var shellCommand: Bool?
     public var date: Date?
     public var appVersion: String?
     public var exceptionType: String?
@@ -375,15 +387,29 @@ public enum CrashClassifier {
                 // "Simulate signed-out iCloud"'s library: XSide added it, not the .ipa.
                 d.cause = .iCloudShim
                 d.iCloudSignedOutOn = true
+            } else if context.tweakSupportNames.contains(owner) {
+                // ElleKit, the support library or an embedded dependency: XSide added it for the
+                // converted tweaks, which are what calls into it.
+                d.cause = .tweakSupport
             } else if context.tweakNames.contains(owner) {
                 d.cause = .tweak
+                d.tweakName = context.tweakLabels[owner]
             } else if owner.hasSuffix(".dylib") {
                 d.cause = .bundledLibrary
             }
+            if d.cause == .tweak || d.cause == .tweakSupport, frames.contains(where: isShellCommand) { d.shellCommand = true }
             return d
         }
         d.subject = stack.first(where: { $0.image != nil })?.image
         return d
+    }
+
+    /// Symbols of running a shell command: Cephei's `HBOutputForShellCommand` (`/var/jb/bin/sh`),
+    /// `system`, `popen`, `posix_spawn`, `NSTask`.
+    private static func isShellCommand(_ frame: CrashFrame) -> Bool {
+        guard let symbol = frame.symbol else { return false }
+        if symbol.contains("HBOutputForShellCommand") || symbol.contains("NSTask") || symbol.hasPrefix("posix_spawn") { return true }
+        return ["system", "popen", "_system", "_popen"].contains(symbol)
     }
 
     /// dyld refused to start the app: a library or a symbol it needs isn't there.

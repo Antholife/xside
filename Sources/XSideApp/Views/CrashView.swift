@@ -132,8 +132,8 @@ private struct CrashView: View {
             if let action = CrashAction.suggested(for: d) {
                 HStack(spacing: 8) {
                     Button(L("crash.action.\(action.rawValue)")) {
-                        guard let all = model.crashActionScope(action, on: entry.id) else { return }
-                        Task { actionStarted = await model.perform(action, on: entry.id, allDevices: all) }
+                        guard let all = model.crashActionScope(action, on: entry.id, diagnosis: d) else { return }
+                        Task { actionStarted = await model.perform(action, on: entry.id, allDevices: all, diagnosis: d) }
                     }
                     .disabled(model.jobs[entry.id] != nil || actionStarted == true)
                     if model.jobs[entry.id] != nil || actionStarted == true {
@@ -232,8 +232,12 @@ struct CrashNotes: View {
                                     onWhy: key.map { key in { model.explainCrash(key) } },
                                     onAction: key.map { key in
                                         { action in
-                                            guard let all = model.crashActionScope(action, on: key) else { return }
-                                            Task { actionStarted[run.deviceID] = await model.perform(action, on: key, allDevices: all) }
+                                            let d = finding.diagnosis
+                                            guard let all = model.crashActionScope(action, on: key, diagnosis: d) else { return }
+                                            Task {
+                                                actionStarted[run.deviceID] = await model.perform(action, on: key, allDevices: all,
+                                                                                                  diagnosis: d)
+                                            }
                                         }
                                     })
                     }
@@ -334,15 +338,30 @@ struct CrashFilledButtonStyle: ButtonStyle {
 
 extension AppModel {
     /// Before a crash's fix: where "Reinstall without XSide features" applies when the app is on
-    /// several devices (this device, the default, or all of them). False: this device only; true:
-    /// all; nil: cancelled. Other fixes are per device already: false without asking.
-    func crashActionScope(_ action: CrashAction, on key: JobKey) -> Bool? {
-        guard action == .reinstallWithoutXSide,
-              let record = records.first(where: { $0.id == key.recordID }), record.installations.count > 1 else { return false }
+    /// several devices, and « Désactiver ce tweak » / « Désactiver les tweaks convertis » when
+    /// more than one installation has the tweak (this device, the default, or all of them).
+    /// False: this device only; true: all; nil: cancelled. Other fixes are per device already:
+    /// false without asking.
+    func crashActionScope(_ action: CrashAction, on key: JobKey, diagnosis: CrashDiagnosis? = nil) -> Bool? {
+        guard let record = records.first(where: { $0.id == key.recordID }),
+              let crashed = record.installations.first(where: { $0.deviceID == key.deviceID }) else { return false }
         let device = devices.first { $0.id == key.deviceID }?.name ?? cachedNames[key.deviceID] ?? L("popover.unknownDevice")
         let alert = NSAlert()
-        alert.messageText = L("crash.scope.title", record.displayName)
-        alert.informativeText = L("crash.scope.message", device, record.installations.count)
+        switch action {
+        case .reinstallWithoutXSide:
+            guard record.installations.count > 1 else { return false }
+            alert.messageText = L("crash.scope.title", record.displayName)
+            alert.informativeText = L("crash.scope.message", device, record.installations.count)
+        case .disableTweak, .disableConvertedTweaks:
+            let count = TweakCrashFix.affected(action, subject: diagnosis?.subject, crashed: crashed, record: record).count
+            guard count > 1 else { return false }
+            let tweak = diagnosis?.tweakName ?? diagnosis?.subject ?? "?"
+            alert.messageText = action == .disableTweak ? L("crash.scope.disableTweak.title", tweak)
+                                                        : L("crash.scope.disableConvertedTweaks.title", record.displayName)
+            alert.informativeText = L("crash.scope.tweaks.message", device, count)
+        default:
+            return false
+        }
         alert.addButton(withTitle: L("crash.scope.thisDevice", device))
         alert.addButton(withTitle: L("crash.scope.allDevices"))
         alert.addButton(withTitle: L("install.cancel"))

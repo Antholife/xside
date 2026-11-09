@@ -122,7 +122,10 @@ private struct FakeResigner: Resigning {
                 (item.package.id, tweakResult?(item) ?? (FileManager.default.fileExists(atPath: item.directory)
                     ? .injected(converted: false) : .skipped(.failed)))
             }
-            await onTweaks(TweakSigningReport(results: Dictionary(results) { a, _ in a }, embedded: embeddedDependencies))
+            let injected = items.filter { item in results.contains { $0.0 == item.package.id && $0.1 == .injected(converted: false) } }
+                .map { InjectedTweak($0.package, conversions: nil) }
+            await onTweaks(TweakSigningReport(results: Dictionary(results) { a, _ in a }, embedded: embeddedDependencies,
+                                              injected: injected, supportImages: embeddedDependencies.isEmpty ? [] : ["Cephei"]))
         }
         await onSigning()
         // Simulate unpacking into the work dir.
@@ -1609,6 +1612,8 @@ struct PipelineTweakTests {
                                                directory: f.library.tweakDirectory(recordID: f.record.id, id: one.id).path)])
         #expect(first.tweaks == [TweakUse(id: one.id)])
         #expect(first.tweakResults == [one.id: .injected(converted: false)])
+        // What was injected is kept with the installation (a crash names it even once replaced).
+        #expect(first.injectedTweaks == [InjectedTweak(one, conversions: nil)] && first.tweakSupportImages == nil)
         #expect(await f.library.records().first?.pendingTweakUses == nil)
         let again = try await f.pipeline(embeddedDependencies: ["ws.hbang.common"])
             .install(recordID: f.record.id, device: phone, env: env, refresh: true)
@@ -1618,6 +1623,7 @@ struct PipelineTweakTests {
         #expect(again.embeddedDependencies == ["ws.hbang.common"])
         let stored = try #require(await f.library.records().first?.installations.first)
         #expect(stored.tweakResults == again.tweakResults && stored.embeddedDependencies == ["ws.hbang.common"])
+        #expect(stored.injectedTweaks == [InjectedTweak(one, conversions: nil)] && stored.tweakSupportImages == ["Cephei"])
     }
 
     /// Same app, two devices, each with its own list: each signing gets that device's only.

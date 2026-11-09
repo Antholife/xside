@@ -893,7 +893,16 @@
 "crash.cause.iCloudShim.advice" = "Reinstall the app without signed-out iCloud, and report the problem.";
 "crash.cause.tweak.title" = "The crash comes from a tweak";
 "crash.cause.tweak.text" = "%1$@ crashed in the tweak %2$@, added to the app.";
-"crash.cause.tweak.advice" = "Remove this tweak from the app, then install it again.";
+"crash.cause.tweak.advice" = "Disable this tweak (it stays in XSide, you can turn it back on), or ask for a fix.";
+"crash.cause.tweakSupport.title" = "The crash comes from converted tweaks";
+"crash.cause.tweakSupport.text" = "%1$@ crashed in %2$@, which XSide added so that converted tweaks work without a jailbreak.";
+"crash.cause.tweakSupport.advice" = "Disable the converted tweaks, then try them one at a time.";
+"crash.shellCommand" = "It was running a shell command, which apps can't do without a jailbreak.";
+"crash.action.disableTweak" = "Disable this tweak";
+"crash.action.disableConvertedTweaks" = "Disable the converted tweaks";
+"crash.scope.disableTweak.title" = "Disable %@?";
+"crash.scope.disableConvertedTweaks.title" = "Disable the converted tweaks of %@?";
+"crash.scope.tweaks.message" = "Only on %1$@ (the device where it crashed), or on all %2$ld devices that have it (the others at their next refresh)? The tweaks stay in XSide: you can turn them back on.";
 "crash.cause.bundledLibrary.title" = "The crash comes from a library added to the app";
 "crash.cause.bundledLibrary.text" = "%1$@ crashed in %2$@, a library that comes with the app (often a tweak already in the .ipa).";
 "crash.cause.bundledLibrary.advice" = "Try another copy of the app, without this tweak or with another version of it.";

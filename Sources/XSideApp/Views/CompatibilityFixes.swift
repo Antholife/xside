@@ -145,7 +145,9 @@ extension AppModel {
             xsideModule: installation.hasXSideModule,
             duoCompatibility: duoOn, duoModule: duoOn && (installation.duoLegacyModule
                 ?? (record.duo?.needsLegacyModule == true)),
-            iCloudSignedOut: installation.hasICloudSignedOut)
+            iCloudSignedOut: installation.hasICloudSignedOut,
+            // What the last signing injected (names and versions of public packages, no path).
+            tweaks: installation.injectedTweakHistory(pool: record.tweaks ?? []).map(TweakCrashFix.reportLine))
         let deviceName = devices.first { $0.id == installation.deviceID }?.name ?? cachedNames[installation.deviceID]
         let secrets = [installation.teamID, record.teamID, installation.deviceID, deviceName].compactMap { $0 }
         let ids = [record.originalBundleID, record.signedBundleID] + record.installations.compactMap(\.signedBundleID)

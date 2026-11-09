@@ -94,14 +94,21 @@ public struct TweakJob: Codable, Equatable, Sendable {
 }
 
 /// What the tweak step did: a result per item (`TweakPackage.id`), and the package ids of XSide's
-/// embedded dependencies copied into the app (`Frameworks/XSideTweaks/deps/`).
+/// embedded dependencies copied into the app (`Frameworks/XSideTweaks/deps/`). `injected`: the
+/// tweaks in the app, in load order, as a crash will need to name them; `supportImages`: the image
+/// names of ElleKit, the support library and the embedded dependencies, when in the app.
 public struct TweakSigningReport: Equatable, Sendable {
     public var results: [String: TweakResult]
     public var embedded: [String]
+    public var injected: [InjectedTweak]
+    public var supportImages: [String]
 
-    public init(results: [String: TweakResult], embedded: [String]) {
+    public init(results: [String: TweakResult], embedded: [String], injected: [InjectedTweak] = [],
+                supportImages: [String] = []) {
         self.results = results
         self.embedded = embedded
+        self.injected = injected
+        self.supportImages = supportImages
     }
 }
 
@@ -687,9 +694,13 @@ public struct Resigner: Sendable {
         if !needSupport { try? fm.removeItem(at: root.appendingPathComponent(TweakLayout.supportName)) }
         let neededDeps = Set(chosen.flatMap(\.classification.providers).map(\.id))
         var embedded: [String] = []
+        var supportImages = (needElleKit ? [TweakLayout.elleKitName] : []) + (needSupport ? [TweakLayout.supportName] : [])
         var depsSeen = Set<String>()
         for p in plan.planned.flatMap(\.classification.providers) where depsSeen.insert(p.id).inserted {
-            if neededDeps.contains(p.id) { embedded.append(p.packageID) } else {
+            if neededDeps.contains(p.id) {
+                embedded.append(p.packageID)
+                supportImages += p.binaries.map(\.imageName).filter { !supportImages.contains($0) }
+            } else {
                 try? fm.removeItem(at: root.appendingPathComponent(TweakLayout.directory(p)))
             }
         }
@@ -701,7 +712,12 @@ public struct Resigner: Sendable {
         if !chosen.isEmpty {
             Self.logger.info("tweaks: \(chosen.count) injected\(embedded.isEmpty ? "" : ", with \(embedded.joined(separator: ", "))")")
         }
-        return (TweakSigningReport(results: results.filter { id, _ in plan.order.contains(id) }, embedded: embedded),
+        let injected = chosen.map { t -> InjectedTweak in
+            if case .converted(let c) = t.verdict { return InjectedTweak(t.item.package, conversions: c) }
+            return InjectedTweak(t.item.package, conversions: nil)
+        }
+        return (TweakSigningReport(results: results.filter { id, _ in plan.order.contains(id) }, embedded: embedded,
+                                   injected: injected, supportImages: supportImages),
                 needSupport)
     }
 

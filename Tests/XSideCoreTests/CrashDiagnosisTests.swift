@@ -360,6 +360,43 @@ private func diagnose(_ data: Data, _ ctx: CrashContext = context) throws -> Cra
         #expect(bundled.subject == "uTweak.dylib")
     }
 
+    private static let tweakFolder = "\(IPS.appPath)/Frameworks/XSideTweaks"
+    private static let tweakContext = CrashContext(moduleName: "XSideWelcome.dylib", tweakNames: ["Alpha.dylib"],
+                                                   tweakSupportNames: [TweakLayout.elleKitName, TweakLayout.supportName, "Cephei"],
+                                                   tweakLabels: ["Alpha.dylib": "Alpha 1.2"])
+
+    @Test func aCrashInElleKitIsTheTweakSupport() throws {
+        let images = IPS.images + [IPS.image("ElleKit.dylib", path: "\(Self.tweakFolder)/ElleKit.dylib"),
+                                   IPS.image("Alpha.dylib", path: "\(Self.tweakFolder)/0123456789abcdef/Alpha.dylib")]
+        let elle = IPS.images.count, alpha = elle + 1
+        let d = try diagnose(IPS.crash(frames: [IPS.frame(elle, "MSHookMessageEx"), IPS.frame(alpha), IPS.frame(0, "main")],
+                                       images: images), Self.tweakContext)
+        #expect(d.cause == .tweakSupport)
+        #expect(d.subject == "ElleKit.dylib")
+        #expect(d.shellCommand == nil)
+        #expect(CrashAction.suggested(for: d) == .disableConvertedTweaks)
+        // The tweak itself, named for people.
+        let t = try diagnose(IPS.crash(frames: [IPS.frame(IPS.uikit), IPS.frame(alpha), IPS.frame(elle)], images: images),
+                             Self.tweakContext)
+        #expect(t.cause == .tweak && t.subject == "Alpha.dylib" && t.tweakName == "Alpha 1.2")
+        #expect(CrashAction.suggested(for: t) == .disableTweak)
+    }
+
+    @Test func aCrashInEmbeddedCepheiIsTheTweakSupport() throws {
+        let path = "\(Self.tweakFolder)/deps/ws.hbang.common/Library/Frameworks/Cephei.framework/Cephei"
+        let images = IPS.images + [IPS.image("Cephei", path: path)]
+        let cephei = IPS.images.count
+        let d = try diagnose(IPS.crash(frames: [IPS.frame(IPS.objc), IPS.frame(cephei, "HBOutputForShellCommand"), IPS.frame(0)],
+                                       images: images), Self.tweakContext)
+        #expect(d.cause == .tweakSupport)
+        #expect(d.subject == "Cephei")
+        // Cephei runs /var/jb/bin/sh: said plainly.
+        #expect(d.shellCommand == true)
+        // Without XSide having added it, the same image is just an app framework.
+        let plain = try diagnose(IPS.crash(frames: [IPS.frame(cephei, "HBOutputForShellCommand")], images: images))
+        #expect(plain.cause == .other && plain.shellCommand == nil)
+    }
+
     @Test func iCloudWithoutTheEntitlement() throws {
         let d = try diagnose(IPS.crash(exception: ["type": "EXC_BREAKPOINT", "signal": "SIGTRAP"],
                                        frames: [IPS.frame(IPS.cloudKit), IPS.frame(IPS.cloudKit), IPS.frame(1), IPS.frame(0)]))

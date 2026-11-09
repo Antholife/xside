@@ -44,9 +44,12 @@ extension FixRequest {
         public var duoCompatibility: Bool
         public var duoModule: Bool
         public var iCloudSignedOut: Bool
+        /// The tweaks XSide injected, one line each (`TweakCrashFix.reportLine`). Empty: none.
+        public var tweaks: [String]
 
         public init(appVersion: String?, iOSVersion: String?, xsideVersion: String, xsideModule: Bool,
-                    duoCompatibility: Bool, duoModule: Bool, iCloudSignedOut: Bool) {
+                    duoCompatibility: Bool, duoModule: Bool, iCloudSignedOut: Bool, tweaks: [String] = []) {
+            self.tweaks = tweaks
             self.appVersion = appVersion
             self.iOSVersion = iOSVersion
             self.xsideVersion = xsideVersion
@@ -75,6 +78,8 @@ extension FixRequest {
         lines.append("XSide module: \(onOff(f.xsideModule))")
         lines.append("iPhone Duo compatibility: \(onOff(f.duoCompatibility))\(f.duoCompatibility && f.duoModule ? " (compatibility module)" : "")")
         lines.append("Simulate signed-out iCloud: \(onOff(f.iCloudSignedOut))")
+        lines.append("Tweaks: \(f.tweaks.isEmpty ? "none" : f.tweaks.joined(separator: "; "))")
+        if d.shellCommand == true { lines.append("Shell command: yes (no shell without a jailbreak)") }
         if !d.topFrames.isEmpty {
             lines.append("Top frames:")
             lines += d.topFrames.enumerated().map { "  \($0.offset)  \($0.element)" }
