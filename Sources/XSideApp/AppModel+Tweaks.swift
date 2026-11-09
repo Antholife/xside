@@ -510,6 +510,7 @@ extension AppModel {
     /// « Ajouter son .deb… »: kept only if it is that package in a version that will do.
     func addDependencyDeb(_ urls: [URL], for dependency: DebDependency, target: DependencyTarget) async {
         guard let url = urls.first else { return }
+        dependencyLineOwners[dependency.package] = target.tweakID
         await addingDependency(dependency) {
             self.dependencyProgress[dependency.package] = L("tweaks.adding", url.lastPathComponent)
             return try await self.addDependency(url, origin: .added, for: dependency, target: target)
@@ -521,6 +522,7 @@ extension AppModel {
     /// how big, then it is downloaded, checked, kept and added on the devices that use the tweak.
     func downloadDependency(_ dependency: DebDependency, for tweak: TweakPackage, target: DependencyTarget) async {
         let repoName = DependencySources.name(for: dependency.package)
+        dependencyLineOwners[dependency.package] = target.tweakID
         await addingDependency(dependency) {
             let work = self.libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent(UUID().uuidString)
             defer { try? FileManager.default.removeItem(at: work) }
@@ -541,7 +543,8 @@ extension AppModel {
             } catch {
                 throw DependencyFailure(text: Self.downloadErrorText(error, dependency: dependency, repoName: source.repoName))
             }
-            return try await self.addDependency(fetched.file, origin: fetched.origin, for: dependency, target: target)
+            return try await self.addDependency(fetched.file, origin: fetched.origin, for: dependency, target: target,
+                                                fromKeptCopy: source.isCached)
         }
     }
 
@@ -629,7 +632,8 @@ extension AppModel {
     /// `DependencyPlacement` says: where the tweak that needs it is on, and where it unblocks that
     /// tweak (which is turned on there). Says what it did.
     private func addDependency(_ url: URL, origin: TweakOrigin, for dependency: DebDependency,
-                               target: DependencyTarget, askReplace: Bool = true) async throws -> DependencyOutcome {
+                               target: DependencyTarget, askReplace: Bool = true,
+                               fromKeptCopy: Bool = false) async throws -> DependencyOutcome {
         switch target {
         case .draft(let tweakID):
             guard let flow = install, !flow.isRunning else { return .cancelled("the install window closed or started") }
@@ -673,7 +677,7 @@ extension AppModel {
             if let i = flow.tweaks.firstIndex(where: { $0.id == tweakID }) { flow.tweaks[i].enabledDevices.formUnion(plan.tweakTurnedOn) }
             refreshTweakVerdicts(flow)
             return .added(addedNotice(package, on: flow.deviceIDs.filter(devices.contains), tweak: tweak.package,
-                                      turnedOn: !plan.tweakTurnedOn.isEmpty))
+                                      turnedOn: !plan.tweakTurnedOn.isEmpty, fromKeptCopy: fromKeptCopy))
         case .entry(let key, let tweakID):
             // Checked from a scratch copy first: a wrong one never enters the app's pool.
             let scratch = libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent(UUID().uuidString)
@@ -708,15 +712,19 @@ extension AppModel {
                 await setTweak(tweakID, enabled: true, for: current)
                 turnedOn = true
             }
-            return .added(addedNotice(package, on: listing.filter(plan.dependencyOn.contains), tweak: tweak, turnedOn: turnedOn))
+            return .added(addedNotice(package, on: listing.filter(plan.dependencyOn.contains), tweak: tweak, turnedOn: turnedOn,
+                                      fromKeptCopy: fromKeptCopy))
         }
     }
 
     /// « Cephei 1.17.1 ajoutée, activée sur iPhone. XSide Test Cephei y est maintenant activé. »
-    private func addedNotice(_ package: TweakPackage, on deviceIDs: [String], tweak: TweakPackage, turnedOn: Bool) -> String {
+    /// From the kept copy: « Cephei 1.17.1 ajoutée depuis la copie gardée, activée sur iPhone. »
+    private func addedNotice(_ package: TweakPackage, on deviceIDs: [String], tweak: TweakPackage, turnedOn: Bool,
+                             fromKeptCopy: Bool = false) -> String {
         let name = package.name + (package.version.map { " " + $0 } ?? "")
         let names = deviceIDs.map { id in devices.first { $0.id == id }?.name ?? L("popover.unknownDevice") }
-        var text = names.isEmpty ? L("deps.added.nowhere", name) : L("deps.added", name, names.joined(separator: ", "))
+        var text = names.isEmpty ? L(fromKeptCopy ? "deps.added.kept.nowhere" : "deps.added.nowhere", name)
+            : L(fromKeptCopy ? "deps.added.kept" : "deps.added", name, names.joined(separator: ", "))
         if turnedOn { text += " " + L("deps.added.tweakOn", tweak.name) }
         return text
     }
@@ -751,6 +759,7 @@ extension AppModel {
         let dependency = wanted.map { DebDependency(package: package.packageID, relation: $0.relation, version: $0.version) }
             ?? DebDependency(package: package.packageID)
         let repoName = DependencySources.name(for: package.packageID)
+        dependencyLineOwners[dependency.package] = package.id
         await addingDependency(dependency) {
             let work = self.libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent(UUID().uuidString)
             defer { try? FileManager.default.removeItem(at: work) }

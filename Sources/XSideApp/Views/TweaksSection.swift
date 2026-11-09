@@ -563,7 +563,11 @@ extension AppModel {
     /// Per card (by tweak id): the package ids whose lines another card shows, with that card's
     /// tweak name (`DependencyRows.lineCards`).
     func dependencyLinesElsewhere(_ cards: [TweakPackage], target: (String) -> DependencyTarget) -> [String: [String: String]] {
-        let owners = DependencyRows.lineCards(cards.compactMap { p in dependencyRows(target(p.id)).map { (p.id, $0.rows) } })
+        var owners = DependencyRows.lineCards(cards.compactMap { p in dependencyRows(target(p.id)).map { (p.id, $0.rows) } })
+        // The card that started the last action keeps its lines (while it lists the dependency).
+        for (package, tweakID) in dependencyLineOwners where owners[package] != nil && cards.contains(where: { $0.id == tweakID }) {
+            owners[package] = tweakID
+        }
         let names = Dictionary(cards.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
         var out: [String: [String: String]] = [:]
         for p in cards {

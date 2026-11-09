@@ -96,6 +96,77 @@ struct DependencyManagementTests {
         }
     }
 
+    /// Device round 2, item 5: « Télécharger » for needs-cephei-old (< 2.0) reuses the Cephei
+    /// 1.17.1 kept earlier (no network). The copy is added, both it and cephei-user (≥ 1.0, which
+    /// links /Library/Frameworks/Cephei.framework/Cephei) read ✓ with XSide's 2.0 at hand, and
+    /// neither is ❌ (cephei-user was « missing Cephei » because the copy keeps it in usr/lib).
+    @Test func aKeptCopyIsReusedAddedAndBothCepheiTweaksAreSettled() async throws {
+        try await withTemporaryDirectory("deps-kept") { dir in
+            let control = "Package: ws.hbang.common\nName: Cephei Tweak Support\nVersion: 1.17.1\nArchitecture: iphoneos-arm\n"
+            let deb = try await FakeDeb.deb(control: control,
+                                            files: [.file("./usr/lib/Cephei.framework/Cephei", FakeIPA.dylibMachO(linking: [], padding: 64))],
+                                            compression: "lzma")
+            let fetcher = FakeFetcher()
+            var p = RepoClientTests.Pkg("1.17.1", arch: "iphoneos-arm", deb: deb)
+            p.package = RepoClientTests.cephei
+            let idx = Data(p.stanza.utf8)
+            fetcher.serve(RepoClientTests.chariz + "Release", RepoClientTests.release([("Packages", idx)]))
+            fetcher.serve(RepoClientTests.chariz + "Packages", idx)
+            fetcher.serve(RepoClientTests.chariz + p.file, deb)
+            let lib = AppLibrary(root: dir.appendingPathComponent("lib"))
+            func downloader(_ f: FakeFetcher) -> DependencyDownloader {
+                DependencyDownloader(library: lib, client: RepoClient(fetcher: f, runner: ProcessRunner(), workDir: dir.appendingPathComponent("work")))
+            }
+            // Kept by an earlier download (for cephei-user).
+            _ = try await downloader(fetcher).fetch(try await downloader(fetcher).prepare(Self.cepheiNeed, preferredArchitecture: "iphoneos-arm"))
+            let offline = FakeFetcher()
+            let old = DebDependency(package: "ws.hbang.common", relation: "<<", version: "2.0")
+            let source = try await downloader(offline).prepare(old, preferredArchitecture: "iphoneos-arm")
+            #expect(source.isCached)
+            let fetched = try await downloader(offline).fetch(source)
+            #expect(offline.fetched.isEmpty)
+            let kept = try await TweakAnalyzer.analyze(fetched.file, into: dir.appendingPathComponent("staging"),
+                                                       origin: fetched.origin, runner: ProcessRunner(), now: Date())
+            #expect(DependencyDirectory.check(kept, for: old) == .matches)
+
+            let needsOld = TweakPackage(id: "00000000000000a1", kind: .deb, origin: .added, packageID: "com.example.old",
+                                        name: "Needs Old", depends: [[old]], files: D.tweak(depends: []).files,
+                                        binaries: D.tweak(depends: []).binaries, addedAt: Date(timeIntervalSince1970: 0))
+            let userBinary = TweakBinary(path: "Library/MobileSubstrate/DynamicLibraries/U.dylib", isEntry: true,
+                                         filter: TweakFilter(bundles: ["com.example.app"]),
+                                         slices: [TweakSlice(arch: "arm64", platform: 2, minOS: "15.0")],
+                                         linked: ["/Library/Frameworks/Cephei.framework/Cephei"], mentionsJailbreakPaths: false,
+                                         imageName: "U.dylib")
+            let user = TweakPackage(id: "00000000000000a2", kind: .deb, origin: .added, packageID: "com.example.user", name: "User",
+                                    depends: [[Self.cepheiNeed]], files: [userBinary.path], binaries: [userBinary],
+                                    addedAt: Date(timeIntervalSince1970: 0))
+            let embeddedBinary = TweakBinary(path: "Library/Frameworks/Cephei.framework/Cephei", isEntry: false, filter: nil,
+                                             slices: [TweakSlice(arch: "arm64", platform: 2, minOS: "15.0")], linked: [],
+                                             mentionsJailbreakPaths: false, imageName: "Cephei")
+            let xside = TweakPackage(id: "ws.hbang.common", kind: .deb, origin: .embedded, packageID: "ws.hbang.common",
+                                     name: "Cephei", version: "2.0", files: [embeddedBinary.path], binaries: [embeddedBinary],
+                                     addedAt: Date(timeIntervalSince1970: 0))
+            func context(_ others: [TweakPackage]) -> TweakContext {
+                TweakContext(originalBundleID: "com.example.app", executableName: "Example", deviceOS: "17.5",
+                             others: others, embedded: [xside])
+            }
+            // Before: needs-cephei-old misses it (XSide's 2.0 is too new).
+            #expect(DependencyRows.missing(needsOld, context([user])) == ["ws.hbang.common"])
+            let plan = DependencyPlacement.plan(tweak: needsOld, adding: kept, devices: [
+                .init(id: "iphone", context: context([user]), tweakOn: false),
+            ])
+            #expect(plan.dependencyOn == ["iphone"] && plan.tweakTurnedOn == ["iphone"])
+            // After: both settled on the iPhone, one copy (1.17.1) for both.
+            let oldRows = DependencyRows.rows(needsOld, contexts: [("iphone", context([user, kept]))])
+            #expect(oldRows.first?.statuses.first?.status == .addedByYou("Cephei Tweak Support"))
+            #expect(!oldRows.contains { $0.isMissingAnywhere })
+            let userRows = DependencyRows.rows(user, contexts: [("iphone", context([needsOld, kept]))])
+            #expect(userRows.first?.statuses.first?.status == .addedByYou("Cephei Tweak Support"))
+            if case .incompatible(let why) = TweakClassifier.verdict(needsOld, context([user, kept])) { Issue.record("old ❌ \(why)") }
+            if case .incompatible(let why) = TweakClassifier.verdict(user, context([needsOld, kept])) { Issue.record("user ❌ \(why)") }
+        }
+    }
+
     // MARK: Cards
 
     @Test func dependentsAreTheTweaksThatAskForIt() {

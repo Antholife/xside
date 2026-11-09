@@ -1001,6 +1001,7 @@
 "tweaks.problem.nothingToInject" = "Nothing in it to add to an app.";
 "tweaks.problem.noFilter" = "This tweak doesn't say which apps it loads into.";
 "tweaks.problem.unreadableRequirement" = "Its requirement on %@ can't be read.";
+"tweaks.problem.dependencyConflict" = "%1$@: two versions asked for (%2$@ and %3$@). An app can load only one copy: remove or turn off one of the two tweaks here.";
 "tweaks.force" = "Inject anyway";
 "tweaks.section" = "Tweaks";
 "tweaks.add" = "Add a tweak…";
@@ -1072,6 +1073,8 @@
 "deps.added" = "%1$@ added to the app's pool, turned on for %2$@.";
 "deps.added.nowhere" = "%@ added to the app's pool, turned on for no device (turn it on in Tweaks).";
 "deps.added.tweakOn" = "%@ is now turned on there.";
+"deps.added.kept" = "%1$@ added from the kept copy, turned on for %2$@.";
+"deps.added.kept.nowhere" = "%@ added from the kept copy, turned on for no device (turn it on in Tweaks).";
 "deps.onDevice" = "%1$@ on %2$@";
 
 /* 1.2: compact Tweaks step, kept downloads */

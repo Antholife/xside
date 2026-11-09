@@ -409,6 +409,34 @@ struct TweakResignTests {
         #expect(report?.embedded == [])
     }
 
+    /// Device round 2, item 16: cephei-user (≥ 1.0, links /Library/Frameworks/Cephei…) and
+    /// needs-cephei-old (< 2.0) with XSide's 2.0 and the downloaded rootful 1.17.1 (files in
+    /// usr/lib) on the device: both use 1.17.1 (it satisfies both; one copy per app), cephei-user
+    /// is no longer left out « missing Cephei », and XSide's 2.0 isn't copied.
+    @Test func cepheiUserAndNeedsCepheiOldBothUseTheDownloadedCepheiInUsrLib() async throws {
+        let f = try await TweakFixture()
+        let user = tweak(idA, name: "CepheiUser", linked: [cephei],
+                         depends: [[DebDependency(package: "ws.hbang.common", relation: ">=", version: "1.0")]])
+        let old = tweak(idB, name: "NeedsOld", depends: [[DebDependency(package: "ws.hbang.common", relation: "<<", version: "2.0")]])
+        let usrLib = "usr/lib/Cephei.framework/Cephei"
+        let bin = TweakBinary(path: usrLib, isEntry: false, filter: nil, slices: [arm64()],
+                              linked: ["/System/Library/Frameworks/Foundation.framework/Foundation"],
+                              mentionsJailbreakPaths: false, imageName: "Cephei")
+        let c117 = Stored(package: TweakPackage(id: idC, kind: .deb, origin: .added, packageID: "ws.hbang.common",
+                                                name: "Cephei Tweak Support", version: "1.17.1", files: [usrLib], binaries: [bin],
+                                                addedAt: Date(timeIntervalSince1970: 1_800_000_000)),
+                          files: [usrLib: FakeIPA.dylibMachO(linking: bin.linked, padding: 512)])
+        let reports = Reports()
+        let app = try await f.run([try f.item(user), try f.item(old), try f.item(c117)], reports: reports)
+        let report = await reports.last
+        #expect(report?.results[idA] == .injected(converted: true))
+        #expect(report?.results[idB] == .injected(converted: true))
+        #expect(report?.results[idC] == .injected(converted: false))
+        #expect(report?.embedded == [])
+        #expect(!exists(app.appendingPathComponent(TweakLayout.folder + "/deps")))
+        #expect(try MachOPatcher.linkedDylibs(in: tweakFile(app, user)) == [TweakLayout.loadPrefix + idC + "/" + usrLib])
+    }
+
     @Test func whenTheOnesCopyCantBeUsedTheTweakDependingOnItIsSkippedToo() async throws {
         let f = try await TweakFixture(embedded: [])
         let a = tweak(idA, linked: [cephei], depends: [[DebDependency(package: "ws.hbang.common")]])

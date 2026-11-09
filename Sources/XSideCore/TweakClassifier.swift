@@ -47,6 +47,9 @@ public enum TweakProblem: Codable, Equatable, Sendable {
     case noFilter
     /// A version constraint (on iOS, or on a dependency) can't be read: never treated as satisfied.
     case unreadableRequirement(String)
+    /// Two tweaks on this device need versions of one dependency no single copy satisfies (its
+    /// display name, this tweak's constraint first): an app loads only one copy.
+    case dependencyConflict(String, [String])
 
     /// The `Localizable.strings` key of the reason. Arguments: `arguments`, except `iOSVersion`
     /// whose text takes (required, device name, device iOS): the app inserts the device's name.
@@ -61,6 +64,7 @@ public enum TweakProblem: Codable, Equatable, Sendable {
         case .nothingToInject: "tweaks.problem.nothingToInject"
         case .noFilter: "tweaks.problem.noFilter"
         case .unreadableRequirement: "tweaks.problem.unreadableRequirement"
+        case .dependencyConflict: "tweaks.problem.dependencyConflict"
         }
     }
 
@@ -77,6 +81,7 @@ public enum TweakProblem: Codable, Equatable, Sendable {
         case .madeForAnotherApp(let list), .wrongArchitecture(let list): [list.joined(separator: ", ")]
         case .iOSVersion(let required, let device): [required, device]
         case .notForIOS, .nothingToInject, .noFilter: []
+        case .dependencyConflict(let name, let c): [name, c.first ?? "?", c.dropFirst().first ?? "?"]
         }
     }
 }
@@ -206,9 +211,10 @@ public enum TweakClassifier {
         // The same providers the verdict may use.
         let usable = { (p: TweakPackage) in p.id != package.id && !isJailbreakOnlyPackage(p) }
         let others = context.others.filter(usable), embedded = context.embedded.filter(usable)
+        let wanted = demands(of: context.others, besides: package)
         return package.depends.compactMap { group in
             guard let first = group.first else { return nil }
-            let statuses = group.map { alt -> (DebDependency, DependencyStatus) in (alt, status(alt, others, embedded, context)) }
+            let statuses = group.map { alt -> (DebDependency, DependencyStatus) in (alt, status(alt, others, embedded, wanted, context)) }
             return statuses.first { s in
                 switch s.1 {
                 case .addedByYou, .providedByXSide, .notNeeded: true
@@ -380,8 +386,10 @@ public enum TweakClassifier {
         let others = context.others.filter(usable)
         var embedded = context.embedded.filter(usable)
         var chosen: [TweakPackage] = [], rejected: Set<String> = []
+        // What the other tweaks on this device ask for: one copy of a package serves them all.
+        let wanted = depth == 0 ? demands(of: context.others, besides: package) : []
         for group in package.depends {
-            dependsGroup(group, others, embedded, context, &a, &chosen, &rejected)
+            dependsGroup(group, others, embedded, wanted, context, &a, &chosen, &rejected)
         }
         rejected.subtract(chosen.map(\.id))
         // Only packages a Depends entry chose are searched for the person's files.
@@ -522,21 +530,48 @@ public enum TweakClassifier {
     }
 
     private static func status(_ dep: DebDependency, _ others: [TweakPackage], _ embedded: [TweakPackage],
-                               _ context: TweakContext) -> DependencyStatus {
+                               _ wanted: [DebDependency], _ context: TweakContext) -> DependencyStatus {
         let r = role(dep, context)
         if case .builtIntoTweak(let n) = r { return .builtIntoTweak(n) }
         if isNotNeeded(r) { return .notNeeded }
         // Nobody's copy of a jailbreak-only library makes it work without a jailbreak.
         if case .jailbreakOnly(let n) = r { return .jailbreakOnly(n) }
-        if let p = others.first(where: { satisfies($0, dep) }) { return .addedByYou(p.name) }
-        if let p = embedded.first(where: { satisfies($0, dep) }) { return .providedByXSide(displayName(p)) }
-        return .missing(dep)
+        guard let pick = provider(for: dep, others, embedded, wanted) else { return .missing(dep) }
+        return pick.embedded ? .providedByXSide(displayName(pick.package)) : .addedByYou(pick.package.name)
+    }
+
+    /// Every alternative the other tweaks of the device ask for (not `package`'s, not iOS).
+    private static func demands(of others: [TweakPackage], besides package: TweakPackage) -> [DebDependency] {
+        others.filter { $0.id != package.id && !isJailbreakOnlyPackage($0) }
+            .flatMap { $0.depends.joined() }
+            .filter { $0.package != "firmware" && !$0.unparseable }
+    }
+
+    /// The copy that serves `dep` on this device: the person's before XSide's, but first one that
+    /// also satisfies what the device's other tweaks ask of the same package (an app loads only
+    /// one copy). `conflict`: what another tweak asks that the copy doesn't satisfy while another
+    /// copy at hand would (two versions needed at once).
+    private static func provider(for dep: DebDependency, _ others: [TweakPackage], _ embedded: [TweakPackage],
+                                 _ wanted: [DebDependency])
+        -> (package: TweakPackage, embedded: Bool, conflict: DebDependency?)? {
+        let candidates = others.map { ($0, false) } + embedded.map { ($0, true) }
+        let fitting = candidates.filter { satisfies($0.0, dep) }
+        guard let first = fitting.first else { return nil }
+        let names = { (p: TweakPackage) in Set([p.packageID] + p.provides) }
+        let relevant = { (p: TweakPackage) in wanted.filter { names(p).contains($0.package) } }
+        if let agreeing = fitting.first(where: { c in relevant(c.0).allSatisfy { satisfies(c.0, $0) } }) {
+            return (agreeing.0, agreeing.1, nil)
+        }
+        let conflict = relevant(first.0).first { w in
+            !satisfies(first.0, w) && candidates.contains { satisfies($0.0, w) }
+        }
+        return (first.0, first.1, conflict)
     }
 
     private enum Outcome { case satisfied(TweakConversion?), unknown, problem(TweakProblem) }
 
     private static func dependsGroup(_ group: [DebDependency], _ others: [TweakPackage], _ embedded: [TweakPackage],
-                                     _ context: TweakContext, _ a: inout Analysis,
+                                     _ wanted: [DebDependency], _ context: TweakContext, _ a: inout Analysis,
                                      _ chosen: inout [TweakPackage], _ rejected: inout Set<String>) {
         var outcomes: [Outcome] = []
         for dep in group {
@@ -550,14 +585,17 @@ public enum TweakClassifier {
             if isNotNeeded(r) { outcomes.append(.satisfied(nil)); break }
             if case .jailbreakOnly(let n) = r { outcomes.append(.problem(.needsJailbreak(n))); continue }
             let matching = (others + embedded).filter { idMatches($0, dep) }
-            let theirs = others.first { satisfies($0, dep) }
-            let ours = theirs == nil ? embedded.first { satisfies($0, dep) } : nil
-            let pick = theirs ?? ours
-            for p in matching where p.id != pick?.id { rejected.insert(p.id) }
-            if let pick {
+            let found = provider(for: dep, others, embedded, wanted)
+            for p in matching where p.id != found?.package.id { rejected.insert(p.id) }
+            if let found {
+                let pick = found.package
                 if !chosen.contains(where: { $0.id == pick.id }) { chosen.append(pick) }
-                a.rely(on: pick, embedded: theirs == nil)
-                outcomes.append(.satisfied(theirs == nil ? .dependencyAdded(displayName(pick)) : .dependency(displayName(pick))))
+                a.rely(on: pick, embedded: found.embedded)
+                if let other = found.conflict {
+                    a.fail(.dependencyConflict(displayName(pick), [DependencyDirectory.constraint(dep) ?? "*",
+                                                                   DependencyDirectory.constraint(other) ?? "*"]))
+                }
+                outcomes.append(.satisfied(found.embedded ? .dependencyAdded(displayName(pick)) : .dependency(displayName(pick))))
                 break
             }
             let name = knownName(dep.package) ?? dep.package
@@ -650,12 +688,14 @@ public enum TweakClassifier {
         let safe = !rel.isEmpty && !rel.utf8.contains(0)
             && !rel.split(separator: "/", omittingEmptySubsequences: false).contains { $0 == ".." || $0 == "." || $0.isEmpty }
         if safe {
-            if package.files.contains(rel) { use(.own, package, file: rel, for: name, conversion: .jailbreakPaths, &a); return }
-            for p in others where p.files.contains(rel) {
-                use(.other, p, file: rel, for: name, conversion: .dependency(displayName(p)), &a); return
-            }
-            for p in embedded where p.files.contains(rel) {
-                use(.embedded, p, file: rel, for: name, conversion: .dependencyAdded(displayName(p)), &a); return
+            // A rootful package keeps its frameworks in usr/lib, /Library/Frameworks being a
+            // symlink to them (Cephei 1.x): either path finds the same file.
+            let paths = [rel] + frameworkAlias(rel)
+            func file(_ p: TweakPackage) -> String? { paths.first { p.files.contains($0) } }
+            if let f = file(package) { use(.own, package, file: f, for: name, conversion: .jailbreakPaths, &a); return }
+            for p in others { if let f = file(p) { use(.other, p, file: f, for: name, conversion: .dependency(displayName(p)), &a); return } }
+            for p in embedded {
+                if let f = file(p) { use(.embedded, p, file: f, for: name, conversion: .dependencyAdded(displayName(p)), &a); return }
             }
         }
         if let known = knownLibrary(name) { a.fail(.missingDependency(known)); return }
@@ -665,6 +705,16 @@ public enum TweakClassifier {
         } else {
             a.fail(.missingDependency(display))
         }
+    }
+
+    /// `Library/Frameworks/X.framework/…` ↔ `usr/lib/X.framework/…` (empty for anything else).
+    static func frameworkAlias(_ rel: String) -> [String] {
+        for (from, to) in [("Library/Frameworks/", "usr/lib/"), ("usr/lib/", "Library/Frameworks/")] where rel.hasPrefix(from) {
+            let rest = rel.dropFirst(from.count)
+            guard let folder = rest.split(separator: "/").first, folder.hasSuffix(".framework"), rest.contains("/") else { return [] }
+            return [to + rest]
+        }
+        return []
     }
 
     // MARK: files

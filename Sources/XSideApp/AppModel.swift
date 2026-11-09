@@ -163,6 +163,9 @@ final class AppModel {
     var dependencyNotices: [String: String] = [:]
     var dependenciesBeingAdded: Set<String> = []
     var dependencyProgress: [String: String] = [:]
+    /// The card whose button started a dependency's last action (by package id: the tweak id): its
+    /// lines stay there, not on the first card that lists it (device round 2, item 5).
+    var dependencyLineOwners: [String: String] = [:]
     /// Settings > Mes apps > « Dépendances téléchargées »: the kept downloads (nil: not read yet).
     var downloadUsage: [DownloadUsage]?
     /// Trusted repos are reached only through this (tests and snapshots never use the network).

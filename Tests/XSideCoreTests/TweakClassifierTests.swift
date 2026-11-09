@@ -721,3 +721,72 @@ struct TweakClassifierTests {
         #expect(old.cFunctionHooks == nil)
     }
 }
+
+// MARK: One Cephei per device (device round 2, item 16)
+
+extension TweakClassifierTests {
+    /// Chariz's rootful Cephei 1.17.1: its frameworks are in usr/lib (the deb's
+    /// /Library/Frameworks/Cephei.framework is a symlink, not a file XSide keeps).
+    private func downloadedCephei117() -> TweakPackage {
+        package([library("usr/lib/Cephei.framework/Cephei"),
+                 library("usr/lib/CepheiUI.framework/CepheiUI", linked: [Self.cephei])],
+                id: "47b661fc09c06549", origin: .downloaded(repo: "chariz", url: "https://repo.chariz.com/x.deb", sha256: String(repeating: "a", count: 64)),
+                packageID: "ws.hbang.common", name: "Cephei Tweak Support", version: "1.17.1",
+                depends: [[DebDependency(package: "firmware", relation: "<<", version: "8.0"),
+                           DebDependency(package: "firmware", relation: ">=", version: "11.0")]])
+    }
+
+    private func cepheiUser() -> TweakPackage {
+        package([entry("XSTestTweakCephei", linked: ["/usr/lib/libobjc.A.dylib", Self.cephei])], id: "80d9f075745add78",
+                packageID: "io.github.xside.testtweak.cephei", name: "XSide Test Cephei",
+                depends: [dep("ws.hbang.common", ">=", "1.0")])
+    }
+
+    private func needsCepheiOld() -> TweakPackage {
+        package([entry("XSTestNeedsCepheiOld")], id: "d2b50f75948bf215", packageID: "io.github.xside.testtweak.cepheiold",
+                name: "XSide Test Needs Cephei < 2.0", depends: [dep("ws.hbang.common", "<<", "2.0")])
+    }
+
+    /// The device's exact case: cephei-user + needs-cephei-old + XSide's Cephei 2.0 + the
+    /// downloaded 1.17.1 on that device. 1.17.1 satisfies both (≥ 1.0 and < 2.0), so both use it,
+    /// and cephei-user's /Library/Frameworks/Cephei.framework/Cephei is found in its usr/lib copy
+    /// (it was « missing Cephei » and left out at signing).
+    @Test func cepheiUserAndNeedsCepheiOldShareTheDownloadedCephei() {
+        let user = cepheiUser(), old = needsCepheiOld(), c117 = downloadedCephei117()
+        let c = context(others: [old, c117], embedded: [embeddedCephei()])
+        let v = verdict(user, c)
+        #expect(v == .converted([.dependency("Cephei")]))
+        #expect(TweakClassifier.resolution(user, c)[Self.cephei]
+                == TweakLayout.loadPrefix + TweakLayout.directory(c117) + "/usr/lib/Cephei.framework/Cephei")
+        #expect(TweakClassifier.providers(user, c).isEmpty) // XSide's 2.0 isn't copied too
+        let cOld = context(others: [user, c117], embedded: [embeddedCephei()])
+        #expect(verdict(old, cOld) == .converted([.dependency("Cephei")]))
+        #expect(DependencyRows.missing(old, cOld).isEmpty)
+        #expect(TweakClassifier.dependencies(user, c).map(\.1) == [.addedByYou("Cephei Tweak Support")])
+        // The downloaded copy's own CepheiUI finds its Cephei in usr/lib too.
+        if case .incompatible(let p) = verdict(c117, context(embedded: [embeddedCephei()])) { Issue.record("1.17.1 ❌: \(p)") }
+    }
+
+    /// Without the downloaded copy on that device, XSide's 2.0 serves cephei-user.
+    @Test func withoutTheDownloadedCopyXSidesCepheiServes() {
+        let user = cepheiUser()
+        let c = context(others: [needsCepheiOld()], embedded: [embeddedCephei()])
+        #expect(verdict(user, c) == .converted([.dependencyAdded("Cephei")]))
+        #expect(TweakClassifier.providers(user, c).map(\.id) == ["ws.hbang.common"])
+    }
+
+    /// Two tweaks on one device that need versions no single copy satisfies (≥ 2.0 and < 2.0):
+    /// both are ❌ with the conflict (one process can load only one Cephei).
+    @Test func twoTweaksNeedingDifferentVersionsConflict() {
+        let new = package([entry("NeedsNew", linked: [Self.cephei])], id: "1111111111111111", packageID: "com.example.new",
+                          name: "Needs New", depends: [dep("ws.hbang.common", ">=", "2.0")])
+        let old = needsCepheiOld(), c117 = downloadedCephei117()
+        let problem = TweakProblem.dependencyConflict("Cephei", ["≥ 2.0", "< 2.0"])
+        #expect(verdict(new, context(others: [old, c117], embedded: [embeddedCephei()])) == .incompatible(problem))
+        #expect(verdict(old, context(others: [new, c117], embedded: [embeddedCephei()]))
+                == .incompatible(.dependencyConflict("Cephei", ["< 2.0", "≥ 2.0"])))
+        #expect(!TweakVerdict.incompatible(problem).canOverride)
+        // Off on that device (not in `others`): no conflict.
+        #expect(verdict(new, context(others: [c117], embedded: [embeddedCephei()])) == .converted([.dependencyAdded("Cephei")]))
+    }
+}
