@@ -106,10 +106,20 @@ struct DebReaderTests {
             try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path)
             try? FileManager.default.removeItem(at: deb); try? FileManager.default.removeItem(at: root)
         }
-        await #expect(throws: (any Error).self) {
+        await #expect(throws: DebError.self) {
             _ = try await DebReader.read(deb, into: root, runner: ProcessRunner(), keep: { _ in true })
         }
         #expect(!FileManager.default.fileExists(atPath: root.path))
+    }
+
+    @Test func createdParentFoldersGoOnFailure() async throws {
+        let deb = try write(Data("junk".utf8))
+        let top = scratch(), root = top.appendingPathComponent("a/b")
+        defer { try? FileManager.default.removeItem(at: deb) }
+        await #expect(throws: DebError.self) {
+            _ = try await DebReader.read(deb, into: root, runner: ProcessRunner(), keep: { _ in true })
+        }
+        #expect(!FileManager.default.fileExists(atPath: top.path))
     }
 
     @Test func aNonEmptyDestinationIsRefusedAndLeftAlone() async throws {
@@ -132,5 +142,56 @@ struct DebReaderTests {
             _ = try await DebReader.read(deb, into: root, runner: ProcessRunner(), keep: { _ in true })
         }
         #expect(!FileManager.default.fileExists(atPath: root.path))
+    }
+
+    /// An `ar` with valid control and a data member of the given bytes.
+    private func debWith(data member: Data, name: String) async throws -> URL {
+        let good = try await FakeDeb.deb(control: control, files: files, compression: "none")
+        let members = try DebArchive.members(good)
+        let ctl = good[members[1].range]
+        return try write(FakeDeb.ar([("debian-binary", Data("2.0\n".utf8)), ("control.tar", Data(ctl)), (name, member)]))
+    }
+    private func gzip(_ data: Data) throws -> Data {
+        let src = scratch(), out = scratch()
+        defer { try? FileManager.default.removeItem(at: src); try? FileManager.default.removeItem(at: out) }
+        try data.write(to: src)
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/gzip"); p.arguments = ["-c"]
+        p.standardInput = try FileHandle(forReadingFrom: src)
+        FileManager.default.createFile(atPath: out.path, contents: nil)
+        p.standardOutput = try FileHandle(forWritingTo: out)
+        try p.run(); p.waitUntilExit()
+        return try Data(contentsOf: out)
+    }
+
+    @Test func anMtreeMemberCannotPullLocalFilesIn() async throws {
+        let secret = scratch().appendingPathExtension("txt")
+        try Data("SECRET-LOCAL-FILE".utf8).write(to: secret)
+        let mtree = Data("#mtree\n./Library/T.dylib type=file contents=\(secret.path)\n".utf8)
+        let root = scratch()
+        defer { try? FileManager.default.removeItem(at: secret); try? FileManager.default.removeItem(at: root) }
+        for (data, name) in [(try gzip(mtree), "data.tar.gz"), (mtree, "data.tar")] {
+            let deb = try await debWith(data: data, name: name)
+            defer { try? FileManager.default.removeItem(at: deb) }
+            await #expect(throws: DebError.self) {
+                _ = try await DebReader.read(deb, into: root, runner: ProcessRunner(), keep: { _ in true })
+            }
+            #expect(!FileManager.default.fileExists(atPath: root.path))
+        }
+    }
+
+    @Test func otherArchiveFormatsAreNotTars() async throws {
+        let cpio = Data("070701".utf8) + Data(repeating: 0x30, count: 200)
+        let zip = Data([0x50, 0x4B, 3, 4]) + Data(count: 100)
+        let root = scratch()
+        defer { try? FileManager.default.removeItem(at: root) }
+        for (data, name) in [(cpio, "data.tar"), (zip, "data.tar"), (try gzip(cpio), "data.tar.gz"), (try gzip(zip), "data.tar.gz")] {
+            let deb = try await debWith(data: data, name: name)
+            defer { try? FileManager.default.removeItem(at: deb) }
+            await #expect(throws: DebError.self) {
+                _ = try await DebReader.read(deb, into: root, runner: ProcessRunner(), keep: { _ in true })
+            }
+            #expect(!FileManager.default.fileExists(atPath: root.path))
+        }
     }
 }

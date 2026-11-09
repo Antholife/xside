@@ -53,14 +53,68 @@ struct StreamDecompressorTests {
         #expect(try Data(contentsOf: out) == text)
     }
 
+    private func fixture(_ name: String) -> URL {
+        URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/stream/\(name)")
+    }
+
     @Test func xz() async throws {
-        let (xz, inner) = try xzTar(text), out = dir.appendingPathComponent("x.out")
-        try await StreamDecompressor.decompress(xz, kind: .xz, to: out, maxBytes: 1 << 20, runner: ProcessRunner())
-        // bsdtar re-wrote the entries: compare what the tar holds
-        let got = try Data(contentsOf: out)
-        let entries = try TarReader.entries(got)
-        #expect(entries.map(\.path) == ["Packages"] && got[entries[0].dataRange] == text)
-        _ = inner
+        let out = dir.appendingPathComponent("x.out")
+        try await StreamDecompressor.decompress(fixture("packages.xz"), kind: .xz, to: out, maxBytes: 1 << 20, runner: ProcessRunner())
+        #expect(try Data(contentsOf: out) == Data(contentsOf: fixture("packages.txt")))
+    }
+
+    @Test func legacyLzma() async throws {
+        let out = dir.appendingPathComponent("l.out")
+        try await StreamDecompressor.decompress(fixture("packages.lzma"), kind: .lzma, to: out, maxBytes: 1 << 20, runner: ProcessRunner())
+        #expect(try Data(contentsOf: out) == Data(contentsOf: fixture("packages.txt")))
+    }
+
+    @Test func multiMemberGzipIsRefusedClearly() async throws {
+        let out = dir.appendingPathComponent("mm.out")
+        for tail in [try gzip(Data("tail\n".utf8)), Data("garbage".utf8)] {
+            let input = try file("mm.gz", try gzip(text) + tail)
+            await #expect(throws: DebError.self) {
+                try await StreamDecompressor.decompress(input, kind: .gzip, to: out, maxBytes: 1 << 20, runner: ProcessRunner())
+            }
+            #expect(!FileManager.default.fileExists(atPath: out.path))
+        }
+    }
+
+    @Test func aSymlinkedInputIsRefused() async throws {
+        let target = try file("real", text), link = dir.appendingPathComponent("link"), out = dir.appendingPathComponent("s.out")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+        await #expect(throws: DebError.malformed("unreadable input")) {
+            try await StreamDecompressor.decompress(link, kind: .none, to: out, maxBytes: 1 << 20, runner: ProcessRunner())
+        }
+    }
+
+    /// Records how big the bzip2 output was the moment the tool stopped.
+    private final class MeasuringRunner: CommandRunning, @unchecked Sendable {
+        let inner = ProcessRunner()
+        private let lock = NSLock()
+        private var _size: UInt64 = 0
+        var size: UInt64 { lock.withLock { _size } }
+        func run(_ executable: String, _ arguments: [String], cwd: URL?, timeout: Duration) async throws -> CommandResult {
+            let result = try await inner.run(executable, arguments, cwd: cwd, timeout: timeout)
+            // the shell wrapper: arguments are [-c, script, sh, copy, blocks]; the output sits next to the copy
+            if arguments.count >= 4 {
+                let plain = URL(fileURLWithPath: arguments[3]).deletingPathExtension()
+                let n = (try? FileManager.default.attributesOfItem(atPath: plain.path)[.size] as? UInt64) ?? nil
+                lock.withLock { _size = n ?? 0 }
+            }
+            return result
+        }
+    }
+
+    @Test func bzip2HasAHardOutputLimit() async throws {
+        let bzSrc = try file("big", Data(count: 64 << 20)), bz = dir.appendingPathComponent("big.bz2")
+        try run("/usr/bin/bzip2", ["-c"], stdin: bzSrc, stdout: bz)
+        try FileManager.default.removeItem(at: bzSrc)
+        let runner = MeasuringRunner(), out = dir.appendingPathComponent("big.out")
+        await #expect(throws: DebError.tooLarge) {
+            try await StreamDecompressor.decompress(bz, kind: .bzip2, to: out, maxBytes: 1 << 20, runner: runner)
+        }
+        #expect(runner.size > 0 && runner.size <= (1 << 20) + 2048, "size \(runner.size)")
     }
 
     @Test func bzip2() async throws {
@@ -76,13 +130,10 @@ struct StreamDecompressorTests {
         #expect(try Data(contentsOf: out) == text)
     }
 
-    @Test func noneCopiesAndLzmaIsUnsupported() async throws {
+    @Test func noneCopies() async throws {
         let input = try file("n", text), out = dir.appendingPathComponent("n.out")
         try await StreamDecompressor.decompress(input, kind: .none, to: out, maxBytes: 1 << 20, runner: ProcessRunner())
         #expect(try Data(contentsOf: out) == text)
-        await #expect(throws: DebError.unsupportedCompression("lzma")) {
-            try await StreamDecompressor.decompress(input, kind: .lzma, to: out, maxBytes: 1 << 20, runner: ProcessRunner())
-        }
         await #expect(throws: DebError.tooLarge) {
             try await StreamDecompressor.decompress(input, kind: .none, to: out, maxBytes: 10, runner: ProcessRunner())
         }

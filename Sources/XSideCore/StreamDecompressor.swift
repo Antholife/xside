@@ -34,33 +34,25 @@ public enum StreamDecompressor {
         let fm = FileManager.default
         try? fm.removeItem(at: output)
         do {
+            var st = stat()
+            guard lstat(input.path, &st) == 0, st.st_mode & S_IFMT == S_IFREG else { throw DebError.malformed("unreadable input") }
             switch kind {
             case .none:
-                let size = (try? fm.attributesOfItem(atPath: input.path)[.size] as? UInt64) ?? nil
-                guard let size else { throw DebError.malformed("unreadable input") }
-                guard size <= maxBytes else { throw DebError.tooLarge }
+                guard UInt64(max(st.st_size, 0)) <= maxBytes else { throw DebError.tooLarge }
                 try fm.copyItem(at: input, to: output)
             case .gzip:
+                try gunzip(try read(input), to: output, maxBytes: maxBytes)
+            case .xz, .lzma:
+                // Compression's LZMA decoder reads both the .xz container and the legacy .lzma one.
                 let data = try read(input)
-                let start = try gzipHeaderEnd(data)
-                let written = try inflate(data, from: start, algorithm: COMPRESSION_ZLIB, to: output, maxBytes: maxBytes) { rest in
-                    // 8 bytes follow the deflate stream: CRC-32 and the size modulo 2^32.
-                    guard rest.count >= 8 else { throw DebError.malformed("truncated gzip trailer") }
-                    return rest
+                try withOutput(output) { handle in
+                    var total: UInt64 = 0
+                    _ = try inflate(data, from: 0, algorithm: COMPRESSION_LZMA, handle: handle, total: &total, maxBytes: maxBytes)
                 }
-                // The size field catches a stream that ended early on its own.
-                let tail = data.suffix(8).suffix(4)
-                let isize = tail.enumerated().reduce(UInt32(0)) { $0 | UInt32($1.element) << UInt32(8 * $1.offset) }
-                if isize != UInt32(truncatingIfNeeded: written) { throw DebError.malformed("gzip size mismatch") }
-            case .xz:
-                let data = try read(input)
-                _ = try inflate(data, from: 0, algorithm: COMPRESSION_LZMA, to: output, maxBytes: maxBytes) { $0 }
             case .bzip2:
                 try await bzip2(input, to: output, maxBytes: maxBytes, runner: runner)
             case .zstd:
                 try await Zstd.decompress(input, to: output, maxBytes: maxBytes, runner: runner)
-            case .lzma:
-                throw DebError.unsupportedCompression("lzma")
             }
         } catch {
             try? fm.removeItem(at: output)
@@ -70,6 +62,29 @@ public enum StreamDecompressor {
 
     private static func read(_ url: URL) throws -> Data {
         do { return try Data(contentsOf: url, options: .mappedIfSafe) } catch { throw DebError.malformed("unreadable input") }
+    }
+
+    private static func withOutput(_ output: URL, _ body: (FileHandle) throws -> Void) throws {
+        guard FileManager.default.createFile(atPath: output.path, contents: nil),
+              let handle = try? FileHandle(forWritingTo: output) else { throw DebError.malformed("cannot write output") }
+        defer { try? handle.close() }
+        try body(handle)
+    }
+
+    /// One gzip member, checked against its size field. Compression's decoder does not say where
+    /// a stream ended, so a file with several members (or bytes after the first) is refused: the
+    /// size at the end of the file would not match.
+    private static func gunzip(_ data: Data, to output: URL, maxBytes: UInt64) throws {
+        let start = try gzipHeaderEnd(data)
+        guard data.count - start >= 8 else { throw DebError.malformed("truncated gzip trailer") }
+        try withOutput(output) { handle in
+            var total: UInt64 = 0
+            _ = try inflate(data, from: start, algorithm: COMPRESSION_ZLIB, handle: handle, total: &total, maxBytes: maxBytes)
+            let isize = (0..<4).reduce(UInt32(0)) { $0 | UInt32(data[data.count - 4 + $1]) << UInt32(8 * $1) }
+            guard isize == UInt32(truncatingIfNeeded: total) else {
+                throw DebError.malformed("gzip size mismatch (several members are not supported)")
+            }
+        }
     }
 
     /// Offset of the first deflate byte (RFC 1952).
@@ -85,7 +100,7 @@ public enum StreamDecompressor {
             pos += 2 + Int(b[pos]) + Int(b[pos + 1]) << 8
         }
         for bit: UInt8 in [0x08, 0x10] where flags & bit != 0 {   // FNAME, FCOMMENT: zero-terminated
-            guard let end = b[min(pos, b.count)...].firstIndex(of: 0) else { throw bad() }
+            guard pos <= b.count, let end = b[pos...].firstIndex(of: 0) else { throw bad() }
             pos = end + 1
         }
         if flags & 0x02 != 0 { pos += 2 }                        // FHCRC
@@ -93,13 +108,11 @@ public enum StreamDecompressor {
         return pos
     }
 
-    /// Streams `data[from...]` through the Compression framework into `output`; returns the bytes written.
-    private static func inflate(_ data: Data, from: Int, algorithm: compression_algorithm, to output: URL,
-                                maxBytes: UInt64, _ trim: (Data) throws -> Data) throws -> UInt64 {
-        let body = try trim(data.dropFirst(from))
-        guard FileManager.default.createFile(atPath: output.path, contents: nil),
-              let handle = try? FileHandle(forWritingTo: output) else { throw DebError.malformed("cannot write output") }
-        defer { try? handle.close() }
+    /// Streams one compressed stream starting at `data[from]` into `handle`, adding to `total`
+    /// (checked against `maxBytes` per chunk before it is written). Returns how many input bytes
+    /// the stream used.
+    private static func inflate(_ data: Data, from: Int, algorithm: compression_algorithm, handle: FileHandle,
+                                total: inout UInt64, maxBytes: UInt64) throws -> Int {
         let chunk = 64 * 1024
         let dst = UnsafeMutablePointer<UInt8>.allocate(capacity: chunk)
         defer { dst.deallocate() }
@@ -109,11 +122,11 @@ public enum StreamDecompressor {
             throw DebError.malformed("decoder")
         }
         defer { compression_stream_destroy(streamPtr) }
-        var total: UInt64 = 0
-        try body.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
-            let base = raw.bindMemory(to: UInt8.self).baseAddress
-            streamPtr.pointee.src_ptr = base ?? UnsafePointer(dst)
-            streamPtr.pointee.src_size = raw.count
+        var written = total
+        let used: Int = try data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            let body = UnsafeRawBufferPointer(rebasing: raw[from...])
+            streamPtr.pointee.src_ptr = body.baseAddress.map { $0.assumingMemoryBound(to: UInt8.self) } ?? UnsafePointer(dst)
+            streamPtr.pointee.src_size = body.count
             while true {
                 try Task.checkCancellation()
                 streamPtr.pointee.dst_ptr = dst
@@ -122,12 +135,13 @@ public enum StreamDecompressor {
                 let status = compression_stream_process(streamPtr, Int32(COMPRESSION_STREAM_FINALIZE.rawValue))
                 let produced = chunk - streamPtr.pointee.dst_size
                 if produced > 0 {
-                    total += UInt64(produced)
-                    guard total <= maxBytes else { throw DebError.tooLarge }
+                    let (sum, overflow) = written.addingReportingOverflow(UInt64(produced))
+                    guard !overflow, sum <= maxBytes else { throw DebError.tooLarge }
+                    written = sum
                     try handle.write(contentsOf: Data(bytes: dst, count: produced))
                 }
                 switch status {
-                case COMPRESSION_STATUS_END: return
+                case COMPRESSION_STATUS_END: return body.count - streamPtr.pointee.src_size
                 case COMPRESSION_STATUS_OK:
                     // No input used and nothing produced: the stream is cut short.
                     if produced == 0 && streamPtr.pointee.src_size == before { throw DebError.malformed("truncated stream") }
@@ -135,7 +149,8 @@ public enum StreamDecompressor {
                 }
             }
         }
-        return total
+        total = written
+        return used
     }
 
     /// `bzip2 -d -k` on a copy (the runner captures stdout, so no `-c`), the size watched.
@@ -149,7 +164,11 @@ public enum StreamDecompressor {
         let result: CommandResult
         do {
             result = try await ZipLimits.watchingFile(plain, maxBytes: maxBytes) {
-                try await runner.run("/usr/bin/bzip2", ["-d", "-k", copy.path], cwd: nil)
+                // The shell only sets a hard file-size limit (RLIMIT_FSIZE; bash counts in 1024-byte
+                // blocks, two past the cap) and clears bzip2's option variables; paths are arguments.
+                let blocks = (maxBytes / 1024).addingReportingOverflow(2).partialValue
+                return try await runner.run("/bin/bash", ["-c", "unset BZIP BZIP2; ulimit -f \"$2\" && exec /usr/bin/bzip2 -d -k \"$1\"",
+                                                        "bash", copy.path, String(blocks)], cwd: nil)
             }
         } catch {
             if error is CancellationError || error is DebError { throw error }
