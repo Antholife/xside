@@ -113,8 +113,24 @@ enum FakeDeb {
 
     // MARK: deb
 
+    /// A zstd frame made of stored (raw) blocks: valid for any decoder, needs no compressor.
+    static func zstdStored(_ payload: Data) -> Data {
+        var out = Data([0x28, 0xB5, 0x2F, 0xFD, 0xA0])      // magic; single segment, 4-byte content size
+        withUnsafeBytes(of: UInt32(payload.count).littleEndian) { out.append(contentsOf: $0) }
+        var offset = 0
+        repeat {
+            let n = min(payload.count - offset, 128 * 1024)
+            let last = offset + n >= payload.count
+            let header = UInt32(n) << 3 | (last ? 1 : 0)     // block type 0: raw
+            out.append(contentsOf: [UInt8(header & 0xFF), UInt8(header >> 8 & 0xFF), UInt8(header >> 16 & 0xFF)])
+            out.append(payload[(payload.startIndex + offset)..<(payload.startIndex + offset + n)])
+            offset += n
+        } while offset < payload.count
+        return out
+    }
+
     /// A `.deb` whose members are compressed with the system tools. `compression`: `gz`, `xz`, `bz2`,
-    /// `lzma` or `none`. `zst` needs the helper of Task 3 and is unsupported until then.
+    /// `lzma`, `zst` (stored blocks) or `none` (also "").
     static func deb(control: String, files: [Entry], compression: String) async throws -> Data {
         let flag: String?
         switch compression {
@@ -122,13 +138,14 @@ enum FakeDeb {
         case "xz": flag = "--xz"
         case "bz2": flag = "--bzip2"
         case "lzma": flag = "--lzma"
-        case "none": flag = nil
+        case "none", "zst", "": flag = nil
         default: throw DebError.unsupportedCompression(compression)
         }
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("fakedeb-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         func compressed(_ tar: Data, _ name: String) throws -> Data {
+            if compression == "zst" { return zstdStored(tar) }
             guard let flag else { return tar }
             let input = dir.appendingPathComponent("\(name).in"), output = dir.appendingPathComponent(name)
             try tar.write(to: input)
@@ -139,7 +156,7 @@ enum FakeDeb {
             guard p.terminationStatus == 0 else { throw DebError.malformed("tar failed") }
             return try Data(contentsOf: output)
         }
-        let ext = compression == "none" ? "" : "." + compression
+        let ext = (compression == "none" || compression.isEmpty) ? "" : "." + compression
         let controlTar = tar([.file("./control", Data(control.utf8))])
         return ar([("debian-binary", Data("2.0\n".utf8)),
                    ("control.tar" + ext, try compressed(controlTar, "control.tar" + ext)),

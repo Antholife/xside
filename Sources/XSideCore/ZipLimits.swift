@@ -85,6 +85,37 @@ public enum ZipLimits {
         }
     }
 
+    /// How often `watchingFile` measures the file.
+    static let fileWatchInterval: Duration = .milliseconds(100)
+
+    /// Runs `run` while measuring `file` (the output of a decompressor): past `maxBytes` the tool
+    /// is stopped (its process group is killed through cancellation) and `DebError.tooLarge`
+    /// thrown. The file is measured once more when the tool is done, so a tool that outruns the
+    /// watch is caught too. A missing file counts as empty. The caller deletes the file.
+    static func watchingFile(_ file: URL, maxBytes: UInt64,
+                             _ run: @escaping @Sendable () async throws -> CommandResult) async throws -> CommandResult {
+        func size() -> UInt64 {
+            var st = stat()
+            return lstat(file.path, &st) == 0 ? UInt64(max(st.st_size, 0)) : 0
+        }
+        return try await withThrowingTaskGroup(of: CommandResult?.self) { group in
+            group.addTask { try await run() }
+            group.addTask {
+                while true {
+                    try await Task.sleep(for: fileWatchInterval)
+                    if size() > maxBytes { throw DebError.tooLarge }
+                }
+            }
+            defer { group.cancelAll() }
+            while let finished = try await group.next() {
+                guard let result = finished else { continue }
+                if size() > maxBytes { throw DebError.tooLarge }
+                return result
+            }
+            throw CancellationError()
+        }
+    }
+
     /// Files and bytes under `directory`, without following links. Some tools write archives whose
     /// folders lack the search bit (`rw-r--r--`), which `ditto` reproduces: such folders are made
     /// accessible to their owner, then measured. Fails closed: a subtree that still can't be read
