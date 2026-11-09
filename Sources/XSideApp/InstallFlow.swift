@@ -82,6 +82,8 @@ final class InstallFlow {
     var runInApp: InAppDraft?
     /// Devices of the last run getting iPhone Duo compatibility, reused by "Retry failed".
     var runDuo: Set<String> = []
+    /// The app has old 32-bit code to remove: its step is listed from the start.
+    var runLegacy32 = false
     /// The last run installs the app without XSide's features (the progress says so).
     var runWithoutXSideFeatures: Bool {
         runOptions.resolvedWithoutXSideFeatures(default: AppModel.withoutXSideFeaturesByDefault)
@@ -94,7 +96,8 @@ final class InstallFlow {
     /// when the option is on there. Wi-Fi verification is planned or not, never added later.
     func runSteps(for deviceID: String? = nil) -> [ProgressStep] {
         let id = deviceID ?? runs.first?.deviceID
-        return ProgressStep.list(includingWifiCheck: wifiStepPlanned, includingDuo: id.map(runDuo.contains) ?? false)
+        return ProgressStep.list(includingWifiCheck: wifiStepPlanned, includingDuo: id.map(runDuo.contains) ?? false,
+                                 includingLegacy32: runLegacy32)
     }
 
     /// `skippedRunSteps`, and the Duo step on a device where it added nothing.

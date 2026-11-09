@@ -218,6 +218,7 @@ extension ProgressStep {
         case .profile: L("install.step.profile")
         case .welcome: L("install.step.welcome")
         case .duo: L("install.step.duo")
+        case .legacy32: L("install.step.legacy32")
         case .signing: L("install.step.signing")
         case .installing: L("install.step.installing")
         case .wifiCheck: L("wifi.title")

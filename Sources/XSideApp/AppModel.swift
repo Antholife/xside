@@ -2051,6 +2051,7 @@ final class AppModel {
         flow.runOptions = flow.draft.options
         flow.runInApp = InAppDraft(settings: flow.inApp, touched: flow.inAppTouched)
         // Only where the option can be on (a device unchecked meanwhile keeps its own choice).
+        flow.runLegacy32 = flow.info?.hasLegacy32 == true
         flow.runDuo = flow.duoDevices.filter { duoState(for: $0, app: flow.info?.duo).canTurnOn }
         // A new run imports again (the options may have changed); only its later devices reuse it.
         flow.importedRecordID = nil

@@ -15,6 +15,7 @@ public protocol Resigning: Sendable {
                 iconURL: URL?, profileURL: URL, profile: ProvisioningProfile,
                 identitySHA1: String, otherBundleIDs: Set<String>, facts: InstallationFacts?,
                 onDuo: @Sendable (DuoOutcome?) async -> Void,
+                onThinning: @Sendable () async -> Void,
                 onSigning: @Sendable () async -> Void) async throws -> URL
     /// Whether the signed `app` holds XSide's library: features asked for can still be missing
     /// when the library couldn't be added (the app is then installed as it came).
@@ -48,7 +49,8 @@ extension Installer: Installing {}
 public enum InstallStep: Int, CaseIterable, Sendable {
     /// `welcome`: unpacking the app and adding the XSide welcome popup to it, before signing.
     /// `duo`: adding iPhone Duo compatibility, only when it was asked for.
-    case profile, welcome, duo, signing, installing
+    /// `legacy32`: removing the old 32-bit code, only when the app has some.
+    case profile, welcome, duo, legacy32, signing, installing
 }
 
 /// FIFO async mutex: `run` bodies execute one at a time, in arrival order. A task already
@@ -417,6 +419,10 @@ public actor SideloadPipeline {
                             await progress(.duo)
                             Self.logger.info("\(what): adding iPhone Duo compatibility")
                         }
+                    },
+                    onThinning: {
+                        await progress(.legacy32)
+                        Self.logger.info("\(what): removing 32-bit slices")
                     },
                     onSigning: {
                         await progress(.signing)

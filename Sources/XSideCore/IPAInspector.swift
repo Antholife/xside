@@ -19,10 +19,14 @@ public struct AppInfo: Equatable, Sendable {
     /// What decides the iPhone Duo option (read from the main executable at import); nil when
     /// not read.
     public let duo: DuoAppInfo?
+    /// Some Mach-O of the app still carries a legacy 32-bit ARM slice, which XSide removes at signing.
+    public let hasLegacy32: Bool
 
     public init(bundleID: String, name: String, version: String?, executable: String,
                 sharedKeychainGroups: [String] = [], sharedKeychainVendor: String? = nil,
-                minimumOSVersion: String? = nil, sdkVersion: String? = nil, duo: DuoAppInfo? = nil) {
+                minimumOSVersion: String? = nil, sdkVersion: String? = nil, duo: DuoAppInfo? = nil,
+                hasLegacy32: Bool = false) {
+        self.hasLegacy32 = hasLegacy32
         self.sdkVersion = sdkVersion
         self.duo = duo
         self.bundleID = bundleID
@@ -120,12 +124,39 @@ public enum IPAInspector {
                        sdkVersion: (plist["DTPlatformVersion"] as? String).flatMap { $0.isEmpty ? nil : $0 })
     }
 
-    /// True if any slice of the Mach-O carries an LC_ENCRYPTION_INFO(_64) with cryptid != 0.
+    /// True if a slice a supported device can run carries an LC_ENCRYPTION_INFO(_64) with
+    /// cryptid != 0. Legacy 32-bit ARM slices (armv7, armv7s) are ignored: no device XSide supports
+    /// runs them (iOS 11 dropped 32-bit), and XSide removes them when it signs. A file that only
+    /// has such slices is still judged on them.
     public static func isEncrypted(_ machO: URL) throws -> Bool {
         let data = try machOData(machO)
+        let slices = try sliceEntries(data)
+        let runnable = slices.filter { $0.cpuType != cpuTypeARM32 }
         var found = false
-        for start in try sliceOffsets(data) where try sliceEncrypted(data, at: start) { found = true }
+        for slice in runnable.isEmpty ? slices : runnable where try sliceEncrypted(data, at: slice.offset) {
+            found = true
+        }
         return found
+    }
+
+    /// CPU_TYPE_ARM: 32-bit ARM (armv7, armv7s...). arm64 is CPU_TYPE_ARM | CPU_ARCH_ABI64.
+    static let cpuTypeARM32: UInt32 = 12
+
+    struct SliceEntry { let cpuType: UInt32; let offset: Int }
+
+    /// Each slice's CPU type and start: from the fat header, or the Mach-O header of a thin file.
+    static func sliceEntries(_ data: Data) throws -> [SliceEntry] {
+        let offsets = try sliceOffsets(data)
+        guard let magicBE = readU32(data, 0, bigEndian: true) else { throw bad() }
+        if magicBE != 0xCAFEBABE && magicBE != 0xCAFEBABF {
+            guard let cpu = readU32(data, 4, bigEndian: false) else { throw bad() }
+            return [SliceEntry(cpuType: cpu, offset: 0)]
+        }
+        let entry = magicBE == 0xCAFEBABF ? 32 : 20
+        return try offsets.enumerated().map { i, off in
+            guard let cpu = readU32(data, 8 + i * entry, bigEndian: true) else { throw bad() }
+            return SliceEntry(cpuType: cpu, offset: off)
+        }
     }
 
     /// Largest entitlements blob read.

@@ -62,7 +62,8 @@ public enum IPAImporter {
                        sharedKeychainVendor: shared.isEmpty ? nil : Resigner.keychainVendor(entitlements),
                        minimumOSVersion: info.minimumOSVersion,
                        // The executable's SDK first: the one iOS goes by (preflight, Duo option).
-                       sdkVersion: duo.sdkVersion ?? info.sdkVersion, duo: duo)
+                       sdkVersion: duo.sdkVersion ?? info.sdkVersion, duo: duo,
+                       hasLegacy32: MachOThinner.hasARM32Slices(under: app))
     }
 
     private static func require(_ type: FileAttributeType, _ url: URL) throws {

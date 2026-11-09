@@ -100,6 +100,7 @@ public struct Resigner: Sendable {
                        iconURL: URL?, profileURL: URL, profile: ProvisioningProfile,
                        identitySHA1: String, otherBundleIDs: Set<String> = [], facts: InstallationFacts? = nil,
                        onDuo: @Sendable (DuoOutcome?) async -> Void = { _ in },
+                       onThinning: @Sendable () async -> Void = {},
                        onSigning: @Sendable () async -> Void = {}) async throws -> URL {
         let fm = FileManager.default
         try fm.createDirectory(at: workDir, withIntermediateDirectories: true)
@@ -181,6 +182,11 @@ public struct Resigner: Sendable {
         try Self.signingEntitlements(profile: profile, bundleID: bundleID, original: originalEntitlements,
                                      shareKeychain: options.shareKeychain, otherBundleIDs: otherBundleIDs)
             .write(to: entitlements)
+
+        // 32-bit ARM slices run on no supported device (and may be encrypted): dropped before signing.
+        if MachOThinner.hasARM32Slices(under: app) { await onThinning() }
+        let thinned = MachOThinner.removeARM32Slices(under: app)
+        if !thinned.isEmpty { Self.logger.info("removed 32-bit ARM slices from \(thinned.count) file(s)") }
 
         await onSigning()
         let targets = signTargets(in: app)

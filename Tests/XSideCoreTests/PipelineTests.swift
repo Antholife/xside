@@ -88,6 +88,7 @@ private struct FakeResigner: Resigning {
                 profileURL: URL, profile: ProvisioningProfile, identitySHA1: String,
                 otherBundleIDs: Set<String>, facts: InstallationFacts?,
                 onDuo: @Sendable (DuoOutcome?) async -> Void,
+                onThinning: @Sendable () async -> Void,
                 onSigning: @Sendable () async -> Void) async throws -> URL {
         await log.resign(ipa, workDir, bundleID, iconURL, profileURL, profile)
         await log.fact(facts)

@@ -92,3 +92,31 @@ enum FakeIPA {
         return app
     }
 }
+
+extension FakeIPA {
+    /// Thin 64-bit Mach-O of the given CPU type (12 | 0x01000000 = arm64) with an encryption command.
+    static func machO(cpuType: UInt32, cryptid: UInt32) -> Data {
+        var d = thinMachO(cryptid: cryptid)
+        withUnsafeBytes(of: cpuType.littleEndian) { d.replaceSubrange(4..<8, with: $0) }
+        return d
+    }
+
+    /// Fat (32-bit header) file with 2^14 alignment from (cpuType, cpuSubtype, slice) triples.
+    static func fat(_ slices: [(cpu: UInt32, sub: UInt32, data: Data)]) -> Data {
+        var d = Data()
+        func be(_ v: UInt32) { withUnsafeBytes(of: v.bigEndian) { d.append(contentsOf: $0) } }
+        be(0xCAFEBABE); be(UInt32(slices.count))
+        var offset = 0x4000
+        var offsets: [Int] = []
+        for s in slices {
+            offsets.append(offset)
+            be(s.cpu); be(s.sub); be(UInt32(offset)); be(UInt32(s.data.count)); be(14)
+            offset += (s.data.count + 0x3FFF) / 0x4000 * 0x4000
+        }
+        for (s, o) in zip(slices, offsets) {
+            d.append(Data(count: o - d.count))
+            d.append(s.data)
+        }
+        return d
+    }
+}

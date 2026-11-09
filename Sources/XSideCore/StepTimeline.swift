@@ -12,13 +12,15 @@ public enum JobStage: Equatable, Sendable {
 /// A step of the progress list shown to the user.
 public enum ProgressStep: Int, CaseIterable, Sendable {
     /// `duo`: adding iPhone Duo compatibility, listed only for a run that asked for it.
-    case preparing, profile, welcome, duo, signing, installing, wifiCheck
+    /// `legacy32`: removing the old 32-bit code, listed only for an app that has some.
+    case preparing, profile, welcome, duo, legacy32, signing, installing, wifiCheck
 
     public init(_ step: InstallStep) {
         switch step {
         case .profile: self = .profile
         case .welcome: self = .welcome
         case .duo: self = .duo
+        case .legacy32: self = .legacy32
         case .signing: self = .signing
         case .installing: self = .installing
         }
@@ -26,8 +28,12 @@ public enum ProgressStep: Int, CaseIterable, Sendable {
 
     /// The list for a run; Wi-Fi verification only exists after a first install, the Duo step
     /// only when the option is on for the device.
-    public static func list(includingWifiCheck: Bool, includingDuo: Bool = false) -> [ProgressStep] {
-        allCases.filter { ($0 != .wifiCheck || includingWifiCheck) && ($0 != .duo || includingDuo) }
+    public static func list(includingWifiCheck: Bool, includingDuo: Bool = false,
+                            includingLegacy32: Bool = false) -> [ProgressStep] {
+        allCases.filter {
+            ($0 != .wifiCheck || includingWifiCheck) && ($0 != .duo || includingDuo)
+                && ($0 != .legacy32 || includingLegacy32)
+        }
     }
 }
 

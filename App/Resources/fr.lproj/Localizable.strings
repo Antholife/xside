@@ -788,6 +788,7 @@
 "duo.refreshNow" = "Rafraîchir maintenant";
 "preflight.notMadeForDuo" = "%1$@ n'est pas faite pour l'écran de ton iPhone Duo (%2$@) : elle n'en utilisera pas toute la surface. L'option « Ajouter la compatibilité iPhone Duo » des options d'installation peut l'aider.";
 "preflight.notMadeForDuo.noOption" = "%1$@ n'est pas faite pour l'écran de ton iPhone Duo (%2$@) : elle n'en utilisera pas toute la surface. Elle ne gère pas les scènes iOS : la compatibilité iPhone Duo ne peut pas lui être ajoutée.";
+"install.step.legacy32" = "Retrait de l'ancienne version 32 bits";
 "install.step.duo" = "Ajout de la compatibilité iPhone Duo";
 "install.step.duo.added" = "Ajoutée : l'app utilisera tous les écrans de l'iPhone Duo.";
 "install.step.duo.failed" = "N'a pas pu être ajoutée : l'app est installée sans. Les journaux disent pourquoi.";

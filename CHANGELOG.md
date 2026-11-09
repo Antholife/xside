@@ -66,6 +66,7 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 - "Last refreshed" in the app's iOS Settings section is the time it was signed, not the profile's creation.
 
 ### Fixed
+- **Apps that still carry an old 32-bit version are no longer refused as encrypted.** XSide only looks at the part of the app that your iPhone or iPad can run, and removes the old 32-bit part when it installs the app.
 - `xside pause` refuses a duration past a year instead of crashing on a huge number, and a garbled pause request is refused instead of pausing until resumed.
 - `xside status` counts the next refresh with the chosen days before expiry (it assumed 2), says when refreshes are paused, and `--json` has `pausedUntil`.
 - Version checks read the leading digits of each part ("1.10a" is newer than "1.9", "21.37.04" equals "21.37.4"), and the "older version" warning only compares the same copy of an app.
