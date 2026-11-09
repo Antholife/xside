@@ -127,6 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch command {
         case .uninstall: "Uninstalling (about a minute per device)…"
         case .report: "Writing the report archive…"
+        case .crash: "Reading the crash logs on the device…"
         default: "Working on it…"
         }
     }

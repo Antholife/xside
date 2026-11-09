@@ -232,6 +232,10 @@ struct DeviceRun: Identifiable, Equatable {
     var duoMissing = false
     /// How the iPhone Duo step went in this run, once known (nil: not asked, or not there yet).
     var duoOutcome: DuoOutcome?
+    /// XSide opened the app and waits to see whether it stays up.
+    var checkingLaunch = false
+    /// The app crashed after the install, explained.
+    var crash: CrashFinding?
 
     var id: String { deviceID }
 

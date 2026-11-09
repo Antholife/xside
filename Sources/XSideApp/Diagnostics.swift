@@ -83,6 +83,12 @@ enum Diagnostics {
             }
             try LogStore.shared.redact(model.diagnosticSummary(header: summary))
                 .write(to: folder.appendingPathComponent("summary.txt"), atomically: true, encoding: .utf8)
+            // The crash logs XSide read (already cleaned when read), one per installation.
+            for (n, finding) in model.crashFindings.enumerated() {
+                let name = "crash-\(n + 1)-" + finding.fileName.filter { $0.isLetter || $0.isNumber || "-_.".contains($0) }
+                try LogStore.shared.redact(finding.log)
+                    .write(to: folder.appendingPathComponent(name), atomically: true, encoding: .utf8)
+            }
         } catch {
             log.error("log export failed: \(error)")
             return false
@@ -192,6 +198,27 @@ extension AppModel {
                 lines.append(text)
             }
         }
+        let crashes = records.enumerated().flatMap { index, record in
+            record.installations.compactMap { i -> String? in
+                guard case .found(let f)? = crashChecks[JobKey(recordID: record.id, deviceID: i.deviceID)] else { return nil }
+                let d = f.diagnosis
+                // Public: the cause and the exception only (a subject can name the app).
+                let what = publicApps ? [d.cause.rawValue, d.exceptionType, d.signal].compactMap { $0 }.joined(separator: " ")
+                                      : d.summary
+                let app = publicApps ? "<app-\(index + 1)>" : record.originalBundleID
+                return "  \(app) on \(i.deviceID): \(what), \(d.date?.formatted(.iso8601) ?? "?")"
+            }
+        }
+        if !crashes.isEmpty {
+            lines.append("")
+            lines.append("Crashes (diagnosed by XSide):")
+            lines += crashes
+        }
         return lines.joined(separator: "\n") + "\n"
+    }
+
+    /// The crashes XSide found, for the report archive.
+    var crashFindings: [CrashFinding] {
+        crashChecks.values.compactMap { if case .found(let f) = $0 { f } else { nil } }
     }
 }

@@ -31,6 +31,10 @@ struct AppRow: View {
     let onRemoveFromList: () -> Void
     /// Opens Settings > Mes apps on this app and device.
     let onXSideSettings: () -> Void
+    /// The app crashed after its last install (XSide opened it): said under its name.
+    var crash: CrashFinding?
+    /// "Why does it crash?": the crash window on this app.
+    var onWhyCrash: () -> Void = {}
     /// Every automatic refresh is paused (the panel's Pause): the row looks paused too, as for
     /// its own pause (device feedback round 2, M2), but keeps its own actions.
     var globallyPaused = false
@@ -63,12 +67,14 @@ struct AppRow: View {
                              onStopRefreshing: onStopRefreshing, onResume: onResume,
                              onRemoveFromList: onRemoveFromList))
         .accessibilityAction(named: L("popover.app.xsideSettings"), onXSideSettings)
+        .accessibilityAction(named: L("popover.app.whyCrash"), onWhyCrash)
     }
 
     private var appName: String { entry.record.options.displayName ?? entry.record.displayName }
 
     @ViewBuilder private var actions: some View {
         Button(L("popover.app.xsideSettings"), systemImage: "slider.horizontal.3", action: onXSideSettings)
+        Button(L("popover.app.whyCrash"), systemImage: "stethoscope", action: onWhyCrash)
         Divider()
         if isPaused {
             Button(L("popover.app.resumeRefreshing"), systemImage: "play.circle", action: onResume)
@@ -140,6 +146,17 @@ struct AppRow: View {
                         .font(.system(size: 11))
                         .foregroundStyle(Color(nsColor: .systemOrange))
                         .fixedSize(horizontal: false, vertical: true)
+                }
+                if step == nil, let crash {
+                    Button(action: onWhyCrash) {
+                        Text(L("popover.app.crashed", CrashWording(crash.diagnosis, app: appName).title))
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color(nsColor: .systemRed))
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .buttonStyle(.plain)
+                    .help(L("popover.app.whyCrash"))
                 }
                 if step == nil, !looksPaused, let key = entry.installation.lastErrorKey {
                     Text(localizedRowError(key: key))

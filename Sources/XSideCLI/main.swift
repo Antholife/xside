@@ -32,6 +32,9 @@ let usage = """
                                            Remove an app from its devices (asks first unless --yes)
       install <file.ipa>                   Open the .ipa in XSide's install window
       logs [-f]                            Print XSide's log (-f: follow it)
+      crash <app> [--device <name>] [--json]
+                                           Why the app crashed lately: its newest crash log on
+                                           the device (last 24 h), explained
       report                               Write the logs archive for a bug report, print its path
       open                                 Open XSide
 
@@ -393,6 +396,9 @@ case .success(let invocation):
         ask(.uninstall(recordID: found[0].recordID, deviceIDs: found.map(\.deviceID)))
     case .logs(let follow): logs(follow: follow)
     case .report: ask(.report)
+    case .crash(let app, let device, let json):
+        let found = resolve(app, device)
+        ask(.crash(recordID: found[0].recordID, deviceIDs: found.map(\.deviceID), json: json))
     case .install(let path):
         let file = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL
         guard file.pathExtension.lowercased() == "ipa" else { fail("\(file.lastPathComponent) isn't an .ipa") }

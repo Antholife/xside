@@ -208,6 +208,11 @@ private struct PopoverContent: View {
                                        NSApp.activate()
                                        openSettings()
                                    },
+                                   crash: model.crashFinding(for: entry),
+                                   onWhyCrash: {
+                                       dismiss()
+                                       model.explainCrash(entry.id)
+                                   },
                                    globallyPaused: RefreshPause.until(pausedUntil) != nil)
                         }
                     }

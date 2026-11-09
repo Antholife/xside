@@ -42,6 +42,18 @@ func L(_ key: String) -> String {
     return key
 }
 
+/// `key` in the language `code` ("en", "fr"), whatever the app's choice: the `xside` tool's
+/// answers are in English.
+func L(_ key: String, language code: String) -> String {
+    let missing = "\u{0}missing"
+    for c in [code, "en"] {
+        if let value = lprojBundle(c)?.localizedString(forKey: key, value: missing, table: "Localizable"), value != missing {
+            return value
+        }
+    }
+    return key
+}
+
 /// Formatted variant: `L("popover.expires.days", 3)`.
 func L(_ key: String, _ args: CVarArg...) -> String {
     let code = AppLanguage.current.resolvedCode

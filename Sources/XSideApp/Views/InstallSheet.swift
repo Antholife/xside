@@ -253,6 +253,7 @@ struct InstallSheet: View {
                     DeviceRunList(model: model, flow: flow)
                     summary
                     DuoMissingNotes(flow: flow)
+                    CrashNotes(model: model, flow: flow)
                     if !flow.failedDeviceIDs.isEmpty { ExportLogsLink(model: model) }
                 } else {
                     InstallProgressView(timeline: StepTimeline(
@@ -262,6 +263,7 @@ struct InstallSheet: View {
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(Color(nsColor: .systemGreen))
                     DuoMissingNotes(flow: flow)
+                    CrashNotes(model: model, flow: flow)
                 }
                 // Wi-Fi checks one device at a time, then every first-install guide.
                 if let check = flow.wifiCheck {

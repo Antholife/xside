@@ -66,6 +66,14 @@ struct XSideApp: App {
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
 
+        // "Why does it crash?" (an app's … menu, the install window, a row's crash line).
+        Window(L("crash.window"), id: CrashWindow.id) {
+            CrashWindowRoot(model: model)
+        }
+        .windowResizability(.contentSize)
+        .defaultPosition(.center)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
 
         Settings {
             SettingsView(model: model)
@@ -232,6 +240,7 @@ struct MenuBarLabel: View {
                 }
                 showJourneyIfNeeded()
                 showWhatsNewIfNeeded()
+                model.showCrashWindow = { openWindow.presentCrash() }
                 model.showInstallWindow = {
                     openWindow(id: InstallWindow.id)
                     NSApp.activate()

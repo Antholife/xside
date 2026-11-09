@@ -16,6 +16,26 @@ struct JobKey: Hashable, Codable {
     let deviceID: String
 }
 
+/// Where XSide stands on an installation's crashes.
+enum CrashCheck: Equatable {
+    case checking
+    case found(CrashFinding)
+    /// No crash in the time looked at.
+    case none
+    /// The device's crash logs couldn't be read (the localized reason).
+    case failed(String)
+}
+
+/// A crash, explained, with its log made fit to share.
+struct CrashFinding: Equatable {
+    let diagnosis: CrashDiagnosis
+    /// Sanitized and redacted: ready for the window and the report archive.
+    let log: String
+    let fileName: String
+    /// Found by the check after an install (the panel's row says so), not asked for.
+    let afterInstall: Bool
+}
+
 /// A device card and the apps installed on it. `device` is nil when the device is known only from
 /// past installations (devicectl doesn't list it right now).
 struct DeviceGroup: Identifiable {
@@ -1705,7 +1725,7 @@ final class AppModel {
             UserDefaults.standard.set(0.0, forKey: BackgroundEngine.pausedUntilKey)
             onNeedsEvaluation?()
             return (true, "Automatic refreshes resumed.")
-        case .editSettings, .pauseApp, .resumeApp, .uninstall, .report:
+        case .editSettings, .pauseApp, .resumeApp, .uninstall, .report, .crash:
             return await handleAppCommand(command, entries: entries, describe: describe)
         case .refreshAll:
             targets = entries.filter { !$0.installation.refreshPaused }
@@ -1824,6 +1844,15 @@ final class AppModel {
                 return (false, "The report archive couldn't be written (see the logs).")
             }
             return (true, archive.path)
+        case .crash(let record, let devices, let json):
+            let found = targets(record, devices)
+            guard !found.isEmpty else { return (false, gone) }
+            var answers: [CrashAnswer] = []
+            for entry in found {
+                let check = await diagnoseCrash(entry.id)
+                answers.append(CrashAnswer(entry: entry, device: describe(entry), check: check))
+            }
+            return Self.crashReply(answers, json: json)
         default:
             return (false, "unsupported")
         }
@@ -2125,12 +2154,15 @@ final class AppModel {
     /// One device of a run. A first install queues its guide and, over USB with Wi-Fi refresh on,
     /// its Wi-Fi check.
     private func installOne(_ flow: InstallFlow, on deviceID: String) async {
+        let startedAt = Date()
         flow.lastStage = .preparing
         flow.phase = .running(.preparing)
         flow.setStatus(.running(.preparing), for: deviceID)
         if let i = flow.runs.firstIndex(where: { $0.deviceID == deviceID }) {
             flow.runs[i].duoMissing = false
             flow.runs[i].duoOutcome = nil
+            flow.runs[i].crash = nil
+            flow.runs[i].checkingLaunch = false
         }
         needsUnlock.remove(deviceID)
         // Looked up now: the device may have gone (or changed transport) during the earlier ones.
@@ -2176,6 +2208,11 @@ final class AppModel {
                 rememberGuideShown(deviceID)
             }
             if trust == .untrusted, flow.openTrustPage { openTrustSettings(deviceID) }
+            // Launched (or the launch failed for another reason than trust): does it stay up?
+            if flow.openAppAfter, trust != .untrusted {
+                watchLaunch(JobKey(recordID: installed.id, deviceID: deviceID), since: startedAt,
+                            launched: trust == .trusted, flow: flow)
+            }
             // Trusted: no guide. Not trusted: the guide, whatever XSide remembers.
             if trust != .trusted,
                let guide = guideIfFirstInstall(on: device, flow: flow, force: trust == .untrusted) {
@@ -2406,6 +2443,163 @@ final class AppModel {
     private func rememberGuideShown(_ deviceID: String) {
         let sha1 = (try? environment?.get())?.identitySHA1
         UserDefaults.standard.set(sha1 ?? true as Any, forKey: Self.guideKey(deviceID))
+    }
+
+    // MARK: Crash diagnosis
+
+    /// How far back "Why does it crash?" looks.
+    static let crashLookback: TimeInterval = 24 * 3600
+    /// After XSide opens an app at install: how long it must stay up to count as started.
+    static let launchGrace: Duration = .seconds(10)
+
+    /// What XSide found about an installation's crashes (memory only: the device keeps the logs).
+    private(set) var crashChecks: [JobKey: CrashCheck] = [:]
+    /// The installation the crash window shows.
+    var crashWindowKey: JobKey?
+    /// Opens the crash window (set by the menu-bar label, which has `openWindow`).
+    var showCrashWindow: (() -> Void)?
+
+    /// "Why does it crash?": the window, on that installation, and a fresh look at its crash logs.
+    func explainCrash(_ key: JobKey) {
+        crashWindowKey = key
+        showCrashWindow?()
+        switch crashChecks[key] {
+        case .checking?, .found?: break // its "Look again" reads them anew
+        default: Task { await diagnoseCrash(key) }
+        }
+    }
+
+    /// Reads the device's newest crash of the installation since `since` (default: the last 24 h),
+    /// explains it and keeps the result for the panel, the window and the report. Any failure is
+    /// an answer, never an error thrown at the caller.
+    @discardableResult
+    func diagnoseCrash(_ key: JobKey, since: Date? = nil, afterInstall: Bool = false) async -> CrashCheck {
+        guard let record = records.first(where: { $0.id == key.recordID }),
+              let installation = record.installations.first(where: { $0.deviceID == key.deviceID }) else {
+            crashChecks[key] = .failed(L("crash.gone"))
+            return .failed(L("crash.gone"))
+        }
+        let since = since ?? Date().addingTimeInterval(-Self.crashLookback)
+        let previous = crashChecks[key]
+        crashChecks[key] = .checking
+        let target = CrashTarget(signedBundleID: installation.signedBundleID ?? record.signedBundleID,
+                                 executable: record.executable)
+        let fetcher = CrashLogFetcher(runner: runner)
+        let result: CrashCheck
+        do {
+            if let found = try await withKnownXcode({ try await fetcher.latest(target, deviceID: key.deviceID, since: since) }) {
+                let context = CrashContext(moduleName: Resigner.welcomeName,
+                                           duoCompatibilityOn: installation.duoCompatibility == true)
+                let diagnosis = CrashClassifier.classify(found.log, context: context)
+                let secrets = [installation.teamID, record.teamID, key.deviceID].compactMap { $0 }
+                let log = LogStore.shared.redact(CrashLogSanitizer.sanitize(found.text, secrets: secrets))
+                Self.logger.notice("crash of \(target.signedBundleID) on \(key.deviceID): \(diagnosis.summary)")
+                // The same crash the install check found stays that one (the panel keeps its line).
+                let wasAfterInstall = if case .found(let earlier)? = previous, earlier.fileName == found.fileName { earlier.afterInstall } else { false }
+                result = .found(CrashFinding(diagnosis: diagnosis, log: log, fileName: found.fileName,
+                                             afterInstall: afterInstall || wasAfterInstall))
+            } else {
+                Self.logger.notice("no crash of \(target.signedBundleID) on \(key.deviceID) since \(since.formatted(.iso8601))")
+                result = .none
+            }
+        } catch {
+            Self.logger.notice("crash logs of \(key.deviceID) unreadable: \(String(describing: error))")
+            result = .failed(localizedMessage(error))
+        }
+        crashChecks[key] = result
+        return result
+    }
+
+    /// After an install that opened the app: once `launchGrace` has passed, an app no longer
+    /// running (or whose launch failed) has its crash logs read, and what they say goes to the
+    /// install window and the panel. Nothing found, or a device that can't tell: nothing is said.
+    /// Never holds up the install.
+    private func watchLaunch(_ key: JobKey, since: Date, launched: Bool, flow: InstallFlow) {
+        func setRun(_ change: (inout DeviceRun) -> Void) {
+            if let i = flow.runs.firstIndex(where: { $0.deviceID == key.deviceID }) { change(&flow.runs[i]) }
+        }
+        setRun { $0.checkingLaunch = true }
+        Task { [weak self] in
+            try? await Task.sleep(for: Self.launchGrace)
+            guard let self else { return }
+            defer { setRun { $0.checkingLaunch = false } }
+            if launched, let executable = records.first(where: { $0.id == key.recordID })?.executable {
+                let fetcher = CrashLogFetcher(runner: runner)
+                let running = await withKnownXcode { await fetcher.isRunning(executable: executable, deviceID: key.deviceID) }
+                Self.logger.notice("app running on \(key.deviceID) after launch: \(running.map(String.init) ?? "unknown")")
+                if running == true { return }
+            }
+            var result = await diagnoseCrash(key, since: since.addingTimeInterval(-5), afterInstall: true)
+            if case .none = result {
+                // ReportCrash may still be writing it.
+                try? await Task.sleep(for: .seconds(5))
+                result = await diagnoseCrash(key, since: since.addingTimeInterval(-5), afterInstall: true)
+            }
+            guard case .found(let finding) = result else {
+                crashChecks[key] = nil // nothing to say
+                return
+            }
+            setRun { $0.crash = finding }
+        }
+    }
+
+    /// The panel's line for an installation: its crash found after its last install, if any.
+    func crashFinding(for entry: AppEntry) -> CrashFinding? {
+        guard case .found(let finding)? = crashChecks[entry.id], finding.afterInstall,
+              (finding.diagnosis.date ?? .distantPast) >= entry.installation.installedAt.addingTimeInterval(-120) else { return nil }
+        return finding
+    }
+
+    /// One installation's answer to `xside crash`.
+    struct CrashAnswer {
+        let entry: AppEntry
+        let device: String
+        let check: CrashCheck
+    }
+
+    /// `xside crash`'s answer, in English like the tool's other output.
+    static func crashReply(_ answers: [CrashAnswer], json: Bool) -> (ok: Bool, message: String) {
+        let failed = answers.allSatisfy { if case .failed = $0.check { true } else { false } }
+        if json {
+            struct Row: Encodable {
+                let app: String, device: String, found: Bool, error: String?
+                let cause: String?, title: String?, explanation: String?, advice: String?
+                let diagnosis: CrashDiagnosis?
+            }
+            let rows = answers.map { a -> Row in
+                let app = a.entry.record.options.displayName ?? a.entry.record.displayName
+                switch a.check {
+                case .found(let f):
+                    let w = CrashWording(f.diagnosis, app: app, language: "en")
+                    return Row(app: app, device: a.device, found: true, error: nil, cause: f.diagnosis.cause.rawValue,
+                               title: w.title, explanation: w.explanation, advice: w.advice, diagnosis: f.diagnosis)
+                case .failed(let message):
+                    return Row(app: app, device: a.device, found: false, error: message, cause: nil, title: nil,
+                               explanation: nil, advice: nil, diagnosis: nil)
+                case .none, .checking:
+                    return Row(app: app, device: a.device, found: false, error: nil, cause: nil, title: nil,
+                               explanation: nil, advice: nil, diagnosis: nil)
+                }
+            }
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            return (!failed, String(decoding: (try? encoder.encode(rows)) ?? Data("[]".utf8), as: UTF8.self))
+        }
+        let lines = answers.map { a -> String in
+            let app = a.entry.record.options.displayName ?? a.entry.record.displayName
+            switch a.check {
+            case .found(let f):
+                let w = CrashWording(f.diagnosis, app: app, language: "en")
+                var text = "\(a.device): \(w.title)\n  \(w.explanation)\n  What to do: \(w.advice)"
+                let when = f.diagnosis.date.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "?"
+                text += "\n  \(when) · \(f.diagnosis.summary)"
+                return text
+            case .failed(let message): return "\(a.device): couldn't read the crash reports (\(message))"
+            case .none, .checking: return "\(a.device): no crash of \(app) in the last 24 hours"
+            }
+        }
+        return (!failed, lines.joined(separator: "\n"))
     }
 
     /// Runs `body`'s tools with the Xcode XSide uses (as the jobs do), else the system's.
