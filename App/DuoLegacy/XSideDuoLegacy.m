@@ -23,6 +23,11 @@
 //    statusBarOrientation (a no-op: now the scene's orientation, which old games lay out from) and
 //    UIAccelerometer ("no longer available": now fed by CoreMotion, same values in g, to the delegate's
 //    accelerometer:didAccelerate:). Boost 2 needed both.
+//  - UIScreen.mainScreen is the scene's screen once it connects: on the Duo it otherwise stays the
+//    outer screen while the app shows on the inner one (Boost 2 sized itself to it: a small picture).
+//  - accelerometer values follow the scene's screen: on a screen whose native orientation is
+//    landscape (the Duo's inner one) the sensor's axes are a quarter turn from what an app expects,
+//    so x and y are turned to match (Boost 2 steered by itself).
 //  - forwards URL contexts -> application:openURL:options: (or the older forms), user activities ->
 //    application:continueUserActivity:restorationHandler:, shortcut items ->
 //    application:performActionForShortcutItem:completionHandler: (also those in the connection options).
@@ -175,6 +180,23 @@ static UIInterfaceOrientation h_statusBarOrientation(UIApplication *self, SEL _c
 @implementation XSAcceleration
 @end
 
+// The sensor's x/y, turned to the axes of the scene's screen.
+static void XSAccelAxes(double *x, double *y) {
+    UIScreen *screen = gScene.screen;
+    if (!screen) return;
+    CGSize n = screen.nativeBounds.size;
+    static int logged = -1;
+    int turned = n.width > n.height;
+    if (logged != turned) {
+        logged = turned;
+        XSLOG("accelerometer axes: screen native %{public}@, %{public}s", NSStringFromCGSize(n), turned ? "turned a quarter" : "as is");
+    }
+    if (!turned) return;
+    double sx = *x;
+    *x = -*y;
+    *y = sx;
+}
+
 static CMMotionManager *gMotion;
 static NSTimeInterval gAccelInterval = 0.1;       // UIAccelerometer's default
 static __weak id gAccelDelegate;
@@ -191,7 +213,9 @@ static void XSAccelStart(id accelerometer) {
         SEL sel = NSSelectorFromString(@"accelerometer:didAccelerate:");
         if (!data || ![d respondsToSelector:sel]) return;
         XSAcceleration *a = [XSAcceleration new];
-        a.x = data.acceleration.x; a.y = data.acceleration.y; a.z = data.acceleration.z;
+        double x = data.acceleration.x, y = data.acceleration.y;
+        XSAccelAxes(&x, &y);
+        a.x = x; a.y = y; a.z = data.acceleration.z;
         a.timestamp = data.timestamp;
         NSInteger every = MAX(1, (NSInteger)lround(1 / MAX(gAccelInterval, 0.01)));
         if (gAccelLogged < 20 * every && gAccelLogged++ % every == 0) {
@@ -221,6 +245,14 @@ static void h_accelSetInterval(id self, SEL _cmd, NSTimeInterval interval) {
     ((void (*)(id, SEL, NSTimeInterval))oAccelSetInterval)(self, _cmd, interval);
     if (interval > 0) gAccelInterval = MAX(interval, 0.01);
     if (gMotion) gMotion.accelerometerUpdateInterval = gAccelInterval;
+}
+
+// The scene's screen, once there is one.
+static IMP oMainScreen;
+static UIScreen *h_mainScreen(id self, SEL _cmd) {
+    UIScreen *real = ((id (*)(id, SEL))oMainScreen)(self, _cmd);
+    UIScreen *scene = gScene.screen;
+    return scene ?: real;
 }
 
 // Replaces `sel` on `c` (added on `c` when inherited) and keeps the original. Returns NO, and
@@ -498,6 +530,7 @@ __attribute__((constructor)) static void XSDuoLegacyInit(void) {
             XSHook(A, @selector(windows), (IMP)h_appWindows, &oAppWindows);
             XSHook(A, @selector(keyWindow), (IMP)h_appKeyWindow, &oAppKeyWindow);
             XSHook(A, @selector(setDelegate:), (IMP)h_setDelegate, &oSetDelegate);
+            XSHook(object_getClass(UIScreen.class), @selector(mainScreen), (IMP)h_mainScreen, &oMainScreen);
             XSHook(A, NSSelectorFromString(@"statusBarOrientation"), (IMP)h_statusBarOrientation, &oStatusBarOrientation);
             Class accel = NSClassFromString(@"UIAccelerometer");
             if (accel && NSClassFromString(@"CMMotionManager")) {
