@@ -739,6 +739,23 @@ private final class CrashDeviceRunner: CommandRunning, @unchecked Sendable {
         #expect(Set(try fm.contentsOfDirectory(atPath: root.path)) == ["xside-crash-NEW", "keep-me"])
     }
 
+    /// The quiet look copies only what it picked from the listing, and leaves nothing behind.
+    @Test func theQuietLookCopiesOnlyItsPicks() async throws {
+        let runner = CrashDeviceRunner(listing: listing(["Demo-2026-11-09-095800.ips", "Stranger-2026-11-09-095900.ips"]), files: [
+            "Demo-2026-11-09-095800.ips": IPS.crash(timestamp: "2026-11-09 09:58:00.00 +0000"),
+            "Stranger-2026-11-09-095900.ips": IPS.crash(name: "Stranger", bundleID: "com.example.stranger"),
+        ])
+        let root = try scratch()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let found = try await CrashLogFetcher(runner: runner, scratchRoot: root).newCrashes(deviceID: "DEV") { entries in
+            CrashLogListing.newCrashFiles(entries, executables: ["Demo"], since: since, seen: [])
+        }
+        #expect(found.map(\.fileName) == ["Demo-2026-11-09-095800.ips"])
+        let copies = runner.calls.filter { $0.starts(with: ["devicectl", "device", "copy", "from"]) }
+        #expect(copies.count == 1)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
+    }
+
     @Test func nothingFound() async throws {
         let runner = CrashDeviceRunner(listing: listing(["Demo-2026-11-09-095800.ips"]), files: [:]) // the copy fails
         let root = try scratch()

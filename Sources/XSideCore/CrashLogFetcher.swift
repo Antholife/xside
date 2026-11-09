@@ -109,20 +109,7 @@ public struct CrashLogFetcher: Sendable {
         try fm.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: folder) }
 
-        let listFile = folder.appendingPathComponent("list.json")
-        let result = try await runner.run("/usr/bin/xcrun",
-                                          ["devicectl", "device", "info", "files", "--device", deviceID,
-                                           "--domain-type", "systemCrashLogs", "--json-output", listFile.path],
-                                          cwd: nil, timeout: CommandTimeout.deviceQuery)
-        guard result.status == 0 else {
-            let mapped = Installer.mapError(String(decoding: result.stdout, as: UTF8.self) + "\n" + result.stderr)
-            if case .commandFailed = mapped { throw XSideError.commandFailed(tool: "devicectl", status: result.status) }
-            throw mapped
-        }
-        guard let data = try? Data(contentsOf: listFile), let entries = CrashLogListing.parse(data) else {
-            throw XSideError.commandFailed(tool: "devicectl", status: result.status)
-        }
-        try? fm.removeItem(at: listFile)
+        let entries = try await list(deviceID: deviceID, in: folder)
         let picked = CrashLogListing.candidates(entries, executable: target.executable, since: since)
         Self.log.info("crash logs: \(entries.count) on the device, \(picked.crashes.count) + \(picked.jetsam.count) to read")
 
@@ -140,6 +127,44 @@ public struct CrashLogFetcher: Sendable {
             }
         }
         return best
+    }
+
+    /// The quiet look (`CrashWatch`): lists the device's crash logs (the listing alone, no copy),
+    /// lets `pick` choose the few worth reading, then copies and reads only those. Every log
+    /// read is returned, raw (not sanitized yet); the temporary folder is gone before returning.
+    /// Throws when the list can't be read.
+    public func newCrashes(deviceID: String, pick: ([CrashLogEntry]) -> [CrashLogEntry]) async throws -> [Found] {
+        let fm = FileManager.default
+        let folder = scratchRoot.appendingPathComponent("xside-crash-\(UUID().uuidString)", isDirectory: true)
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: folder) }
+        let picked = pick(try await list(deviceID: deviceID, in: folder))
+        var found: [Found] = []
+        for (n, entry) in picked.enumerated() {
+            try Task.checkCancellation()
+            if let log = await read(entry, deviceID: deviceID, into: folder.appendingPathComponent("\(n).ips")) { found.append(log) }
+        }
+        return found
+    }
+
+    /// The device's crash-log files, as `devicectl device info files` lists them (its JSON is
+    /// written into `folder`, then deleted).
+    private func list(deviceID: String, in folder: URL) async throws -> [CrashLogEntry] {
+        let listFile = folder.appendingPathComponent("list.json")
+        defer { try? FileManager.default.removeItem(at: listFile) }
+        let result = try await runner.run("/usr/bin/xcrun",
+                                          ["devicectl", "device", "info", "files", "--device", deviceID,
+                                           "--domain-type", "systemCrashLogs", "--json-output", listFile.path],
+                                          cwd: nil, timeout: CommandTimeout.deviceQuery)
+        guard result.status == 0 else {
+            let mapped = Installer.mapError(String(decoding: result.stdout, as: UTF8.self) + "\n" + result.stderr)
+            if case .commandFailed = mapped { throw XSideError.commandFailed(tool: "devicectl", status: result.status) }
+            throw mapped
+        }
+        guard let data = try? Data(contentsOf: listFile), let entries = CrashLogListing.parse(data) else {
+            throw XSideError.commandFailed(tool: "devicectl", status: result.status)
+        }
+        return entries
     }
 
     /// Copies one file, reads it (size-capped) and deletes it. devicectl writes the file at
