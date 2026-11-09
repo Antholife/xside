@@ -134,9 +134,64 @@ private func diagnose(_ data: Data, _ ctx: CrashContext = context) throws -> Cra
             IPS.join(["bug_type": "309"], ["termination": ["code": 1e300, "reasons": [1, ["x"], "ok"]],
                                           "lastExceptionBacktrace": [["imageIndex": 0]], "usedImages": []]),
             IPS.join(["bug_type": "298"], ["processes": [["name": NSNull(), "reason": 3], 5, "x"]]),
+            // Dates whose clock part is only dots, empty or odd: once a trap (review Critical 1).
+            IPS.join(["bug_type": "309", "timestamp": "2026-11-08 . +0100"], ["captureTime": "2026-11-08 . +0100"]),
+            IPS.join(["bug_type": "309", "timestamp": "2026-11-08 .5 +0100"], ["captureTime": "2026-11-08 ... +0100"]),
+            IPS.join(["bug_type": "298", "timestamp": ". . ."], ["date": "  . "]),
         ]
         for data in hostile {
             if let log = CrashLogParser.parse(data) { _ = CrashClassifier.classify(log, context: context) }
+        }
+    }
+
+    @Test func datesNeverTrap() {
+        for text in ["2026-11-08 . +0100", "2026-11-08 .. +0100", "2026-11-08 .5 +0100", "2026-11-08 10:00:00. +0100",
+                     ". . .", "  ", "a b c", "2026-11-08 10:00:00.x +0100", "2026-11-08 10:00:00.\u{0663} +0100"] {
+            _ = CrashLogParser.date(text)
+        }
+        #expect(CrashLogParser.date("2026-11-08 . +0100") == nil)
+        #expect(CrashLogParser.date("2026-11-08 10:00:00. +0100") != nil)
+        var rng = SeededGenerator(seed: 7)
+        let alphabet = Array("0123456789 .:+-Z")
+        for _ in 0..<3_000 {
+            let length = Int.random(in: 0...30, using: &rng)
+            _ = CrashLogParser.date(String((0..<length).map { _ in alphabet.randomElement(using: &rng)! }))
+        }
+    }
+
+    /// Cut and mutated copies of every kind of synthetic log: the parser and the classifier may
+    /// refuse them, never trap.
+    @Test func fuzzedLogsNeverTrap() {
+        let seeds: [Data] = [
+            IPS.crash(frames: [IPS.frame(IPS.uikit, "x"), IPS.frame(0), IPS.frame(1)], lastException: [IPS.frame(2), IPS.frame(99)],
+                      asi: ["libdyld": ["Library not loaded: /var/jb/Library/Frameworks/CydiaSubstrate.framework/CydiaSubstrate"]]),
+            IPS.crash(termination: ["namespace": "DYLD", "code": 1, "indicator": "Symbol missing",
+                                    "details": ["Symbol not found: _x", "Expected in: <UUID> /usr/lib/libz.dylib"]]),
+            IPS.crash(exception: ["type": "EXC_CRASH", "signal": "SIGKILL"],
+                      termination: ["namespace": "FRONTBOARD", "code": 2_343_432_205, "reasons": ["scene-create watchdog"]]),
+            IPS.jetsam(processes: [["name": "Demo", "reason": "per-process-limit", "states": ["active", "frontmost"]],
+                                   ["name": "Other", "states": ["suspended"]]]),
+        ]
+        var rng = SeededGenerator(seed: 42)
+        let noise = Array("{}[]\":,.0123456789 -+ex\n\\".utf8)
+        for seed in seeds {
+            let bytes = [UInt8](seed)
+            // Every cut, from 1 byte to the whole file.
+            for length in stride(from: 0, through: bytes.count, by: 3) {
+                if let log = CrashLogParser.parse(Data(bytes.prefix(length))) { _ = CrashClassifier.classify(log, context: context) }
+            }
+            for _ in 0..<400 {
+                var mutated = bytes
+                for _ in 0..<Int.random(in: 1...8, using: &rng) where !mutated.isEmpty {
+                    let at = Int.random(in: 0..<mutated.count, using: &rng)
+                    switch Int.random(in: 0..<3, using: &rng) {
+                    case 0: mutated[at] = noise.randomElement(using: &rng)!
+                    case 1: mutated.removeSubrange(at..<min(mutated.count, at + Int.random(in: 1...40, using: &rng)))
+                    default: mutated.insert(noise.randomElement(using: &rng)!, at: at)
+                    }
+                }
+                if let log = CrashLogParser.parse(Data(mutated)) { _ = CrashClassifier.classify(log, context: context) }
+            }
         }
     }
 
@@ -502,5 +557,18 @@ private final class CrashDeviceRunner: CommandRunning, @unchecked Sendable {
         #expect(await fetcher.isRunning(executable: "Demo App", deviceID: "DEV") == true)
         #expect(await fetcher.isRunning(executable: "Demo", deviceID: "DEV") == false) // an extension is not the app
         #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
+    }
+}
+
+/// A reproducible random source for the fuzz tests (SplitMix64).
+struct SeededGenerator: RandomNumberGenerator {
+    private var state: UInt64
+    init(seed: UInt64) { state = seed }
+    mutating func next() -> UInt64 {
+        state &+= 0x9E37_79B9_7F4A_7C15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE5_E9B9
+        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+        return z ^ (z >> 31)
     }
 }

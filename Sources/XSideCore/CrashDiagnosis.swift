@@ -207,12 +207,14 @@ public enum CrashLogParser {
         guard let text else { return nil }
         let parts = text.split(separator: " ")
         guard parts.count == 3 else { return nil }
+        // "." alone splits into nothing: no clock, no date (never `time[0]`).
         let time = parts[1].split(separator: ".", maxSplits: 1)
+        guard let clock = time.first else { return nil }
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss Z"
-        guard let whole = formatter.date(from: "\(parts[0]) \(time[0]) \(parts[2])") else { return nil }
+        guard let whole = formatter.date(from: "\(parts[0]) \(clock) \(parts[2])") else { return nil }
         guard time.count == 2, time[1].allSatisfy(\.isNumber), let fraction = Double("0." + time[1].prefix(9)) else { return whole }
         return whole.addingTimeInterval(fraction)
     }
