@@ -1416,6 +1416,18 @@ extension AppLibrary {
         return found
     }
 
+    /// Forgets a kept download: its index entry and its file.
+    public func removeDownload(sha256: String) {
+        let sha = sha256.lowercased()
+        guard Self.isSHA256(sha) else { return }
+        verifiedDownloads[sha] = nil
+        let all = readDownloadIndex()
+        let kept = all.filter { $0.sha256 != sha }
+        if kept != all { try? writeDownloadIndex(kept) }
+        try? FileManager.default.removeItem(at: downloadURL(sha))
+        Self.logger.notice("download cache: \(sha).deb dropped")
+    }
+
     private func readDownloadIndex() -> [DownloadCacheEntry] {
         var st = stat()
         guard lstat(downloadIndexURL.path, &st) == 0, st.st_mode & S_IFMT == S_IFREG,

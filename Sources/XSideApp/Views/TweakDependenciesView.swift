@@ -2,18 +2,9 @@ import AppKit
 import SwiftUI
 import XSideCore
 
-/// One `Depends` group of a tweak, as the « Dépendances » sheet shows it.
-struct DependencyLine: Identifiable {
-    let id: Int
-    let dependency: DebDependency
-    let status: DependencyStatus
-    /// « Ajoutée par toi »: the version of the package that satisfies it.
-    var addedVersion: String?
-
-    var isMissing: Bool { if case .missing = status { true } else { false } }
-
+enum DependencyNames {
     /// The library's usual name (« Cephei ») when XSide knows it, else its package id.
-    static func displayName(_ packageID: String) -> String {
+    static func display(_ packageID: String) -> String {
         switch KnownDependency.role(of: packageID) {
         case .library(let n)?, .jailbreakOnly(let n)?, .builtIntoTweak(let n)?: n
         default: packageID
@@ -21,22 +12,32 @@ struct DependencyLine: Identifiable {
     }
 }
 
-/// « Dépendances de … » (« Dépendances manquantes » while one is missing): one row per `Depends`
-/// group with its status. A missing one offers « Où la trouver » (a page XSide knows) or two
-/// searches, « Ajouter son .deb… » (drop zone and open panel) and, for a package a trusted repo
-/// offers, « Télécharger ». The links only open the browser.
+/// « Dépendances de … » (« Dépendances manquantes » while one is missing on a device): one row per
+/// `Depends` group with its status, one per device when the devices disagree (« Manquante sur
+/// iPad »). A missing one offers « Où la trouver » (a page XSide knows) or two searches,
+/// « Ajouter son .deb… » (drop zone and open panel) and, for a package a trusted repo offers,
+/// « Télécharger ». The links only open the browser. The rows scroll only when they don't fit;
+/// the title and « Terminé » stay put.
 struct TweakDependenciesView: View {
     let tweakName: String
-    let lines: [DependencyLine]
+    let rows: [DependencyRow]
+    var deviceNames: [String: String] = [:]
     var errors: [String: String] = [:]
     var beingAdded: Set<String> = []
     var isDisabled = false
+    /// The rows' height past which they scroll (nil: the visible screen less room for the rest).
+    var maxListHeight: CGFloat?
     let open: (URL) -> Void
     let addDeb: (DebDependency, [URL]) -> Void
     let download: (DebDependency) -> Void
     let done: () -> Void
+    @State private var listHeight: CGFloat = 0
 
-    private var anyMissing: Bool { lines.contains(where: \.isMissing) }
+    private var anyMissing: Bool { rows.contains(where: \.isMissingAnywhere) }
+
+    private var cap: CGFloat {
+        maxListHeight ?? max(240, (NSScreen.main?.visibleFrame.height ?? 800) - 200)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -49,19 +50,14 @@ struct TweakDependenciesView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if lines.isEmpty {
+            if rows.isEmpty {
                 Text(L("deps.none")).font(.system(size: 12)).foregroundStyle(.secondary)
             } else {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(lines) { line in
-                        if line.id != lines.first?.id { Divider().padding(.leading, 48) }
-                        DependencyRowView(line: line, error: errors[line.dependency.package],
-                                          isAdding: beingAdded.contains(line.dependency.package), isDisabled: isDisabled,
-                                          open: open, addDeb: { addDeb(line.dependency, $0) },
-                                          download: { download(line.dependency) })
-                    }
+                ScrollView {
+                    list.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listHeight = $0 }
                 }
-                .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .scrollBounceBehavior(.basedOnSize)
+                .frame(height: min(listHeight, cap))
             }
             HStack {
                 Spacer()
@@ -72,10 +68,26 @@ struct TweakDependenciesView: View {
         .padding(20)
         .frame(width: 520)
     }
+
+    private var list: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(rows) { row in
+                if row.id != rows.first?.id { Divider().padding(.leading, 48) }
+                let key = row.missingDependency?.package ?? row.dependency.package
+                DependencyRowView(row: row, deviceNames: deviceNames, error: errors[key],
+                                  isAdding: beingAdded.contains(key), isDisabled: isDisabled,
+                                  open: open, addDeb: { if let d = row.missingDependency { addDeb(d, $0) } },
+                                  download: { if let d = row.missingDependency { download(d) } })
+            }
+        }
+        .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .fixedSize(horizontal: false, vertical: true)
+    }
 }
 
 private struct DependencyRowView: View {
-    let line: DependencyLine
+    let row: DependencyRow
+    let deviceNames: [String: String]
     let error: String?
     let isAdding: Bool
     let isDisabled: Bool
@@ -84,11 +96,12 @@ private struct DependencyRowView: View {
     let download: () -> Void
     @State private var isTargeted = false
 
-    private var packageID: String { line.dependency.package }
+    private var missing: DebDependency? { row.missingDependency }
+    private var packageID: String { (missing ?? row.dependency).package }
 
     private var title: String {
-        if case .providedByXSide(let name) = line.status { return name }
-        return DependencyLine.displayName(packageID)
+        if row.statuses.count == 1, case .providedByXSide(let name) = row.statuses[0].status { return name }
+        return DependencyNames.display(packageID)
     }
 
     /// The package id (when the title is a name) and the version it asks for (a missing one says
@@ -96,38 +109,8 @@ private struct DependencyRowView: View {
     private var detail: String? {
         var parts: [String] = []
         if title != packageID { parts.append(packageID) }
-        if !line.isMissing, let c = DependencyDirectory.constraint(line.dependency) { parts.append(c) }
+        if missing == nil, let c = DependencyDirectory.constraint(row.dependency) { parts.append(c) }
         return parts.isEmpty ? nil : parts.joined(separator: " ")
-    }
-
-    private var statusText: String {
-        switch line.status {
-        case .providedByXSide: L("deps.status.xside")
-        case .addedByYou(let name): L("deps.status.yours") + " — " + name + (line.addedVersion.map { " " + $0 } ?? "")
-        case .missing(let dep): L("deps.status.missing") + (DependencyDirectory.constraint(dep).map { " (\($0))" } ?? "")
-        case .jailbreakOnly: L("deps.status.jailbreak")
-        case .builtIntoTweak: L("deps.status.builtIn")
-        case .notNeeded: L("deps.status.notNeeded")
-        }
-    }
-
-    private var tint: Color {
-        switch line.status {
-        case .providedByXSide, .addedByYou, .builtIntoTweak: Color(nsColor: .systemGreen)
-        case .missing: Color(nsColor: .systemOrange)
-        case .jailbreakOnly: Color(nsColor: .systemRed)
-        case .notNeeded: Color.secondary
-        }
-    }
-
-    private var symbol: String {
-        switch line.status {
-        case .providedByXSide, .builtIntoTweak: "checkmark.seal.fill"
-        case .addedByYou: "person.crop.circle.badge.checkmark"
-        case .missing: "questionmark.circle.fill"
-        case .jailbreakOnly: "xmark.octagon.fill"
-        case .notNeeded: "minus.circle"
-        }
     }
 
     var body: some View {
@@ -136,7 +119,7 @@ private struct DependencyRowView: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 26, height: 26)
-                .background(line.isMissing ? AnyShapeStyle(Color(nsColor: .systemOrange)) : AnyShapeStyle(Theme.brand),
+                .background(missing != nil ? AnyShapeStyle(Color(nsColor: .systemOrange)) : AnyShapeStyle(Theme.brand),
                             in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             VStack(alignment: .leading, spacing: 5) {
                 VStack(alignment: .leading, spacing: 1) {
@@ -146,17 +129,10 @@ private struct DependencyRowView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                Label {
-                    Text(statusText).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
-                } icon: {
-                    Image(systemName: symbol).foregroundStyle(tint)
+                ForEach(Array(row.statuses.enumerated()), id: \.offset) { _, s in
+                    DependencyStatusLine(status: s, deviceName: s.deviceID.map { deviceNames[$0] ?? $0 })
                 }
-                .font(.system(size: 11, weight: .medium))
-                .padding(.horizontal, 7)
-                .padding(.vertical, 4)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                if line.isMissing { actions }
+                if missing != nil { actions }
                 if let error {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
                         .font(.system(size: 11))
@@ -170,10 +146,10 @@ private struct DependencyRowView: View {
         .background(isTargeted ? Theme.violet.opacity(0.10) : .clear)
         .dropDestination(for: URL.self) { urls, _ in
             let files = urls.filter(\.isFileURL)
-            guard line.isMissing, !isDisabled, !isAdding, !files.isEmpty else { return false }
+            guard missing != nil, !isDisabled, !isAdding, !files.isEmpty else { return false }
             addDeb(files)
             return true
-        } isTargeted: { isTargeted = $0 && line.isMissing && !isDisabled }
+        } isTargeted: { isTargeted = $0 && missing != nil && !isDisabled }
         .accessibilityElement(children: .contain)
     }
 
@@ -220,6 +196,65 @@ private struct DependencyRowView: View {
     }
 }
 
+/// One status, tinted; « … sur <appareil> » when the devices disagree.
+private struct DependencyStatusLine: View {
+    let status: DependencyDeviceStatus
+    let deviceName: String?
+
+    private var label: String {
+        switch status.status {
+        case .providedByXSide: L("deps.status.xside")
+        case .addedByYou: L("deps.status.yours")
+        case .missing: L("deps.status.missing")
+        case .jailbreakOnly: L("deps.status.jailbreak")
+        case .builtIntoTweak: L("deps.status.builtIn")
+        case .notNeeded: L("deps.status.notNeeded")
+        }
+    }
+
+    private var suffix: String {
+        switch status.status {
+        case .addedByYou(let name): " — " + name + (status.addedVersion.map { " " + $0 } ?? "")
+        case .missing(let dep): DependencyDirectory.constraint(dep).map { " (\($0))" } ?? ""
+        default: ""
+        }
+    }
+
+    private var text: String { (deviceName.map { L("deps.onDevice", label, $0) } ?? label) + suffix }
+
+    private var tint: Color {
+        switch status.status {
+        case .providedByXSide, .addedByYou, .builtIntoTweak: Color(nsColor: .systemGreen)
+        case .missing: Color(nsColor: .systemOrange)
+        case .jailbreakOnly: Color(nsColor: .systemRed)
+        case .notNeeded: Color.secondary
+        }
+    }
+
+    private var symbol: String {
+        switch status.status {
+        case .providedByXSide, .builtIntoTweak: "checkmark.seal.fill"
+        case .addedByYou: "person.crop.circle.badge.checkmark"
+        case .missing: "questionmark.circle.fill"
+        case .jailbreakOnly: "xmark.octagon.fill"
+        case .notNeeded: "minus.circle"
+        }
+    }
+
+    var body: some View {
+        Label {
+            Text(text).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: symbol).foregroundStyle(tint)
+        }
+        .font(.system(size: 11, weight: .medium))
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+}
+
 /// The sheet for `target`, from the model.
 struct TweakDependenciesSheet: View {
     let model: AppModel
@@ -227,16 +262,18 @@ struct TweakDependenciesSheet: View {
     var isDisabled = false
 
     var body: some View {
-        if let (package, lines) = model.dependencyLines(target) {
-            TweakDependenciesView(tweakName: package.name, lines: lines, errors: model.dependencyErrors,
-                                  beingAdded: model.dependenciesBeingAdded, isDisabled: isDisabled,
+        if let found = model.dependencyRows(target) {
+            let package = found.package
+            TweakDependenciesView(tweakName: package.name, rows: found.rows, deviceNames: found.deviceNames,
+                                  errors: model.dependencyErrors, beingAdded: model.dependenciesBeingAdded,
+                                  isDisabled: isDisabled,
                                   open: { NSWorkspace.shared.open($0) },
                                   addDeb: { dep, urls in Task { await model.addDependencyDeb(urls, for: dep, target: target) } },
                                   download: { dep in Task { await model.downloadDependency(dep, for: package, target: target) } },
                                   done: { model.closeDependencies() })
         } else {
             // The tweak went away meanwhile.
-            TweakDependenciesView(tweakName: "", lines: [], open: { _ in }, addDeb: { _, _ in }, download: { _ in },
+            TweakDependenciesView(tweakName: "", rows: [], open: { _ in }, addDeb: { _, _ in }, download: { _ in },
                                   done: { model.closeDependencies() })
         }
     }

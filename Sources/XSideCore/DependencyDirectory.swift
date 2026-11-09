@@ -58,7 +58,13 @@ public enum DependencyDirectory {
         if package.packageID == wanted {
             if !dependency.unparseable, dependency.relation == nil { return .matches }
             if let v = package.version, dependency.isSatisfied(by: v) { return .matches }
-            return .tooOld(found: package.version ?? "?", needed: constraint(dependency) ?? "?")
+            let found = package.version ?? "?", needed = constraint(dependency) ?? "?"
+            guard package.version != nil, !dependency.unparseable else { return .unsuitable(found: found, needed: needed) }
+            switch dependency.relation {
+            case ">=", ">>": return .tooOld(found: found, needed: needed)
+            case "<=", "<<": return .tooNew(found: found, needed: needed)
+            default: return .unsuitable(found: found, needed: needed)
+            }
         }
         if package.provides.contains(wanted), !dependency.unparseable, dependency.relation == nil { return .matches }
         return .wrongPackage(found: package.packageID, wanted: wanted)
@@ -69,8 +75,92 @@ public enum DependencyDirectory {
 public enum DependencyMatch: Equatable, Sendable {
     case matches
     case wrongPackage(found: String, wanted: String)
-    /// Its version doesn't meet the constraint (`needed`, as `DependencyDirectory.constraint` writes it).
+    /// Its version is under a lower bound (`needed`, as `DependencyDirectory.constraint` writes it).
     case tooOld(found: String, needed: String)
+    /// …over an upper bound.
+    case tooNew(found: String, needed: String)
+    /// …not the exact one asked for, unknown, or the constraint couldn't be read.
+    case unsuitable(found: String, needed: String)
+}
+
+/// One device's status for a `Depends` group (`deviceID` nil: every device agrees).
+public struct DependencyDeviceStatus: Equatable, Sendable {
+    public let deviceID: String?
+    /// The alternative the status is about.
+    public let dependency: DebDependency
+    public let status: DependencyStatus
+    /// « Ajoutée par toi »: the version of the package that satisfies it.
+    public let addedVersion: String?
+
+    public init(deviceID: String?, dependency: DebDependency, status: DependencyStatus, addedVersion: String?) {
+        self.deviceID = deviceID
+        self.dependency = dependency
+        self.status = status
+        self.addedVersion = addedVersion
+    }
+
+    public var isMissing: Bool { if case .missing = status { true } else { false } }
+}
+
+/// One `Depends` group of a tweak across the devices it goes on: one status when they all agree,
+/// else one per device, in the devices' order.
+public struct DependencyRow: Equatable, Sendable, Identifiable {
+    public let id: Int
+    public let statuses: [DependencyDeviceStatus]
+
+    public init(id: Int, statuses: [DependencyDeviceStatus]) {
+        self.id = id
+        self.statuses = statuses
+    }
+
+    public var dependency: DebDependency { statuses.first?.dependency ?? DebDependency(package: "") }
+    public var isMissingAnywhere: Bool { statuses.contains(where: \.isMissing) }
+    /// What « Ajouter son .deb… » and « Télécharger » look for.
+    public var missingDependency: DebDependency? { statuses.first(where: \.isMissing)?.dependency }
+    /// The devices that miss it (none named when they all do: `deviceID` nil).
+    public var missingDevices: [String] { statuses.filter(\.isMissing).compactMap(\.deviceID) }
+}
+
+public enum DependencyRows {
+    /// Each device's statuses (`TweakClassifier.dependencies` with that device's context), merged
+    /// per group. No device: no rows.
+    public static func rows(_ package: TweakPackage, contexts: [(deviceID: String, context: TweakContext)]) -> [DependencyRow] {
+        let perDevice = contexts.map { (id: $0.deviceID, list: statuses(package, $0.context)) }
+        guard let first = perDevice.first else { return [] }
+        return first.list.indices.map { i in
+            let each = perDevice.compactMap { d in
+                i < d.list.count ? DependencyDeviceStatus(deviceID: d.id, dependency: d.list[i].dependency,
+                                                          status: d.list[i].status, addedVersion: d.list[i].addedVersion) : nil
+            }
+            let agree = each.allSatisfy {
+                $0.dependency == each[0].dependency && $0.status == each[0].status && $0.addedVersion == each[0].addedVersion
+            }
+            return DependencyRow(id: i, statuses: agree
+                ? [DependencyDeviceStatus(deviceID: nil, dependency: each[0].dependency, status: each[0].status,
+                                          addedVersion: each[0].addedVersion)]
+                : each)
+        }
+    }
+
+    /// The package ids missing in `context` (for the device row's flag).
+    public static func missing(_ package: TweakPackage, _ context: TweakContext) -> [String] {
+        TweakClassifier.dependencies(package, context).compactMap { pair in
+            if case .missing(let d) = pair.1 { d.package } else { nil }
+        }
+    }
+
+    private static func statuses(_ package: TweakPackage, _ context: TweakContext)
+        -> [(dependency: DebDependency, status: DependencyStatus, addedVersion: String?)] {
+        TweakClassifier.dependencies(package, context).map { dep, status in
+            var version: String?
+            if case .addedByYou(let name) = status {
+                version = context.others.first { p in
+                    p.name == name && (p.packageID == dep.package || p.provides.contains(dep.package))
+                }?.version
+            }
+            return (dep, status, version)
+        }
+    }
 }
 
 /// Where a dependency's `.deb` would come from: a copy XSide kept (no network), or a trusted repo.
@@ -135,8 +225,13 @@ public struct DependencyDownloader: Sendable {
     public func prepare(_ dependency: DebDependency, preferredArchitecture: String?) async throws -> DependencySource {
         // Only what a trusted repo offers is ever downloaded or reused.
         guard !TrustedRepos.offering(dependency.package).isEmpty else { throw RepoError.notAllowlisted }
-        if let kept = await library.cachedDownloadEntry(packageID: dependency.package.lowercased(), satisfying: dependency) {
-            return .cached(kept)
+        let id = dependency.package.lowercased()
+        let trusted = Set(TrustedRepos.offering(id).map(\.id))
+        // A kept copy only from a repo trusted for this package now; any other is dropped.
+        for _ in 0..<AppLibrary.maxDownloadEntries {
+            guard let kept = await library.cachedDownloadEntry(packageID: id, satisfying: dependency) else { break }
+            if trusted.contains(kept.repo) { return .cached(kept) }
+            await library.removeDownload(sha256: kept.sha256)
         }
         return .repo(try await client.offer(for: dependency, preferredArchitecture: preferredArchitecture))
     }

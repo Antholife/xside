@@ -70,21 +70,31 @@ extension AppModel {
 
     /// Classifies every tweak on every selected device, with the others enabled there.
     func refreshTweakVerdicts(_ flow: InstallFlow) {
-        guard let info = flow.info else { return }
+        guard flow.info != nil else { return }
         let drafts = flow.tweaks
         for (i, draft) in drafts.enumerated() {
             var verdicts: [String: TweakVerdict] = [:], forced: [String: TweakVerdict] = [:]
+            var missing: [String: [String]] = [:]
             for id in flow.deviceIDs {
-                let others = drafts.filter { $0.id != draft.id && $0.enabledDevices.contains(id) }.map(\.package)
-                let c = TweakClassifier.classify(draft.package, TweakResources.context(
-                    bundleID: info.bundleID, executable: info.executable,
-                    deviceOS: devices.first { $0.id == id }?.osVersion, others: others))
+                let context = draftContext(flow, draft.id, on: id, drafts: drafts)
+                let c = TweakClassifier.classify(draft.package, context)
                 verdicts[id] = c.verdict
                 forced[id] = c.verdictOverridingFilter
+                // A missing dependency the verdict can't judge (unknown package) is flagged on the row.
+                let names = DependencyRows.missing(draft.package, context)
+                if !names.isEmpty { missing[id] = names }
             }
             flow.tweaks[i].verdicts = verdicts
             flow.tweaks[i].forcedVerdicts = forced
+            flow.tweaks[i].missingDependencies = missing
         }
+    }
+
+    /// What the classifier knows for `tweakID` on one device: the other tweaks enabled there and its iOS.
+    func draftContext(_ flow: InstallFlow, _ tweakID: String, on deviceID: String, drafts: [TweakDraft]? = nil) -> TweakContext {
+        let others = (drafts ?? flow.tweaks).filter { $0.id != tweakID && $0.enabledDevices.contains(deviceID) }.map(\.package)
+        return TweakResources.context(bundleID: flow.info?.bundleID ?? "", executable: flow.info?.executable,
+                                      deviceOS: devices.first { $0.id == deviceID }?.osVersion, others: others)
     }
 
     private func isIncompatible(_ verdict: TweakVerdict?) -> Bool {
@@ -256,13 +266,22 @@ extension AppModel {
 
     /// The verdict of `package` for this installation, with the other tweaks enabled there.
     func tweakVerdicts(_ package: TweakPackage, for entry: AppEntry) -> (verdict: TweakVerdict, forced: TweakVerdict) {
-        let pool = entry.record.tweaks ?? []
-        let enabled = Set(entry.installation.enabledTweakIDs)
-        let others = pool.filter { $0.id != package.id && enabled.contains($0.id) }
-        let c = TweakClassifier.classify(package, TweakResources.context(
-            bundleID: entry.record.originalBundleID, executable: entry.record.executable,
-            deviceOS: devices.first { $0.id == entry.installation.deviceID }?.osVersion, others: others))
+        let c = TweakClassifier.classify(package, entryContext(entry.record, package.id, on: entry.installation.deviceID))
         return (c.verdict, c.verdictOverridingFilter)
+    }
+
+    /// The package ids `package` misses on this installation (the row's flag).
+    func missingDependencies(_ package: TweakPackage, for entry: AppEntry) -> [String] {
+        DependencyRows.missing(package, entryContext(entry.record, package.id, on: entry.installation.deviceID))
+    }
+
+    /// One device of an app in the library: the other tweaks its list enables (its installation's,
+    /// else the one waiting for its first install), and its iOS.
+    func entryContext(_ record: AppRecord, _ tweakID: String, on deviceID: String) -> TweakContext {
+        let enabled = Set((tweakLists(record)[deviceID] ?? []).filter(\.enabled).map(\.id))
+        let others = (record.tweaks ?? []).filter { $0.id != tweakID && enabled.contains($0.id) }
+        return TweakResources.context(bundleID: record.originalBundleID, executable: record.executable,
+                                      deviceOS: devices.first { $0.id == deviceID }?.osVersion, others: others)
     }
 
     /// Adds files to the installation's tweaks, from its next signing: each starts on unless ❌
@@ -454,43 +473,48 @@ extension AppModel {
     func openDependenciesIfMissing(_ targets: [DependencyTarget]) {
         guard dependencySheet == nil else { return }
         for target in targets {
-            guard let (_, lines) = dependencyLines(target) else { continue }
-            if lines.contains(where: { if case .missing = $0.status { true } else { false } }) {
+            guard let found = dependencyRows(target) else { continue }
+            if found.rows.contains(where: \.isMissingAnywhere) {
                 showDependencies(for: target)
                 return
             }
         }
     }
 
-    /// The tweak and one line per `Depends` group, with the other tweaks enabled where it is.
+    /// The tweak and one row per `Depends` group, per device it goes on: each device with the
+    /// other tweaks enabled there and its iOS (one status when they all agree). The devices are
+    /// those where it is on (all of the window's or the app's when it is on nowhere).
     /// Nothing here reaches the network or the disk.
-    func dependencyLines(_ target: DependencyTarget) -> (package: TweakPackage, lines: [DependencyLine])? {
-        let package: TweakPackage, context: TweakContext
+    func dependencyRows(_ target: DependencyTarget) -> (package: TweakPackage, rows: [DependencyRow], deviceNames: [String: String])? {
+        let package: TweakPackage, contexts: [(deviceID: String, context: TweakContext)]
         switch target {
         case .draft(let id):
             guard let flow = install, let draft = flow.tweaks.first(where: { $0.id == id }) else { return nil }
-            let on = draft.enabledDevices.isEmpty ? Set(flow.deviceIDs) : draft.enabledDevices
-            let others = flow.tweaks.filter { $0.id != id && !$0.enabledDevices.isDisjoint(with: on) }.map(\.package)
+            let on = flow.deviceIDs.filter { draft.enabledDevices.contains($0) }
             package = draft.package
-            let first = flow.deviceIDs.first { on.contains($0) }
-            context = TweakResources.context(bundleID: flow.info?.bundleID ?? "", executable: flow.info?.executable,
-                                             deviceOS: devices.first { $0.id == first }?.osVersion, others: others)
+            contexts = (on.isEmpty ? flow.deviceIDs : on).map { ($0, draftContext(flow, id, on: $0)) }
         case .entry(let key, let id):
-            guard let entry = currentEntry(key), let p = entry.record.tweaks?.first(where: { $0.id == id }) else { return nil }
-            let enabled = Set(entry.installation.enabledTweakIDs)
-            let others = (entry.record.tweaks ?? []).filter { $0.id != id && enabled.contains($0.id) }
+            guard let record = records.first(where: { $0.id == key.recordID }),
+                  let p = record.tweaks?.first(where: { $0.id == id }) else { return nil }
             package = p
-            context = TweakResources.context(bundleID: entry.record.originalBundleID, executable: entry.record.executable,
-                                             deviceOS: devices.first { $0.id == key.deviceID }?.osVersion, others: others)
+            contexts = dependencyDevices(record, tweakID: id, first: key.deviceID).map { ($0, entryContext(record, id, on: $0)) }
         }
-        let lines = TweakClassifier.dependencies(package, context).enumerated().map { i, pair in
-            var line = DependencyLine(id: i, dependency: pair.0, status: pair.1)
-            if case .addedByYou(let name) = pair.1 {
-                line.addedVersion = context.others.first { $0.name == name && ($0.packageID == pair.0.package || $0.provides.contains(pair.0.package)) }?.version
-            }
-            return line
-        }
-        return (package, lines)
+        var names: [String: String] = [:]
+        for (id, _) in contexts { names[id] = devices.first { $0.id == id }?.name ?? L("popover.unknownDevice") }
+        return (package, DependencyRows.rows(package, contexts: contexts), names)
+    }
+
+    /// The app's devices whose list has the tweak on (`first`, the one shown, leads); just `first`
+    /// when it's on nowhere.
+    private func dependencyDevices(_ record: AppRecord, tweakID: String, first: String) -> [String] {
+        let on = tweakDevices(record, tweakID: tweakID)
+        guard !on.isEmpty else { return [first] }
+        return on.contains(first) ? [first] + on.filter { $0 != first } : on
+    }
+
+    /// The devices whose list (pending included) has `tweakID` on, sorted.
+    private func tweakDevices(_ record: AppRecord, tweakID: String) -> [String] {
+        tweakLists(record).filter { $0.value.contains { $0.id == tweakID && $0.enabled } }.map(\.key).sorted()
     }
 
     /// « Ajouter son .deb… »: kept only if it is that package in a version that will do.
@@ -551,7 +575,7 @@ extension AppModel {
         logger.notice("dependency \(dependency.package) not downloaded: \(String(describing: error))")
         switch DependencyDownloader.failure(error) {
         case .hash: return L("deps.error.hash")
-        case .notFound: return L("deps.error.notFound", DependencyLine.displayName(dependency.package))
+        case .notFound: return L("deps.error.notFound", DependencyNames.display(dependency.package))
         case .network: return L("deps.error.network", repoName)
         }
     }
@@ -560,7 +584,7 @@ extension AppModel {
     private func confirmDownload(_ source: DependencySource, dependency: DebDependency) -> Bool {
         let name: String
         switch source {
-        case .cached: name = DependencyLine.displayName(dependency.package)
+        case .cached: name = DependencyNames.display(dependency.package)
         case .repo(let o): name = o.name
         }
         let alert = NSAlert()
@@ -599,8 +623,8 @@ extension AppModel {
                 if !known { try? FileManager.default.removeItem(at: directory) }
                 return problem
             }
-            let devices = flow.tweaks.first { $0.id == tweakID }.map { $0.enabledDevices.isEmpty ? Set(flow.deviceIDs) : $0.enabledDevices }
-                ?? Set(flow.deviceIDs)
+            // Only where the tweak that needs it is on (nowhere when it's on nowhere).
+            let devices = flow.tweaks.first { $0.id == tweakID }?.enabledDevices.intersection(flow.deviceIDs) ?? []
             if let i = flow.tweaks.firstIndex(where: { $0.id == package.id }) {
                 flow.tweaks[i].enabledDevices.formUnion(devices)
             } else if let i = flow.tweaks.firstIndex(where: { $0.package.packageID == package.packageID }) {
@@ -630,9 +654,9 @@ extension AppModel {
             let checked = try await TweakAnalyzer.analyze(url, into: scratch, origin: origin, runner: runner, now: Date())
             if let problem = Self.mismatchText(DependencyDirectory.check(checked, for: dependency)) { return problem }
             guard let record = records.first(where: { $0.id == key.recordID }) else { return nil }
-            let devices = tweakLists(record).filter { $0.value.contains { $0.id == tweakID && $0.enabled } }.map(\.key)
+            // The same devices the statuses are for: where the tweak's list has it on.
             let (package, replacing) = try await library.addTweak(url, origin: origin, recordID: key.recordID,
-                                                                  deviceIDs: devices.isEmpty ? [key.deviceID] : devices.sorted(),
+                                                                  deviceIDs: tweakDevices(record, tweakID: tweakID),
                                                                   runner: runner, now: Date())
             if let replacing, confirmReplace(old: replacing, new: package) {
                 try await library.replaceTweak(replacing.id, with: package, recordID: key.recordID)
@@ -647,6 +671,8 @@ extension AppModel {
         case .matches: nil
         case .wrongPackage(let found, let wanted): L("deps.wrongPackage", found, wanted)
         case .tooOld(let found, let needed): L("deps.tooOld", found, needed)
+        case .tooNew(let found, let needed): L("deps.tooNew", found, needed)
+        case .unsuitable(let found, let needed): L("deps.unsuitable", found, needed)
         }
     }
 }

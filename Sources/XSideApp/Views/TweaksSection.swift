@@ -101,6 +101,8 @@ struct TweakRow: Identifiable {
     /// Its last signing on this device injected it: a ❌ from the check made here (no app files,
     /// no SDK) doesn't switch it off; the next signing checks it again.
     var signedAnyway = false
+    /// `Depends` package ids missing on this device (« Dépendances… » says where to find them).
+    var missingDependencies: [String] = []
 
     var id: String { deviceID }
 
@@ -213,6 +215,14 @@ private struct TweakDeviceRow: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
+                // A verdict that already says a dependency is missing needs no second line.
+                if row.isOn, !row.missingDependencies.isEmpty, !isMissingDependencyVerdict {
+                    Label(L("tweaks.missingHere", row.missingDependencies.map(DependencyNames.display).joined(separator: ", ")),
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color(nsColor: .systemOrange))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let result = row.result {
                     Text(result)
                         .font(.system(size: 11))
@@ -231,6 +241,10 @@ private struct TweakDeviceRow: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
         .accessibilityElement(children: .contain)
+    }
+
+    private var isMissingDependencyVerdict: Bool {
+        if case .incompatible(.missingDependency)? = row.applied { true } else { false }
     }
 
     /// « Injecter quand même » on: one line, « Injecté quand même — fait pour une autre app (…) »,
@@ -342,7 +356,8 @@ struct InstallTweaksSection: View {
             return TweakRow(deviceID: id, label: several ? name : nil, deviceName: name,
                             verdict: draft.verdicts[id], forcedVerdict: draft.forcedVerdicts[id],
                             isOn: draft.enabledDevices.contains(id), isForced: draft.force.contains(id),
-                            signedAnyway: draft.injectedOn.contains(id))
+                            signedAnyway: draft.injectedOn.contains(id),
+                            missingDependencies: draft.missingDependencies[id] ?? [])
         }
     }
 }
@@ -375,7 +390,8 @@ struct InstalledTweaksSection<Notice: View>: View {
                                                                    enabled: use.enabled, signed: signed, deviceName: deviceName),
                                           signedAnyway: {
                                               if case .injected? = entry.installation.tweakResults?[package.id] { true } else { false }
-                                          }())],
+                                          }(),
+                                          missingDependencies: use.enabled ? model.missingDependencies(package, for: entry) : [])],
                           removeHelp: L("tweaks.remove.helpOne"),
                           setOn: { _, on in Task { await model.setTweak(package.id, enabled: on, for: entry) } },
                           setForce: { _, on in Task { await model.setTweakForce(package.id, on, for: entry) } },

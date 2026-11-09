@@ -45,7 +45,20 @@ struct DependencyDirectoryTests {
         #expect(DependencyDirectory.check(Self.package("ws.hbang.common", version: "1.15.3"), for: dep)
                 == .tooOld(found: "1.15.3", needed: "≥ 1.16"))
         #expect(DependencyDirectory.check(Self.package("ws.hbang.common", version: nil), for: dep)
-                == .tooOld(found: "?", needed: "≥ 1.16"))
+                == .unsuitable(found: "?", needed: "≥ 1.16"))
+        // An upper bound: too recent; an exact one: doesn't fit.
+        #expect(DependencyDirectory.check(Self.package("ws.hbang.common", version: "3.0"),
+                                          for: DebDependency(package: "ws.hbang.common", relation: "<<", version: "2.0"))
+                == .tooNew(found: "3.0", needed: "< 2.0"))
+        #expect(DependencyDirectory.check(Self.package("ws.hbang.common", version: "2.0"),
+                                          for: DebDependency(package: "ws.hbang.common", relation: "<=", version: "1.9"))
+                == .tooNew(found: "2.0", needed: "≤ 1.9"))
+        #expect(DependencyDirectory.check(Self.package("ws.hbang.common", version: "2.0"),
+                                          for: DebDependency(package: "ws.hbang.common", relation: "=", version: "1.9"))
+                == .unsuitable(found: "2.0", needed: "= 1.9"))
+        #expect(DependencyDirectory.check(Self.package("ws.hbang.common", version: "1.0"),
+                                          for: DebDependency(package: "ws.hbang.common", relation: ">>", version: "1.0"))
+                == .tooOld(found: "1.0", needed: "> 1.0"))
         #expect(DependencyDirectory.check(Self.package("com.other", version: "9"), for: dep)
                 == .wrongPackage(found: "com.other", wanted: "ws.hbang.common"))
         // Any version will do.
@@ -54,7 +67,7 @@ struct DependencyDirectoryTests {
         // An unreadable constraint is never satisfied.
         #expect(DependencyDirectory.check(Self.package("ws.hbang.common", version: "2.0"),
                                           for: DebDependency(package: "ws.hbang.common", unparseable: true))
-                == .tooOld(found: "2.0", needed: "?"))
+                == .unsuitable(found: "2.0", needed: "?"))
     }
 
     /// Versioned `Provides` aren't read: a `Provides` only satisfies a dependency without a version
@@ -164,6 +177,111 @@ struct DependencyDirectoryTests {
             }
             #expect(fetcher.fetched.isEmpty)
         }
+    }
+
+    /// A kept copy is reused only when it came from a repo that is trusted for that package now;
+    /// any other is dropped (file and index entry) and the repo is asked instead.
+    @Test func aCachedCopyFromARepoNotTrustedForThePackageIsDropped() async throws {
+        try await withTemporaryDirectory("deps") { dir in
+            let fetcher = FakeFetcher()
+            let deb = Data("altlist deb".utf8)
+            Self.serveAltList(fetcher, version: "1.0.5", deb: deb)
+            let lib = AppLibrary(root: dir.appendingPathComponent("lib"))
+            let planted = dir.appendingPathComponent("planted.deb")
+            let bytes = Data("not from opa334".utf8)
+            try bytes.write(to: planted)
+            // Newer than the repo's, and kept as coming from Chariz (not trusted for AltList).
+            let kept = try await lib.storeDownload(planted, sha256: RepoClientTests.sha256(bytes), packageID: Self.altlist,
+                                                   version: "9.0", repo: "chariz", url: "https://repo.chariz.com/x.deb")
+            let downloader = DependencyDownloader(library: lib, client: RepoClient(fetcher: fetcher, runner: FakeRunner(),
+                                                                                 workDir: dir.appendingPathComponent("work")))
+            let dep = DebDependency(package: Self.altlist)
+            let source = try await downloader.prepare(dep, preferredArchitecture: nil)
+            guard case .repo(let offer) = source else { Issue.record("an untrusted kept copy was reused"); return }
+            #expect(offer.version == "1.0.5")
+            #expect(!FileManager.default.fileExists(atPath: kept.path))
+            #expect(await lib.cachedDownloadEntry(packageID: Self.altlist, satisfying: dep) == nil)
+            // An unknown repo id too.
+            let other = try await lib.storeDownload(planted, sha256: RepoClientTests.sha256(bytes), packageID: Self.altlist,
+                                                    version: "9.0", repo: "evil", url: "https://evil.example/x.deb")
+            guard case .repo = try await downloader.prepare(dep, preferredArchitecture: nil) else {
+                Issue.record("an unknown repo's kept copy was reused"); return
+            }
+            #expect(!FileManager.default.fileExists(atPath: other.path))
+        }
+    }
+
+    // MARK: Per device
+
+    static func tweak(depends: [[DebDependency]]) -> TweakPackage {
+        let binary = TweakBinary(path: "Library/MobileSubstrate/DynamicLibraries/T.dylib", isEntry: true,
+                                 filter: TweakFilter(bundles: ["com.example.app"]),
+                                 slices: [TweakSlice(arch: "arm64", platform: 2, minOS: "15.0")],
+                                 linked: ["/usr/lib/libobjc.A.dylib"], mentionsJailbreakPaths: false, imageName: "T.dylib")
+        return TweakPackage(id: "00000000000000aa", kind: .deb, origin: .added, packageID: "com.example.tweak", name: "T",
+                            version: "1.0", depends: depends,
+                            files: ["Library/MobileSubstrate/DynamicLibraries/T.dylib", "Library/MobileSubstrate/DynamicLibraries/T.plist"],
+                            binaries: [binary], addedAt: Date(timeIntervalSince1970: 0))
+    }
+
+    static func dependencyPackage(_ packageID: String, name: String, version: String) -> TweakPackage {
+        let binary = TweakBinary(path: "usr/lib/\(name).dylib", isEntry: false, filter: nil,
+                                 slices: [TweakSlice(arch: "arm64", platform: 2, minOS: "15.0")], linked: [],
+                                 mentionsJailbreakPaths: false, imageName: "\(name).dylib")
+        return TweakPackage(id: "00000000000000bb", kind: .deb, origin: .added, packageID: packageID, name: name,
+                            version: version, files: [binary.path], binaries: [binary], addedAt: Date(timeIntervalSince1970: 0))
+    }
+
+    static func context(_ others: [TweakPackage], os: String = "17.5") -> TweakContext {
+        TweakContext(originalBundleID: "com.example.app", executableName: "Example", deviceOS: os, others: others)
+    }
+
+    @Test func devicesThatAgreeShareOneStatus() {
+        let t = Self.tweak(depends: [[DebDependency(package: "mobilesubstrate")],
+                                     [DebDependency(package: "com.example.helper", relation: ">=", version: "1.0")]])
+        let helper = Self.dependencyPackage("com.example.helper", name: "Helper", version: "1.2")
+        let rows = DependencyRows.rows(t, contexts: [("a", Self.context([helper])), ("b", Self.context([helper]))])
+        #expect(rows.count == 2)
+        #expect(rows[0].statuses == [DependencyDeviceStatus(deviceID: nil, dependency: DebDependency(package: "mobilesubstrate"),
+                                                             status: .notNeeded, addedVersion: nil)])
+        #expect(rows[1].statuses.count == 1)
+        #expect(rows[1].statuses[0].deviceID == nil)
+        #expect(rows[1].statuses[0].status == .addedByYou("Helper"))
+        #expect(rows[1].statuses[0].addedVersion == "1.2")
+        #expect(!rows[1].isMissingAnywhere)
+        #expect(rows[1].missingDependency == nil)
+    }
+
+    /// The helper is on the iPhone only: added there, missing on the iPad. The iPad's verdict
+    /// then says so too for a known library (Cephei); an unknown one is listed for the row's flag.
+    @Test func devicesThatDisagreeGetOneStatusEach() {
+        let need = DebDependency(package: "com.example.helper", relation: ">=", version: "1.0")
+        let t = Self.tweak(depends: [[need]])
+        let helper = Self.dependencyPackage("com.example.helper", name: "Helper", version: "1.2")
+        let rows = DependencyRows.rows(t, contexts: [("iphone", Self.context([helper])), ("ipad", Self.context([]))])
+        #expect(rows.count == 1)
+        #expect(rows[0].statuses == [
+            DependencyDeviceStatus(deviceID: "iphone", dependency: need, status: .addedByYou("Helper"), addedVersion: "1.2"),
+            DependencyDeviceStatus(deviceID: "ipad", dependency: need, status: .missing(need), addedVersion: nil),
+        ])
+        #expect(rows[0].isMissingAnywhere)
+        #expect(rows[0].missingDependency == need)
+        #expect(rows[0].missingDevices == ["ipad"])
+        #expect(DependencyRows.missing(t, Self.context([helper])).isEmpty)
+        #expect(DependencyRows.missing(t, Self.context([])) == ["com.example.helper"])
+
+        // A known library missing on one device: that device's verdict is ❌.
+        let cepheiNeed = DebDependency(package: "ws.hbang.common", relation: ">=", version: "1.0")
+        let c = Self.tweak(depends: [[cepheiNeed]])
+        let cephei = Self.dependencyPackage("ws.hbang.common", name: "Cephei", version: "2.0")
+        #expect(TweakClassifier.verdict(c, Self.context([cephei])) != .incompatible(.missingDependency("Cephei")))
+        #expect(TweakClassifier.verdict(c, Self.context([])) == .incompatible(.missingDependency("Cephei")))
+        #expect(DependencyRows.rows(c, contexts: [("iphone", Self.context([cephei])), ("ipad", Self.context([]))])[0]
+                    .missingDevices == ["ipad"])
+    }
+
+    @Test func noDeviceMeansNoRows() {
+        #expect(DependencyRows.rows(Self.tweak(depends: [[DebDependency(package: "x")]]), contexts: []).isEmpty)
     }
 
     @Test func failuresAreSortedForTheirMessage() {

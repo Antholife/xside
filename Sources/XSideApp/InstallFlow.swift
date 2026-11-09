@@ -265,6 +265,8 @@ struct TweakDraft: Identifiable {
     /// Devices whose last signing injected it: a ❌ from the check made here (without the app's
     /// files or the SDK) doesn't switch it off there; the signing checks it again.
     var injectedOn: Set<String> = []
+    /// Per device, the `Depends` package ids missing there (« Dépendances »), flagged on its row.
+    var missingDependencies: [String: [String]] = [:]
 
     var id: String { package.id }
 

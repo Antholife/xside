@@ -1049,3 +1049,7 @@
 "deps.error.hash" = "The downloaded file doesn't match the repo's fingerprint: not added.";
 "deps.error.network" = "Couldn't reach %@.";
 "deps.error.notFound" = "%@ isn't in that repo in a suitable version.";
+"deps.tooNew" = "Version %1$@ is too recent: %2$@ needed.";
+"deps.unsuitable" = "Version %1$@ doesn't fit: %2$@ needed.";
+"deps.onDevice" = "%1$@ on %2$@";
+"tweaks.missingHere" = "Missing on this device: %@ (see Dependencies…)";
