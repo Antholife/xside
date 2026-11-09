@@ -2,9 +2,10 @@ import SwiftUI
 import XSideCore
 
 /// "Simulate signed-out iCloud" for one device: an install option of its own, with or without
-/// XSide's module (see `ICloudSignedOut`). Always shown; how depends on the app and the account
-/// (`ICloudSignedOut.OptionState`): highlighted for an app that uses iCloud, "not needed" for one
-/// that doesn't, greyed with a paid team.
+/// XSide's module (see `ICloudSignedOut`). Always shown and usable, with any account; how depends
+/// on the app (`ICloudSignedOut.OptionState`): highlighted for an app whose entitlements declare
+/// iCloud, "useful if it crashes because of iCloud" for one that only links CloudKit, "not needed"
+/// for one that doesn't use it.
 struct ICloudOptionRow: View {
     let state: ICloudSignedOut.OptionState
     let appName: String
@@ -13,11 +14,6 @@ struct ICloudOptionRow: View {
     @Binding var isOn: Bool
     /// The last signing couldn't add it (Settings > Mes apps).
     var missing = false
-    /// `isOn` is a choice already stored on an installation: it can be turned off even when the
-    /// option can't be turned on anymore (a paid team now).
-    var storedChoice = false
-
-    private var usable: Bool { state.canTurnOn || (storedChoice && isOn) }
     @State private var showsDetails = false
 
     var body: some View {
@@ -27,7 +23,6 @@ struct ICloudOptionRow: View {
                 .foregroundStyle(.white)
                 .frame(width: 26, height: 26)
                 .background(Theme.brand, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                .opacity(state.canTurnOn ? 1 : 0.45)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(L("icloud.option")).font(.system(size: 13))
@@ -59,13 +54,11 @@ struct ICloudOptionRow: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .opacity(state.canTurnOn ? 1 : 0.7)
             Spacer(minLength: 8)
-            Toggle(L("icloud.option"), isOn: Binding(get: { isOn && usable }, set: { isOn = $0 }))
+            Toggle(L("icloud.option"), isOn: $isOn)
                 .labelsHidden()
                 .toggleStyle(.xside)
                 .controlSize(.small)
-                .disabled(!usable)
                 .help(caption)
         }
         .padding(.horizontal, 12)
@@ -78,9 +71,9 @@ struct ICloudOptionRow: View {
     private var caption: String {
         switch state {
         case .recommended: L("icloud.caption.recommended", appName) + " " + L("icloud.caption")
+        case .useful: L("icloud.caption.useful")
         case .unknown: L("icloud.caption")
         case .notNeeded: L("icloud.caption.notNeeded")
-        case .paidTeam: L("icloud.caption.paidTeam")
         }
     }
 }

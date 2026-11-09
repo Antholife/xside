@@ -86,6 +86,12 @@ struct ICloudDetectionTests {
         #expect(!ICloudSignedOut.entitlementsUseICloud(["com.apple.developer.icloud-container-identifiers": [Any]()]))
         #expect(!ICloudSignedOut.entitlementsUseICloud(["keychain-access-groups": ["TEAM.x"]]))
         #expect(!ICloudSignedOut.entitlementsUseICloud(nil))
+        // Only a truthy value: a non-empty list or string, or true (the .ipa is untrusted).
+        #expect(ICloudSignedOut.entitlementsUseICloud(["com.apple.developer.icloud-services": true]))
+        #expect(!ICloudSignedOut.entitlementsUseICloud(["com.apple.developer.icloud-services": false]))
+        #expect(!ICloudSignedOut.entitlementsUseICloud(["com.apple.developer.ubiquity-kvstore-identifier": ""]))
+        #expect(!ICloudSignedOut.entitlementsUseICloud(["com.apple.developer.icloud-services": 1]))
+        #expect(!ICloudSignedOut.entitlementsUseICloud(["com.apple.developer.icloud-container-identifiers": ["x": 1]]))
     }
 
     /// Only plain `iCloud.` identifiers, in order, once each, capped: the .ipa is untrusted.
@@ -148,23 +154,44 @@ struct ICloudDetectionTests {
         let ents: [String: Any] = ["com.apple.developer.icloud-container-identifiers": ["iCloud.com.vendor.app"]]
         let exe = try write(try iCloudMachO(dylibs: [(0xC, foundation)], entitlements: ents))
         let read = ICloudAppInfo.read(executable: exe, entitlements: IPAInspector.embeddedEntitlements(exe))
-        #expect(read == ICloudAppInfo(usesICloud: true, containers: ["iCloud.com.vendor.app"]))
+        #expect(read == ICloudAppInfo(declaresICloud: true, containers: ["iCloud.com.vendor.app"]))
+        // Linking CloudKit is remembered apart: it doesn't mean the app uses iCloud.
         let linked = try write(try iCloudMachO(dylibs: [(0xC, cloudKit)]))
-        #expect(ICloudAppInfo.read(executable: linked, entitlements: nil) == ICloudAppInfo(usesICloud: true))
+        #expect(ICloudAppInfo.read(executable: linked, entitlements: nil) == ICloudAppInfo(declaresICloud: false, linksCloudKit: true))
+        let both = try write(try iCloudMachO(dylibs: [(0xC, cloudKit)], entitlements: ents))
+        #expect(ICloudAppInfo.read(executable: both, entitlements: ents)
+                == ICloudAppInfo(declaresICloud: true, linksCloudKit: true, containers: ["iCloud.com.vendor.app"]))
         let plain = try write(try iCloudMachO(dylibs: [(0xC, foundation)]))
-        #expect(ICloudAppInfo.read(executable: plain, entitlements: [:]) == ICloudAppInfo(usesICloud: false))
+        #expect(ICloudAppInfo.read(executable: plain, entitlements: [:]) == ICloudAppInfo(declaresICloud: false))
     }
 
+    /// Recommended only from the entitlements; an app that only links CloudKit (YouTube) is
+    /// offered neutrally. No account kind changes it (XSide gives no app iCloud).
     @Test func optionStateMatrix() {
-        let uses = ICloudAppInfo(usesICloud: true), none = ICloudAppInfo(usesICloud: false)
-        #expect(ICloudSignedOut.optionState(app: uses, paidTeam: false) == .recommended)
-        #expect(ICloudSignedOut.optionState(app: none, paidTeam: false) == .notNeeded)
-        #expect(ICloudSignedOut.optionState(app: nil, paidTeam: false) == .unknown)
-        for app in [uses, none, nil] { #expect(ICloudSignedOut.optionState(app: app, paidTeam: true) == .paidTeam) }
-        #expect(ICloudSignedOut.OptionState.recommended.canTurnOn)
-        #expect(ICloudSignedOut.OptionState.notNeeded.canTurnOn)
-        #expect(ICloudSignedOut.OptionState.unknown.canTurnOn)
-        #expect(!ICloudSignedOut.OptionState.paidTeam.canTurnOn)
+        #expect(ICloudSignedOut.optionState(app: ICloudAppInfo(declaresICloud: true)) == .recommended)
+        #expect(ICloudSignedOut.optionState(app: ICloudAppInfo(declaresICloud: true, linksCloudKit: true)) == .recommended)
+        #expect(ICloudSignedOut.optionState(app: ICloudAppInfo(declaresICloud: false, linksCloudKit: true)) == .useful)
+        #expect(ICloudSignedOut.optionState(app: ICloudAppInfo(declaresICloud: false)) == .notNeeded)
+        #expect(ICloudSignedOut.optionState(app: nil) == .unknown)
+    }
+
+    /// A record written before the split (one `usesICloud` key, which counted linking CloudKit)
+    /// reads as "not known", never as recommended.
+    @Test func oldAppInfoIsNotKnown() throws {
+        let old = Data(#"{"usesICloud":true,"containers":[]}"#.utf8)
+        #expect((try? JSONDecoder().decode(ICloudAppInfo.self, from: old)) == nil)
+        let info = ICloudAppInfo(declaresICloud: false, linksCloudKit: true, containers: ["iCloud.a"])
+        #expect(try JSONDecoder().decode(ICloudAppInfo.self, from: JSONEncoder().encode(info)) == info)
+    }
+
+    /// Asked for but not added by the last signing: the app doesn't have it.
+    @Test func installationHasTheLibraryOnlyWhenAdded() {
+        var i = Installation(deviceID: "D", installedAt: Date(), expiresAt: Date())
+        #expect(!i.hasICloudSignedOut)
+        i.iCloudSignedOut = true
+        #expect(i.hasICloudSignedOut)
+        i.iCloudSignedOutMissing = true
+        #expect(!i.hasICloudSignedOut)
     }
 
     @Test func infoPlistKeys() {
@@ -179,43 +206,33 @@ struct ICloudDetectionTests {
         #expect(plist["CFBundleIdentifier"] as? String == "x")
     }
 
-    @Test func paidTeamFromXcodesTeams() {
-        let teams: [String: Any] = ["acc": [["teamID": "FREE000001", "isFreeProvisioningTeam": true],
-                                            ["teamID": "PAID000001", "isFreeProvisioningTeam": false],
-                                            ["teamID": "UNKN000001"]]]
-        #expect(EnvironmentProbe.isPaidTeam(teams, teamID: "PAID000001"))
-        #expect(!EnvironmentProbe.isPaidTeam(teams, teamID: "FREE000001"))
-        #expect(!EnvironmentProbe.isPaidTeam(teams, teamID: "UNKN000001"))
-        #expect(!EnvironmentProbe.isPaidTeam(teams, teamID: "OTHER00001"))
-        #expect(!EnvironmentProbe.isPaidTeam(nil, teamID: "PAID000001"))
-        #expect(!EnvironmentProbe.isPaidTeam(["acc": "garbage"], teamID: "PAID000001"))
-    }
-
     @Test func crashActionTurnsTheOptionOn() {
         #expect(CrashAction.suggested(for: CrashDiagnosis(cause: .iCloud)) == .turnOnICloudSignedOut)
         var on = CrashDiagnosis(cause: .iCloud); on.iCloudSignedOutOn = true
         #expect(CrashAction.suggested(for: on) == nil) // already on: something it doesn't cover
-        var paid = CrashDiagnosis(cause: .iCloud); paid.iCloudSignedOutUnavailable = true
-        #expect(CrashAction.suggested(for: paid) == nil)
         #expect(CrashAction.suggested(for: CrashDiagnosis(cause: .other)) == nil)
-        // Older crash files have neither key.
+        // Older crash files have no key; files of a build that knew paid teams still offer it.
         let old = try? JSONDecoder().decode(CrashDiagnosis.self, from: Data(#"{"cause":"iCloud","duoCompatibilityOn":false,"topFrames":[]}"#.utf8))
         #expect(old.map(CrashAction.suggested(for:)) == .turnOnICloudSignedOut)
+        let paid = try? JSONDecoder().decode(CrashDiagnosis.self, from: Data(#"{"cause":"iCloud","duoCompatibilityOn":false,"topFrames":[],"iCloudSignedOutUnavailable":true}"#.utf8))
+        #expect(paid.map(CrashAction.suggested(for:)) == .turnOnICloudSignedOut)
     }
 
-    @Test func preflightNoteForAFreeAccount() {
+    @Test func preflightNoteOnlyWhenTheEntitlementsDeclareICloud() {
         let targets = [InstallPreflight.Target(deviceID: "a", osVersion: "27.3", otherApps: [], hasThisApp: false),
                        InstallPreflight.Target(deviceID: "b", osVersion: "27.3", otherApps: [], hasThisApp: false)]
-        func check(_ icloud: ICloudAppInfo?, paid: Bool = false, on: Set<String> = []) -> [InstallPreflight.Warning] {
+        func check(_ icloud: ICloudAppInfo?, on: Set<String> = []) -> [InstallPreflight.Warning] {
             InstallPreflight.check(minimumOS: nil, targets: targets, needsNewAppID: false, appIDsRemaining: nil,
-                                   icloud: icloud, paidTeam: paid, iCloudSignedOutDevices: on)
+                                   icloud: icloud, iCloudSignedOutDevices: on)
         }
-        let uses = ICloudAppInfo(usesICloud: true)
+        let uses = ICloudAppInfo(declaresICloud: true)
         #expect(check(uses) == [.usesICloud(optionOn: false)])
         #expect(check(uses, on: ["a"]) == [.usesICloud(optionOn: true)])
         #expect(check(uses, on: ["a", "b"]).isEmpty)
-        #expect(check(uses, paid: true).isEmpty)
-        #expect(check(ICloudAppInfo(usesICloud: false)).isEmpty)
+        #expect(check(ICloudAppInfo(declaresICloud: true, linksCloudKit: true)) == [.usesICloud(optionOn: false)])
+        // Linking CloudKit alone: no note (YouTube links it and runs fine).
+        #expect(check(ICloudAppInfo(declaresICloud: false, linksCloudKit: true)).isEmpty)
+        #expect(check(ICloudAppInfo(declaresICloud: false)).isEmpty)
         #expect(check(nil).isEmpty)
     }
 

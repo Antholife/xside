@@ -51,19 +51,20 @@ public enum InstallPreflight {
         case notMadeForDuo(deviceID: String, optionPossible: Bool)
         /// An older version than the one on the device (the wrong file?).
         case olderVersion(deviceID: String, installing: String, installed: String)
-        /// The app uses iCloud, which a free account can't give it: it may crash. Said once, unless
-        /// "Simulate signed-out iCloud" is on for every device. `optionOn`: on for some of them.
+        /// The app's entitlements declare iCloud, which XSide doesn't give apps: it may crash. Said
+        /// once, unless "Simulate signed-out iCloud" is on for every device. `optionOn`: on for some
+        /// of them. Linking CloudKit alone says nothing (see `ICloudAppInfo`).
         case usesICloud(optionOn: Bool)
     }
 
     /// `needsNewAppID`: the signed bundle id isn't registered yet (a first install, or a new id).
     /// `sdkVersion` / `appVersion`: the .ipa's build SDK and version (nil: not checked).
     /// `duo`: what the .ipa supports for the iPhone Duo option (nil: not known).
-    /// `icloud`: what the .ipa uses of iCloud; `paidTeam`: signed with a paid team (no note then);
+    /// `icloud`: what the .ipa uses of iCloud (any account: XSide gives no app iCloud);
     /// `iCloudSignedOutDevices`: the targets getting "Simulate signed-out iCloud".
     public static func check(minimumOS: String?, targets: [Target], needsNewAppID: Bool,
                              appIDsRemaining: Int?, sdkVersion: String? = nil, appVersion: String? = nil,
-                             duo: DuoAppInfo? = nil, icloud: ICloudAppInfo? = nil, paidTeam: Bool = false,
+                             duo: DuoAppInfo? = nil, icloud: ICloudAppInfo? = nil,
                              iCloudSignedOutDevices: Set<String> = []) -> [Warning] {
         var warnings: [Warning] = []
         for target in targets {
@@ -86,7 +87,7 @@ public enum InstallPreflight {
             }
         }
         let ready = targets.filter { $0.developerModeEnabled != false }.map(\.deviceID)
-        if icloud?.usesICloud == true, !paidTeam, !ready.isEmpty {
+        if icloud?.declaresICloud == true, !ready.isEmpty {
             let on = ready.filter(iCloudSignedOutDevices.contains)
             if on.count < ready.count { warnings.append(.usesICloud(optionOn: !on.isEmpty)) }
         }

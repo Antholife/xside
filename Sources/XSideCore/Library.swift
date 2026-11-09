@@ -58,6 +58,8 @@ public struct Installation: Codable, Equatable, Sendable {
     /// Asked for at the last signing, but the app installed doesn't have it (this build has no
     /// library, or it couldn't be added). nil otherwise.
     public var iCloudSignedOutMissing: Bool?
+    /// The app on the device has the library: asked for, and the last signing added it.
+    public var hasICloudSignedOut: Bool { iCloudSignedOut == true && iCloudSignedOutMissing != true }
 
     public init(deviceID: String, installedAt: Date, expiresAt: Date,
                 lastAttempt: Date? = nil, lastErrorKey: String? = nil, signedBundleID: String? = nil,

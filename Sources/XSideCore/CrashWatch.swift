@@ -47,7 +47,7 @@ public enum CrashAction: String, Codable, Sendable, CaseIterable {
         case .xsideModule: return .reinstallWithoutXSide
         case .noSceneSupport: return d.duoCompatibilityOn ? .turnOffDuo : nil
         case .codeSignature: return .refresh
-        case .iCloud: return d.iCloudSignedOutOn == true || d.iCloudSignedOutUnavailable == true ? nil : .turnOnICloudSignedOut
+        case .iCloud: return d.iCloudSignedOutOn == true ? nil : .turnOnICloudSignedOut
         default: return nil
         }
     }

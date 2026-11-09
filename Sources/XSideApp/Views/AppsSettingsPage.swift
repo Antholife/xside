@@ -319,8 +319,7 @@ private struct AppSettingsContent: View {
                                 isOn: Binding(get: { on }, set: { value in
                                     Task { await model.setICloudSignedOut(value, for: entry) }
                                 }),
-                                missing: on && entry.installation.iCloudSignedOutMissing == true,
-                                storedChoice: true)
+                                missing: on && entry.installation.iCloudSignedOutMissing == true)
                 .disabled(!model.canManage(entry))
                 HStack(spacing: 8) {
                     Text(L("duo.nextSigning"))

@@ -1,22 +1,30 @@
 import Foundation
 
 /// What decides the "Simulate signed-out iCloud" option for an app, read from its .ipa at import.
+/// Only the entitlements say the app uses iCloud: plenty of apps link CloudKit without ever
+/// calling it (YouTube does, and runs fine without the option), so linking it alone recommends
+/// nothing. An app whose entitlements were stripped and that does crash in iCloud is caught by the
+/// crash diagnosis instead (`CrashAction.turnOnICloudSignedOut`).
+/// Records written before this split (one `usesICloud` key) don't decode: "not known".
 public struct ICloudAppInfo: Codable, Equatable, Sendable {
-    /// The app's original entitlements ask for iCloud, or its main executable links CloudKit.
-    public var usesICloud: Bool
+    /// The app's original entitlements ask for iCloud (`ICloudSignedOut.entitlementKeys`).
+    public var declaresICloud: Bool
+    /// Its main executable links CloudKit: it may use iCloud, or not at all.
+    public var linksCloudKit: Bool
     /// The CloudKit containers its original entitlements declare (`iCloud.<id>`), checked and
     /// capped (see `ICloudSignedOut.containerIdentifiers`).
     public var containers: [String]
 
-    public init(usesICloud: Bool, containers: [String] = []) {
-        self.usesICloud = usesICloud
+    public init(declaresICloud: Bool, linksCloudKit: Bool = false, containers: [String] = []) {
+        self.declaresICloud = declaresICloud
+        self.linksCloudKit = linksCloudKit
         self.containers = containers
     }
 
     /// From the original entitlements (nil: unsigned or unreadable) and the main executable.
     public static func read(executable: URL, entitlements: [String: Any]?) -> ICloudAppInfo {
-        ICloudAppInfo(usesICloud: ICloudSignedOut.entitlementsUseICloud(entitlements)
-                          || ICloudSignedOut.linksCloudKit(executable),
+        ICloudAppInfo(declaresICloud: ICloudSignedOut.entitlementsUseICloud(entitlements),
+                      linksCloudKit: ICloudSignedOut.linksCloudKit(executable),
                       containers: ICloudSignedOut.containerIdentifiers(entitlements))
     }
 }
@@ -49,14 +57,16 @@ public enum ICloudSignedOut {
     /// Longest container identifier kept.
     static let maxContainerLength = 255
 
+    /// Whether one of `entitlementKeys` has a truthy value: a non-empty list or string, or `true`.
+    /// Anything else (`false`, a number, a dictionary: an untrusted .ipa) is no.
     public static func entitlementsUseICloud(_ entitlements: [String: Any]?) -> Bool {
         guard let entitlements else { return false }
         return entitlementKeys.contains { key in
             switch entitlements[key] {
-            case nil: false
             case let list as [Any]: !list.isEmpty
             case let text as String: !text.isEmpty
-            default: true
+            case let flag as Bool: flag
+            default: false
             }
         }
     }
@@ -104,24 +114,24 @@ public enum ICloudSignedOut {
         path.hasSuffix("/CloudKit.framework/CloudKit") || path.contains("/CloudKit.framework/Versions/")
     }
 
-    /// How the option shows for an app.
+    /// How the option shows for an app. Always usable, with any account: XSide gives no app
+    /// iCloud (not even with a paid team), so this is the only fix for an app that crashes in it.
     public enum OptionState: Equatable, Sendable {
-        /// The app uses iCloud and the account is free: highlighted, still off until turned on.
+        /// The app's entitlements declare iCloud: highlighted, still off until turned on.
         case recommended
+        /// The app links CloudKit but declares no iCloud: offered, "useful if it crashes because
+        /// of iCloud", not highlighted.
+        case useful
         /// The app doesn't use iCloud: offered, "not needed".
         case notNeeded
         /// What the app uses isn't known (imported by an older XSide): offered.
         case unknown
-        /// Signed with a paid team: greyed, "not needed with a paid account".
-        case paidTeam
-
-        public var canTurnOn: Bool { self != .paidTeam }
     }
 
-    public static func optionState(app: ICloudAppInfo?, paidTeam: Bool) -> OptionState {
-        if paidTeam { return .paidTeam }
+    public static func optionState(app: ICloudAppInfo?) -> OptionState {
         guard let app else { return .unknown }
-        return app.usesICloud ? .recommended : .notNeeded
+        if app.declaresICloud { return .recommended }
+        return app.linksCloudKit ? .useful : .notNeeded
     }
 
     /// Writes what the library reads into the app's Info.plist; removes it first (an app signed by
@@ -135,16 +145,5 @@ public enum ICloudSignedOut {
     public static func clearInfoPlist(_ plist: inout [String: Any]) {
         plist[originalBundleIDKey] = nil
         plist[containersKey] = nil
-    }
-}
-
-extension EnvironmentProbe {
-    /// Whether Xcode lists `teamID` as a paid team (`isFreeProvisioningTeam` false). Unknown
-    /// (unreadable, team not listed, key missing) is not paid: free accounts are the common case.
-    public static func isPaidTeam(_ teams: Any?, teamID: String) -> Bool {
-        guard let byAccount = teams as? [String: Any] else { return false }
-        let all = byAccount.values.flatMap { $0 as? [[String: Any]] ?? [] }
-        guard let team = all.first(where: { $0["teamID"] as? String == teamID }) else { return false }
-        return team["isFreeProvisioningTeam"] as? Bool == false
     }
 }

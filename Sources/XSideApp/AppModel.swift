@@ -1714,7 +1714,7 @@ final class AppModel {
         return InstallPreflight.check(minimumOS: minOS.isEmpty ? info.minimumOSVersion : minOS, targets: targets,
                                       needsNewAppID: needsNewAppID, appIDsRemaining: appIDsRemaining,
                                       sdkVersion: info.sdkVersion, appVersion: version.isEmpty ? info.version : version,
-                                      duo: info.duo, icloud: info.icloud, paidTeam: isPaidTeam,
+                                      duo: info.duo, icloud: info.icloud,
                                       iCloudSignedOutDevices: flow.iCloudDevices)
     }
 
@@ -2165,7 +2165,7 @@ final class AppModel {
         // Only where the option can be on (a device unchecked meanwhile keeps its own choice).
         flow.runLegacy32 = flow.info?.hasLegacy32 == true
         flow.runDuo = flow.duoDevices.filter { duoState(for: $0, app: flow.info?.duo).canTurnOn }
-        flow.runICloud = iCloudState(app: flow.info?.icloud).canTurnOn ? flow.iCloudDevices : []
+        flow.runICloud = flow.iCloudDevices
         // A new run imports again (the options may have changed); only its later devices reuse it.
         flow.importedRecordID = nil
         flow.guides = []
@@ -2384,18 +2384,9 @@ final class AppModel {
     }
 
     /// How "Simulate signed-out iCloud" shows for an app (`app`: what its .ipa uses of iCloud).
+    /// Usable with any account: XSide gives no app iCloud, not even with a paid team.
     func iCloudState(app: ICloudAppInfo?) -> ICloudSignedOut.OptionState {
-        ICloudSignedOut.optionState(app: app, paidTeam: isPaidTeam)
-    }
-
-    /// The signing team is a paid one (Xcode's teams say so). Asked again when the team changes.
-    @ObservationIgnored private var paidTeamCache: (team: String, paid: Bool)?
-    var isPaidTeam: Bool {
-        guard case .success(let env)? = environment else { return false }
-        if let cached = paidTeamCache, cached.team == env.teamID { return cached.paid }
-        let paid = EnvironmentProbe.isPaidTeam(EnvironmentProbe.savedXcodeTeams(), teamID: env.teamID)
-        paidTeamCache = (env.teamID, paid)
-        return paid
+        ICloudSignedOut.optionState(app: app)
     }
 
     /// Settings > Mes apps (and a crash's fix): "Simulate signed-out iCloud" for one installation,
@@ -2661,8 +2652,8 @@ final class AppModel {
     private func finding(_ found: CrashLogFetcher.Found, record: AppRecord, installation: Installation) async -> CrashFinding {
         let context = CrashContext(moduleName: Resigner.welcomeName,
                                    duoCompatibilityOn: installation.duoCompatibility == true,
-                                   iCloudSignedOutOn: installation.iCloudSignedOut == true,
-                                   iCloudSignedOutUnavailable: isPaidTeam)
+                                   // Asked for but not added by the last signing: it's off in the app.
+                                   iCloudSignedOutOn: installation.hasICloudSignedOut)
         let diagnosis = CrashClassifier.classify(found.log, context: context)
         let secrets = [installation.teamID, record.teamID, installation.deviceID].compactMap { $0 }
         let text = found.text

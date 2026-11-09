@@ -801,27 +801,27 @@
 "icloud.section" = "iCloud";
 "icloud.option" = "Simuler iCloud déconnecté";
 "icloud.recommended" = "Recommandé";
-"icloud.caption" = "L'app croit qu'aucun compte iCloud n'est connecté au lieu de planter. Ça règle : CloudKit, Core Data et SwiftData avec iCloud, CKSyncEngine, les réglages synchronisés par iCloud (gardés sur l'appareil) et iCloud Drive (vu comme indisponible). Les données restent sur l'appareil, rien n'est synchronisé. Une app qui exige iCloud pour fonctionner démarrera, mais restera sur son écran de connexion.";
+"icloud.caption" = "L'app croit qu'aucun compte iCloud n'est connecté au lieu de planter. Ça règle : CloudKit, Core Data et SwiftData avec iCloud, CKSyncEngine, les réglages synchronisés par iCloud (gardés sur l'appareil) et iCloud Drive (vu comme indisponible). Les données restent sur l'appareil, rien n'est synchronisé. Une app qui exige iCloud pour fonctionner démarre en général, mais peut rester sur son écran de connexion.";
 "icloud.details.title" = "En savoir plus";
 "icloud.details.cloudKit" = "CloudKit : l'app voit « aucun compte iCloud » ; chaque requête échoue comme sur un appareil déconnecté, sans planter.";
 "icloud.details.coreData" = "Core Data et SwiftData avec iCloud, CKSyncEngine : la synchronisation attend un compte qui ne vient pas ; les données locales fonctionnent normalement.";
 "icloud.details.kvs" = "Réglages synchronisés par iCloud : gardés sur l'appareil. Ils restent d'une ouverture à l'autre, mais pas après une désinstallation.";
 "icloud.details.drive" = "iCloud Drive : le dossier iCloud de l'app est vu comme indisponible, comme sans compte.";
-"icloud.details.limits" = "Ce que ça ne règle pas : rien n'est synchronisé avec tes autres appareils, et une app qui exige un compte iCloud pour fonctionner démarre, mais reste sur son écran de connexion.";
-"icloud.caption.recommended" = "%@ utilise iCloud, auquel un compte gratuit ne peut pas lui donner accès : sans cette option, elle risque de planter.";
+"icloud.details.limits" = "Ce que ça ne règle pas : rien n'est synchronisé avec tes autres appareils, et une app qui exige un compte iCloud pour fonctionner démarre en général, mais peut rester sur son écran de connexion.";
+"icloud.caption.recommended" = "%@ utilise iCloud, mais les apps installées par XSide n'y ont pas accès : sans cette option, elle risque de planter.";
 "icloud.caption.notNeeded" = "Pas nécessaire : l'app n'utilise pas iCloud.";
-"icloud.caption.paidTeam" = "Inutile avec un compte payant.";
+"icloud.caption.useful" = "Utile si l'app plante à cause d'iCloud.";
 "icloud.missing" = "La dernière installation n'a pas pu l'ajouter : %@ a été installée sans. Les journaux disent pourquoi.";
 "icloud.missing.install" = "%1$@ : le mode iCloud déconnecté n'a pas pu être ajouté, %2$@ a été installée sans.";
 "icloud.missing.row" = "Mode iCloud déconnecté non ajouté (installée sans)";
 "install.step.icloud" = "Ajout du mode iCloud déconnecté";
-"preflight.usesICloud" = "%@ utilise iCloud, mais un compte gratuit ne peut pas y donner accès : elle risque de planter. L'option « Simuler iCloud déconnecté » (étape ②) l'évite.";
-"preflight.usesICloud.someDevices" = "%@ utilise iCloud, mais un compte gratuit ne peut pas y donner accès : elle risque de planter sur les appareils où « Simuler iCloud déconnecté » (étape ②) n'est pas activé.";
+"preflight.usesICloud" = "%@ utilise iCloud, mais les apps installées par XSide n'y ont pas accès : elle risque de planter. L'option « Simuler iCloud déconnecté » (étape ②) l'évite.";
+"preflight.usesICloud.someDevices" = "%@ utilise iCloud, mais les apps installées par XSide n'y ont pas accès : elle risque de planter sur les appareils où « Simuler iCloud déconnecté » (étape ②) n'est pas activé.";
 "crash.cause.iCloud.adviceOption" = "Réinstalle-la en mode iCloud déconnecté : elle croira qu'aucun compte iCloud n'est connecté et ses données resteront sur l'appareil.";
 "crash.cause.iCloud.adviceSignedOut" = "Le mode iCloud déconnecté est déjà activé : l'app utilise iCloud d'une façon qu'il ne couvre pas encore. Une autre version de l'app peut s'en passer.";
 "crash.action.turnOnICloudSignedOut" = "Réinstaller en mode iCloud déconnecté";
 "whatsNew.120.icloud.title" = "Simuler iCloud déconnecté";
-"whatsNew.120.icloud.text" = "Une option d'installation, par appareil : une app qui utilise iCloud plante souvent avec un compte gratuit. « Simuler iCloud déconnecté » lui fait croire qu'aucun compte iCloud n'est connecté au lieu de planter : CloudKit, Core Data et SwiftData avec iCloud, CKSyncEngine, les réglages synchronisés par iCloud (gardés sur l'appareil) et iCloud Drive (vu comme indisponible). Les données restent sur l'appareil, rien n'est synchronisé ; une app qui exige iCloud pour fonctionner démarre, mais reste sur son écran de connexion. Recommandée quand l'app utilise iCloud, proposée en un clic quand une app plante dans iCloud.";
+"whatsNew.120.icloud.text" = "Une option d'installation, par appareil : une app qui utilise iCloud plante souvent, car les apps installées par XSide n'y ont pas accès. « Simuler iCloud déconnecté » lui fait croire qu'aucun compte iCloud n'est connecté au lieu de planter : CloudKit, Core Data et SwiftData avec iCloud, CKSyncEngine, les réglages synchronisés par iCloud (gardés sur l'appareil) et iCloud Drive (vu comme indisponible). Les données restent sur l'appareil, rien n'est synchronisé ; une app qui exige iCloud pour fonctionner démarre en général, mais peut rester sur son écran de connexion. Recommandée quand l'app déclare utiliser iCloud, proposée en un clic quand une app plante dans iCloud.";
 
 /* Crash diagnosis */
 "crash.window" = "Diagnostic de plantage";
@@ -876,7 +876,6 @@
 "crash.cause.bundledLibrary.advice" = "Essaie une autre copie de l'app, sans ce tweak ou avec une autre version de celui-ci.";
 "crash.cause.iCloud.title" = "L'app a planté en utilisant iCloud";
 "crash.cause.iCloud.text" = "%@ a planté dans iCloud (CloudKit). Les apps installées par XSide n'ont pas accès à iCloud (XSide ne le configure pas, et un compte Apple gratuit ne le permet pas du tout) : c'est très probablement la cause.";
-"crash.cause.iCloud.advice" = "XSide n'y peut rien : certaines apps exigent iCloud au lancement. Une autre version de l'app peut s'en passer.";
 "crash.cause.outOfMemory.title" = "L'app a manqué de mémoire";
 "crash.cause.outOfMemory.text" = "iOS a arrêté %@ pendant qu'elle était ouverte, parce qu'elle dépassait la mémoire qu'iOS lui accorde.";
 "crash.cause.outOfMemory.advice" = "Ferme les autres apps et relance-la. Si ça recommence, l'app est peut-être trop lourde pour cet appareil.";

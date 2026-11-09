@@ -97,7 +97,7 @@ struct InstallSummaryView: View {
     var body: some View {
         let info = flow.info
         let duoOn = flow.deviceIDs.filter { flow.duoDevices.contains($0) && model.duoState(for: $0, app: info?.duo).canTurnOn }
-        let iCloudOn = model.iCloudState(app: info?.icloud).canTurnOn ? flow.deviceIDs.filter(flow.iCloudDevices.contains) : []
+        let iCloudOn = flow.deviceIDs.filter(flow.iCloudDevices.contains)
         let lines = InstallSummary.lines(options: flow.draft.options, inApp: flow.inApp,
                                          withoutXSideFeatures: flow.withoutXSideFeatures,
                                          openAppAfter: flow.openAppAfter, openTrustPage: flow.openTrustPage,
@@ -105,7 +105,7 @@ struct InstallSummaryView: View {
                                          duoDevices: duoOn.map(deviceName),
                                          offersDuo: flow.deviceIDs.contains { model.isDuo($0) },
                                          iCloudDevices: iCloudOn.map(deviceName),
-                                         offersICloud: info?.icloud?.usesICloud == true)
+                                         offersICloud: info?.icloud?.declaresICloud == true)
         VStack(alignment: .leading, spacing: 10) {
             SectionTitle(L("install.summary.title"))
             group(L("install.optionsTitle"), lines.install, step: 1)

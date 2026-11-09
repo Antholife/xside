@@ -257,7 +257,9 @@ public struct Resigner: Sendable {
     /// missing library never stops the app, it then behaves as without the option). When the
     /// header lacks room for it (and for `alsoLoading`, XSide's module, added next), the build
     /// Mac's toolchain run paths go first. Never fails the install: on any problem the library is
-    /// removed and the executable keeps no command naming it. Returns whether it's in the app.
+    /// removed. The executable may still name it when the iPhone Duo patch already added the load
+    /// command (its copy carries both): harmless, the command is weak and the app runs as without
+    /// the option. Returns whether the library is in the app.
     private func addICloudLibrary(to app: URL, executable: URL, alsoLoading other: String?) -> Bool {
         guard let iCloudLibrary else { return false }
         let fm = FileManager.default
