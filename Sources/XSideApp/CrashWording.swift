@@ -54,7 +54,7 @@ struct CrashWording {
         case .iCloud:
             explanation = f(base + ".text", app)
             advice = t(base + (d.iCloudSignedOutOn == true ? ".adviceSignedOut" : ".adviceOption"))
-        case .codeSignature, .xsideModule, .duoLegacyModule, .iCloudShim, .outOfMemory, .launchTimeout, .hang:
+        case .codeSignature, .xsideModule, .duoLegacyModule, .duoAppLaunch, .iCloudShim, .outOfMemory, .launchTimeout, .hang:
             explanation = f(base + ".text", app)
             advice = t(base + ".advice")
         }

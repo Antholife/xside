@@ -362,6 +362,26 @@ private func diagnose(_ data: Data, _ ctx: CrashContext = context) throws -> Cra
         #expect(CrashAction.suggested(for: d) == .turnOffDuo)
     }
 
+    /// The app's own code throws while its delegate finishes launching, with the iPhone Duo
+    /// option on (Plague Inc. read `windows[0]` before any scene was connected): the option is
+    /// the likely cause, and the fix is reinstalling without it.
+    @Test func appCrashAtLaunchWithDuo() throws {
+        let launch = [IPS.frame(IPS.coreFoundation, "__exceptionPreprocess"), IPS.frame(IPS.objc, "objc_exception_throw"),
+                      IPS.frame(0), IPS.frame(0),
+                      IPS.frame(IPS.uikit, "-[UIApplication _handleDelegateCallbacksWithOptions:isSuspended:restoreState:]"),
+                      IPS.frame(IPS.uikit, "UIApplicationMain"), IPS.frame(0, "main")]
+        let crash = IPS.crash(frames: [IPS.frame(IPS.objc, "__abort_with_payload")], lastException: launch)
+        let d = try diagnose(crash, CrashContext(moduleName: "XSideWelcome.dylib", duoCompatibilityOn: true))
+        #expect(d.cause == .duoAppLaunch)
+        #expect(CrashAction.suggested(for: d) == .turnOffDuo)
+        // Without the option, or once launched, it stays the app's own crash.
+        #expect(try diagnose(crash, CrashContext(moduleName: "XSideWelcome.dylib")).cause == .other)
+        let later = IPS.crash(frames: [IPS.frame(IPS.objc, "__abort_with_payload")],
+                              lastException: [IPS.frame(IPS.objc, "objc_exception_throw"), IPS.frame(0),
+                                              IPS.frame(IPS.uikit, "UIApplicationMain"), IPS.frame(0, "main")])
+        #expect(try diagnose(later, CrashContext(moduleName: "XSideWelcome.dylib", duoCompatibilityOn: true)).cause == .other)
+    }
+
     /// A crash in "Simulate signed-out iCloud"'s library: XSide's, not the .ipa's (morning review
     /// I1), and the fix is reinstalling without the option.
     @Test func iCloudSignedOutLibrary() throws {

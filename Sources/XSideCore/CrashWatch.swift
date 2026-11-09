@@ -55,7 +55,7 @@ public enum CrashAction: String, Codable, Sendable, CaseIterable {
         case .xsideModule: return .reinstallWithoutXSide
         case .noSceneSupport: return d.duoCompatibilityOn ? .turnOffDuo : nil
         // Only the Duo option adds that module: going without it is the fix.
-        case .duoLegacyModule: return .turnOffDuo
+        case .duoLegacyModule, .duoAppLaunch: return .turnOffDuo
         case .codeSignature: return .refresh
         // Only that option adds the library: going without it is the fix.
         case .iCloudShim: return .turnOffICloudSignedOut

@@ -904,6 +904,9 @@
 "crash.cause.duoLegacyModule.advice" = "Reinstall the app without iPhone Duo compatibility, and report the problem.";
 "crash.cause.duoLegacyModule.text" = "%@ crashed in the iPhone Duo compatibility module (XSideDuoLegacy.dylib), which XSide adds with iPhone Duo compatibility to apps that don't handle iOS scenes.";
 "crash.cause.duoLegacyModule.title" = "The crash comes from the iPhone Duo compatibility module";
+"crash.cause.duoAppLaunch.title" = "The crash likely comes from iPhone Duo compatibility";
+"crash.cause.duoAppLaunch.text" = "%@ crashed while launching. With iPhone Duo compatibility, iOS sets up the app's window a little later than the app expects: an older app can crash looking for it.";
+"crash.cause.duoAppLaunch.advice" = "Reinstall the app without iPhone Duo compatibility, and report the problem.";
 "crash.cause.iCloudShim.title" = "The crash comes from the signed-out iCloud library";
 "crash.cause.iCloudShim.text" = "%@ crashed in the signed-out iCloud library (XSideICloud.dylib), which XSide adds when Simulate signed-out iCloud is on.";
 "crash.cause.iCloudShim.advice" = "Reinstall the app without signed-out iCloud, and report the problem.";

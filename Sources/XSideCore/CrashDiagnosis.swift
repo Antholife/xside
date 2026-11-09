@@ -80,6 +80,9 @@ public struct CrashLog: Equatable, Sendable {
     public var exceptionBacktrace: [CrashFrame] = []
     /// JetsamEvent only.
     public var jetsamKills: [JetsamKill] = []
+    /// The crash happened while UIKit ran the app delegate's launch methods (didFinishLaunching…),
+    /// seen anywhere in the whole backtrace, not only in the top frames kept.
+    public var duringLaunch = false
 
     public init(kind: Kind) { self.kind = kind }
 }
@@ -160,6 +163,7 @@ public enum CrashLogParser {
             log.asi = Array(asi.keys.sorted().flatMap { strings(asi[$0]) + [string(asi[$0])].compactMap { $0 } }.prefix(maxList))
         }
         let images = (body["usedImages"] as? [Any] ?? []).map { $0 as? [String: Any] ?? [:] }
+        var faulting: Any?
         if let threads = body["threads"] as? [Any] {
             var thread: [String: Any]?
             if let index = integer(body["faultingThread"]), index >= 0, index < threads.count {
@@ -167,8 +171,10 @@ public enum CrashLogParser {
             }
             thread = thread ?? threads.lazy.compactMap { $0 as? [String: Any] }.first { $0["triggered"] as? Bool == true }
             log.faultingFrames = frames(thread?["frames"], images: images)
+            faulting = thread?["frames"]
         }
         log.exceptionBacktrace = frames(body["lastExceptionBacktrace"], images: images)
+        log.duringLaunch = [body["lastExceptionBacktrace"], faulting].contains { isLaunch($0) }
         return log
     }
 
@@ -181,6 +187,19 @@ public enum CrashLogParser {
             return JetsamKill(name: name, reason: reason, states: strings(p["states"]))
         }
         return log
+    }
+
+    /// Frames looked at for UIKit's launch methods: deep enough for any real backtrace.
+    static let launchScanFrames = 512
+
+    /// UIKit is calling the app delegate's launch methods somewhere in these frames.
+    private static func isLaunch(_ value: Any?) -> Bool {
+        guard let list = value as? [Any] else { return false }
+        let markers = ["-[UIApplication _handleDelegateCallbacksWithOptions:", "-[UIApplication _callInitializationDelegatesWithActions:"]
+        return list.prefix(launchScanFrames).contains { item in
+            guard let symbol = (item as? [String: Any])?["symbol"] as? String else { return false }
+            return markers.contains { symbol.hasPrefix($0) }
+        }
     }
 
     private static func frames(_ value: Any?, images: [[String: Any]]) -> [CrashFrame] {
@@ -302,6 +321,8 @@ public struct CrashContext: Equatable, Sendable {
 /// The plain cause of a crash; the app words it (`crash.cause.<rawValue>.*`).
 public enum CrashCause: String, Codable, Sendable, CaseIterable {
     case noSceneSupport, missingLibrary, missingSymbol, jailbreakLibrary, codeSignature, xsideModule, duoLegacyModule, iCloudShim
+    /// The app's own code crashed during launch with the iPhone Duo option on.
+    case duoAppLaunch
     case tweak, tweakSupport, bundledLibrary
     /// iOS killed the app for writing into its code (CODESIGNING, invalid page), and an injected
     /// tweak imports C function hooks: that tweak (`subject`, `tweakName`).
@@ -414,6 +435,15 @@ public enum CrashClassifier {
         if stack.first?.image == "CloudKit", log.exceptionType == "EXC_BREAKPOINT" || !log.exceptionBacktrace.isEmpty {
             d.cause = .iCloud
             d.iCloudSignedOutOn = context.iCloudSignedOutOn ? true : nil
+            return d
+        }
+        // The app's own code stopped while its delegate finished launching, with the iPhone Duo
+        // option on: iOS connects no scene before that, which old apps don't expect (Plague Inc.
+        // reads `windows[0]`, empty then). The option is the likely cause.
+        if context.duoCompatibilityOn, log.duringLaunch, let first = stack.first(where: \.inApp),
+           first.image != nil, first.image == log.processName {
+            d.cause = .duoAppLaunch
+            d.subject = first.image
             return d
         }
         // The app-side code closest to the crash.

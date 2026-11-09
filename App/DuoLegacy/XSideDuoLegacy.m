@@ -11,6 +11,9 @@
 //    first under scenes) and any scene-less window: sets windowScene, sizes it to the scene, makes the
 //    main one key and visible; windows shown later without a scene are attached too
 //    (makeKeyAndVisible / setHidden:NO / setRootViewController:).
+//  - until the scene connects, lists the windows the app made in UIApplication.windows (and the one
+//    it made key in keyWindow): iOS lists none before then, and old apps read windows[0] in
+//    didFinishLaunching (Plague Inc. crashed on it).
 //  - forwards URL contexts -> application:openURL:options: (or the older forms), user activities ->
 //    application:continueUserActivity:restorationHandler:, shortcut items ->
 //    application:performActionForShortcutItem:completionHandler: (also those in the connection options).
@@ -38,6 +41,8 @@ static NSString *const XSDelegateClassName = @"XSDuoSceneDelegate";
 static BOOL gActive;                         // the manifest names our delegate: the hooks do their work
 static NSHashTable<UIWindow *> *gWindows;    // every UIWindow created (weak)
 static __weak UIWindowScene *gScene;         // the connected scene, once there is one
+static NSPointerArray *gOrder;               // the same windows, in creation order (weak)
+static __weak UIWindow *gKeyCandidate;       // the last window made key before the scene connected
 
 static id<UIApplicationDelegate> XSAppDelegate(void) { return UIApplication.sharedApplication.delegate; }
 
@@ -79,17 +84,24 @@ static void XSAttach(UIWindow *w, const char *why) {
 
 static IMP oInit, oInitWithFrame, oMakeKeyAndVisible, oSetHidden, oSetRoot;
 
+static void XSTrack(UIWindow *w) {
+    if (!w || !gWindows || [gWindows containsObject:w]) return;
+    [gWindows addObject:w];
+    [gOrder compact];
+    [gOrder addPointer:(__bridge void *)w];
+}
 static id h_init(UIWindow *self, SEL _cmd) {
     self = ((id (*)(id, SEL))oInit)(self, _cmd);
-    if (self && gWindows) [gWindows addObject:self];
+    XSTrack(self);
     return self;
 }
 static id h_initWithFrame(UIWindow *self, SEL _cmd, CGRect f) {
     self = ((id (*)(id, SEL, CGRect))oInitWithFrame)(self, _cmd, f);
-    if (self && gWindows) [gWindows addObject:self];
+    XSTrack(self);
     return self;
 }
 static void h_makeKeyAndVisible(UIWindow *self, SEL _cmd) {
+    if (!gScene) gKeyCandidate = self;
     XSAttach(self, "makeKeyAndVisible");
     ((void (*)(id, SEL))oMakeKeyAndVisible)(self, _cmd);
 }
@@ -100,6 +112,36 @@ static void h_setHidden(UIWindow *self, SEL _cmd, BOOL hidden) {
 static void h_setRoot(UIWindow *self, SEL _cmd, UIViewController *vc) {
     ((void (*)(id, SEL, id))oSetRoot)(self, _cmd, vc);
     if (vc && !self.hidden) XSAttach(self, "setRootViewController");
+}
+
+#pragma mark - UIApplication hooks: the windows made before the scene connects
+
+// Without scenes, the windows an app made in didFinishLaunching are already listed by
+// UIApplication. With the scene manifest, iOS lists none until the scene connects (after
+// didFinishLaunching): old apps reading `windows[0]` there crash (Plague Inc.), and `keyWindow` is
+// nil. Until then, list the windows the app made, in creation order, as iOS did without scenes.
+static IMP oAppWindows, oAppKeyWindow;
+
+static NSArray<UIWindow *> *XSPendingWindows(void) {
+    NSMutableArray<UIWindow *> *list = [NSMutableArray array];
+    for (NSUInteger i = 0; i < gOrder.count; i++) {
+        UIWindow *w = (__bridge UIWindow *)[gOrder pointerAtIndex:i];
+        if (w && !w.windowScene) [list addObject:w];
+    }
+    return list;
+}
+static NSArray *h_appWindows(UIApplication *self, SEL _cmd) {
+    NSArray *real = ((id (*)(id, SEL))oAppWindows)(self, _cmd);
+    if (real.count || gScene || !gActive) return real;
+    NSArray *pending = XSPendingWindows();
+    if (pending.count) XSLOG("windows before the scene: %lu made by the app", (unsigned long)pending.count);
+    return pending.count ? pending : real;
+}
+static UIWindow *h_appKeyWindow(UIApplication *self, SEL _cmd) {
+    UIWindow *real = ((id (*)(id, SEL))oAppKeyWindow)(self, _cmd);
+    if (real || gScene || !gActive) return real;
+    UIWindow *k = gKeyCandidate;
+    return (k && !k.windowScene) ? k : real;
 }
 
 // Replaces `sel` on `c` (added on `c` when inherited) and keeps the original. Returns NO, and
@@ -293,6 +335,7 @@ __attribute__((constructor)) static void XSDuoLegacyInit(void) {
         @try {
             if (!XSManifestNamesUs()) { XSLOG("inactive: the manifest doesn't name %{public}@", XSDelegateClassName); return; }
             gWindows = [NSHashTable weakObjectsHashTable];
+            gOrder = [NSPointerArray weakObjectsPointerArray];
             Class W = UIWindow.class;
             // init/initWithFrame: only track windows; the others attach. A missing one is skipped.
             XSHook(W, @selector(init), (IMP)h_init, &oInit);
@@ -300,6 +343,9 @@ __attribute__((constructor)) static void XSDuoLegacyInit(void) {
             XSHook(W, @selector(makeKeyAndVisible), (IMP)h_makeKeyAndVisible, &oMakeKeyAndVisible);
             XSHook(W, @selector(setHidden:), (IMP)h_setHidden, &oSetHidden);
             XSHook(W, @selector(setRootViewController:), (IMP)h_setRoot, &oSetRoot);
+            Class A = UIApplication.class;
+            XSHook(A, @selector(windows), (IMP)h_appWindows, &oAppWindows);
+            XSHook(A, @selector(keyWindow), (IMP)h_appKeyWindow, &oAppKeyWindow);
             gActive = YES;
             XSLOG("loaded");
         } @catch (NSException *e) {

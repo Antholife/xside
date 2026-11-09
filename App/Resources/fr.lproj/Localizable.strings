@@ -904,6 +904,9 @@
 "crash.cause.duoLegacyModule.advice" = "Réinstalle l'app sans la compatibilité iPhone Duo, et signale le problème.";
 "crash.cause.duoLegacyModule.text" = "%@ a planté dans le module de compatibilité iPhone Duo (XSideDuoLegacy.dylib), qu'XSide ajoute avec la compatibilité iPhone Duo aux apps qui ne gèrent pas les scènes iOS.";
 "crash.cause.duoLegacyModule.title" = "Le plantage vient du module de compatibilité iPhone Duo";
+"crash.cause.duoAppLaunch.title" = "Le plantage vient sans doute de la compatibilité iPhone Duo";
+"crash.cause.duoAppLaunch.text" = "%@ a planté pendant son lancement. Avec la compatibilité iPhone Duo, iOS prépare la fenêtre de l'app un peu plus tard qu'elle ne l'attend : une app ancienne peut alors planter en la cherchant.";
+"crash.cause.duoAppLaunch.advice" = "Réinstalle l'app sans la compatibilité iPhone Duo, et signale le problème.";
 "crash.cause.iCloudShim.title" = "Le plantage vient de la bibliothèque du mode iCloud déconnecté";
 "crash.cause.iCloudShim.text" = "%@ a planté dans la bibliothèque du mode iCloud déconnecté (XSideICloud.dylib), qu'XSide ajoute quand « Simuler iCloud déconnecté » est activé.";
 "crash.cause.iCloudShim.advice" = "Réinstalle l'app sans le mode iCloud déconnecté, et signale le problème.";
