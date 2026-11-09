@@ -794,8 +794,9 @@
 "duo.status.alreadySupported" = "Already compatible: %@ already supports the iPhone Duo.";
 "duo.status.notADuo" = "Not recommended: this device isn't an iPhone Duo.";
 "duo.status.recommended" = "%@ isn't made for your iPhone Duo's screen.";
+"duo.status.unavailable" = "Not available: %@ doesn't handle iOS scenes, and this build of XSide doesn't include the compatibility module it needs.";
 "preflight.notMadeForDuo" = "%1$@ isn't made for your iPhone Duo's screen (%2$@): it won't use all of it. The install option \"Add iPhone Duo compatibility\" can help.";
-"preflight.notMadeForDuo.noOption" = "%1$@ isn't made for your iPhone Duo's screen (%2$@): it won't use all of it. It doesn't handle iOS scenes, so iPhone Duo compatibility can't be added to it.";
+"preflight.notMadeForDuo.noOption" = "%1$@ isn't made for your iPhone Duo's screen (%2$@): it won't use all of it. It doesn't handle iOS scenes and this build of XSide doesn't include the compatibility module it needs, so iPhone Duo compatibility isn't available for it.";
 "install.step.legacy32" = "Removing the old 32-bit code";
 "install.step.duo" = "Adding iPhone Duo compatibility";
 "install.step.duo.added" = "Added: the app will use all of the iPhone Duo's screens.";

@@ -62,10 +62,11 @@ public enum InstallPreflight {
     /// `duo`: what the .ipa supports for the iPhone Duo option (nil: not known).
     /// `icloud`: what the .ipa uses of iCloud (any account: XSide gives no app iCloud);
     /// `iCloudSignedOutDevices`: the targets getting "Simulate signed-out iCloud".
+    /// `duoLegacyModuleAvailable`: this build has the Duo compatibility module (apps without scenes).
     public static func check(minimumOS: String?, targets: [Target], needsNewAppID: Bool,
                              appIDsRemaining: Int?, sdkVersion: String? = nil, appVersion: String? = nil,
                              duo: DuoAppInfo? = nil, icloud: ICloudAppInfo? = nil,
-                             iCloudSignedOutDevices: Set<String> = []) -> [Warning] {
+                             iCloudSignedOutDevices: Set<String> = [], duoLegacyModuleAvailable: Bool = true) -> [Warning] {
         var warnings: [Warning] = []
         for target in targets {
             if target.developerModeEnabled == false {
@@ -79,7 +80,8 @@ public enum InstallPreflight {
                 warnings.append(.deviceFull(deviceID: target.deviceID, apps: target.otherApps))
             }
             if target.isDuo, let sdk = sdkVersion, !DuoCompatibility.supportsDuo(sdk: sdk) {
-                let possible = DuoCompatibility.optionState(isDuo: true, app: duo).canTurnOn
+                let possible = DuoCompatibility.optionState(isDuo: true, app: duo,
+                                                            legacyModuleAvailable: duoLegacyModuleAvailable).canTurnOn
                 warnings.append(.notMadeForDuo(deviceID: target.deviceID, optionPossible: possible))
             }
             if let appVersion, let installed = target.installedVersion, compare(appVersion, installed) == .orderedAscending {

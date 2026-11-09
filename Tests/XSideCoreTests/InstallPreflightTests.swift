@@ -60,6 +60,15 @@ struct InstallPreflightTests {
         #expect(check(DuoAppInfo(sdkVersion: "26.4", adoptsScenes: true, sceneDelegateClass: nil))
                 == [.notMadeForDuo(deviceID: "duo", optionPossible: true)])
         #expect(check(nil) == [.notMadeForDuo(deviceID: "duo", optionPossible: true)]) // not known: offered
+        // A build without the compatibility module: not possible for an app without scenes only.
+        let noModule = { (app: DuoAppInfo) in
+            InstallPreflight.check(minimumOS: nil, targets: [duo], needsNewAppID: false, appIDsRemaining: 10,
+                                   sdkVersion: "26.4", duo: app, duoLegacyModuleAvailable: false)
+        }
+        #expect(noModule(DuoAppInfo(sdkVersion: "26.4", adoptsScenes: false, sceneDelegateClass: nil))
+                == [.notMadeForDuo(deviceID: "duo", optionPossible: false)])
+        #expect(noModule(DuoAppInfo(sdkVersion: "26.4", adoptsScenes: false, sceneDelegateClass: "YTSceneDelegate"))
+                == [.notMadeForDuo(deviceID: "duo", optionPossible: true)])
     }
 
     /// Someone picked the wrong file: an older version than the one already on the device.

@@ -84,7 +84,7 @@ enum SnapshotRenderer {
     }
 
     /// The Duo option: recommended (own scene delegate), not a Duo, already compatible, recommended
-    /// with the compatibility module; then iCloud: recommended, useful, not needed.
+    /// with the compatibility module, not available (a build without that module); then iCloud: recommended, useful, not needed.
     @MainActor private static var fixStates: some View {
         let off = Binding.constant(false)
         return CompatibilityFixesSection {
@@ -97,6 +97,9 @@ enum SnapshotRenderer {
                 Divider().padding(.leading, 48)
                 DuoOptionRow(state: .recommended, appName: "Instagram", deviceName: "legacy module", isOn: .constant(true),
                              needsModule: true)
+                Divider().padding(.leading, 48)
+                DuoOptionRow(state: .unavailable, appName: "Instagram", deviceName: "unavailable (no module in this build)",
+                             isOn: off, needsModule: true)
             }
             CompatibilityFixCard {
                 ICloudOptionRow(state: .recommended, appName: "Notes+", deviceName: "recommended", isOn: off)

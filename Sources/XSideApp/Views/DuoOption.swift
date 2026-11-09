@@ -96,6 +96,7 @@ struct DuoOptionRow: View {
         case .recommended: (L("duo.status.recommended", appName), .recommended)
         case .notADuo: (L("duo.status.notADuo"), .caution)
         case .alreadySupported: (L("duo.status.alreadySupported", appName), .caution)
+        case .unavailable: (L("duo.status.unavailable", appName), .caution)
         case .unknown: nil
         }
     }

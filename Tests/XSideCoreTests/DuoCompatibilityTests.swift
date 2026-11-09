@@ -159,6 +159,11 @@ struct DuoCompatibilityTests {
         // No scene support of its own: offered like any other (XSide's module adapts it).
         #expect(DuoCompatibility.optionState(isDuo: true, app: noScenes) == .recommended)
         #expect(DuoCompatibility.optionState(isDuo: false, app: noScenes) == .notADuo)
+        // Morning review M4: a build without the compatibility module can't do it for such an app.
+        #expect(DuoCompatibility.optionState(isDuo: true, app: noScenes, legacyModuleAvailable: false) == .unavailable)
+        #expect(DuoCompatibility.optionState(isDuo: false, app: noScenes, legacyModuleAvailable: false) == .unavailable)
+        #expect(!DuoCompatibility.OptionState.unavailable.canTurnOn)
+        #expect(DuoCompatibility.optionState(isDuo: true, app: plain, legacyModuleAvailable: false) == .recommended)
         #expect(noScenes.needsLegacyModule)
         #expect(!plain.needsLegacyModule)
         // An app that already declares its scenes only needs the SDK raised.

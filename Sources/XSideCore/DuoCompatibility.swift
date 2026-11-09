@@ -126,15 +126,20 @@ public enum DuoCompatibility {
         case unknown
         /// Built with SDK 27.1 or later: nothing to do (greyed).
         case alreadySupported
+        /// The app has no scene support and this build of XSide has no compatibility module
+        /// (built without the iOS SDK): not possible (greyed).
+        case unavailable
 
-        public var canTurnOn: Bool { self != .alreadySupported }
+        public var canTurnOn: Bool { self != .alreadySupported && self != .unavailable }
     }
 
     /// An app without scene support of its own is no exception: it gets XSide's module
-    /// (`DuoAppInfo.needsLegacyModule` says so, for the wording).
-    public static func optionState(isDuo: Bool, app: DuoAppInfo?) -> OptionState {
+    /// (`DuoAppInfo.needsLegacyModule` says so, for the wording), when this build has it
+    /// (`legacyModuleAvailable`).
+    public static func optionState(isDuo: Bool, app: DuoAppInfo?, legacyModuleAvailable: Bool = true) -> OptionState {
         guard let app else { return isDuo ? .unknown : .notADuo }
         if supportsDuo(sdk: app.sdkVersion) { return .alreadySupported }
+        if app.needsLegacyModule, !legacyModuleAvailable { return .unavailable }
         return isDuo ? .recommended : .notADuo
     }
 

@@ -1721,7 +1721,8 @@ final class AppModel {
                                       needsNewAppID: needsNewAppID, appIDsRemaining: appIDsRemaining,
                                       sdkVersion: info.sdkVersion, appVersion: version.isEmpty ? info.version : version,
                                       duo: info.duo, icloud: info.icloud,
-                                      iCloudSignedOutDevices: flow.iCloudDevices)
+                                      iCloudSignedOutDevices: flow.iCloudDevices,
+                                      duoLegacyModuleAvailable: Self.hasDuoLegacyModule)
     }
 
     /// The running step's progress per row, in whole percents, when its tool reports one.
@@ -2368,8 +2369,14 @@ final class AppModel {
     /// next install or refresh.
     /// How the iPhone Duo option shows for an app (`app`: what its .ipa supports) on a device:
     /// connected, as devicectl describes it, else as it was at its last signing.
+    /// This build has the Duo compatibility module (a build without the iOS SDK has none).
+    nonisolated static var hasDuoLegacyModule: Bool {
+        Bundle.main.url(forResource: "XSideDuoLegacy", withExtension: "dylib") != nil
+    }
+
     func duoState(for deviceID: String, app: DuoAppInfo?, installation: Installation? = nil) -> DuoCompatibility.OptionState {
-        DuoCompatibility.optionState(isDuo: isDuo(deviceID, installation: installation), app: app)
+        DuoCompatibility.optionState(isDuo: isDuo(deviceID, installation: installation), app: app,
+                                     legacyModuleAvailable: Self.hasDuoLegacyModule)
     }
 
     /// The device is an iPhone Duo: what devicectl says of it, else (it isn't connected, or
