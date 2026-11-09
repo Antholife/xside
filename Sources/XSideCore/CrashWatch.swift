@@ -40,6 +40,8 @@ public enum CrashAction: String, Codable, Sendable, CaseIterable {
     case refresh
     /// The app stopped in CloudKit: "Simulate signed-out iCloud" makes it believe no account is signed in.
     case turnOnICloudSignedOut
+    /// The crash is in "Simulate signed-out iCloud"'s library: install again without the option.
+    case turnOffICloudSignedOut
 
     /// The action the diagnosis suggests, if XSide can do it. A tweak XSide added would be
     /// removed here; XSide doesn't add tweaks yet, so a tweak crash has no button.
@@ -50,6 +52,8 @@ public enum CrashAction: String, Codable, Sendable, CaseIterable {
         // Only the Duo option adds that module: going without it is the fix.
         case .duoLegacyModule: return .turnOffDuo
         case .codeSignature: return .refresh
+        // Only that option adds the library: going without it is the fix.
+        case .iCloudShim: return .turnOffICloudSignedOut
         case .iCloud: return d.iCloudSignedOutOn == true ? nil : .turnOnICloudSignedOut
         default: return nil
         }

@@ -2870,6 +2870,7 @@ final class AppModel {
         case .reinstallWithoutXSide: await setWithoutXSideFeatures(true, recordID: key.recordID)
         case .turnOffDuo: await setDuoCompatibility(false, for: AppEntry(record: record, installation: installation))
         case .turnOnICloudSignedOut: await setICloudSignedOut(true, for: AppEntry(record: record, installation: installation))
+        case .turnOffICloudSignedOut: await setICloudSignedOut(false, for: AppEntry(record: record, installation: installation))
         case .refresh: break
         }
         return refreshNow(RefreshJob(recordID: key.recordID, deviceID: key.deviceID))

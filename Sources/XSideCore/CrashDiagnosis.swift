@@ -265,7 +265,7 @@ public struct CrashContext: Equatable, Sendable {
 
 /// The plain cause of a crash; the app words it (`crash.cause.<rawValue>.*`).
 public enum CrashCause: String, Codable, Sendable, CaseIterable {
-    case noSceneSupport, missingLibrary, missingSymbol, jailbreakLibrary, codeSignature, xsideModule, duoLegacyModule
+    case noSceneSupport, missingLibrary, missingSymbol, jailbreakLibrary, codeSignature, xsideModule, duoLegacyModule, iCloudShim
     case tweak, bundledLibrary
     case iCloud, outOfMemory, launchTimeout, hang, other
 }
@@ -371,6 +371,10 @@ public enum CrashClassifier {
             } else if owner == DuoCompatibility.legacyDylibName {
                 // The iPhone Duo option's module for apps without scenes.
                 d.cause = .duoLegacyModule
+            } else if owner == ICloudSignedOut.dylibName {
+                // "Simulate signed-out iCloud"'s library: XSide added it, not the .ipa.
+                d.cause = .iCloudShim
+                d.iCloudSignedOutOn = true
             } else if context.tweakNames.contains(owner) {
                 d.cause = .tweak
             } else if owner.hasSuffix(".dylib") {

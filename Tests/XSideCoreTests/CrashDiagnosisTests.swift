@@ -333,6 +333,22 @@ private func diagnose(_ data: Data, _ ctx: CrashContext = context) throws -> Cra
         #expect(CrashAction.suggested(for: d) == .turnOffDuo)
     }
 
+    /// A crash in "Simulate signed-out iCloud"'s library: XSide's, not the .ipa's (morning review
+    /// I1), and the fix is reinstalling without the option.
+    @Test func iCloudSignedOutLibrary() throws {
+        let images = IPS.images + [IPS.image("XSideICloud.dylib", path: "\(IPS.appPath)/Frameworks/XSideICloud.dylib")]
+        let shim = IPS.images.count
+        let d = try diagnose(IPS.crash(exception: ["type": "EXC_BAD_ACCESS", "signal": "SIGSEGV", "codes": "0x1, 0x0"],
+                                       termination: ["namespace": "SIGNAL", "code": 11, "indicator": "Segmentation fault: 11"],
+                                       frames: [IPS.frame(shim, "XSStubContainer"), IPS.frame(IPS.uikit), IPS.frame(0, "main")],
+                                       images: images),
+                             CrashContext(moduleName: "XSideWelcome.dylib", iCloudSignedOutOn: true))
+        #expect(d.cause == .iCloudShim)
+        #expect(d.subject == "XSideICloud.dylib")
+        #expect(d.iCloudSignedOutOn == true)
+        #expect(CrashAction.suggested(for: d) == .turnOffICloudSignedOut)
+    }
+
     @Test func aKnownTweak() throws {
         let frames = [IPS.frame(IPS.uikit), IPS.frame(2), IPS.frame(0)]
         let known = try diagnose(IPS.crash(frames: frames), CrashContext(moduleName: "XSideWelcome.dylib", tweakNames: ["uTweak.dylib"]))

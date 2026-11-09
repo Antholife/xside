@@ -878,6 +878,9 @@
 "crash.cause.duoLegacyModule.advice" = "Reinstall the app without iPhone Duo compatibility, and report the problem.";
 "crash.cause.duoLegacyModule.text" = "%@ crashed in the iPhone Duo compatibility module (XSideDuoLegacy.dylib), which XSide adds with iPhone Duo compatibility to apps that don't handle iOS scenes.";
 "crash.cause.duoLegacyModule.title" = "The crash comes from the iPhone Duo compatibility module";
+"crash.cause.iCloudShim.title" = "The crash comes from the signed-out iCloud library";
+"crash.cause.iCloudShim.text" = "%@ crashed in the signed-out iCloud library (XSideICloud.dylib), which XSide adds when Simulate signed-out iCloud is on.";
+"crash.cause.iCloudShim.advice" = "Reinstall the app without signed-out iCloud, and report the problem.";
 "crash.cause.tweak.title" = "The crash comes from a tweak";
 "crash.cause.tweak.text" = "%1$@ crashed in the tweak %2$@, added to the app.";
 "crash.cause.tweak.advice" = "Remove this tweak from the app, then install it again.";
@@ -909,6 +912,7 @@
 "crash.banner.title" = "%1$@ stopped at launch on %2$@";
 "crash.action.reinstallWithoutXSide" = "Reinstall without XSide features";
 "crash.action.turnOffDuo" = "Reinstall without Duo compatibility";
+"crash.action.turnOffICloudSignedOut" = "Reinstall without signed-out iCloud";
 "crash.action.refresh" = "Sign and reinstall";
 "crash.action.started" = "Reinstalling: follow it in the panel, then open the app again.";
 "crash.action.failed" = "XSide couldn't start it now (device out of reach or busy). Try again in a moment.";
