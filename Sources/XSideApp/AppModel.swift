@@ -166,6 +166,8 @@ final class AppModel {
     /// The card whose button started a dependency's last action (by package id: the tweak id): its
     /// lines stay there, not on the first card that lists it (device round 2, item 5).
     var dependencyLineOwners: [String: String] = [:]
+    /// When each app last checked in on each device, by any installation (`AppLibrary.connectionHistory`).
+    var connections: [String: Date] = [:]
     /// Settings > Mes apps > « Dépendances téléchargées »: the kept downloads (nil: not read yet).
     var downloadUsage: [DownloadUsage]?
     /// Trusted repos are reached only through this (tests and snapshots never use the network).
@@ -986,6 +988,8 @@ final class AppModel {
 
     func reloadRecords() async {
         records = await library.records()
+        let history = await library.connectionHistory()
+        if history != connections { connections = history }
         pushToWatches() // the Mac's changes reach the apps open in front at once (device feedback 4)
         hasLoadedRecords = true
         updateAttention()
@@ -1027,6 +1031,11 @@ final class AppModel {
     }
 
     /// The menu-bar icon's accessibility description: what needs a look.
+    /// The app's last check-in on that device by an earlier installation (step ④, Mes apps).
+    func connectedBefore(_ record: AppRecord, deviceID: String) -> Date? {
+        connections[AppLibrary.connectionKey(record, deviceID: deviceID)]
+    }
+
     var attentionDescription: String {
         guard !attentionReasons.isEmpty else { return "XSide" }
         return L("menuBar.attention") + " — " + attentionReasons.map { L($0.stringKey) }.joined(separator: ", ")

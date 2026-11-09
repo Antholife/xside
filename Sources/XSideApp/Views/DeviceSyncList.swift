@@ -12,6 +12,8 @@ struct DeviceSyncLine: Identifiable {
     var lastSeen: Date? = nil
     /// The app is open there now (`AppModel.liveInstallations`, observed: the line flips by itself).
     var live = false
+    /// The app's last check-in on this device by an earlier installation (`AppLibrary.lastConnection`).
+    var connectedBefore: Date? = nil
     var id: String { deviceID }
 }
 
@@ -65,7 +67,8 @@ private struct DeviceSyncRow: View {
     }
 
     private var status: ReachabilityStatus? {
-        line.installation.map { ReachabilityStatus.of(installation: $0, now: now, lastSeen: line.lastSeen, watching: line.live) }
+        line.installation.map { ReachabilityStatus.of(installation: $0, now: now, lastSeen: line.lastSeen, watching: line.live,
+                                                      connectedBefore: line.connectedBefore) }
     }
 
     /// Green while the app is open (changes arrive live), paler when it is reachable at its next
@@ -74,7 +77,7 @@ private struct DeviceSyncRow: View {
         guard hasFeatures else { return Theme.unreachable }
         switch status {
         case .openNow?: return Theme.reachable
-        case .joinable?: return Theme.reachable.opacity(0.45)
+        case .joinable?, .connectedBefore?: return Theme.reachable.opacity(0.45)
         default: return Theme.unreachable
         }
     }
@@ -86,6 +89,7 @@ private struct DeviceSyncRow: View {
         case .openNow?: return L("inApp.reach.openNow", line.deviceName)
         case .joinable?: return L("inApp.reach.joinable")
         case .neverConnected?: return L("inApp.reach.never")
+        case .connectedBefore?: return L("inApp.reach.connectedBefore")
         case .channelComing?: return L("inApp.reach.channelComing")
         case .notSeenSince(let date)?: return L("inApp.reach.notSeen", Self.format(date))
         // Signed without them, turned back on since: they come with the next signing.

@@ -693,6 +693,7 @@
 "inApp.delivery.pendingFields" = "%@ — pending";
 "inApp.reach.openNow" = "App open on %@: changes arrive live";
 "inApp.reach.never" = "Not connected yet: open the app and allow the local network";
+"inApp.reach.connectedBefore" = "Already connected · reconnects as soon as you reopen the app";
 "inApp.reach.channelComing" = "Installed by an earlier XSide: reachable after its next refresh";
 "inApp.reach.notSeen" = "Not seen since %@: arrives at the next refresh";
 "inApp.reach.notInstalled" = "Not installed here yet: these values go with the install";

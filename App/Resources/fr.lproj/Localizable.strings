@@ -693,6 +693,7 @@
 "inApp.delivery.pendingFields" = "%@ — en attente";
 "inApp.reach.openNow" = "App ouverte sur %@ : les changements arrivent en direct";
 "inApp.reach.never" = "Pas encore connecté : ouvre l'app et autorise le réseau local";
+"inApp.reach.connectedBefore" = "Déjà connectée · se reconnectera dès que tu rouvres l'app";
 "inApp.reach.channelComing" = "Installée par une version précédente d'XSide : joignable après son prochain rafraîchissement";
 "inApp.reach.notSeen" = "Pas vu depuis le %@ : arrivera au prochain rafraîchissement";
 "inApp.reach.notInstalled" = "Pas encore installée ici : ces valeurs partent avec l'installation";

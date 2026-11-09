@@ -13,6 +13,11 @@ public enum ReachabilityStatus: Equatable, Sendable {
     /// Never checked in: the phone hasn't allowed the local network yet (a first tap on
     /// "Rafraîchir" in the app asks for it). Mac changes arrive at the next signing.
     case neverConnected
+    /// This installation never checked in, but the same app on this device did before (an earlier
+    /// installation, deleted and installed again, or a record removed since): the local network
+    /// is allowed there, and each signing changes the secret, so the app reconnects as soon as it
+    /// is opened (device round 2, item 2).
+    case connectedBefore(Date)
     /// Signed by an XSide before 1.1 (no channel secret): the app has nothing to talk to XSide
     /// with, nor a Refresh to tap, until its next refresh brings them (final review minor 3).
     case channelComing
@@ -56,13 +61,16 @@ public enum ReachabilityStatus: Equatable, Sendable {
     /// written to the library, so its date can lag by up to a minute).
     /// `watching`: the app holds a watch open now (the Mac writes its changes on it as they happen).
     /// `pollEvery`: the poll interval the last check-in stated (nil: not said, 15 s).
+    /// `connectedBefore`: the app's last check-in on this device by any installation
+    /// (`AppLibrary.lastConnection`).
     public static func of(installation: Installation, now: Date, lastSeen: Date? = nil,
-                          watching: Bool = false, pollEvery: TimeInterval? = nil) -> ReachabilityStatus {
+                          watching: Bool = false, pollEvery: TimeInterval? = nil,
+                          connectedBefore: Date? = nil) -> ReachabilityStatus {
         if installation.withoutXSideFeatures == true { return .noFeatures }
         if installation.channelSecret == nil { return .channelComing }
         if watching { return .openNow(lastSeen: now) }
         let seen = [installation.lastCheckIn, lastSeen].compactMap { $0 }.max()
-        guard let last = seen else { return .neverConnected }
+        guard let last = seen else { return connectedBefore.map { .connectedBefore($0) } ?? .neverConnected }
         let since = now.timeIntervalSince(last)
         if isLive(watching: false, lastSeen: last, now: now, pollEvery: pollEvery) { return .openNow(lastSeen: last) }
         return since <= recentWindow ? .joinable(lastSeen: installation.lastCheckIn ?? last) : .notSeenSince(last)

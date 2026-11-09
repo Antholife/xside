@@ -420,6 +420,43 @@ import Foundation
         }
     }
 
+    /// Device round 2, item 2: the app checked in on this device, then was deleted there (or its
+    /// record removed) and installed again: the new installation has no check-in of its own, but
+    /// the library remembers that this app on this device was connected (local network allowed),
+    /// across a restart, so step ④ says « Déjà connectée » instead of « Pas encore connecté ».
+    @Test func aConnectionIsRememberedAcrossAReinstall() async throws {
+        let (lib, rec, tmp) = try await library(); defer { try? FileManager.default.removeItem(at: tmp) }
+        #expect(await lib.lastConnection(bundleID: "com.example.a", deviceID: "a") == nil)
+        let merged = InAppSettings.defaults(reminder: true, at: now.addingTimeInterval(-60))
+        _ = try await lib.applyCheckIn(merged, checkIn: now, outcome: nil, recordID: rec.id, deviceID: "a")
+        #expect(await lib.lastConnection(bundleID: "com.example.a", deviceID: "a") == now)
+        _ = try await lib.removeInstallation(recordID: rec.id, deviceID: "a")
+        try await lib.remove(rec.id)
+        let again = AppLibrary(root: tmp)
+        #expect(await again.lastConnection(bundleID: "com.example.a", deviceID: "a") == now)
+        #expect(await again.lastConnection(bundleID: "com.example.a", deviceID: "b") == nil)
+        let fresh = Installation(deviceID: "a", installedAt: now.addingTimeInterval(600), expiresAt: now.addingTimeInterval(86_400),
+                                 channelSecret: Data([1]))
+        #expect(ReachabilityStatus.of(installation: fresh, now: now.addingTimeInterval(700),
+                                      connectedBefore: await again.lastConnection(bundleID: "com.example.a", deviceID: "a"))
+                == .connectedBefore(now))
+        #expect(ReachabilityStatus.of(installation: fresh, now: now.addingTimeInterval(700)) == .neverConnected)
+        // Its own check-in wins once it comes.
+        var seen = fresh
+        seen.lastCheckIn = now.addingTimeInterval(650)
+        #expect(ReachabilityStatus.of(installation: seen, now: now.addingTimeInterval(700), connectedBefore: now)
+                == .joinable(lastSeen: now.addingTimeInterval(650)))
+    }
+
+    /// A library written before the history existed: its installations' check-ins seed it.
+    @Test func olderInstallationsSeedTheConnectionHistory() async throws {
+        let (lib, rec, tmp) = try await library(); defer { try? FileManager.default.removeItem(at: tmp) }
+        _ = try await lib.applyCheckIn(InAppSettings.defaults(reminder: true, at: now.addingTimeInterval(-60)), checkIn: now,
+                                       outcome: nil, recordID: rec.id, deviceID: "a")
+        try FileManager.default.removeItem(at: tmp.appendingPathComponent(AppLibrary.connectionsFile))
+        #expect(await AppLibrary(root: tmp).lastConnection(bundleID: "com.example.a", deviceID: "a") == now)
+    }
+
     @Test func checkInIsStoredAndItsAutoRefreshApplies() async throws {
         let (lib, rec, tmp) = try await library(); defer { try? FileManager.default.removeItem(at: tmp) }
         let merged = InAppSettings.defaults(reminder: true, at: now.addingTimeInterval(-60))

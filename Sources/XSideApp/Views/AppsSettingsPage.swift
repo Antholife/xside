@@ -294,7 +294,8 @@ private struct AppSettingsContent: View {
                         },
                         statuses: [DeviceSyncLine(deviceID: entry.installation.deviceID, deviceName: deviceName,
                                                   installation: entry.installation, lastSeen: model.channelSeen[entry.id],
-                                                  live: model.isLive(entry.id))],
+                                                  live: model.isLive(entry.id),
+                                                  connectedBefore: model.connectedBefore(entry.record, deviceID: entry.installation.deviceID))],
                         featuresNotice: AnyView(pendingNotice(.xsideModule)),
                         isDisabled: !model.canManage(entry))
                     Text(L("appSettings.note"))

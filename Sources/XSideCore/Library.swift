@@ -390,6 +390,11 @@ public actor AppLibrary {
     private var reservedTweaks: [UUID: [String: Int]] = [:]
     /// Downloads whose bytes were checked, with the size and date they had then.
     private var verifiedDownloads: [String: FileStamp] = [:]
+    /// When each app (original bundle id) last checked in on each device, kept across a reinstall
+    /// and the removal of its record (`connections.json`, device round 2, item 2): a new
+    /// installation of an app that was connected there says so.
+    private var connections: [String: Date] = [:]
+    public static let connectionsFile = "connections.json"
     private var stateURL: URL { root.appendingPathComponent("state.json") }
     private var backupURL: URL { root.appendingPathComponent("state.json.bak") }
 
@@ -399,7 +404,52 @@ public actor AppLibrary {
         self.root = root
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         (items, loadIssue) = Self.load(root: root)
+        connections = Self.loadConnections(root: root, records: items)
         Self.sweepLeftovers(root: root, temporaryDirectory: temporaryDirectory)
+    }
+
+    private static func connectionKey(bundleID: String, deviceID: String) -> String { bundleID + "|" + deviceID }
+
+    /// The file, merged with the check-ins the records hold (a library written before it).
+    private static func loadConnections(root: URL, records: [AppRecord]) -> [String: Date] {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        var out = (try? Data(contentsOf: root.appendingPathComponent(connectionsFile)))
+            .flatMap { try? decoder.decode([String: Date].self, from: $0) } ?? [:]
+        for r in records {
+            for i in r.installations {
+                guard let date = i.lastCheckIn else { continue }
+                let key = connectionKey(bundleID: r.originalBundleID, deviceID: i.deviceID)
+                out[key] = max(out[key] ?? date, date)
+            }
+        }
+        return out
+    }
+
+    /// The last check-in of that app on that device, by any of its installations (nil: never).
+    public func lastConnection(bundleID: String, deviceID: String) -> Date? {
+        connections[Self.connectionKey(bundleID: bundleID, deviceID: deviceID)]
+    }
+
+    /// Every remembered connection, by `originalBundleID|deviceID` (for the views).
+    public func connectionHistory() -> [String: Date] { connections }
+
+    public nonisolated static func connectionKey(_ record: AppRecord, deviceID: String) -> String {
+        connectionKey(bundleID: record.originalBundleID, deviceID: deviceID)
+    }
+
+    private func rememberConnection(bundleID: String, deviceID: String, at date: Date) {
+        let key = Self.connectionKey(bundleID: bundleID, deviceID: deviceID)
+        guard (connections[key] ?? .distantPast) < date else { return }
+        connections[key] = date
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys]
+        do {
+            try encoder.encode(connections).write(to: root.appendingPathComponent(Self.connectionsFile), options: .atomic)
+        } catch {
+            Self.logger.error("saving connections.json failed: \(String(describing: error))")
+        }
     }
 
     /// Decodes one record at a time, so a single bad record doesn't cost the whole library.
@@ -762,6 +812,7 @@ public actor AppLibrary {
         }
         items[index].installations[i] = installation
         do { try save() } catch { items = previous; throw error }
+        rememberConnection(bundleID: items[index].originalBundleID, deviceID: deviceID, at: checkIn)
         return change
     }
 
