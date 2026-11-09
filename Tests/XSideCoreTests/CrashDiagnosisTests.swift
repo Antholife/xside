@@ -447,6 +447,17 @@ private func diagnose(_ data: Data, _ ctx: CrashContext = context) throws -> Cra
         #expect(picked.jetsam.isEmpty)
     }
 
+    /// An entry whose size isn't listed isn't copied (its size couldn't be checked before).
+    @Test func skipsEntriesWithoutASize() throws {
+        let json = try JSONSerialization.data(withJSONObject: ["result": ["files": [
+            ["relativePath": "Demo-2026-11-09-095800.ips", "metadata": ["lastModDate": "2026-11-09T09:00:00.000Z"]],
+            ["relativePath": "Demo-2026-11-09-095700.ips", "metadata": ["size": 10, "lastModDate": "2026-11-09T09:00:00.000Z"]],
+        ]]])
+        let entries = try #require(CrashLogListing.parse(json))
+        let picked = CrashLogListing.candidates(entries, executable: "Demo", since: Date(timeIntervalSince1970: 0))
+        #expect(picked.crashes.map(\.relativePath) == ["Demo-2026-11-09-095700.ips"])
+    }
+
     @Test func limitsHowManyAreCopied() throws {
         let files = (10..<40).map { ("Demo-2026-11-09-0919\($0).ips", 1_000, "2026-11-09T08:19:\($0).000Z") }
         let entries = try #require(CrashLogListing.parse(listing(files)))
@@ -497,6 +508,28 @@ private func diagnose(_ data: Data, _ ctx: CrashContext = context) throws -> Cra
         #expect(clean.contains("Demo.app/Demo"))
         #expect(clean.contains("com.example.demo."))
     }
+
+    /// The binary images' UUIDs are what symbolication needs: kept. The device's and the person's
+    /// are masked, as are ECIDs written as numbers (review Minor 11).
+    @Test func keepsBinaryImageUUIDs() {
+        let text = """
+            {"slice_uuid":"0b5a1c2d-3e4f-5061-7283-94a5b6c7d8e9","bootSessionUUID":"11112222-3333-4444-5555-666677778888"}
+            {"usedImages" : [{"uuid" : "aabbccdd-eeff-0011-2233-445566778899", "path" : "/private/var/containers/Bundle/Application/C514880A-9749-48AE-A295-B4076597C222/Demo.app/Demo"}],
+             "UUID": "99998888-7777-6666-5555-444433332222",
+             "deviceIdentifierForVendor" : "FAEADC79-7D12-4249-AA35-40515185CAB3",
+             "ecid" : 1234567890123, "uniqueChipID": 9876543210987, "note": "AAAABBBB-CCCC-DDDD-EEEE-FFFF00001111"}
+            """
+        let clean = CrashLogSanitizer.sanitize(text)
+        for kept in ["0b5a1c2d-3e4f-5061-7283-94a5b6c7d8e9", "aabbccdd-eeff-0011-2233-445566778899",
+                     "99998888-7777-6666-5555-444433332222"] {
+            #expect(clean.contains(kept), "\(kept) masked")
+        }
+        for secret in ["11112222-3333-4444-5555-666677778888", "C514880A-9749-48AE-A295-B4076597C222",
+                       "FAEADC79-7D12-4249-AA35-40515185CAB3", "1234567890123", "9876543210987",
+                       "AAAABBBB-CCCC-DDDD-EEEE-FFFF00001111"] {
+            #expect(!clean.contains(secret), "\(secret) left in")
+        }
+    }
 }
 
 /// Plays devicectl: the listing, then each copy writes the file it was asked for.
@@ -504,6 +537,8 @@ private final class CrashDeviceRunner: CommandRunning, @unchecked Sendable {
     let listing: Data
     var files: [String: Data]
     var listStatus: Int32 = 0
+    enum CopyMode { case file, folder, symlink }
+    var copyMode = CopyMode.file
     private let lock = NSLock()
     private(set) var calls: [[String]] = []
 
@@ -526,8 +561,22 @@ private final class CrashDeviceRunner: CommandRunning, @unchecked Sendable {
             guard let source = value("--source"), let data = files[source] else {
                 return CommandResult(status: 1, stdout: Data(), stderr: "ERROR: no such file")
             }
-            try data.write(to: URL(fileURLWithPath: value("--destination")!))
-            return CommandResult(status: 0, stdout: Data(), stderr: "")
+            // As devicectl does (checked on a device): the file at `--destination`, its folder made.
+            let destination = URL(fileURLWithPath: value("--destination")!)
+            let fm = FileManager.default
+            try fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+            switch copyMode {
+            case .file:
+                try data.write(to: destination)
+            case .folder:
+                try fm.createDirectory(at: destination, withIntermediateDirectories: true)
+                try data.write(to: destination.appendingPathComponent((source as NSString).lastPathComponent))
+            case .symlink:
+                let real = destination.deletingLastPathComponent().appendingPathComponent("real-\(UUID().uuidString)")
+                try data.write(to: real)
+                try fm.createSymbolicLink(at: destination, withDestinationURL: real)
+            }
+            return CommandResult(status: 0, stdout: Data("File received from Device\n\(destination.path)\n".utf8), stderr: "")
         }
         if arguments.starts(with: ["devicectl", "device", "info", "processes"]) {
             let json = ["result": ["runningProcesses": [
@@ -601,7 +650,7 @@ private final class CrashDeviceRunner: CommandRunning, @unchecked Sendable {
         #expect(found.text.contains("highwater"))
         // Nor another process's name anywhere else (largestProcess, memoryStatus).
         #expect(!found.text.contains("SecretApp") && !found.text.contains("OtherApp"))
-        #expect(found.text.contains("pageSize") && found.text.contains("APFS"))
+        #expect(found.text.contains("pageSize"))
     }
 
     /// A suspended app iOS evicted to free memory, newer than a real crash: the crash is the answer.
@@ -617,6 +666,34 @@ private final class CrashDeviceRunner: CommandRunning, @unchecked Sendable {
         #expect(found.log.kind == .crash)
     }
 
+    /// Another app's name, as a key or a value at any depth, never survives the cut (allowlist).
+    @Test func noOtherProcessNameSurvivesTheCut() throws {
+        let secret = "SecretBankApp"
+        let header: [String: Any] = ["bug_type": "298", "timestamp": "2026-11-09 10:00:00.00 +0100", "os_version": "iPhone OS 27.3",
+                                     "incident_id": secret, secret: 1]
+        let body: [String: Any] = [
+            "date": "2026-11-09 10:00:00.00 +0100", "build": "iPhone OS 27.3", "product": "iPhone19,4", "bug_type": "298",
+            "largestProcess": secret, secret: ["x": 1], "extra": [secret, ["k": secret]],
+            "memoryStatus": ["pageSize": 16384, "largestZone": secret, secret: 5, "compressorSize": secret,
+                             "memoryPages": ["active": 1, secret: 2, "free": ["deep": secret]],
+                             "nested": [secret: [secret: secret]]],
+            "processes": [
+                ["name": "Demo", "reason": "per-process-limit", "states": ["frontmost", secret], secret: secret,
+                 "coalition": secret, "uuid": "aabbccdd-eeff-0011-2233-445566778899"],
+                ["name": secret, "reason": "vm-pageshortage", "states": ["suspended"]],
+            ],
+        ]
+        let text = String(decoding: IPS.join(header, body), as: UTF8.self)
+        let log = try #require(CrashLogParser.parse(Data(text.utf8)))
+        let cut = CrashLogFetcher.jetsamOnly(.init(log: log, text: text, fileName: "J.ips"), executable: "Demo")
+        #expect(!cut.text.contains(secret))
+        #expect(cut.text.contains("per-process-limit") && cut.text.contains("frontmost") && cut.text.contains("16384"))
+        // What's left still reads as the app's foreground memory-limit kill.
+        let reread = try #require(CrashLogParser.parse(Data(cut.text.utf8)))
+        #expect(reread.jetsamKills == [JetsamKill(name: "Demo", reason: "per-process-limit", states: ["frontmost"])])
+        #expect(reread.date != nil)
+    }
+
     /// The largest process is kept only when it is the app itself.
     @Test func keepsTheLargestProcessOnlyWhenItIsTheApp() {
         let text = String(decoding: IPS.jetsam(processes: [["name": "Demo", "reason": "per-process-limit", "states": ["frontmost"]]],
@@ -624,6 +701,42 @@ private final class CrashDeviceRunner: CommandRunning, @unchecked Sendable {
         let log = CrashLogParser.parse(Data(text.utf8))!
         let cut = CrashLogFetcher.jetsamOnly(.init(log: log, text: text, fileName: "J.ips"), executable: "Demo")
         #expect(cut.text.contains("\"largestProcess\" : \"Demo\""))
+    }
+
+    /// devicectl writes the file at `--destination` itself (checked on a device); a folder holding
+    /// it, should a version do that, is read too. A symbolic link is never followed.
+    @Test func readsWhateverTheCopyMade() async throws {
+        let files = ["Demo-2026-11-09-095800.ips": IPS.crash(timestamp: "2026-11-09 09:58:00.00 +0000")]
+        for mode in [CrashDeviceRunner.CopyMode.file, .folder] {
+            let runner = CrashDeviceRunner(listing: listing(["Demo-2026-11-09-095800.ips"]), files: files)
+            runner.copyMode = mode
+            let root = try scratch()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let found = try await CrashLogFetcher(runner: runner, scratchRoot: root).latest(target, deviceID: "DEV", since: since)
+            #expect(found != nil, "\(mode)")
+            #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
+        }
+        let runner = CrashDeviceRunner(listing: listing(["Demo-2026-11-09-095800.ips"]), files: files)
+        runner.copyMode = .symlink
+        let root = try scratch()
+        defer { try? FileManager.default.removeItem(at: root) }
+        #expect(try await CrashLogFetcher(runner: runner, scratchRoot: root).latest(target, deviceID: "DEV", since: since) == nil)
+    }
+
+    /// Folders left by a fetch XSide was killed in the middle of go at the next launch, once old
+    /// enough not to be another XSide's fetch in progress.
+    @Test func sweepsLeftovers() throws {
+        let root = try scratch()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fm = FileManager.default
+        let old = root.appendingPathComponent("xside-crash-OLD"), fresh = root.appendingPathComponent("xside-crash-NEW")
+        let oldList = root.appendingPathComponent("xside-processes-OLD.json"), other = root.appendingPathComponent("keep-me")
+        for url in [old, fresh, other] { try fm.createDirectory(at: url, withIntermediateDirectories: true) }
+        try Data("{}".utf8).write(to: oldList)
+        let hourAgo = Date().addingTimeInterval(-3600)
+        for url in [old, oldList, other] { try fm.setAttributes([.modificationDate: hourAgo], ofItemAtPath: url.path) }
+        CrashLogFetcher.sweepLeftovers(in: root)
+        #expect(Set(try fm.contentsOfDirectory(atPath: root.path)) == ["xside-crash-NEW", "keep-me"])
     }
 
     @Test func nothingFound() async throws {

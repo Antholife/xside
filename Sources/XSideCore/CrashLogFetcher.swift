@@ -58,7 +58,8 @@ public enum CrashLogListing {
         -> (crashes: [CrashLogEntry], jetsam: [CrashLogEntry]) {
         let recent = entries.filter { entry in
             !entry.relativePath.hasPrefix("ProxiedDevice-")
-                && (entry.size ?? 0) <= CrashLogParser.maxBytes
+                // No size listed: not copied, its size couldn't be checked first.
+                && (entry.size.map { $0 >= 0 && $0 <= CrashLogParser.maxBytes } ?? false)
                 && (entry.modified.map { $0 >= since.addingTimeInterval(-slack) } ?? true)
         }
         func newestFirst(_ list: [CrashLogEntry]) -> [CrashLogEntry] {
@@ -141,7 +142,9 @@ public struct CrashLogFetcher: Sendable {
         return best
     }
 
-    /// Copies one file, reads it (size-capped) and deletes it.
+    /// Copies one file, reads it (size-capped) and deletes it. devicectl writes the file at
+    /// `--destination` itself (checked on a device, Xcode 27); a folder holding it is read too, in
+    /// case a version does that. Only a regular file is read: a link is never followed.
     private func read(_ entry: CrashLogEntry, deviceID: String, into file: URL) async -> Found? {
         defer { try? FileManager.default.removeItem(at: file) }
         guard let result = try? await runner.run("/usr/bin/xcrun",
@@ -150,57 +153,97 @@ public struct CrashLogFetcher: Sendable {
                                                   "--destination", file.path],
                                                  cwd: nil, timeout: CommandTimeout.deviceQuery),
               result.status == 0,
-              let size = (try? file.resourceValues(forKeys: [.fileSizeKey]))?.fileSize, size <= CrashLogParser.maxBytes,
-              let data = try? Data(contentsOf: file), let log = CrashLogParser.parse(data) else { return nil }
+              let copied = Self.copiedFile(at: file, source: entry.relativePath),
+              let data = try? Data(contentsOf: copied), data.count <= CrashLogParser.maxBytes,
+              let log = CrashLogParser.parse(data) else { return nil }
         return Found(log: log, text: String(decoding: data, as: UTF8.self),
                      fileName: (entry.relativePath as NSString).lastPathComponent)
     }
 
-    /// A JetsamEvent cut down to `executable`'s entries (it lists every process of the device:
-    /// which apps the person uses is none of the report's business).
+    /// The regular file devicectl wrote at `destination` (or inside it, named as on the device),
+    /// no larger than the parser takes; nil for anything else (a link, a folder of other things).
+    static func copiedFile(at destination: URL, source: String) -> URL? {
+        let fm = FileManager.default
+        func regular(_ url: URL) -> URL? {
+            // attributesOfItem doesn't follow a symbolic link: its type is the link's.
+            guard let attributes = try? fm.attributesOfItem(atPath: url.path),
+                  attributes[.type] as? FileAttributeType == .typeRegular,
+                  let size = attributes[.size] as? NSNumber, size.intValue <= CrashLogParser.maxBytes else { return nil }
+            return url
+        }
+        guard let type = (try? fm.attributesOfItem(atPath: destination.path))?[.type] as? FileAttributeType else { return nil }
+        if type == .typeDirectory {
+            return regular(destination.appendingPathComponent((source as NSString).lastPathComponent))
+        }
+        return regular(destination)
+    }
+
+    /// Removes what a fetch XSide was killed in the middle of left in `root` (the temporary
+    /// folder): `xside-crash-*` folders and `xside-processes-*.json` files older than `age`, so a
+    /// fetch in progress (XSide and XSide-debug share the folder) is never touched.
+    public static func sweepLeftovers(in root: URL = FileManager.default.temporaryDirectory, olderThan age: TimeInterval = 600) {
+        let fm = FileManager.default
+        guard let names = try? fm.contentsOfDirectory(atPath: root.path) else { return }
+        let limit = Date().addingTimeInterval(-age)
+        for name in names where name.hasPrefix("xside-crash-") || (name.hasPrefix("xside-processes-") && name.hasSuffix(".json")) {
+            let url = root.appendingPathComponent(name)
+            guard let modified = (try? fm.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date, modified < limit else { continue }
+            try? fm.removeItem(at: url)
+        }
+    }
+
+    /// A JetsamEvent cut down, by allowlist, to what concerns the app: it lists every process of
+    /// the device, and which apps the person uses is none of the report's business. Kept: a few
+    /// header and body fields, memoryStatus's known counters (numbers only), and the app's own
+    /// entry with only its name, reason and states. Anything else, a key or a value, goes.
     static func jetsamOnly(_ found: Found, executable: String) -> Found {
         var log = found.log
         log.jetsamKills = log.jetsamKills.filter { $0.name == executable }
         let data = Data(found.text.utf8)
         let newline = data.firstIndex(of: 0x0A) ?? data.endIndex
-        let header = String(decoding: data[data.startIndex..<newline], as: UTF8.self)
-        var text = header + "\n"
+        func json(_ object: [String: Any], pretty: Bool) -> String {
+            let options: JSONSerialization.WritingOptions = pretty ? [.prettyPrinted, .sortedKeys] : [.sortedKeys]
+            return (try? JSONSerialization.data(withJSONObject: object, options: options)).map { String(decoding: $0, as: UTF8.self) } ?? "{}"
+        }
+        let header = (try? JSONSerialization.jsonObject(with: Data(data[data.startIndex..<newline]))) as? [String: Any] ?? [:]
+        var text = json(header.filter { Self.jetsamHeaderKeys.contains($0.key) && $0.value is String }, pretty: false) + "\n"
         if newline < data.endIndex,
            let body = try? JSONSerialization.jsonObject(with: Data(data[data.index(after: newline)...])) as? [String: Any] {
-            var kept: [String: Any] = [:]
-            for key in ["build", "product", "date", "bug_type"] { kept[key] = body[key] }
-            let processes = body["processes"] as? [Any] ?? []
-            let others = Set(processes.compactMap { ($0 as? [String: Any])?["name"] as? String }).subtracting([executable])
-            // Another process's name is nobody's business: largestProcess only when it's the app.
+            var kept = body.filter { Self.jetsamBodyKeys.contains($0.key) && $0.value is String }
             if body["largestProcess"] as? String == executable { kept["largestProcess"] = executable }
-            if let memory = body["memoryStatus"] { kept["memoryStatus"] = withoutProcessNames(memory, others: others, executable: executable) }
-            kept["processes"] = processes.filter { ($0 as? [String: Any])?["name"] as? String == executable }
-            if let json = try? JSONSerialization.data(withJSONObject: kept, options: [.prettyPrinted, .sortedKeys]) {
-                text += String(decoding: json, as: UTF8.self)
+            if let memory = body["memoryStatus"] as? [String: Any] { kept["memoryStatus"] = Self.memoryCounters(memory) }
+            kept["processes"] = (body["processes"] as? [Any] ?? []).compactMap { item -> [String: Any]? in
+                guard let p = item as? [String: Any], p["name"] as? String == executable else { return nil }
+                var entry: [String: Any] = ["name": executable]
+                if let reason = p["reason"] as? String, JetsamKill.knownReasons.contains(reason) { entry["reason"] = reason }
+                let states = (p["states"] as? [Any] ?? []).compactMap { $0 as? String }.filter(Self.jetsamStates.contains)
+                entry["states"] = states
+                return entry
             }
+            text += json(kept, pretty: true)
         }
         return Found(log: log, text: text, fileName: found.fileName)
     }
 
-    /// `value` (memoryStatus) without any process name but the app's: a string under a key that
-    /// names a process, or equal to another listed process's name, is dropped.
-    static func withoutProcessNames(_ value: Any, others: Set<String>, executable: String, key: String? = nil) -> Any? {
-        switch value {
-        case let dictionary as [String: Any]:
-            var out: [String: Any] = [:]
-            for (k, v) in dictionary {
-                if let kept = withoutProcessNames(v, others: others, executable: executable, key: k) { out[k] = kept }
-            }
-            return out
-        case let list as [Any]:
-            return list.compactMap { withoutProcessNames($0, others: others, executable: executable, key: key) }
-        case let text as String:
-            if text == executable { return text }
-            if others.contains(text) || key?.lowercased().contains("proc") == true { return nil }
-            return text
-        default:
-            return value
+    static let jetsamHeaderKeys: Set<String> = ["bug_type", "timestamp", "os_version"]
+    static let jetsamBodyKeys: Set<String> = ["build", "product", "date", "bug_type"]
+    /// memoryStatus's counters, as iOS 27 writes them (checked on a device); `memoryPages` holds
+    /// page counts by kind.
+    static let memoryKeys: Set<String> = ["compressorSize", "compressions", "decompressions", "zoneMapCap", "largestZoneSize",
+                                          "pageSize", "uncompressed", "zoneMapSize"]
+    static let memoryPageKeys: Set<String> = ["active", "throttled", "fileBacked", "wired", "anonymous", "purgeable",
+                                              "inactive", "free", "speculative"]
+    static let jetsamStates: Set<String> = ["frontmost", "active", "suspended", "daemon", "idle", "background", "visible",
+                                            "frozen", "tracked", "inactive", "extension"]
+
+    /// memoryStatus's known counters, numbers only.
+    static func memoryCounters(_ memory: [String: Any]) -> [String: Any] {
+        func numbers(_ dictionary: [String: Any], _ keys: Set<String>) -> [String: Any] {
+            dictionary.filter { keys.contains($0.key) && $0.value is NSNumber && !($0.value is String) }
         }
+        var out = numbers(memory, memoryKeys)
+        if let pages = memory["memoryPages"] as? [String: Any] { out["memoryPages"] = numbers(pages, memoryPageKeys) }
+        return out
     }
 
     /// Whether the app (its main executable, not one of its extensions) runs on the device; nil

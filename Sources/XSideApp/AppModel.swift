@@ -239,6 +239,9 @@ final class AppModel {
             // Leftovers of jobs interrupted by a quit or a crash (extracted apps, template builds).
             // No job can be running yet.
             try? FileManager.default.removeItem(at: paths.work)
+            // Crash-log folders a killed fetch left behind (only old ones: XSide and XSide-debug
+            // share the temporary folder).
+            Task.detached(priority: .utility) { CrashLogFetcher.sweepLeftovers() }
         }
         pipeline = SideloadPipeline(
             library: library,

@@ -40,6 +40,11 @@ public struct JetsamKill: Equatable, Sendable {
     /// Reasons that mean the process itself went over its own memory limit (not iOS freeing
     /// memory for others: "vm-pageshortage", "fc-thrashing", "idle-exit"…).
     static let ownLimitReasons: Set<String> = ["per-process-limit", "highwater", "memory-limit"]
+    /// Reasons iOS writes in a JetsamEvent (anything else is left out of a shared copy).
+    static let knownReasons: Set<String> = ownLimitReasons.union(["vm-pageshortage", "vm-thrashing", "fc-thrashing", "idle-exit",
+                                                                  "vnode-limit", "zone-map-exhaustion", "jettisoned",
+                                                                  "diagnostic", "disk-space-shortage", "swap-shortage",
+                                                                  "long-idle-exit", "sustained-memory-pressure"])
 
     /// The app, in front of the person, went over its memory limit: a real "out of memory" crash.
     /// A suspended or background app evicted to free memory is routine iOS behaviour, not a crash.
@@ -433,11 +438,13 @@ public enum CrashLogSanitizer {
     }
 
     /// Fields whose value is the device's, the person's or the account's.
-    private static let fields = regex(#""(crashReporterKey|deviceIdentifierForVendor|codeSigningTeamID|bootSessionUUID|userID|incident|incident_id|basebandVersion|itemID|adam_id|storeCohortMetadata|softwareVersionExternalIdentifier|parentProc|coalitionName)"(\s*):(\s*)("(?:[^"\\]|\\.)*"|-?[0-9]+)"#)
+    private static let fields = regex(#""(ecid|uniqueChipID|serialNumber|imei|meid|udid|crashReporterKey|deviceIdentifierForVendor|codeSigningTeamID|bootSessionUUID|userID|incident|incident_id|basebandVersion|itemID|adam_id|storeCohortMetadata|softwareVersionExternalIdentifier|parentProc|coalitionName)"(\s*):(\s*)("(?:[^"\\]|\\.)*"|-?[0-9]+)"#)
     private static let rules: [(NSRegularExpression, String)] = [
         (regex(#"[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}"#), "<email>"),
         (regex(#"/Users/[^/\s"]+"#), "/Users/<user>"),
-        (regex(#"\b[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\b"#), "<uuid>"),
+        // A binary's UUID ("uuid", "slice_uuid", "UUID") is what symbolication needs and says
+        // nothing of the person: kept. Any other UUID (containers, device, sessions) is masked.
+        (regex(#"(?<!"(?:slice_)?uuid"\s{0,4}:\s{0,4}")\b[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\b"#), "<uuid>"),
         (regex(#"\b[0-9A-F]{8}-[0-9A-F]{16}\b"#), "<udid>"),
         (regex(#"\b[0-9A-F]{40}\b"#), "<id>"),
     ]
