@@ -334,6 +334,140 @@ struct TweakAnalyzerTests {
         #expect(contents(storage).isEmpty)
     }
 
+    @Test func aThrowAfterExtractionLeavesNothing() async throws {
+        // Files are written by the extraction, then the control is refused.
+        let src = try await deb([.file("./usr/lib/libexample.dylib", dylib(linking: [])),
+                                 .file("./Library/Application Support/Example/res.txt", Data("r".utf8))],
+                                control: "Version: 1\n")
+        let storage = scratch("store")
+        defer { cleanup(src, storage) }
+        await #expect(throws: TweakError.self) { try await analyze(src, into: storage) }
+        #expect(contents(storage).isEmpty)
+    }
+
+    @Test func aCancelKeepsItsTypeAndLeavesNothing() async throws {
+        let src = scratch("src").appendingPathExtension("deb")
+        try await FakeDeb.deb(control: control, files: [.file("./usr/lib/libexample.dylib", dylib(linking: []))],
+                              compression: "bz2").write(to: src)
+        let storage = scratch("store")
+        defer { cleanup(src, storage) }
+        await #expect(throws: CancellationError.self) {
+            try await TweakAnalyzer.analyze(src, into: storage, runner: ThrowingRunner(failure: .cancelled), now: now)
+        }
+        #expect(contents(storage).isEmpty)
+        do {
+            _ = try await TweakAnalyzer.analyze(src, into: storage, runner: ThrowingRunner(failure: .timedOut), now: now)
+            Issue.record("expected a throw")
+        } catch XSideError.timedOut {
+        }
+        #expect(contents(storage).isEmpty)
+    }
+
+    @Test func aCancelledTaskStopsDroppedFilesAndFolders() async throws {
+        let fw = try framework("Example")
+        let lone = fw.deletingLastPathComponent().appendingPathComponent("Lone.dylib")
+        try dylib().write(to: lone)
+        let storage = scratch("store")
+        defer { cleanup(fw.deletingLastPathComponent(), storage) }
+        for source in [fw, lone] {
+            let task = Task {
+                withUnsafeCurrentTask { $0?.cancel() }
+                return try await TweakAnalyzer.analyze(source, into: storage, runner: ProcessRunner(), now: now)
+            }
+            await #expect(throws: CancellationError.self) { try await task.value }
+        }
+        #expect(contents(storage).isEmpty)
+    }
+
+    @Test func aLoneDylibOverTheReadCapIsTooLarge() async throws {
+        let src = scratch("src").appendingPathExtension("dylib")
+        try dylib().write(to: src)
+        let storage = scratch("store")
+        defer { cleanup(src, storage) }
+        var limits = TweakAnalyzer.Limits()
+        limits.maxFileBytes = 16
+        await #expect(throws: TweakError.tooLarge) {
+            try await TweakAnalyzer.analyze(src, into: storage, runner: ProcessRunner(), now: now, limits: limits)
+        }
+        #expect(contents(storage).isEmpty)
+    }
+
+    @Test func aMachOWithoutDylibExtensionAndAPlistIsAnEntry() async throws {
+        let src = try await deb([.file("./Library/MobileSubstrate/DynamicLibraries/Example", dylib()),
+                                 .file("./Library/MobileSubstrate/DynamicLibraries/Example.plist", try filterPlist(["com.example.app"]))])
+        let storage = scratch("store")
+        defer { cleanup(src, storage) }
+        let p = try await analyze(src, into: storage)
+        #expect(p.entries.map(\.path) == ["Library/MobileSubstrate/DynamicLibraries/Example"])
+        #expect(p.entries.map(\.imageName) == ["Example"])
+    }
+
+    @Test func finderFilesChangeNeitherTheIdNorTheCopy() async throws {
+        let fw = try framework("Example")
+        let a = scratch("store"), b = scratch("store")
+        defer { cleanup(fw.deletingLastPathComponent(), a, b) }
+        let before = try await analyze(fw, into: a)
+        for junk in [".DS_Store", "._Example", "Icon\r", ".localized", "Resources/._a.txt"] {
+            try Data("junk".utf8).write(to: fw.appendingPathComponent(junk))
+        }
+        try FileManager.default.createDirectory(at: fw.appendingPathComponent("__MACOSX"), withIntermediateDirectories: true)
+        try Data("junk".utf8).write(to: fw.appendingPathComponent("__MACOSX/x"))
+        let after = try await analyze(fw, into: b)
+        #expect(after.id == before.id && after.files == before.files)
+        #expect(contents(b.appendingPathComponent("\(after.id)/Example.framework")) == ["Example", "Info.plist", "Resources"])
+    }
+
+    @Test func idsOfDifferentKindsDiffer() async throws {
+        let dir = scratch("src")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let lone = dir.appendingPathComponent("Same.dylib")
+        try dylib().write(to: lone)
+        let fw = dir.appendingPathComponent("Same.framework"), bundle = dir.appendingPathComponent("Same.bundle")
+        for folder in [fw, bundle] {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try PropertyListSerialization.data(fromPropertyList: ["CFBundleExecutable": "Same"], format: .xml, options: 0)
+                .write(to: folder.appendingPathComponent("Info.plist"))
+            try dylib().write(to: folder.appendingPathComponent("Same"))
+        }
+        let storage = scratch("store")
+        defer { cleanup(dir, storage) }
+        let ids = [try await analyze(lone, into: storage).id, try await analyze(fw, into: storage).id,
+                   try await analyze(bundle, into: storage).id]
+        #expect(Set(ids).count == 3)
+    }
+
+    @Test func anUnparseableMachOInAFolderIsDropped() async throws {
+        let b = scratch("src").appendingPathComponent("Example.bundle")
+        try FileManager.default.createDirectory(at: b, withIntermediateDirectories: true)
+        try Data([0xCA, 0xFE, 0xBA, 0xBE, 0, 0, 0, 52, 1, 2]).write(to: b.appendingPathComponent("Thing.class"))
+        try Data("img".utf8).write(to: b.appendingPathComponent("icon.png"))
+        let storage = scratch("store")
+        defer { cleanup(b.deletingLastPathComponent(), storage) }
+        let p = try await analyze(b, into: storage)
+        #expect(p.files == ["Example.bundle/icon.png"] && p.binaries.isEmpty && p.notes == [.filesIgnored])
+        #expect(contents(storage.appendingPathComponent("\(p.id)/Example.bundle")) == ["icon.png"])
+    }
+
+    @Test func theSameBytesKeepTheStoredFolderAndADamagedOneIsReplaced() async throws {
+        let src = try await deb([.file("./usr/lib/libexample.dylib", dylib(linking: [])),
+                                 .file("./usr/lib/res.txt", Data("r".utf8))])
+        let storage = scratch("store")
+        defer { cleanup(src, storage) }
+        let p = try await analyze(src, into: storage)
+        let folder = storage.appendingPathComponent(p.id)
+        func inode() throws -> UInt64 {
+            try #require(try FileManager.default.attributesOfItem(atPath: folder.path)[.systemFileNumber] as? UInt64)
+        }
+        let first = try inode()
+        _ = try await analyze(src, into: storage)
+        #expect(try inode() == first)                               // kept, never missing
+        try FileManager.default.removeItem(at: folder.appendingPathComponent("usr/lib/res.txt"))
+        _ = try await analyze(src, into: storage)
+        #expect(try inode() != first)                               // damaged: stored again
+        #expect(FileManager.default.fileExists(atPath: folder.appendingPathComponent("usr/lib/res.txt").path))
+        #expect(contents(storage) == [p.id])
+    }
+
     @Test func jailbreakPathStringsAreNoted() async throws {
         for needle in ["/var/jb/", "/Library/MobileSubstrate/", "/Library/Application Support/", "/Library/PreferenceBundles/"] {
             let src = try await deb([.file("./usr/lib/libexample.dylib", dylib(["\(needle)thing"], linking: [])),
@@ -374,5 +508,17 @@ struct TweakAnalyzerTests {
                              files: ["a.dylib"], binaries: [bin], notes: [.filesIgnored], addedAt: now)
         let data = try JSONEncoder().encode(p)
         #expect(try JSONDecoder().decode(TweakPackage.self, from: data) == p)
+    }
+}
+
+/// A runner whose every command is cancelled or times out.
+private struct ThrowingRunner: CommandRunning {
+    enum Failure: Sendable { case cancelled, timedOut }
+    let failure: Failure
+    func run(_ executable: String, _ arguments: [String], cwd: URL?, timeout: Duration) async throws -> CommandResult {
+        switch failure {
+        case .cancelled: throw CancellationError()
+        case .timedOut: throw XSideError.timedOut(tool: "test")
+        }
     }
 }

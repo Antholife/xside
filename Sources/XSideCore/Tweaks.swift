@@ -62,8 +62,8 @@ public enum TweakNote: String, Codable, Sendable {
 
 /// A tweak analysed and stored under `<storage>/<id>/`.
 public struct TweakPackage: Codable, Equatable, Sendable, Identifiable {
-    /// 16 lowercase hex digits of the SHA-256 of the source (folders: of their sorted
-    /// `"path\0sha256"` lines).
+    /// 16 lowercase hex digits of the SHA-256 of a kind tag (`deb-`, `dylib-`, `fw-`, `bundle-`)
+    /// followed by the source (folders: by their sorted `"path\0sha256\n"` lines, Finder files left out).
     public let id: String
     public var kind: TweakKind
     public var origin: TweakOrigin

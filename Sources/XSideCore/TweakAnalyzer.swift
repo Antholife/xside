@@ -72,6 +72,9 @@ public enum TweakAnalyzer {
             return package
         } catch {
             try? fm.removeItem(at: incoming)
+            // A cancel or a helper timeout is not a bad file: callers see it as it is.
+            if error is CancellationError { throw error }
+            if case XSideError.timedOut = error { throw error }
             throw mapped(error)
         }
     }
@@ -99,7 +102,7 @@ public enum TweakAnalyzer {
         // Hash and read the same bytes: a private copy, so the file can't change in between.
         let copy = fm.temporaryDirectory.appendingPathComponent("tweak-src-\(UUID().uuidString).deb")
         defer { try? fm.removeItem(at: copy) }
-        let digest = try copyHashing(source, to: copy, maxBytes: DebLimits.maxDebBytes)
+        let digest = try copyHashing(source, to: copy, maxBytes: DebLimits.maxDebBytes, domain: idDomain(.deb))
 
         let skipped = Skipped()
         let contents = try await DebReader.read(copy, into: incoming, runner: runner, keep: { path in
@@ -126,6 +129,7 @@ public enum TweakAnalyzer {
         var files: [String] = []
         var binaries: [TweakBinary] = []
         for path in contents.extraction.files.sorted() {
+            try Task.checkCancellation()
             let url = incoming.appendingPathComponent(path)
             guard isMachO(url) else { files.append(path); continue }
             let parts = path.split(separator: "/").map(String.init)
@@ -164,7 +168,9 @@ public enum TweakAnalyzer {
     private static func analyzeDylib(_ source: URL, name: String, into incoming: URL, origin: TweakOrigin, now: Date,
                                      limits: Limits) throws -> TweakPackage {
         var data = Data()
-        let digest = try readHashing(source, maxBytes: limits.maxFileBytes) { data.append(contentsOf: $0) }
+        let digest = try readHashing(source, maxBytes: limits.maxFileBytes, domain: idDomain(.dylib)) {
+            data.append(contentsOf: $0)
+        }
         try FileManager.default.createDirectory(at: incoming, withIntermediateDirectories: false)
         let url = incoming.appendingPathComponent(name)
         try writeNew(data, to: url)
@@ -190,6 +196,7 @@ public enum TweakAnalyzer {
         var files: [String] = []
         var total = 0
         for item in items {
+            try Task.checkCancellation()
             let to = top.appendingPathComponent(item.relative)
             if item.isDirectory { try fm.createDirectory(at: to, withIntermediateDirectories: true); continue }
             var data = Data()
@@ -205,17 +212,27 @@ public enum TweakAnalyzer {
             lines.append(path + "\0" + hex(digest))
             files.append(path)
         }
-        let id = shortID(Data(SHA256.hash(data: Data(lines.sorted().map { $0 + "\n" }.joined().utf8))))
+        let id = shortID(Data(SHA256.hash(data: Data((idDomain(kind) + lines.sorted().map { $0 + "\n" }.joined()).utf8))))
 
         let info = readSmall(top.appendingPathComponent("Info.plist"), limits.maxInfoPlistBytes)
             .flatMap { try? PropertyListSerialization.propertyList(from: $0, options: [], format: nil) as? [String: Any] } ?? [:]
         let executable = (kind == .framework ? info["CFBundleExecutable"] as? String : nil)
             .flatMap { isSafeComponent($0) ? name + "/" + $0 : nil }
         var binaries: [TweakBinary] = []
+        var kept: [String] = []
+        var notes: [TweakNote] = []
         for path in files.sorted() {
+            try Task.checkCancellation()
             let url = incoming.appendingPathComponent(path)
-            guard isMachO(url) else { continue }
-            if let binary = store(url, path: path, isEntry: path == executable, filter: nil) { binaries.append(binary) }
+            guard isMachO(url) else { kept.append(path); continue }
+            guard let binary = store(url, path: path, isEntry: path == executable, filter: nil) else {
+                // Mach-O magic that doesn't parse (a truncated file, a Java class): never copied into an app.
+                try? fm.removeItem(at: url)
+                if notes.isEmpty { notes.append(.filesIgnored) }
+                continue
+            }
+            kept.append(path)
+            binaries.append(binary)
         }
         if kind == .framework, !binaries.contains(where: \.isEntry) { throw TweakError.nothingUsable }
 
@@ -225,7 +242,7 @@ public enum TweakAnalyzer {
         let displayName = (info["CFBundleName"] as? String).flatMap { clean($0) } ?? base
         let version = ((info["CFBundleShortVersionString"] ?? info["CFBundleVersion"]) as? String).flatMap { clean($0) }
         return TweakPackage(id: id, kind: kind, origin: origin, packageID: packageID, name: displayName, version: version,
-                            files: files.sorted(), binaries: binaries, addedAt: now)
+                            files: kept, binaries: binaries, notes: notes, addedAt: now)
     }
 
     /// Every file and folder under `root`, parents first. Links anywhere refuse the folder.
@@ -239,7 +256,7 @@ public enum TweakAnalyzer {
             do { names = try FileManager.default.contentsOfDirectory(atPath: dir.path) } catch {
                 throw TweakError.unreadable("cannot list a folder")
             }
-            for name in names.sorted() where name != ".DS_Store" {
+            for name in names.sorted() where !isFinderJunk(name) {
                 count += 1
                 guard count <= limits.maxFolderFiles else { throw TweakError.tooLarge }
                 guard isSafeComponent(name) else { throw TweakError.unreadable("unusable file name") }
@@ -275,9 +292,9 @@ public enum TweakAnalyzer {
         if let data = try? Data(contentsOf: url), let thinned = MachOThinner.removingARM32(from: data) {
             guard (try? thinned.write(to: url, options: .atomic)) != nil else { return nil }
         }
-        _ = chmod(url.path, 0o755)
         guard let slices = try? MachOBuildInfo.slices(of: url), !slices.isEmpty,
               let linked = try? MachOPatcher.linkedDylibs(in: url) else { return nil }
+        _ = chmod(url.path, 0o755)
         return TweakBinary(path: path, isEntry: isEntry, filter: filter,
                            slices: slices.map { TweakSlice(arch: archName($0), platform: $0.platform, minOS: $0.minOS) },
                            linked: linked,
@@ -307,7 +324,8 @@ public enum TweakAnalyzer {
 
     /// Reads a regular file (never following a link, never blocking on a FIFO), at most
     /// `maxBytes`, handing each chunk to `sink`; returns its SHA-256.
-    private static func readHashing(_ url: URL, maxBytes: Int, _ sink: (UnsafeRawBufferPointer) throws -> Void) throws -> Data {
+    private static func readHashing(_ url: URL, maxBytes: Int, domain: String = "",
+                                    _ sink: (UnsafeRawBufferPointer) throws -> Void) throws -> Data {
         let fd = open(url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
         guard fd >= 0 else {
             if errno == ELOOP { throw TweakError.symlinkInFolder }
@@ -318,9 +336,11 @@ public enum TweakAnalyzer {
         guard fstat(fd, &st) == 0, st.st_mode & S_IFMT == S_IFREG else { throw TweakError.unreadable("not a regular file") }
         guard st.st_size <= off_t(maxBytes) else { throw TweakError.tooLarge }
         var hasher = SHA256()
+        hasher.update(data: Data(domain.utf8))
         var buffer = [UInt8](repeating: 0, count: 1 << 20)
         var total = 0
         while true {
+            try Task.checkCancellation()                                  // per MiB read
             let n = buffer.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress!, $0.count) }
             if n < 0, errno == EINTR { continue }
             guard n >= 0 else { throw TweakError.unreadable("cannot read a file") }
@@ -336,11 +356,11 @@ public enum TweakAnalyzer {
         return Data(hasher.finalize())
     }
 
-    private static func copyHashing(_ source: URL, to destination: URL, maxBytes: Int) throws -> Data {
+    private static func copyHashing(_ source: URL, to destination: URL, maxBytes: Int, domain: String) throws -> Data {
         let fd = open(destination.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
         guard fd >= 0 else { throw TweakError.unreadable("cannot create a temporary file") }
         defer { close(fd) }
-        return try readHashing(source, maxBytes: maxBytes) { chunk in
+        return try readHashing(source, maxBytes: maxBytes, domain: domain) { chunk in
             var done = 0
             while done < chunk.count {
                 let n = write(fd, chunk.baseAddress! + done, chunk.count - done)
@@ -385,24 +405,84 @@ public enum TweakAnalyzer {
         _ = prune(root)
     }
 
-    /// Renames the finished folder into place. The same bytes stored again replace the earlier copy.
+    /// Renames the finished folder into place. The id comes from the content, so a folder already
+    /// stored under it with the same files is kept as is (no window where it is missing) and the
+    /// new copy goes; a damaged one (files removed or changed) is replaced.
     private static func install(_ incoming: URL, at destination: URL) throws {
         let fm = FileManager.default
         var st = stat()
-        guard lstat(destination.path, &st) == 0 else {
-            do { try fm.moveItem(at: incoming, to: destination) } catch { throw TweakError.unreadable("cannot store the package") }
+        if lstat(destination.path, &st) == 0 {
+            if sameTree(incoming, destination) { try? fm.removeItem(at: incoming); return }
+            let stale = destination.deletingLastPathComponent().appendingPathComponent(".stale-\(UUID().uuidString)")
+            do { try fm.moveItem(at: destination, to: stale) } catch { throw TweakError.unreadable("cannot replace the stored package") }
+            defer { try? fm.removeItem(at: stale) }
+            do { try fm.moveItem(at: incoming, to: destination) } catch {
+                if lstat(destination.path, &st) != 0 { try? fm.moveItem(at: stale, to: destination) }
+                throw TweakError.unreadable("cannot store the package")
+            }
             return
         }
-        let stale = destination.deletingLastPathComponent().appendingPathComponent(".stale-\(UUID().uuidString)")
-        do { try fm.moveItem(at: destination, to: stale) } catch { throw TweakError.unreadable("cannot replace the stored package") }
         do { try fm.moveItem(at: incoming, to: destination) } catch {
-            try? fm.moveItem(at: stale, to: destination)
+            // Another analysis of the same bytes got there first.
+            if sameTree(incoming, destination) { try? fm.removeItem(at: incoming); return }
             throw TweakError.unreadable("cannot store the package")
         }
-        try? fm.removeItem(at: stale)
+    }
+
+    /// Same relative paths, kinds and bytes, links never followed (a link anywhere: not the same).
+    static func sameTree(_ a: URL, _ b: URL) -> Bool {
+        func list(_ root: URL) -> [String: (isDir: Bool, size: off_t)]? {
+            var out: [String: (isDir: Bool, size: off_t)] = [:]
+            func walk(_ rel: String, depth: Int) -> Bool {
+                guard depth <= DebLimits.maxPathDepth + 2, out.count <= DebLimits.maxEntries + 1,
+                      let names = try? FileManager.default.contentsOfDirectory(atPath: (rel.isEmpty ? root : root.appendingPathComponent(rel)).path)
+                else { return false }
+                for name in names {
+                    let path = rel.isEmpty ? name : rel + "/" + name
+                    var st = stat()
+                    guard lstat(root.appendingPathComponent(path).path, &st) == 0 else { return false }
+                    switch st.st_mode & S_IFMT {
+                    case S_IFDIR: out[path] = (true, 0); if !walk(path, depth: depth + 1) { return false }
+                    case S_IFREG: out[path] = (false, st.st_size)
+                    default: return false
+                    }
+                }
+                return true
+            }
+            return walk("", depth: 0) ? out : nil
+        }
+        guard let left = list(a), let right = list(b), left.count == right.count else { return false }
+        for (path, l) in left {
+            guard let r = right[path], r.isDir == l.isDir, r.size == l.size else { return false }
+            if l.isDir { continue }
+            guard let x = FileHandle(forReadingAtPath: a.appendingPathComponent(path).path),
+                  let y = FileHandle(forReadingAtPath: b.appendingPathComponent(path).path) else { return false }
+            defer { try? x.close(); try? y.close() }
+            while true {
+                let cx = (try? x.read(upToCount: 1 << 20)) ?? Data(), cy = (try? y.read(upToCount: 1 << 20)) ?? Data()
+                guard cx == cy else { return false }
+                if cx.isEmpty { break }
+            }
+        }
+        return true
     }
 
     // MARK: names
+
+    /// Files Finder and other macOS tools add to folders: never hashed, never copied.
+    static func isFinderJunk(_ name: String) -> Bool {
+        name == ".DS_Store" || name.hasPrefix("._") || name == "__MACOSX" || name == "Icon\r" || name == ".localized"
+    }
+
+    /// Hashed before the content, so two kinds never share an id.
+    private static func idDomain(_ kind: TweakKind) -> String {
+        switch kind {
+        case .deb: "deb-"
+        case .dylib: "dylib-"
+        case .framework: "fw-"
+        case .bundle: "bundle-"
+        }
+    }
 
     private static func isSafeComponent(_ name: String) -> Bool {
         !name.isEmpty && name != "." && name != ".." && !name.contains("/") && !name.utf8.contains(0)
