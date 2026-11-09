@@ -120,3 +120,42 @@ extension FakeIPA {
         return d
     }
 }
+
+extension FakeIPA {
+    /// Thin arm64 `MH_DYLIB` with a `__TEXT` segment, one `dylib_command` per `linking` name
+    /// (even indexes `LC_LOAD_DYLIB`, odd ones `LC_LOAD_WEAK_DYLIB`; timestamp 2, current
+    /// version 5.0.0, compatibility 1.0.0) and a last `LC_CODE_SIGNATURE`. The one section
+    /// starts `padding` bytes after the load commands and holds 16 bytes of 0xAB, then each of
+    /// `strings`, NUL-terminated.
+    static func dylibMachO(linking: [String], padding: Int, cpuSubtype: UInt32 = 0, strings: [String] = []) -> Data {
+        var d = Data()
+        func le32(_ v: UInt32) { withUnsafeBytes(of: v.littleEndian) { d.append(contentsOf: $0) } }
+        func le64(_ v: UInt64) { withUnsafeBytes(of: v.littleEndian) { d.append(contentsOf: $0) } }
+        func name(_ s: String) { var b = Array(s.utf8); b += Array(repeating: 0, count: 16 - b.count); d.append(contentsOf: b) }
+        let dylibSizes = linking.map { (24 + $0.utf8.count + 1 + 7) & ~7 }
+        let segmentSize = 72 + 80
+        let sizeofcmds = segmentSize + dylibSizes.reduce(0, +) + 16
+        let sectionOffset = 32 + sizeofcmds + padding
+        var content = Data(repeating: 0xAB, count: 16)
+        for s in strings { content.append(contentsOf: Array(s.utf8) + [0]) }
+        let fileSize = sectionOffset + content.count
+        le32(0xFEEDFACF); le32(0x0100000C); le32(cpuSubtype); le32(6)      // MH_DYLIB
+        le32(UInt32(linking.count + 2)); le32(UInt32(sizeofcmds)); le32(0); le32(0)
+        le32(0x19); le32(UInt32(segmentSize)); name("__TEXT")
+        le64(0); le64(UInt64(fileSize)); le64(0); le64(UInt64(fileSize))
+        le32(5); le32(5); le32(1); le32(0)
+        name("__text"); name("__TEXT"); le64(UInt64(sectionOffset)); le64(UInt64(content.count))
+        le32(UInt32(sectionOffset)); le32(2); le32(0); le32(0); le32(0); le32(0); le32(0); le32(0)
+        for (i, (path, size)) in zip(linking, dylibSizes).enumerated() {
+            le32(i % 2 == 0 ? 0xC : 0x8000_0018); le32(UInt32(size)); le32(24)
+            le32(2); le32(0x0005_0000); le32(0x0001_0000)
+            var bytes = Array(path.utf8) + [0]
+            bytes += Array(repeating: 0, count: size - 24 - bytes.count)
+            d.append(contentsOf: bytes)
+        }
+        le32(0x1D); le32(16); le32(UInt32(fileSize)); le32(0)
+        d.append(Data(count: sectionOffset - d.count))
+        d.append(content)
+        return d
+    }
+}
