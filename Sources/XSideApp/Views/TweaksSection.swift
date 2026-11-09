@@ -231,12 +231,22 @@ private struct TweakDeviceRow: View {
                 }
             }
             Spacer(minLength: 8)
-            Toggle(L("tweaks.enable.a11y", package.name, row.deviceName),
-                   isOn: Binding(get: { row.isOn && !row.isBlocked }, set: setOn))
-                .labelsHidden()
-                .toggleStyle(.xside)
-                .controlSize(.small)
-                .disabled(row.isBlocked || row.verdict == nil)
+            // Always says what it does, even with one device (device test 2026-11-09).
+            HStack(spacing: 6) {
+                Text(L("tweaks.enableOn", row.deviceName))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .accessibilityHidden(true)
+                Toggle(L("tweaks.enable.a11y", package.name, row.deviceName),
+                       isOn: Binding(get: { row.isOn && !row.isBlocked }, set: setOn))
+                    .labelsHidden()
+                    .toggleStyle(.xside)
+                    .controlSize(.small)
+                    .accessibilityLabel(L("tweaks.enable.a11y", package.name, row.deviceName))
+            }
+            .fixedSize()
+            .disabled(row.isBlocked || row.verdict == nil)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)

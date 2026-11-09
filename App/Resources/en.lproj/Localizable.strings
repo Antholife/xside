@@ -1005,7 +1005,8 @@
 "tweaks.remove.help" = "Removes it from this app on every device of this install.";
 "tweaks.remove.helpOne" = "Removes it from this app on this device, at its next refresh.";
 "tweaks.dependencies.help" = "What this tweak depends on, and where to find what's missing.";
-"tweaks.enable.a11y" = "Add %1$@ on %2$@";
+"tweaks.enable.a11y" = "Turn on %1$@ on %2$@";
+"tweaks.enableOn" = "Turn on for %@";
 "tweaks.confirm.title" = "Install with a converted tweak?";
 "tweaks.confirm.text" = "This tweak was converted to work without a jailbreak (%@). Unexpected problems can happen: the app may crash or the tweak may not behave correctly.";
 "tweaks.confirm.install" = "Install";
