@@ -31,6 +31,10 @@ enum SnapshotRenderer {
         let now = Date()
         let sample = Sample(now: now, library: out.appendingPathComponent("library", isDirectory: true))
         model.showSnapshot(records: sample.records, devices: sample.devices, live: sample.live, now: now)
+        // Duolingo stopped at launch on the iPhone two hours ago: its row's crash box and badge.
+        let crash = CrashDiagnosis(cause: .noSceneSupport, duoCompatibilityOn: true, date: now.addingTimeInterval(-2 * 3600),
+                                   appVersion: "6.9.0", exceptionType: "EXC_BREAKPOINT", signal: "SIGTRAP")
+        model.showSnapshotCrash(CrashFinding(diagnosis: crash, log: "", fileName: "Duolingo-snapshot.ips"), on: sample.crashed)
 
         for language in ["en", "fr"] {
             UserDefaults.standard.set(language, forKey: AppLanguage.storageKey)
@@ -39,6 +43,13 @@ enum SnapshotRenderer {
                 model.settingsPane = .apps
                 render(PopoverView(model: model).background(Color(nsColor: .windowBackgroundColor)),
                        dark: dark, to: out.appendingPathComponent("panel-\(language)-\(scheme).png"))
+                // The install window's banner when the check after the install found the crash.
+                render(CrashBanner(app: "Duolingo", device: "iPhone Duo de Anthony", diagnosis: crash,
+                                   onWhy: {}, onAction: { _ in })
+                        .padding(20)
+                        .frame(width: InstallWindow.width)
+                        .background(Color(nsColor: .windowBackgroundColor)),
+                       dark: dark, to: out.appendingPathComponent("install-crash-\(language)-\(scheme).png"))
                 for (name, key) in sample.selections {
                     model.settingsApp = key
                     render(SettingsView(model: model).background(Color(nsColor: .windowBackgroundColor)),
@@ -79,6 +90,8 @@ enum SnapshotRenderer {
         let records: [AppRecord]
         let live: Set<JobKey>
         let selections: [(String, JobKey)]
+        /// The installation shown as stopped at launch.
+        let crashed: JobKey
 
         init(now: Date, library: URL) {
             let iPad = Device(id: "snapshot-ipad", udid: nil, name: "Anthony's iPad Air 5", model: "iPad Air (5th generation)",
@@ -108,6 +121,7 @@ enum SnapshotRenderer {
                                                                                checkIn: 2 * 86_400)])
             records = [video, photos, lessons]
             live = [JobKey(recordID: video.id, deviceID: iPhone.id)]
+            crashed = JobKey(recordID: lessons.id, deviceID: iPhone.id)
             selections = [("iphone", JobKey(recordID: video.id, deviceID: iPhone.id)),
                           ("ipad", JobKey(recordID: video.id, deviceID: iPad.id)),
                           ("paused", JobKey(recordID: photos.id, deviceID: iPhone.id))]

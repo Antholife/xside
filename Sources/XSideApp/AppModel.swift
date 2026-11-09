@@ -34,8 +34,6 @@ struct CrashFinding: Equatable {
     /// `log`'s lines, cut for display (split off the main actor; the window shows them lazily).
     var lines: [String] = []
     let fileName: String
-    /// Found by the check after an install (the panel's row says so), not asked for.
-    let afterInstall: Bool
 
     /// A very long line is cut for display (Copy gives it whole).
     static let maxLineLength = 2_000
@@ -206,6 +204,7 @@ final class AppModel {
     private var lastGoodEnv: SigningEnvironment?
     private var listingDevices = false
     private let prefsStore: DevicePrefsStore
+    private let crashWatchStore: CrashWatchStore
     /// Per-device settings (Wi-Fi refresh), persisted in `devices.json`.
     private(set) var devicePrefs = DevicePrefs()
     /// Devices being removed right now: no job may start on them.
@@ -229,6 +228,8 @@ final class AppModel {
     /// Every pipeline run that ends (install, manual or automatic refresh), with its error if it failed.
     var onJobFinished: ((_ job: RefreshJob, _ error: (any Error)?, _ automatic: Bool,
                                _ wasRefresh: Bool) -> Void)?
+    /// XSide found a crash it hadn't told about (a new row flag): the engine notifies it.
+    var onCrashFound: ((_ key: JobKey, _ flag: CrashFlag) -> Void)?
     /// True while the menu-bar popover is on screen (drives the device polling rate).
     private(set) var isPopoverOpen = false
 
@@ -244,6 +245,9 @@ final class AppModel {
         icons = AppIcons(library: library, runner: runner)
         prefsStore = DevicePrefsStore(libraryRoot: paths.root)
         devicePrefs = prefsStore.load()
+        crashWatchStore = CrashWatchStore(libraryRoot: paths.root)
+        crashWatch = startsServices ? crashWatchStore.load() : CrashWatch()
+        crashFlags = crashWatch.flags
         if startsServices {
             // Icons pulled out of earlier sessions' `.ipa` files.
             try? FileManager.default.removeItem(at: Self.iconsDir)
@@ -282,6 +286,11 @@ final class AppModel {
         liveInstallations = live
         appIDsRemaining = 7
         appIDReleases = [now.addingTimeInterval(2 * 86_400), now.addingTimeInterval(4 * 86_400), now.addingTimeInterval(5 * 86_400)]
+    }
+
+    /// Snapshot harness only: `finding` as a crash XSide found by itself on `key` (row flag and window).
+    func showSnapshotCrash(_ finding: CrashFinding, on key: JobKey) {
+        crashFound(finding, key: key)
     }
     #endif
 
@@ -900,6 +909,7 @@ final class AppModel {
         names[deviceID] = nil
         UserDefaults.standard.set(names, forKey: Self.namesKey)
         UserDefaults.standard.removeObject(forKey: Self.guideKey(deviceID))
+        changeCrashWatch { $0.forgetDevice(deviceID) }
         await reloadRecords()
         // After the reload: what it forgets (reminders) is rebuilt from the records left.
         onDeviceRemoved?(deviceID)
@@ -1251,6 +1261,12 @@ final class AppModel {
         let job = RefreshJob(recordID: found.recordID, deviceID: found.installation.deviceID)
         let key = JobKey(recordID: found.recordID, deviceID: found.installation.deviceID)
         channelSeen[key] = now
+        // Running: a crash flagged before now is over (a check-in only comes from a running app).
+        if crashFlags[CrashWatch.key(recordID: key.recordID, deviceID: key.deviceID)] != nil {
+            changeCrashWatch { $0.launchSeen(recordID: key.recordID, deviceID: key.deviceID, at: now) }
+        } else {
+            crashWatch.launchSeen(recordID: key.recordID, deviceID: key.deviceID, at: now)
+        }
         // Each check-in states the interval to its next poll (an older dylib's says nothing: 15 s);
         // a refresh or a watch keeps what the last check-in said.
         if case .checkIn = request { channelPollEvery[key] = request.pollEvery.map(TimeInterval.init) }
@@ -1598,6 +1614,7 @@ final class AppModel {
     /// The installation left the library: its reminder and notification state go too, and a
     /// record left without any installation is deleted (with its files) once nothing uses it.
     private func installationRemoved(_ key: JobKey) async {
+        changeCrashWatch { $0.forget(recordID: key.recordID, deviceID: key.deviceID) }
         await reloadRecords()
         onInstallationRemoved?(RefreshJob(recordID: key.recordID, deviceID: key.deviceID))
         if records.first(where: { $0.id == key.recordID })?.installations.isEmpty == true {
@@ -1976,6 +1993,8 @@ final class AppModel {
             throw error
         }
         await reloadRecords()
+        // A crash flagged before this install or refresh waits for the next check to go.
+        changeCrashWatch { $0.installed(recordID: key.recordID, deviceID: key.deviceID, at: Date()) }
         onJobFinished?(job, nil, automatic, wasRefresh)
         await updateAppIDCounter()
     }
@@ -2466,43 +2485,83 @@ final class AppModel {
     static let crashLookback: TimeInterval = 24 * 3600
     /// After XSide opens an app at install: how long it must stay up to count as started.
     static let launchGrace: Duration = .seconds(10)
+    /// UserDefaults key of "Notify me when an app stops at launch" (default on).
+    static let notifyCrashKey = "notifyCrash"
 
     /// What XSide found about an installation's crashes (memory only: the device keeps the logs).
     /// Only on-demand looks ("Why does it crash?", Look again, `xside crash`) show `.checking`
-    /// here; the quiet check after an install writes only a crash it found.
+    /// here; the checks XSide makes by itself write only a crash they found.
     private(set) var crashChecks: [JobKey: CrashCheck] = [:]
     /// The newest on-demand look of each installation: an older one finishing late never
     /// overwrites it (so its spinner always ends with its own answer).
     private var crashLooks: [JobKey: UUID] = [:]
-    /// Crash files the check after an install found, by installation: whoever reads them later
-    /// keeps them marked as found after the install (the panel's line).
-    private var crashFilesAfterInstall: [JobKey: Set<String>] = [:]
     /// The check after each installation's latest install (a new install cancels the older one).
     private var launchWatches: [JobKey: Task<Void, Never>] = [:]
+    /// Which crashes the rows tell about, and the quiet look's bookkeeping (saved in the library).
+    /// Not observed: a check-in updates it every few seconds; `crashFlags` is what views read.
+    @ObservationIgnored private var crashWatch: CrashWatch
+    /// The rows' crash flags, by `CrashWatch.key` (observed copy of `crashWatch.flags`).
+    private(set) var crashFlags: [String: CrashFlag] = [:]
+    /// Devices whose crash logs are being looked at right now.
+    @ObservationIgnored private var crashScans: Set<String> = []
     /// The installation the crash window shows.
     var crashWindowKey: JobKey?
     /// Opens the crash window (set by the menu-bar label, which has `openWindow`).
     var showCrashWindow: (() -> Void)?
 
-    /// "Why does it crash?": the window, on that installation, and a fresh look at its crash logs.
+    /// Changes the crash watch, then publishes its flags and saves it when anything changed.
+    @discardableResult
+    private func changeCrashWatch<R>(_ change: (inout CrashWatch) -> R) -> R {
+        let before = crashWatch
+        let result = change(&crashWatch)
+        guard crashWatch != before else { return result }
+        if crashFlags != crashWatch.flags { crashFlags = crashWatch.flags }
+        #if DEBUG
+        if SnapshotRenderer.folder != nil { return result }
+        #endif
+        do { try crashWatchStore.save(crashWatch) } catch {
+            Self.logger.error("saving crash-watch.json failed: \(String(describing: error))")
+        }
+        return result
+    }
+
+    /// The row's crash, if XSide is telling about one.
+    func crashFlag(for key: JobKey) -> CrashFlag? {
+        crashFlags[CrashWatch.key(recordID: key.recordID, deviceID: key.deviceID)]
+    }
+
+    /// "Ignore" on the row: that crash is no longer shown.
+    func dismissCrash(_ key: JobKey) {
+        changeCrashWatch { $0.dismiss(recordID: key.recordID, deviceID: key.deviceID) }
+    }
+
+    /// "Why does it crash?": the window, on that installation, and a fresh look at its crash logs
+    /// (back to the flagged crash when it's older than the usual 24 h).
     func explainCrash(_ key: JobKey) {
         crashWindowKey = key
         showCrashWindow?()
         switch crashChecks[key] {
         case .checking?, .found?: break // its "Look again" reads them anew
-        default: Task { await diagnoseCrash(key) }
+        default:
+            var since = Date().addingTimeInterval(-Self.crashLookback)
+            if let flag = crashFlag(for: key) { since = min(since, flag.crashDate.addingTimeInterval(-60)) }
+            Task { await diagnoseCrash(key, since: since) }
         }
     }
 
-    /// An on-demand look: reads the device's newest crash of the installation in the last 24 h,
-    /// explains it and keeps the result for the panel, the window and the report. Any failure is
-    /// an answer, never an error thrown at the caller. The newest look's answer is the one kept.
+    /// An on-demand look: reads the device's newest crash of the installation in the last 24 h
+    /// (or since `since`), explains it and keeps the result for the window and the report. Any
+    /// failure is an answer, never an error thrown at the caller. The newest look's answer is kept.
     @discardableResult
-    func diagnoseCrash(_ key: JobKey) async -> CrashCheck {
+    func diagnoseCrash(_ key: JobKey, since: Date? = nil) async -> CrashCheck {
         let look = UUID()
         crashLooks[key] = look
         crashChecks[key] = .checking
-        let result = await readCrash(key, since: Date().addingTimeInterval(-Self.crashLookback))
+        let result = await readCrash(key, since: since ?? Date().addingTimeInterval(-Self.crashLookback))
+        if case .found(let finding) = result {
+            // Seen by the person: the quiet look won't announce it again.
+            changeCrashWatch { $0.markSeen(fileName: finding.fileName, deviceID: key.deviceID, at: Date()) }
+        }
         if crashLooks[key] == look {
             crashLooks[key] = nil
             crashChecks[key] = result
@@ -2510,8 +2569,23 @@ final class AppModel {
         return result
     }
 
+    /// The diagnosis of a crash log read from the device, with its log cleaned off the main actor
+    /// (it can be megabytes).
+    private func finding(_ found: CrashLogFetcher.Found, record: AppRecord, installation: Installation) async -> CrashFinding {
+        let context = CrashContext(moduleName: Resigner.welcomeName,
+                                   duoCompatibilityOn: installation.duoCompatibility == true)
+        let diagnosis = CrashClassifier.classify(found.log, context: context)
+        let secrets = [installation.teamID, record.teamID, installation.deviceID].compactMap { $0 }
+        let text = found.text
+        let (log, lines) = await Task.detached(priority: .userInitiated) {
+            let log = LogStore.shared.redact(CrashLogSanitizer.sanitize(text, secrets: secrets))
+            return (log, CrashFinding.displayLines(log))
+        }.value
+        return CrashFinding(diagnosis: diagnosis, log: log, lines: lines, fileName: found.fileName)
+    }
+
     /// Reads the device's newest crash of the installation since `since` and explains it; touches
-    /// nothing the window shows. The log is cleaned off the main actor (it can be megabytes).
+    /// nothing the window shows.
     private func readCrash(_ key: JobKey, since: Date) async -> CrashCheck {
         guard let record = records.first(where: { $0.id == key.recordID }),
               let installation = record.installations.first(where: { $0.deviceID == key.deviceID }) else {
@@ -2525,29 +2599,40 @@ final class AppModel {
                 Self.logger.notice("no crash of \(target.signedBundleID) on \(key.deviceID) since \(since.formatted(.iso8601))")
                 return .none
             }
-            let context = CrashContext(moduleName: Resigner.welcomeName,
-                                       duoCompatibilityOn: installation.duoCompatibility == true)
-            let diagnosis = CrashClassifier.classify(found.log, context: context)
-            let secrets = [installation.teamID, record.teamID, key.deviceID].compactMap { $0 }
-            let text = found.text
-            let (log, lines) = await Task.detached(priority: .userInitiated) {
-                let log = LogStore.shared.redact(CrashLogSanitizer.sanitize(text, secrets: secrets))
-                return (log, CrashFinding.displayLines(log))
-            }.value
-            Self.logger.notice("crash of \(target.signedBundleID) on \(key.deviceID): \(diagnosis.summary)")
-            let afterInstall = crashFilesAfterInstall[key]?.contains(found.fileName) == true
-            return .found(CrashFinding(diagnosis: diagnosis, log: log, lines: lines, fileName: found.fileName, afterInstall: afterInstall))
+            let result = await finding(found, record: record, installation: installation)
+            Self.logger.notice("crash of \(target.signedBundleID) on \(key.deviceID): \(result.diagnosis.summary)")
+            return .found(result)
         } catch {
             Self.logger.notice("crash logs of \(key.deviceID) unreadable: \(String(describing: error))")
             return .failed(localizedMessage(error))
         }
     }
 
+    /// A crash XSide found by itself (after an install, or by the quiet look): flags the row
+    /// unless it's old news, shows it in the window when nothing newer is there, and tells the
+    /// engine when it's new. True when the flag is new.
+    @discardableResult
+    private func crashFound(_ finding: CrashFinding, key: JobKey) -> Bool {
+        guard let installation = records.first(where: { $0.id == key.recordID })?
+            .installations.first(where: { $0.deviceID == key.deviceID }) else { return false }
+        let isNew = changeCrashWatch {
+            $0.raise(recordID: key.recordID, deviceID: key.deviceID, fileName: finding.fileName,
+                     diagnosis: finding.diagnosis, installedAt: installation.installedAt, now: Date())
+        }
+        // The window: an on-demand look in progress gives its own answer; otherwise this crash
+        // replaces nothing newer.
+        if crashLooks[key] == nil, Self.isNewer(finding, than: crashChecks[key]) {
+            crashChecks[key] = .found(finding)
+        }
+        if isNew, let flag = crashFlag(for: key) { onCrashFound?(key, flag) }
+        return isNew
+    }
+
     /// After an install that opened the app: once `launchGrace` has passed, an app no longer
     /// running (or whose launch failed) has its crash logs read, and a crash found goes to that
-    /// install's window (its own attempt only) and the panel. Nothing found, or a device that
-    /// can't tell: nothing is said, and whatever the window shows is left alone. Never holds up
-    /// the install.
+    /// install's window (its own attempt only) and the panel. Still running, or nothing found:
+    /// a crash flagged before this install goes. A device that can't tell: nothing is said, and
+    /// whatever the window shows is left alone. Never holds up the install.
     private func watchLaunch(_ key: JobKey, since: Date, launched: Bool, flow: InstallFlow) {
         guard let attempt = flow.runs.first(where: { $0.deviceID == key.deviceID })?.attempt else { return }
         func setRun(_ change: (inout DeviceRun) -> Void) {
@@ -2563,7 +2648,11 @@ final class AppModel {
                 let fetcher = CrashLogFetcher(runner: runner)
                 let running = await withKnownXcode { await fetcher.isRunning(executable: executable, deviceID: key.deviceID) }
                 Self.logger.notice("app running on \(key.deviceID) after launch: \(running.map(String.init) ?? "unknown")")
-                if running == true || Task.isCancelled { return }
+                if Task.isCancelled { return }
+                if running == true {
+                    changeCrashWatch { $0.launchSeen(recordID: key.recordID, deviceID: key.deviceID, at: Date()) }
+                    return
+                }
             }
             var result = await readCrash(key, since: since.addingTimeInterval(-5))
             if case .none = result, !Task.isCancelled {
@@ -2571,17 +2660,88 @@ final class AppModel {
                 try? await Task.sleep(for: .seconds(5))
                 result = await readCrash(key, since: since.addingTimeInterval(-5))
             }
-            guard !Task.isCancelled, case .found(var finding) = result else { return } // nothing to say
-            crashFilesAfterInstall[key, default: []].insert(finding.fileName)
-            finding = CrashFinding(diagnosis: finding.diagnosis, log: finding.log, lines: finding.lines, fileName: finding.fileName,
-                                   afterInstall: true)
-            setRun { $0.crash = finding }
-            // The window: an on-demand look in progress gives its own answer (marked the same way
-            // when it's this crash); otherwise this crash replaces nothing newer.
-            if crashLooks[key] == nil, Self.isNewer(finding, than: crashChecks[key]) {
-                crashChecks[key] = .found(finding)
+            guard !Task.isCancelled else { return }
+            switch result {
+            case .found(let finding):
+                setRun { $0.crash = finding }
+                crashFound(finding, key: key)
+            case .none:
+                changeCrashWatch { $0.noNewCrash(recordID: key.recordID, deviceID: key.deviceID, checkedAt: Date()) }
+            case .failed, .checking:
+                break // nothing to say
             }
         }
+    }
+
+    /// The quiet look (run by the engine at each evaluation): each reachable device holding XSide
+    /// apps, at most once an hour, with no job running on it, has its crash-log folder listed, and
+    /// only the few new files of its XSide apps are copied and read. A new crash flags its row and
+    /// is notified; an installation reinstalled since its flag and with no new crash is cleared.
+    /// Errors are skipped silently (logged); it never holds up a refresh.
+    func scanCrashesIfDue() {
+        let now = Date()
+        let busyDevices = Set(jobs.keys.map(\.deviceID)).union(install?.isRunning == true ? (install?.runs.map(\.deviceID) ?? []) : [])
+        var keys: Set<String> = []
+        for record in records { for i in record.installations { keys.insert(CrashWatch.key(recordID: record.id, deviceID: i.deviceID)) } }
+        changeCrashWatch { $0.prune(keeping: keys, now: now) } // saved only when something went
+        for device in devices where device.isAvailable && device.isPaired {
+            let id = device.id
+            guard !removingDevices.contains(id), !busyDevices.contains(id), !crashScans.contains(id),
+                  crashWatch.shouldScan(deviceID: id, now: now) else { continue }
+            let entries = records.flatMap { r in
+                r.installations.filter { $0.deviceID == id }.map { AppEntry(record: r, installation: $0) }
+            }
+            let executables = Set(entries.compactMap(\.record.executable))
+            guard !executables.isEmpty else { continue }
+            let since = changeCrashWatch { $0.scanStarted(deviceID: id, now: now) }
+            let seen = crashWatch.seenFiles(deviceID: id)
+            crashScans.insert(id)
+            Task { [weak self, runner] in
+                guard let self else { return }
+                defer { crashScans.remove(id) }
+                let fetcher = CrashLogFetcher(runner: runner)
+                let found: [CrashLogFetcher.Found]
+                do {
+                    found = try await withKnownXcode {
+                        try await fetcher.newCrashes(deviceID: id) {
+                            CrashLogListing.newCrashFiles($0, executables: executables, since: since, seen: seen)
+                        }
+                    }
+                } catch {
+                    Self.logger.info("crash look on \(id) skipped: \(String(describing: error))")
+                    return
+                }
+                var raised: Set<JobKey> = []
+                for file in found {
+                    changeCrashWatch { $0.markSeen(fileName: file.fileName, deviceID: id, at: Date()) }
+                    guard let entry = entries.first(where: { e in
+                        file.log.matches(CrashTarget(signedBundleID: e.installation.signedBundleID ?? e.record.signedBundleID,
+                                                     executable: e.record.executable), since: .distantPast)
+                    }), let record = records.first(where: { $0.id == entry.record.id }),
+                       let installation = record.installations.first(where: { $0.deviceID == id }) else { continue }
+                    let result = await finding(file, record: record, installation: installation)
+                    Self.logger.notice("crash look on \(id): \(entry.record.signedBundleID) \(result.diagnosis.summary)")
+                    if crashFound(result, key: entry.id) { raised.insert(entry.id) }
+                }
+                for entry in entries where !raised.contains(entry.id) {
+                    changeCrashWatch { $0.noNewCrash(recordID: entry.record.id, deviceID: id, checkedAt: now) }
+                }
+            }
+        }
+    }
+
+    /// The fix a crash suggests (its window, the install window): changes the option and signs
+    /// the app again on that device. False when the refresh couldn't start (device away, busy).
+    @discardableResult
+    func perform(_ action: CrashAction, on key: JobKey) async -> Bool {
+        guard let record = records.first(where: { $0.id == key.recordID }),
+              let installation = record.installations.first(where: { $0.deviceID == key.deviceID }) else { return false }
+        switch action {
+        case .reinstallWithoutXSide: await setWithoutXSideFeatures(true, recordID: key.recordID)
+        case .turnOffDuo: await setDuoCompatibility(false, for: AppEntry(record: record, installation: installation))
+        case .refresh: break
+        }
+        return refreshNow(RefreshJob(recordID: key.recordID, deviceID: key.deviceID))
     }
 
     /// `finding` is worth showing over `current`: nothing found yet, or an older crash.
@@ -2589,13 +2749,6 @@ final class AppModel {
         guard case .found(let shown)? = current else { return true }
         if shown.fileName == finding.fileName { return true }
         return (finding.diagnosis.date ?? .distantPast) >= (shown.diagnosis.date ?? .distantPast)
-    }
-
-    /// The panel's line for an installation: its crash found after its last install, if any.
-    func crashFinding(for entry: AppEntry) -> CrashFinding? {
-        guard case .found(let finding)? = crashChecks[entry.id], finding.afterInstall,
-              (finding.diagnosis.date ?? .distantPast) >= entry.installation.installedAt.addingTimeInterval(-120) else { return nil }
-        return finding
     }
 
     /// One installation's answer to `xside crash`.

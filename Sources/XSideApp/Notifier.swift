@@ -35,6 +35,11 @@ final class Notifier: NSObject {
     /// Installed by the app: shows the update (Sparkle's window, in front).
     static var installUpdateHandler: (@MainActor () -> Void)?
 
+    /// An app stopped at launch: a click opens the crash window on it.
+    private nonisolated static let crashCategory = "crash"
+    /// Installed by the app: opens the crash window on one installation.
+    static var crashHandler: (@MainActor (RefreshJob) -> Void)?
+
     /// Installed by the app: refreshes one app (a notification's "Refresh now").
     static var refreshHandler: (@MainActor (RefreshJob) -> Void)?
     /// Installed by the app: opens the menu-bar panel, on the notification's app if it has one.
@@ -84,6 +89,7 @@ final class Notifier: NSObject {
                                                                   title: L("notification.update.install"), options: [.foreground])],
                                    intentIdentifiers: []),
             UNNotificationCategory(identifier: Self.settingsCategory, actions: [], intentIdentifiers: []),
+            UNNotificationCategory(identifier: Self.crashCategory, actions: [], intentIdentifiers: []),
         ])
     }
 
@@ -243,6 +249,27 @@ final class Notifier: NSObject {
         }
     }
 
+    /// XSide found that an app stopped at launch (a crash it hadn't told about): the cause in a few
+    /// words; a click opens the crash window on it. One per crash (the caller dedups by file).
+    func crashFound(appName: String, deviceName: String, cause: String, job: RefreshJob) async {
+        let content = UNMutableNotificationContent()
+        content.title = L("notification.crash.title", appName)
+        content.body = L("notification.crash.body", deviceName, cause)
+        content.sound = .default
+        content.categoryIdentifier = Self.crashCategory
+        content.userInfo = [Self.recordKey: job.recordID.uuidString, Self.deviceKey: job.deviceID]
+        guard let center else {
+            Self.logger.notice("would notify: \(content.title)")
+            return
+        }
+        do {
+            try await center.add(UNNotificationRequest(identifier: "crash.\(job.recordID.uuidString).\(job.deviceID)",
+                                                       content: content, trigger: nil))
+        } catch {
+            Self.logger.error("notification failed: \(String(describing: error))")
+        }
+    }
+
     /// The app was deleted from the device, so XSide stopped managing it there.
     func appRemoved(appName: String, deviceName: String, id: String) async {
         let content = UNMutableNotificationContent()
@@ -384,6 +411,11 @@ extension Notifier: UNUserNotificationCenterDelegate {
             await MainActor.run {
                 NSApp.activate()
                 Self.installUpdateHandler?()
+            }
+        } else if request.content.categoryIdentifier == Self.crashCategory, let job = Self.job(of: response.notification) {
+            await MainActor.run {
+                NSApp.activate()
+                Self.crashHandler?(job)
             }
         } else if response.actionIdentifier == Self.refreshAction, let job = Self.job(of: response.notification) {
             await MainActor.run { Self.refreshHandler?(job) }

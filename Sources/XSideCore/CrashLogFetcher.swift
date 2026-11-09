@@ -133,7 +133,7 @@ public struct CrashLogFetcher: Sendable {
     /// lets `pick` choose the few worth reading, then copies and reads only those. Every log
     /// read is returned, raw (not sanitized yet); the temporary folder is gone before returning.
     /// Throws when the list can't be read.
-    public func newCrashes(deviceID: String, pick: ([CrashLogEntry]) -> [CrashLogEntry]) async throws -> [Found] {
+    public func newCrashes(deviceID: String, pick: @Sendable ([CrashLogEntry]) -> [CrashLogEntry]) async throws -> [Found] {
         let fm = FileManager.default
         let folder = scratchRoot.appendingPathComponent("xside-crash-\(UUID().uuidString)", isDirectory: true)
         try fm.createDirectory(at: folder, withIntermediateDirectories: true)

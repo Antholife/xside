@@ -31,10 +31,13 @@ struct AppRow: View {
     let onRemoveFromList: () -> Void
     /// Opens Settings > Mes apps on this app and device.
     let onXSideSettings: () -> Void
-    /// The app crashed after its last install (XSide opened it): said under its name.
-    var crash: CrashFinding?
+    /// XSide found the app stopped at launch (after its install, or later): a red box under its
+    /// name and a badge on its icon, until dismissed or the app is seen running again.
+    var crash: CrashFlag?
     /// "Why does it crash?": the crash window on this app.
     var onWhyCrash: () -> Void = {}
+    /// "Ignore" on the crash box.
+    var onDismissCrash: () -> Void = {}
     /// Every automatic refresh is paused (the panel's Pause): the row looks paused too, as for
     /// its own pause (device feedback round 2, M2), but keeps its own actions.
     var globallyPaused = false
@@ -68,6 +71,7 @@ struct AppRow: View {
                              onRemoveFromList: onRemoveFromList))
         .accessibilityAction(named: L("popover.app.xsideSettings"), onXSideSettings)
         .accessibilityAction(named: L("popover.app.whyCrash"), onWhyCrash)
+        .modifier(CrashDismissAction(hasCrash: crash != nil, onDismiss: onDismissCrash))
     }
 
     private var appName: String { entry.record.options.displayName ?? entry.record.displayName }
@@ -106,7 +110,8 @@ struct AppRow: View {
 
     private func row(validity: Validity, now: Date) -> some View {
         HStack(spacing: 10) {
-            AppIconView(icon: icon, isBusy: step != nil || isUninstalling, isPaused: looksPaused)
+            AppIconView(icon: icon, isBusy: step != nil || isUninstalling, isPaused: looksPaused,
+                        hasCrash: crash != nil && step == nil)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     Text(appName)
@@ -148,15 +153,7 @@ struct AppRow: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if step == nil, let crash {
-                    Button(action: onWhyCrash) {
-                        Text(L("popover.app.crashed", CrashWording(crash.diagnosis, app: appName).title))
-                            .font(.system(size: 11))
-                            .foregroundStyle(Color(nsColor: .systemRed))
-                            .multilineTextAlignment(.leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .buttonStyle(.plain)
-                    .help(L("popover.app.whyCrash"))
+                    CrashRowBox(flag: crash, appName: appName, onWhy: onWhyCrash, onDismiss: onDismissCrash)
                 }
                 if step == nil, !looksPaused, let key = entry.installation.lastErrorKey {
                     Text(localizedRowError(key: key))
@@ -216,6 +213,61 @@ struct AppRow: View {
     }
 }
 
+/// Under the app's name, when it stopped at launch: what happened in a few words, "See why" (the
+/// crash window) and "Ignore". Red; orange once a reinstall since waits for the next check.
+private struct CrashRowBox: View {
+    let flag: CrashFlag
+    let appName: String
+    let onWhy: () -> Void
+    let onDismiss: () -> Void
+
+    private var tint: Color { Color(nsColor: flag.supersededAt == nil ? .systemRed : .systemOrange) }
+
+    var body: some View {
+        let cause = CrashWording(flag.diagnosis, app: appName).title
+        VStack(alignment: .leading, spacing: 5) {
+            Label {
+                Text(L(flag.supersededAt == nil ? "popover.app.crashLine" : "popover.app.crashLine.before", cause))
+                    .font(.system(size: 11, weight: .semibold))
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: "exclamationmark.octagon.fill")
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .foregroundStyle(tint)
+            HStack(spacing: 8) {
+                Button(L("crash.seeWhy"), action: onWhy)
+                    .buttonStyle(CrashFilledButtonStyle(tint: tint))
+                Button(L("crash.ignore"), action: onDismiss)
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(tint.opacity(0.35), lineWidth: 0.5))
+        .padding(.top, 2)
+    }
+}
+
+/// VoiceOver: "Ignore" on the row while it shows a crash.
+private struct CrashDismissAction: ViewModifier {
+    let hasCrash: Bool
+    let onDismiss: () -> Void
+
+    func body(content: Content) -> some View {
+        if hasCrash {
+            content.accessibilityAction(named: L("crash.ignore"), onDismiss)
+        } else {
+            content
+        }
+    }
+}
+
 /// A violet halo pulsing around a row: "this is the one". The fill goes behind the row (the
 /// app's icon stays crisp), the border over it.
 private struct HighlightGlow: View {
@@ -252,6 +304,8 @@ struct AppIconView: View {
     let icon: NSImage?
     var isBusy = false
     var isPaused = false
+    /// The app stopped at launch: a red badge on its corner.
+    var hasCrash = false
     var size: CGFloat = 38
 
     private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: size * 0.225, style: .continuous) }
@@ -279,6 +333,17 @@ struct AppIconView: View {
         .shadow(color: .black.opacity(0.15), radius: 2, y: 1)
         .saturation(isPaused ? 0 : 1)
         .opacity(isPaused ? 0.6 : 1)
+        .overlay(alignment: .bottomTrailing) {
+            if hasCrash {
+                Image(systemName: "exclamationmark")
+                    .font(.system(size: size * 0.24, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .frame(width: size * 0.42, height: size * 0.42)
+                    .background(Circle().fill(Color(nsColor: .systemRed)))
+                    .overlay(Circle().strokeBorder(Color(nsColor: .windowBackgroundColor), lineWidth: 1.5))
+                    .offset(x: size * 0.12, y: size * 0.12)
+            }
+        }
         .accessibilityHidden(true)
     }
 }

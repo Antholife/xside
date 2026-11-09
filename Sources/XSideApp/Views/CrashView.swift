@@ -50,6 +50,8 @@ private struct CrashView: View {
     let check: CrashCheck?
     @State private var showRaw = false
     @State private var showAllLines = false
+    /// The suggested fix was asked for here: whether its refresh started.
+    @State private var actionStarted: Bool?
     /// Lines shown before "Show all": a 5 MB log would stall the window otherwise.
     private static let firstLines = 1_500
     @Environment(\.dismissWindow) private var dismissWindow
@@ -126,6 +128,19 @@ private struct CrashView: View {
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            if let action = CrashAction.suggested(for: d) {
+                HStack(spacing: 8) {
+                    Button(L("crash.action.\(action.rawValue)")) {
+                        Task { actionStarted = await model.perform(action, on: entry.id) }
+                    }
+                    .disabled(model.jobs[entry.id] != nil || actionStarted == true)
+                    if model.jobs[entry.id] != nil || actionStarted == true {
+                        Text(L("crash.action.started")).font(.system(size: 11)).foregroundStyle(.secondary)
+                    } else if actionStarted == false {
+                        Text(L("crash.action.failed")).font(.system(size: 11)).foregroundStyle(Color(nsColor: .systemOrange))
+                    }
+                }
+            }
             Text(when(d)).font(.system(size: 11)).foregroundStyle(.secondary)
             DisclosureGroup(L("crash.technical")) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -187,16 +202,19 @@ private struct CrashView: View {
     }
 }
 
-/// After an install: "checking it starts", then, if it crashed, why in a word and a link to the window.
+/// After an install: "checking it starts", then, if it crashed, a banner per device with the
+/// cause, "See why" and the fix it suggests.
 struct CrashNotes: View {
     let model: AppModel
     let flow: InstallFlow
+    /// The suggested fix was asked for, by device: whether its refresh started.
+    @State private var actionStarted: [String: Bool] = [:]
 
     var body: some View {
         let checking = flow.runs.filter(\.checkingLaunch)
         let crashed = flow.runs.filter { $0.crash != nil }
         if !checking.isEmpty || !crashed.isEmpty {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 8) {
                 ForEach(checking) { run in
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.mini)
@@ -205,24 +223,108 @@ struct CrashNotes: View {
                 }
                 ForEach(crashed) { run in
                     if let finding = run.crash {
-                        let app = flow.info?.name ?? ""
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Label(L("install.crash.found", app, run.name, CrashWording(finding.diagnosis, app: app).title),
-                                  systemImage: "exclamationmark.octagon.fill")
-                                .font(.system(size: 12))
-                                .foregroundStyle(Color(nsColor: .systemRed))
-                                .fixedSize(horizontal: false, vertical: true)
-                            if let recordID = flow.importedRecordID {
-                                Button(L("install.crash.details")) {
-                                    model.explainCrash(JobKey(recordID: recordID, deviceID: run.deviceID))
-                                }
-                                .buttonStyle(.link)
-                                .font(.system(size: 12))
-                            }
-                        }
+                        let key = flow.importedRecordID.map { JobKey(recordID: $0, deviceID: run.deviceID) }
+                        CrashBanner(app: flow.info?.name ?? "", device: run.name, diagnosis: finding.diagnosis,
+                                    isFixing: key.map { model.jobs[$0] != nil } ?? false,
+                                    actionStarted: actionStarted[run.deviceID],
+                                    onWhy: key.map { key in { model.explainCrash(key) } },
+                                    onAction: key.map { key in
+                                        { action in
+                                            Task { actionStarted[run.deviceID] = await model.perform(action, on: key) }
+                                        }
+                                    })
                     }
                 }
             }
         }
+    }
+}
+
+/// The app stopped at launch, said loud: on a red card, which app on which device, the cause in
+/// plain words, "See why" (the crash window) and the suggested fix as a button when XSide can do
+/// it (install without XSide's features, without the Duo compatibility, sign again).
+struct CrashBanner: View {
+    let app: String
+    let device: String
+    let diagnosis: CrashDiagnosis
+    /// The fix's refresh is running on that installation.
+    var isFixing = false
+    /// The fix was asked for: whether its refresh started (nil: not asked).
+    var actionStarted: Bool?
+    let onWhy: (() -> Void)?
+    let onAction: ((CrashAction) -> Void)?
+
+    private var red: Color { Color(nsColor: .systemRed) }
+
+    var body: some View {
+        let wording = CrashWording(diagnosis, app: app)
+        let action = CrashAction.suggested(for: diagnosis)
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.octagon.fill")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(red)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(L("crash.banner.title", app, device))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(red)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(wording.title)
+                    .font(.system(size: 12, weight: .medium))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(wording.advice)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    if let onWhy {
+                        Button(L("crash.seeWhy"), action: onWhy)
+                            .buttonStyle(CrashFilledButtonStyle(tint: red, size: 13))
+                    }
+                    if let action, let onAction {
+                        Button(L("crash.action.\(action.rawValue)")) { onAction(action) }
+                            .buttonStyle(.bordered)
+                            .disabled(isFixing || actionStarted == true)
+                    }
+                }
+                .controlSize(.regular)
+                .padding(.top, 2)
+                if isFixing || actionStarted == true {
+                    Text(L("crash.action.started"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if actionStarted == false {
+                    Text(L("crash.action.failed"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color(nsColor: .systemOrange))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(red.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(red.opacity(0.4), lineWidth: 1))
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// A filled button in the crash's color, white text: as loud whether or not its window is key
+/// (a prominent system button greys out in the menu-bar panel's inactive window).
+struct CrashFilledButtonStyle: ButtonStyle {
+    let tint: Color
+    var size: CGFloat = 11
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: size, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, size * 0.85)
+            .padding(.vertical, size * 0.3)
+            .background(tint.opacity(configuration.isPressed ? 0.75 : 1), in: Capsule())
+            .opacity(isEnabled ? 1 : 0.5)
+            .contentShape(Capsule())
     }
 }

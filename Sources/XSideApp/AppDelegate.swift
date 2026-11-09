@@ -40,6 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // The panel opens on the app: it follows the refresh there, or says why it couldn't start
         // (device not seen yet, already running, setup to fix).
+        // A crash notification: the crash window on that app.
+        Notifier.crashHandler = { job in model.explainCrash(JobKey(recordID: job.recordID, deviceID: job.deviceID)) }
         Notifier.refreshHandler = { [weak self] job in
             Self.logger.notice("refresh from a notification")
             model.refreshWhenReady(job) // just launched by the notification: runs once ready

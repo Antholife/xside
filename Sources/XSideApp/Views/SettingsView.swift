@@ -236,6 +236,7 @@ private struct SettingsPage: View {
     @AppStorage(BackgroundEngine.acOnlyKey) private var acOnly = false
     @AppStorage(BackgroundEngine.preferredHoursKey) private var preferredHours = ""
     @AppStorage(AppModel.notifyAppRemovedKey) private var notifyAppRemoved = true
+    @AppStorage(AppModel.notifyCrashKey) private var notifyCrash = true
     @Environment(\.openWindow) private var openWindow
     @State private var login = LaunchAtLogin()
     @State private var notifications = NotificationPermission()
@@ -375,6 +376,10 @@ private struct SettingsPage: View {
             Toggle(isOn: $notifyAppRemoved) {
                 Text(L("settings.notifyAppRemoved"))
                 Text(L("settings.notifyAppRemoved.note"))
+            }
+            Toggle(isOn: $notifyCrash) {
+                Text(L("settings.notifyCrash"))
+                Text(L("settings.notifyCrash.note"))
             }
             if notifications.state == .notDetermined || notifications.state == .denied {
                 NotificationPermissionCard(permission: notifications)

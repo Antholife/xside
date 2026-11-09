@@ -81,6 +81,7 @@ final class BackgroundEngine {
         model.onRefreshResumed = { [weak self] job in self?.refreshResumed(job) }
         // Allowed only now (journey, Settings): the reminders couldn't be scheduled before.
         NotificationPermission.onBecameAuthorized = { [weak self] in self?.reconcileReminders() }
+        model.onCrashFound = { [weak self] key, flag in self?.notifyCrash(key, flag: flag) }
         model.onJobFinished = { [weak self] job, error, automatic, wasRefresh in
             self?.jobFinished(job, error: error, automatic: automatic, wasRefresh: wasRefresh)
         }
@@ -184,6 +185,7 @@ final class BackgroundEngine {
         reportEnvironment()
         reportMacBeta()
         checkPresence()
+        model.scanCrashesIfDue()
         reportUnreachable()
         reportNeedsUSB()
         // Environment broken (or not probed yet): nothing can be refreshed. `reportEnvironment`
@@ -503,6 +505,23 @@ final class BackgroundEngine {
                 appName: Self.appName(record), deviceName: deviceName, date: date,
                 id: "refreshed.\(job.recordID.uuidString).\(job.deviceID)")
             if !posted { successGate.forget(recordID: job.recordID, deviceID: job.deviceID) }
+        }
+    }
+
+    /// A crash XSide hadn't told about (the model dedups by crash file), unless turned off in
+    /// Settings or for that device, or the install window on screen already shows it.
+    private func notifyCrash(_ key: JobKey, flag: CrashFlag) {
+        guard AppModel.setting(AppModel.notifyCrashKey), model.devicePrefs.notifies(key.deviceID),
+              let record = model.records.first(where: { $0.id == key.recordID }) else { return }
+        if model.isInstallWindowOpen, let flow = model.install,
+           flow.runs.contains(where: { $0.deviceID == key.deviceID && $0.crash?.fileName == flag.fileName }) { return }
+        let appName = Self.appName(record)
+        let cause = CrashWording(flag.diagnosis, app: appName).title
+        let device = deviceName(key.deviceID)
+        Task { [notifier] in
+            guard await notifier.canDeliver() else { return }
+            await notifier.crashFound(appName: appName, deviceName: device, cause: cause,
+                                      job: RefreshJob(recordID: key.recordID, deviceID: key.deviceID))
         }
     }
 
