@@ -318,8 +318,10 @@ private struct AppSettingsContent: View {
 
     /// The Mac's choice for XSide's module now: this device's own, else the app's, else the Mac's default.
     private var wantsWithoutFeatures: Bool { !hasFeatures }
+    /// Read from the library's current installation, not the value this view was built with: a
+    /// switch changed here is in it as soon as it is stored (device round 2, item 10).
     private var pending: Set<SigningTimeSetting> {
-        entry.installation.pendingSigningChanges(wantsWithoutXSideFeatures: wantsWithoutFeatures)
+        (model.currentEntry(entry.id) ?? entry).installation.pendingSigningChanges(wantsWithoutXSideFeatures: wantsWithoutFeatures)
     }
 
     /// Under a signing-time option: its stored choice isn't in the installed copy yet.

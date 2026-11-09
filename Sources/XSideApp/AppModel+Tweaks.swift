@@ -376,11 +376,18 @@ extension AppModel {
         var uses = entry.installation.tweaks ?? []
         change(&uses)
         do {
-            try await library.setTweaks(uses, recordID: entry.record.id, deviceID: entry.installation.deviceID)
+            let changed = try await library.setTweaks(uses, recordID: entry.record.id, deviceID: entry.installation.deviceID)
+            await reloadRecords()
+            // What the « Changement en attente » line will say (device round 2, item 10).
+            let pending = currentEntry(entry.id)?.installation.signedChoices.map { _ in
+                currentEntry(entry.id)!.installation.pendingSigningChanges(wantsWithoutXSideFeatures: false).contains(.tweaks)
+            }
+            Self.logger.notice("tweak choice on \(entry.installation.deviceID): \(changed ? "stored" : "unchanged"), "
+                               + "on \(uses.filter(\.enabled).count) of \(uses.count), pending: \(pending.map(String.init) ?? "unknown (never signed with tweaks)")")
         } catch {
             Self.logger.error("tweak choice failed: \(String(describing: error))")
+            await reloadRecords()
         }
-        await reloadRecords()
     }
 }
 

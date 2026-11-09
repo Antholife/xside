@@ -663,6 +663,43 @@ struct LibraryTweakTests {
         #expect(a.pendingSigningChanges(wantsWithoutXSideFeatures: false) == [.tweaks])
     }
 
+    /// Device round 2, item 10: in Mes apps, turning a tweak back on (after a signing without it)
+    /// is pending as much as turning it off, and so is « Injecter quand même ».
+    @Test func turningATweakOnOrOffOrForcedIsPendingUntilSigned() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let (lib, rec) = try await library(tmp, devices: ["A"])
+        let p = try await lib.addTweak(try tweakDylib(in: tmp), recordID: rec.id, deviceIDs: ["A"], runner: ProcessRunner(),
+                                       now: tweakNow).package
+        func pending() async throws -> Set<SigningTimeSetting> {
+            try #require(try await record(lib).installations.first).pendingSigningChanges(wantsWithoutXSideFeatures: false)
+        }
+        func sign() async throws {
+            let i = try #require(try await record(lib).installations.first)
+            let start = try await record(lib).signingSnapshot(deviceID: "A")
+            var job = signing("A", uses: i.tweaks ?? [], signed: i.enabledTweakIDs)
+            job.signedChoices?.forcedTweaks = i.forcedTweakIDs.isEmpty ? nil : i.forcedTweakIDs
+            _ = try await lib.recordSigning(job, for: rec.id, requireExisting: true, startedFrom: start)
+        }
+        try await sign()
+        #expect(try await pending().isEmpty)
+        // Off: pending; signed without it: nothing pending, it stays listed off.
+        _ = try await lib.setTweaks([TweakUse(id: p.id, enabled: false)], recordID: rec.id, deviceID: "A")
+        #expect(try await pending() == [.tweaks])
+        try await sign()
+        #expect(try await pending().isEmpty)
+        #expect(try await uses(lib, "A") == [TweakUse(id: p.id, enabled: false)])
+        // On again: pending.
+        _ = try await lib.setTweaks([TweakUse(id: p.id, enabled: true)], recordID: rec.id, deviceID: "A")
+        #expect(try await pending() == [.tweaks])
+        try await sign()
+        #expect(try await pending().isEmpty)
+        // Forced: pending; unforced again before signing: nothing.
+        _ = try await lib.setTweaks([TweakUse(id: p.id, enabled: true, force: true)], recordID: rec.id, deviceID: "A")
+        #expect(try await pending() == [.tweaks])
+        _ = try await lib.setTweaks([TweakUse(id: p.id, enabled: true)], recordID: rec.id, deviceID: "A")
+        #expect(try await pending().isEmpty)
+    }
+
     @Test func theJobsOwnChoiceWinsWhenNothingChangedMeanwhile() async throws {
         let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
         let (lib, rec) = try await library(tmp, devices: ["A"])
