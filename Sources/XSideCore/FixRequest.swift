@@ -1,11 +1,11 @@
 import Foundation
 
-/// "Request a fix": a new GitHub issue on the idea form (.github/ISSUE_TEMPLATE/feature_request.yml),
+/// "Request a fix": a new GitHub issue on the fix request form (.github/ISSUE_TEMPLATE/fix_request.yml),
 /// its title prefilled with the app's name only (what the person sees on the device), never a
 /// bundle id, a device name or anything else of theirs.
 public enum FixRequest {
     public static let newIssue = "https://github.com/Antholife/xside/issues/new"
-    public static let template = "feature_request.yml"
+    public static let template = "fix_request.yml"
     /// Longest app name kept in the title.
     static let maxNameLength = 60
 
@@ -83,13 +83,13 @@ extension FixRequest {
         return IssueReport.maskApps(text, apps: [appIDs]).replacingOccurrences(of: "<app-1>", with: "<app>")
     }
 
-    /// The request from a crash: the idea form, titled "Fix request: <app>", the person's own words
+    /// The request from a crash: the fix request form, titled "Fix request: <app>", the person's own words
     /// to write (`prompt`, in their language) and the details in a code block (cut first when the
     /// link gets too long).
     public static func crashURL(appName: String?, prompt: String, details: String) -> URL {
         IssueReport.url(template: template,
-                        fields: [("title", title(appName: appName)), ("idea", prompt),
-                                 ("more", "```\n\(details)\n```")],
-                        cut: "more")
+                        fields: [("title", title(appName: appName)), ("expected", prompt),
+                                 ("diagnosis", "```\n\(details)\n```")],
+                        cut: "diagnosis")
     }
 }

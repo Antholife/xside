@@ -11,15 +11,15 @@ struct FixRequestTests {
         #expect(FixRequest.title(appName: String(repeating: "a", count: 200)).count == "Fix request: ".count + 60)
     }
 
-    @Test func urlOpensTheIdeaFormWithAnEncodedTitle() throws {
+    @Test func urlOpensTheFixFormWithAnEncodedTitle() throws {
         let url = FixRequest.url(appName: "Tom & Jerry+ #1 = é")
-        #expect(url.absoluteString.hasPrefix("https://github.com/Antholife/xside/issues/new?template=feature_request.yml&title="))
+        #expect(url.absoluteString.hasPrefix("https://github.com/Antholife/xside/issues/new?template=fix_request.yml&title="))
         let items = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
         #expect(items.count == 2)
         #expect(items.first { $0.name == "title" }?.value == "Fix request: Tom & Jerry+ #1 = é")
         #expect(!url.absoluteString.contains(" ") && !url.absoluteString.contains("#"))
         #expect(FixRequest.url(appName: nil).absoluteString
-                == "https://github.com/Antholife/xside/issues/new?template=feature_request.yml&title=Fix%20request")
+                == "https://github.com/Antholife/xside/issues/new?template=fix_request.yml&title=Fix%20request")
     }
 }
 
@@ -56,13 +56,13 @@ struct FixRequestCrashTests {
         #expect(text.contains("<app>"))
     }
 
-    @Test func crashURLUsesTheIdeaForm() throws {
+    @Test func crashURLUsesTheFixForm() throws {
         let url = FixRequest.crashURL(appName: "Duolingo", prompt: "Décris", details: "Cause: other")
         let items = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
-        #expect(items.first { $0.name == "template" }?.value == "feature_request.yml")
+        #expect(items.first { $0.name == "template" }?.value == "fix_request.yml")
         #expect(items.first { $0.name == "title" }?.value == "Fix request: Duolingo")
-        #expect(items.first { $0.name == "idea" }?.value == "Décris")
-        #expect(items.first { $0.name == "more" }?.value == "```\nCause: other\n```")
+        #expect(items.first { $0.name == "expected" }?.value == "Décris")
+        #expect(items.first { $0.name == "diagnosis" }?.value == "```\nCause: other\n```")
         let long = FixRequest.crashURL(appName: "A", prompt: "p", details: String(repeating: "frame\n", count: 4000))
         #expect(long.absoluteString.count <= IssueReport.maxURLLength)
     }
