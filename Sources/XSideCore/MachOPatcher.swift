@@ -178,8 +178,8 @@ public enum MachOPatcher {
 
     /// Gives every library command whose name is a key of `map` the matching name, in every
     /// slice, keeping its `cmd`, timestamp and versions (`install_name_tool -change`). A name
-    /// that fits stays in its command (same size); a longer one makes the command grow (to a
-    /// multiple of 8) and the commands after it move, into the zeros between the load commands
+    /// that fits stays in its command (same size), else it moves to offset 24 and the
+    /// command keeps its size when that is enough, or grows (to a multiple of 8) and the commands after it move, into the zeros between the load commands
     /// and the first section: `sizeofcmds` grows by the difference, nothing past that free space
     /// moves and the file keeps its size. All slices are planned before anything is written: a
     /// slice without the room throws `Failure.noRoom`, any other problem `notMachO` or
@@ -245,7 +245,8 @@ public enum MachOPatcher {
     }
 
     /// `command` (a `dylib_command` whose name was checked) naming `name`: in place when it fits
-    /// (rest zeroed), else rebuilt with the name right after its 24-byte header.
+    /// (rest zeroed), else rebuilt with the name right after its 24-byte header, at least as
+    /// large as before.
     private static func renamed(_ command: Data, to name: String) throws -> Data {
         let bytes = Array(name.utf8)
         let offset = Int(u32(command, 8))
@@ -256,7 +257,9 @@ public enum MachOPatcher {
             return c
         }
         let (needed, o1) = (24 + 1 + 7).addingReportingOverflow(bytes.count)
-        guard !o1, let size = UInt32(exactly: needed & ~7) else { throw Failure.noRoom }
+        // Never smaller than it was (a name stored past offset 24 may fit once moved to 24):
+        // the commands after it never move up, so the rewrite never shrinks `sizeofcmds`.
+        guard !o1, let size = UInt32(exactly: max(needed & ~7, command.count)) else { throw Failure.noRoom }
         var c = command.subdata(in: 0..<24)
         put(&c, 4, size)
         put(&c, 8, 24)
@@ -280,29 +283,35 @@ public enum MachOPatcher {
     /// match). Only a regular file is read (never a FIFO or device, which could block); false
     /// when unreadable.
     public static func containsAny(_ needles: [String], in binary: URL, maxBytes: Int = 256 * 1024 * 1024) -> Bool {
+        containsAny(needles, in: binary, maxBytes: maxBytes, chunkBytes: 1 << 20)
+    }
+
+    /// `containsAny`, reading `chunkBytes` at a time (at least 1): each window keeps the last
+    /// (longest needle − 1) bytes of the one before, so a needle across two chunks is found.
+    static func containsAny(_ needles: [String], in binary: URL, maxBytes: Int = 256 * 1024 * 1024,
+                            chunkBytes: Int) -> Bool {
         let needles = needles.map { Data($0.utf8) }.filter { !$0.isEmpty }
-        guard !needles.isEmpty, maxBytes > 0 else { return false }
+        guard let longest = needles.map(\.count).max(), maxBytes > 0 else { return false }
         let fd = open(binary.path, O_RDONLY | O_NONBLOCK | O_CLOEXEC)
         guard fd >= 0 else { return false }
         defer { close(fd) }
         var info = stat()
         guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { return false }
         let limit = Int(min(Int64(maxBytes), Int64(info.st_size)))
-        guard limit > 0 else { return false }
-        var data = Data(count: limit)
-        var read = 0
-        data.withUnsafeMutableBytes { (buffer: UnsafeMutableRawBufferPointer) in
-            guard let base = buffer.baseAddress else { return }
-            while read < limit {
-                let n = Darwin.read(fd, base + read, limit - read)
-                if n < 0, errno == EINTR { continue }
-                guard n > 0 else { break } // end of file (it shrank) or an error: search what was read
-                read += n
-            }
+        let chunk = max(1, min(chunkBytes, limit))
+        var buffer = [UInt8](repeating: 0, count: chunk)
+        var window = Data()
+        var total = 0
+        while total < limit {
+            let n = buffer.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress!, min(chunk, limit - total)) }
+            if n < 0, errno == EINTR { continue }
+            guard n > 0 else { break } // end of file (it shrank) or an error: what was read is searched
+            total += n
+            window.append(contentsOf: buffer[0..<n])
+            if needles.contains(where: { window.range(of: $0) != nil }) { return true }
+            window = Data(window.suffix(longest - 1))
         }
-        guard read > 0 else { return false }
-        let content = data.prefix(read)
-        return needles.contains { content.range(of: $0) != nil }
+        return false
     }
 
     /// Removes the commands `select` picks (index → what to report), in every slice: see `removeRpaths`.

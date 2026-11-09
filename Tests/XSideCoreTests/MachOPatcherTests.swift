@@ -275,6 +275,41 @@ extension MachOPatcherTests {
         #expect(sign.status == 0, "\(sign.stderr)")
     }
 
+    /// Review fix 1: a name stored past offset 24 (valid) that doesn't fit there but would at 24:
+    /// the command keeps at least its size, never shrinks, and the rewrite succeeds without room.
+    @Test func aNameAfterAGapIsRewrittenWithoutShrinking() throws {
+        // libsubstrate (27) in an 88-byte command whose name starts at 64: 23 bytes there, 63 at 24.
+        var d = FakeIPA.dylibMachO(linking: [Self.substrate], padding: 0)
+        let c = commands(d)[1].pos
+        withUnsafeBytes(of: UInt32(64).littleEndian) { d.replaceSubrange(c + 8..<c + 12, with: $0) }
+        d.replaceSubrange(c + 24..<c + 88, with: Data(count: 40) + Array("/usr/lib/libz.1.dylib".utf8) + [0, 0, 0])
+        let url = try file(d)
+        #expect(try MachOPatcher.linkedDylibs(in: url) == ["/usr/lib/libz.1.dylib"])
+        let new = "/usr/lib/a-name-of-forty-bytes-or-so.dylib"
+        #expect(try MachOPatcher.rewriteDylibNames(["/usr/lib/libz.1.dylib": new], in: url) == ["/usr/lib/libz.1.dylib"])
+        let after = try Data(contentsOf: url)
+        #expect(after.count == d.count)
+        #expect(u32(after, 20) == u32(d, 20))
+        #expect(u32(after, c + 4) == 88)
+        #expect(commands(after).map(\.cmd) == [0x19, 0xC, 0x1D])
+        #expect(try MachOPatcher.linkedDylibs(in: url) == [new])
+        let end = 32 + Int(u32(d, 20))
+        #expect(after.subdata(in: end..<after.count) == d.subdata(in: end..<d.count))
+    }
+
+    /// Review fix 2: read in chunks; a needle across a chunk boundary is still found.
+    @Test func findsAStringAcrossAChunkBoundary() throws {
+        let data = FakeIPA.dylibMachO(linking: [], padding: 0, strings: ["/var/jb/usr/lib/x"])
+        let url = try file(data)
+        let at = data.range(of: Data("/var/jb".utf8))!.lowerBound
+        for chunk in [1, 2, 3, 7, 16, at + 3, 1 << 20] {
+            #expect(MachOPatcher.containsAny(["/Library/MobileSubstrate", "/var/jb"], in: url, maxBytes: data.count, chunkBytes: chunk), "\(chunk)")
+            #expect(!MachOPatcher.containsAny(["/var/jb"], in: url, maxBytes: at + 6, chunkBytes: chunk), "\(chunk)")
+            #expect(MachOPatcher.containsAny(["/var/jb"], in: url, maxBytes: at + 7, chunkBytes: chunk), "\(chunk)")
+            #expect(!MachOPatcher.containsAny(["/var/jb/usr/lib/y"], in: url, chunkBytes: chunk), "\(chunk)")
+        }
+    }
+
     // MARK: Hostile input
 
     /// A FIFO (or anything not a regular file) is never read: no hang.
