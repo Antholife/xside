@@ -17,6 +17,12 @@ NSString *XSICloudDefaultContainer(NSDictionary *info) {
     return [@"iCloud." stringByAppendingString:original ?: @"unknown"];
 }
 
+BOOL XSICloudIsEnabled(NSDictionary *info) {
+    if (![info isKindOfClass:NSDictionary.class]) return NO;
+    id value = info[@"XSideICloudSignedOut"];
+    return [value isKindOfClass:NSNumber.class] && [value boolValue];
+}
+
 NSString *XSICloudStoreSuite(NSString *identifier) {
     NSString *name = [identifier isKindOfClass:NSString.class] && identifier.length ? identifier : @"default";
     return [@"io.github.xside.icloud-kvs." stringByAppendingString:name];

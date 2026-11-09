@@ -75,6 +75,16 @@ public enum MachOPatcher {
         }
     }
 
+    /// Whether some 64-bit slice of `executable` loads `dylibPath` (false when unreadable).
+    public static func loadsAnySlice(_ dylibPath: String, in executable: URL) -> Bool {
+        guard let data = try? Data(contentsOf: executable, options: .mappedIfSafe),
+              let starts = try? IPAInspector.sliceOffsets(data) else { return false }
+        return starts.contains { start in
+            guard let commands = try? loadCommands(data, at: start) else { return false }
+            return commands.contains { dylibLoads.contains($0.cmd) && dylibName(data, $0) == dylibPath }
+        }
+    }
+
     /// The free bytes between the load commands and the first section, in the slice that has
     /// the fewest: what a new load command can take.
     public static func freeSpace(in executable: URL) throws -> Int {
@@ -110,6 +120,40 @@ public enum MachOPatcher {
     /// removed (one per command).
     @discardableResult
     public static func removeRpaths(from executable: URL, where matches: (String) -> Bool) throws -> [String] {
+        try removeCommands(from: executable) { data, commands in
+            var drop: [Int: String] = [:]
+            for (i, c) in commands.enumerated() where c.cmd == rpath {
+                if let path = rpathName(data, c), matches(path) { drop[i] = path }
+            }
+            return drop
+        }
+    }
+
+    /// Commands that make dyld load a library (their order is the ordinals binds refer to).
+    static let dylibLoads: Set<UInt32> = [loadDylib, loadWeakDylib, 0x8000_001F /* REEXPORT */,
+                                          0x20 /* LAZY_LOAD */, 0x8000_0023 /* LOAD_UPWARD */]
+
+    /// Removes the load commands of `paths` (libraries XSide added at an earlier signing), in
+    /// every slice, like `removeRpaths`. A command is removed only when every library command
+    /// after it names one of `movable` (XSide's own libraries, which nothing in the app binds
+    /// to): the ordinals of the app's own libraries never change. Returns the paths removed (one
+    /// per command).
+    @discardableResult
+    public static func removeDylibs(_ paths: Set<String>, from executable: URL, movable: Set<String>) throws -> [String] {
+        try removeCommands(from: executable) { data, commands in
+            var drop: [Int: String] = [:]
+            for (i, c) in commands.enumerated() where dylibLoads.contains(c.cmd) {
+                guard let name = dylibName(data, c), paths.contains(name) else { continue }
+                let after = commands[(i + 1)...].filter { dylibLoads.contains($0.cmd) }
+                if after.allSatisfy({ dylibName(data, $0).map(movable.contains) == true }) { drop[i] = name }
+            }
+            return drop
+        }
+    }
+
+    /// Removes the commands `select` picks (index → what to report), in every slice: see `removeRpaths`.
+    private static func removeCommands(from executable: URL,
+                                       select: (Data, [(cmd: UInt32, pos: Int, size: Int)]) -> [Int: String]) throws -> [String] {
         guard var data = try? Data(contentsOf: executable),
               let starts = try? IPAInspector.sliceOffsets(data) else { throw Failure.notMachO }
         var plans: [(start: Int, commands: [(cmd: UInt32, pos: Int, size: Int)], drop: Set<Int>)] = []
@@ -117,11 +161,9 @@ public enum MachOPatcher {
         var seen = Set<Int>()
         for start in starts where seen.insert(start).inserted {
             let commands = try loadCommands(data, at: start)
-            var drop = Set<Int>()
-            for (i, c) in commands.enumerated() where c.cmd == rpath {
-                if let path = rpathName(data, c), matches(path) { drop.insert(i); removed.append(path) }
-            }
-            if !drop.isEmpty { plans.append((start, commands, drop)) }
+            let picked = select(data, commands)
+            removed += picked.sorted { $0.key < $1.key }.map(\.value)
+            if !picked.isEmpty { plans.append((start, commands, Set(picked.keys))) }
         }
         guard !plans.isEmpty else { return [] }
         // Two slices whose load commands overlap: not something to rewrite.

@@ -26,7 +26,8 @@
 // and SwiftData load it at runtime and start mirroring on their own queue right away).
 // Logs: os_log, prefix "[XSiCloud]".
 // The default container comes from the Info.plist file (XSideOriginalBundleID,
-// XSideICloudContainers, written by XSide at signing), not from NSBundle.
+// XSideICloudContainers, written by XSide at signing), not from NSBundle. Nothing is installed
+// unless that file has XSideICloudSignedOut = true (written only when the option applied).
 
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
@@ -616,6 +617,11 @@ static void xsiInstallCloudKit(void) {
 __attribute__((constructor)) static void xsiInit(void) {
     @autoreleasepool {
         @try {
+            // Only an app XSide signed with the option on (the Info.plist says so).
+            if (!XSICloudIsEnabled(xsiInfo())) {
+                XLOG("not enabled for this app (no XSideICloudSignedOut in its Info.plist): nothing installed");
+                return;
+            }
             gStores = [NSMutableDictionary new];
             Class kvs = objc_getClass("NSUbiquitousKeyValueStore");
             if (kvs) {

@@ -155,6 +155,9 @@ public struct Resigner: Sendable {
         let library = features && welcomeDylib.map { FileManager.default.fileExists(atPath: $0.path) } == true
         let iCloudAsked = options.iCloudSignedOut == true
         let shim = iCloudAsked && iCloudLibrary.map { FileManager.default.fileExists(atPath: $0.path) } == true
+        // An .ipa XSide signed before carries its libraries: those this signing doesn't add again
+        // go, with their load commands (a stray iCloud library would stay active with the option off).
+        removeStaleLibraries(app: app, executable: executableURL, keepWelcome: library, keepICloud: shim)
         // Asked for this device: patched on a copy that replaces the executable only once it
         // declares the new SDK (XSide's load command included, when the features are on, so
         // both get the room); the Info.plist keys follow. Any problem leaves the executable
@@ -260,6 +263,42 @@ public struct Resigner: Sendable {
             try? fm.removeItem(at: target)
             Self.logger.notice("welcome popup skipped: \(String(describing: error))")
             return false
+        }
+    }
+
+    // MARK: - Libraries from an earlier signing
+
+    /// Removes from `Frameworks/` the XSide libraries an earlier XSide signing put there and this
+    /// one won't add again (`keepWelcome`, `keepICloud`: it will, replacing them), and their load
+    /// commands. The Duo compatibility module stays while the Info.plist names its scene delegate
+    /// (the raised SDK needs it; the Duo step replaces it when the option is on); otherwise it is
+    /// inert, and goes too. A load command that can't be removed without moving the app's own
+    /// libraries stays: it is weak, and the file is gone. Never fails the install.
+    private func removeStaleLibraries(app: URL, executable: URL, keepWelcome: Bool, keepICloud: Bool) {
+        let fm = FileManager.default
+        var stale: [(name: String, loadPath: String)] = []
+        if !keepWelcome { stale.append((Self.welcomeName, Self.welcomeLoadPath)) }
+        if !keepICloud { stale.append((ICloudSignedOut.dylibName, ICloudSignedOut.loadPath)) }
+        if !namesDuoLegacyDelegate(app) { stale.append((DuoCompatibility.legacyDylibName, DuoCompatibility.legacyLoadPath)) }
+        var paths = Set<String>()
+        for library in stale {
+            let file = app.appendingPathComponent("Frameworks/\(library.name)")
+            let present = (try? fm.attributesOfItem(atPath: file.path)) != nil
+            if present {
+                do { try fm.removeItem(at: file) } catch {
+                    Self.logger.notice("\(library.name) from an earlier signing not removed: \(String(describing: error))")
+                }
+            }
+            if present || MachOPatcher.loadsAnySlice(library.loadPath, in: executable) { paths.insert(library.loadPath) }
+            if present { Self.logger.info("removed \(library.name) from an earlier signing") }
+        }
+        guard !paths.isEmpty else { return }
+        let movable: Set<String> = [Self.welcomeLoadPath, ICloudSignedOut.loadPath, DuoCompatibility.legacyLoadPath]
+        do {
+            let removed = try MachOPatcher.removeDylibs(paths, from: executable, movable: movable)
+            if !removed.isEmpty { Self.logger.info("removed \(removed.count) load command(s) from an earlier signing") }
+        } catch {
+            Self.logger.notice("load commands from an earlier signing kept: \(String(describing: error))")
         }
     }
 

@@ -201,8 +201,10 @@ struct ICloudDetectionTests {
         #expect(plist["XSideICloudContainers"] == nil)
         ICloudSignedOut.applyInfoPlist(&plist, originalBundleID: "com.vendor.app", containers: ["iCloud.a"])
         #expect(plist["XSideICloudContainers"] as? [String] == ["iCloud.a"])
+        #expect(plist[ICloudSignedOut.enabledKey] as? Bool == true)
         ICloudSignedOut.clearInfoPlist(&plist)
         #expect(plist["XSideOriginalBundleID"] == nil && plist["XSideICloudContainers"] == nil)
+        #expect(plist[ICloudSignedOut.enabledKey] == nil)
         #expect(plist["CFBundleIdentifier"] as? String == "x")
     }
 
@@ -279,9 +281,11 @@ private struct ICloudFixture {
     let shim: URL?
 
     init(executable: Data, plistExtras: [String: Any] = ["CFBundleName": "Demo"],
-         withModule: Bool = true, withShim: Bool = true) async throws {
+         withModule: Bool = true, withShim: Bool = true, frameworks: [String: Data] = [:]) async throws {
         let src = try tempDir("icloud-src")
-        try FakeIPA.makeApp(at: src, bundleID: "com.vendor.app", extensions: [], executableData: executable, plistExtras: plistExtras)
+        let made = try FakeIPA.makeApp(at: src, bundleID: "com.vendor.app", extensions: [], executableData: executable, plistExtras: plistExtras)
+        // Files an earlier XSide signing left in the .ipa.
+        for (name, data) in frameworks { try data.write(to: made.appendingPathComponent("Frameworks/\(name)")) }
         let out = try tempDir("icloud-ipa")
         ipa = out.appendingPathComponent("Demo.ipa")
         let r = try await ProcessRunner().run("/usr/bin/ditto",
@@ -337,6 +341,7 @@ struct ICloudResignTests {
         let info = try plist(app)
         // The app's own id, not the signed one, and only the valid declared containers.
         #expect(info["XSideOriginalBundleID"] as? String == "com.vendor.app")
+        #expect(info["XSideICloudSignedOut"] as? Bool == true)
         #expect(info["XSideICloudContainers"] as? [String] == ["iCloud.com.vendor.app.data"])
         #expect(info["CFBundleIdentifier"] as? String == "com.vendor.app.\(team)")
         // Signed after the change, the library too.
@@ -412,6 +417,58 @@ struct ICloudResignTests {
         let plain = try await ICloudFixture(executable: exe)
         let plainApp = try await plain.run(InstallOptions())
         #expect(try MachOPatcher.rpaths(in: plainApp.appendingPathComponent("Demo")).count == 2)
+    }
+
+    /// Morning review M1: an .ipa XSide signed before, with the iCloud library, its module and the
+    /// Duo compatibility module (its delegate no longer named), signed again with all of them off:
+    /// the files and their load commands go, the app's own library stays, the gate key goes.
+    @Test func librariesFromAnEarlierSigningGoWhenTheirOptionIsOff() async throws {
+        let welcome = "@executable_path/Frameworks/XSideWelcome.dylib"
+        let exe = try iCloudMachO(dylibs: [(0xC, cloudKit), (0x8000_0018, DuoCompatibility.legacyLoadPath),
+                                           (0x8000_0018, welcome), (0x8000_0018, ICloudSignedOut.loadPath)])
+        let f = try await ICloudFixture(executable: exe, plistExtras: ["CFBundleName": "Demo", "XSideICloudSignedOut": true,
+                                                                       "XSideOriginalBundleID": "com.vendor.app"],
+                                        frameworks: ["XSideICloud.dylib": Data("OLD".utf8), "XSideWelcome.dylib": Data("OLD".utf8),
+                                                     "XSideDuoLegacy.dylib": Data("OLD".utf8)])
+        let app = try await f.run(InstallOptions(withoutXSideFeatures: true))
+        let out = app.appendingPathComponent("Demo")
+        for name in ["XSideICloud.dylib", "XSideWelcome.dylib", "XSideDuoLegacy.dylib"] {
+            #expect(!FileManager.default.fileExists(atPath: app.appendingPathComponent("Frameworks/\(name)").path))
+        }
+        for path in [ICloudSignedOut.loadPath, welcome, DuoCompatibility.legacyLoadPath] {
+            #expect(!MachOPatcher.loadsAnySlice(path, in: out))
+        }
+        #expect(MachOPatcher.loadsDylib(cloudKit, in: out))
+        #expect(!f.resigner.hasICloudSignedOut(app) && !f.resigner.hasXSideLibrary(app))
+        #expect(try plist(app)["XSideICloudSignedOut"] == nil)
+        // The option on again: a fresh library replaces the old one, the command once.
+        let on = try await ICloudFixture(executable: exe, frameworks: ["XSideICloud.dylib": Data("OLD".utf8)])
+        let onApp = try await on.run(InstallOptions(iCloudSignedOut: true))
+        #expect(try Data(contentsOf: onApp.appendingPathComponent("Frameworks/XSideICloud.dylib")) == Data("ICLOUD".utf8))
+        #expect(MachOPatcher.loadsDylib(ICloudSignedOut.loadPath, in: onApp.appendingPathComponent("Demo")))
+    }
+
+    /// A library of the app's own loaded after XSide's (a tool injected one since): XSide's command
+    /// stays (removing it would shift that library's ordinal), its file goes, so it can't load.
+    @Test func aStaleCommandBeforeTheAppsOwnLibraryStays() async throws {
+        let exe = try iCloudMachO(dylibs: [(0x8000_0018, ICloudSignedOut.loadPath), (0xC, cloudKit)])
+        let f = try await ICloudFixture(executable: exe, frameworks: ["XSideICloud.dylib": Data("OLD".utf8)])
+        let app = try await f.run(InstallOptions())
+        #expect(!FileManager.default.fileExists(atPath: app.appendingPathComponent("Frameworks/XSideICloud.dylib").path))
+        #expect(MachOPatcher.loadsDylib(ICloudSignedOut.loadPath, in: app.appendingPathComponent("Demo")))
+        #expect(MachOPatcher.loadsDylib(cloudKit, in: app.appendingPathComponent("Demo")))
+    }
+
+    /// The Duo compatibility module stays while the Info.plist names its delegate (the raised SDK needs it).
+    @Test func theDuoModuleStaysWhileTheManifestNamesIt() async throws {
+        let manifest: [String: Any] = ["UISceneConfigurations": ["UIWindowSceneSessionRoleApplication": [
+            ["UISceneDelegateClassName": DuoCompatibility.legacySceneDelegateClass]]]]
+        let exe = try iCloudMachO(dylibs: [(0xC, cloudKit), (0x8000_0018, DuoCompatibility.legacyLoadPath)])
+        let f = try await ICloudFixture(executable: exe, plistExtras: ["CFBundleName": "Demo", "UIApplicationSceneManifest": manifest],
+                                        frameworks: ["XSideDuoLegacy.dylib": Data("OLD".utf8)])
+        let app = try await f.run(InstallOptions())
+        #expect(FileManager.default.fileExists(atPath: app.appendingPathComponent("Frameworks/XSideDuoLegacy.dylib").path))
+        #expect(MachOPatcher.loadsDylib(DuoCompatibility.legacyLoadPath, in: app.appendingPathComponent("Demo")))
     }
 
     @Test func loadsDylibIsFalseForUnreadable() throws {

@@ -41,6 +41,11 @@ static void testCore(void) {
     check([XSICloudDefaultContainer(@{@"XSideOriginalBundleID": @[@"x"], @"XSideICloudContainers": @"iCloud.x"}) isEqualToString:@"iCloud.unknown"],
           @"core: wrong types ignored");
     check([XSICloudDefaultContainer((NSDictionary *)@[]) isEqualToString:@"iCloud.unknown"], @"core: not a dictionary");
+    check(XSICloudIsEnabled(@{@"XSideICloudSignedOut": @YES}), @"core: enabled by the Info.plist key");
+    check(!XSICloudIsEnabled(@{@"XSideOriginalBundleID": @"com.vendor.app"}), @"core: not enabled without the key");
+    check(!XSICloudIsEnabled(@{@"XSideICloudSignedOut": @NO}) && !XSICloudIsEnabled(@{@"XSideICloudSignedOut": @"YES"}),
+          @"core: not enabled by false or a string");
+    check(!XSICloudIsEnabled((NSDictionary *)@[]), @"core: not enabled by a non-dictionary");
     check([XSICloudStoreSuite(nil) isEqualToString:@"io.github.xside.icloud-kvs.default"], @"core: default store suite");
     check([XSICloudStoreSuite(@"other") isEqualToString:@"io.github.xside.icloud-kvs.other"], @"core: additional store suite");
 }
@@ -119,8 +124,21 @@ static void testShim(void) {
     check([NSFileManager.defaultManager URLForUbiquityContainerIdentifier:nil] == nil, @"ubiquity container: nil");
 }
 
-int main(void) {
+// Run from a folder whose Info.plist lacks XSideICloudSignedOut (an .ipa XSide signed before,
+// option now off): the library must install nothing.
+static void testInert(void) {
+    check(objc_getClass("XSiStubContainer") == nil, @"inert: no CloudKit stubs without the Info.plist key");
+    check(![NSStringFromClass([[NSUbiquitousKeyValueStore defaultStore] class]) hasPrefix:@"XSi"],
+          @"inert: the key-value store is the system's");
+}
+
+int main(int argc, const char **argv) {
     @autoreleasepool {
+        if (argc > 1 && strcmp(argv[1], "--inert") == 0) {
+            testInert();
+            printf(failures ? "%d failure(s)\n" : "all inert iCloud shim checks passed\n", failures);
+            return failures ? 1 : 0;
+        }
         testCore();
         testShim();
         printf(failures ? "%d failure(s)\n" : "all iCloud shim checks passed\n", failures);

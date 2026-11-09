@@ -9,6 +9,11 @@ NS_ASSUME_NONNULL_BEGIN
 /// `iCloud.<CFBundleIdentifier>`, else `iCloud.unknown`. Values of the wrong type are ignored.
 NSString *XSICloudDefaultContainer(NSDictionary *info);
 
+/// Whether XSide turned the option on at this signing: the Info.plist has `XSideICloudSignedOut`
+/// = true (written only then). Without it the library installs nothing: an .ipa XSide signed
+/// before may carry the library with the option off.
+BOOL XSICloudIsEnabled(NSDictionary *info);
+
 /// The NSUserDefaults suite backing the local key-value store `identifier` (nil: the default one).
 NSString *XSICloudStoreSuite(NSString *_Nullable identifier);
 

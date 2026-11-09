@@ -19,8 +19,17 @@ xcrun clang "${CFLAGS[@]}" -I App/ICloud -framework Foundation -framework CloudK
 plutil -create xml1 "$OUT/Info.plist"
 plutil -insert CFBundleIdentifier -string com.example.icloudtest.TEAM123456 "$OUT/Info.plist"
 plutil -insert XSideOriginalBundleID -string com.example.icloudtest "$OUT/Info.plist"
+plutil -insert XSideICloudSignedOut -bool YES "$OUT/Info.plist"
 mkdir -p "$OUT/home"
 CFFIXED_USER_HOME="$OUT/home" "$OUT/test-icloud-shim"
+# The same library in an app whose Info.plist lacks XSideICloudSignedOut (signed before with the
+# option, now off): it must stay inert.
+mkdir -p "$OUT/inert"
+cp "$OUT/test-icloud-shim" "$OUT/XSideICloud.dylib" "$OUT/inert/"
+plutil -create xml1 "$OUT/inert/Info.plist"
+plutil -insert CFBundleIdentifier -string com.example.icloudtest.TEAM123456 "$OUT/inert/Info.plist"
+plutil -insert XSideOriginalBundleID -string com.example.icloudtest "$OUT/inert/Info.plist"
+CFFIXED_USER_HOME="$OUT/home" "$OUT/inert/test-icloud-shim" --inert
 # Core Data + CloudKit in a program that doesn't link CloudKit: Core Data loads it at runtime and
 # starts mirroring while the main thread is still busy.
 xcrun clang "${CFLAGS[@]}" -framework Foundation -framework CoreData \

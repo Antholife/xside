@@ -43,6 +43,9 @@ public enum ICloudSignedOut {
     /// signed one is `<original>.<TEAM>`), and the CloudKit containers its entitlements declared.
     public static let originalBundleIDKey = "XSideOriginalBundleID"
     public static let containersKey = "XSideICloudContainers"
+    /// Written only when the option applied: the library does nothing without it (an .ipa XSide
+    /// signed before may still carry the library with the option off).
+    public static let enabledKey = "XSideICloudSignedOut"
 
     /// Entitlements that mean the app uses iCloud (CloudKit, iCloud Drive, key-value store).
     public static let entitlementKeys = [
@@ -138,6 +141,7 @@ public enum ICloudSignedOut {
     /// XSide before may carry it).
     public static func applyInfoPlist(_ plist: inout [String: Any], originalBundleID: String?, containers: [String]) {
         clearInfoPlist(&plist)
+        plist[enabledKey] = true
         if let originalBundleID, !originalBundleID.isEmpty { plist[originalBundleIDKey] = originalBundleID }
         if !containers.isEmpty { plist[containersKey] = containers }
     }
@@ -145,5 +149,6 @@ public enum ICloudSignedOut {
     public static func clearInfoPlist(_ plist: inout [String: Any]) {
         plist[originalBundleIDKey] = nil
         plist[containersKey] = nil
+        plist[enabledKey] = nil
     }
 }
