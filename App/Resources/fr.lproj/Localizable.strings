@@ -985,6 +985,9 @@
 "tweaks.status.compatible" = "Compatible tel quel";
 "tweaks.status.converted" = "Converti";
 "tweaks.status.incompatible" = "Pas compatible";
+"tweaks.status.forced" = "Injecté quand même";
+"tweaks.signedAnyway" = "Sa dernière signature l'a ajouté sur cet appareil : XSide le garde activé et le vérifie à nouveau à la prochaine.";
+"tweaks.replace.text" = "La nouvelle version prend aussi sa place sur les autres appareils qui utilisent ce tweak.";
 "tweaks.badge.converted" = "tweak converti";
 "tweaks.problem.needsJailbreakLibrary" = "Demande un jailbreak : il utilise %@, une bibliothèque que seuls les appareils jailbreakés ont.";
 "tweaks.note.settingsNotConverted" = "Sa page de réglages n'est pas convertie : le tweak utilise ses valeurs par défaut.";

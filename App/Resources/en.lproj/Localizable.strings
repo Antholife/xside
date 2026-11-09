@@ -985,6 +985,9 @@
 "tweaks.status.compatible" = "Compatible as is";
 "tweaks.status.converted" = "Converted";
 "tweaks.status.incompatible" = "Not compatible";
+"tweaks.status.forced" = "Injected anyway";
+"tweaks.signedAnyway" = "Its last signing added it on this device: XSide keeps it on and checks it again at the next one.";
+"tweaks.replace.text" = "The new version also takes its place on the other devices that use this tweak.";
 "tweaks.badge.converted" = "converted tweak";
 "tweaks.problem.needsJailbreakLibrary" = "Needs a jailbreak: it uses %@, a library only jailbroken devices have.";
 "tweaks.note.settingsNotConverted" = "Its settings page isn't converted: the tweak uses its defaults.";

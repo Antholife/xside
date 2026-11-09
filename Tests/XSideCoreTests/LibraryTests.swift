@@ -912,27 +912,33 @@ struct LibraryStagedTweakTests {
         return StagedTweak(package: p, directory: staging.appendingPathComponent(p.id))
     }
 
-    @Test func adoptingCopiesTheStagedFolderAndSetsEachDevicesList() async throws {
+    /// The files go into the pool, held for the job; no device's list changes (the job writes it
+    /// when the install succeeds).
+    @Test func adoptingCopiesTheStagedFolderAndHoldsItForTheJob() async throws {
         let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
-        let (lib, rec) = try await library(tmp, devices: ["A", "B"])
+        let (lib, rec) = try await library(tmp, devices: ["A"])
         let one = try await stage(try tweakDylib(in: tmp, "One.dylib"), in: tmp)
         let two = try await stage(try tweakDylib(in: tmp, "Two.dylib"), in: tmp)
-        try await lib.adoptTweaks([one, two], uses: [
-            "A": [TweakUse(id: two.package.id), TweakUse(id: one.package.id, enabled: false, force: true)],
-            "C": [TweakUse(id: one.package.id)], // not installed yet
-        ], recordID: rec.id)
+        let held = try await lib.adoptTweaks([one, two], recordID: rec.id)
+        #expect(held == [one.package.id, two.package.id])
         let r = try await record(lib)
         #expect(r.tweaks == [one.package, two.package])
-        #expect(r.installations.first { $0.deviceID == "A" }?.tweaks
-                == [TweakUse(id: one.package.id, enabled: false, force: true), TweakUse(id: two.package.id)])
-        #expect(r.installations.first { $0.deviceID == "B" }?.tweaks == nil) // not in the run: untouched
-        #expect(r.pendingTweakUses?["C"] == [TweakUse(id: one.package.id)])
+        #expect(r.installations.first?.tweaks == nil && r.pendingTweakUses == nil)
         #expect(exists(lib.tweakDirectory(recordID: rec.id, id: one.package.id).appendingPathComponent("One.dylib")))
         #expect(exists(one.directory)) // copied: the window keeps its own until it closes
+        // Held: a collection meanwhile keeps them.
+        await lib.collectUnusedTweaks(recordID: rec.id)
+        #expect(try await record(lib).tweaks == [one.package, two.package])
         // Again (a second run of the same window): nothing doubles.
-        try await lib.adoptTweaks([one, two], uses: [:], recordID: rec.id)
+        _ = try await lib.adoptTweaks([one, two], recordID: rec.id)
         #expect(try await record(lib).tweaks == [one.package, two.package])
         #expect(await AppLibrary(root: lib.root).records() == (await lib.records()))
+        // Released by both runs, with no device listing them: collected.
+        await lib.releaseTweaks(held, recordID: rec.id)
+        await lib.releaseTweaks(held, recordID: rec.id)
+        await lib.collectUnusedTweaks(recordID: rec.id)
+        #expect(try await record(lib).tweaks?.isEmpty ?? true)
+        #expect(!exists(lib.tweakDirectory(recordID: rec.id, id: one.package.id)))
     }
 
     @Test func adoptingAReplacementTakesTheOldOnesPlaceOnEveryDevice() async throws {
@@ -942,15 +948,14 @@ struct LibraryStagedTweakTests {
                                         runner: ProcessRunner(), now: tweakNow).package
         var v2 = try await stage(try await tweakDeb(in: tmp, version: "2.0", payload: "new"), in: tmp)
         v2.replacing = v1.id
-        // Only A is in the run.
-        try await lib.adoptTweaks([v2], uses: ["A": [TweakUse(id: v2.package.id)]], recordID: rec.id)
+        _ = try await lib.adoptTweaks([v2], recordID: rec.id)
         let r = try await record(lib)
         #expect(r.tweaks == [v2.package])
         #expect(r.installations.first { $0.deviceID == "A" }?.tweaks == [TweakUse(id: v2.package.id)])
         #expect(r.installations.first { $0.deviceID == "B" }?.tweaks == [TweakUse(id: v2.package.id)])
         // The same package id without `replacing` still never leaves two versions in the pool.
         let v3 = try await stage(try await tweakDeb(in: tmp, version: "3.0", payload: "newer"), in: tmp)
-        try await lib.adoptTweaks([v3], uses: [:], recordID: rec.id)
+        _ = try await lib.adoptTweaks([v3], recordID: rec.id)
         #expect(try await record(lib).tweaks == [v3.package])
     }
 
@@ -961,22 +966,20 @@ struct LibraryStagedTweakTests {
         var badID = good
         badID.package = TweakPackage(id: "../../escape", kind: .dylib, origin: .added, packageID: good.package.packageID,
                                      name: "Escape", files: good.package.files, binaries: good.package.binaries, addedAt: tweakNow)
-        await #expect(throws: (any Error).self) {
-            try await lib.adoptTweaks([badID], uses: ["A": [TweakUse(id: badID.package.id)]], recordID: rec.id)
-        }
+        await #expect(throws: (any Error).self) { _ = try await lib.adoptTweaks([badID], recordID: rec.id) }
         var missing = good
         missing.directory = tmp.appendingPathComponent("nothing-here")
-        await #expect(throws: (any Error).self) { try await lib.adoptTweaks([missing], uses: [:], recordID: rec.id) }
+        await #expect(throws: (any Error).self) { _ = try await lib.adoptTweaks([missing], recordID: rec.id) }
         // A link instead of a folder.
         let link = tmp.appendingPathComponent("link")
         try FileManager.default.createSymbolicLink(at: link, withDestinationURL: good.directory)
         var linked = good
         linked.directory = link
-        await #expect(throws: (any Error).self) { try await lib.adoptTweaks([linked], uses: [:], recordID: rec.id) }
+        await #expect(throws: (any Error).self) { _ = try await lib.adoptTweaks([linked], recordID: rec.id) }
         let r = try await record(lib)
         #expect(r.tweaks?.isEmpty ?? true)
         #expect(r.installations.first?.tweaks == nil)
         #expect(!exists(lib.tweakDirectory(recordID: rec.id, id: good.package.id)))
-        await #expect(throws: XSideError.recordNotFound) { try await lib.adoptTweaks([good], uses: [:], recordID: UUID()) }
+        await #expect(throws: XSideError.recordNotFound) { _ = try await lib.adoptTweaks([good], recordID: UUID()) }
     }
 }

@@ -1596,6 +1596,52 @@ private struct HookInstaller: Installing {
 }
 
 struct PipelineTweakTests {
+    /// The install window's list for a device is the app's only once that device's install
+    /// succeeds: a failed or cancelled one leaves the previous list, and the next refresh injects
+    /// only that. The files added in the window are in the pool, held, meanwhile.
+    @Test func aWindowsTweakListIsKeptOnlyWhenTheInstallSucceeds() async throws {
+        for failure in [XSideError.deviceUnavailable as any Error, CancellationError()] {
+            let f = try await Fixture(); defer { f.cleanup() }
+            let one = try await addTweak(f, "One.dylib", deviceIDs: ["dev-1"])
+            _ = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
+            // The window adds Two and turns One off.
+            let folder = f.tmp.appendingPathComponent("drop-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try FakeIPA.dylibMachO(linking: [], padding: 64, strings: ["Two"]).write(to: folder.appendingPathComponent("Two.dylib"))
+            let staging = f.tmp.appendingPathComponent("staging")
+            let two = try await TweakAnalyzer.analyze(folder.appendingPathComponent("Two.dylib"), into: staging,
+                                                      runner: ProcessRunner(), now: fixedNow)
+            let held = try await f.library.adoptTweaks([StagedTweak(package: two, directory: staging.appendingPathComponent(two.id))],
+                                                       recordID: f.record.id)
+            let asked = [TweakUse(id: one.id, enabled: false), TweakUse(id: two.id)]
+            let failing = HookInstaller(log: f.log, error: failure) {}
+            let pipeline = SideloadPipeline(library: f.library, provisioner: FakeProvisioner(log: f.log),
+                                            resigner: FakeResigner(log: f.log), installer: failing,
+                                            workRoot: f.workRoot, now: { fixedNow })
+            await #expect(throws: (any Error).self) {
+                _ = try await pipeline.install(recordID: f.record.id, device: device(), env: env, refresh: true, tweaks: asked)
+            }
+            await f.library.releaseTweaks(held, recordID: f.record.id)
+            let kept = try #require(await f.library.records().first?.installations.first)
+            #expect(kept.tweaks == [TweakUse(id: one.id)], "\(failure)")
+            #expect(kept.pendingSigningChanges(wantsWithoutXSideFeatures: false).isEmpty)
+            // The next refresh injects the previous list only, and Two's files go.
+            _ = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env, refresh: true)
+            #expect(ids(await f.log.options.last) == [one.id])
+            #expect(await f.library.records().first?.tweaks?.map(\.id) == [one.id])
+            #expect(!FileManager.default.fileExists(atPath: f.library.tweakDirectory(recordID: f.record.id, id: two.id).path))
+
+            // Again, and this time it succeeds: the window's list is the device's.
+            let again = try await f.library.adoptTweaks([StagedTweak(package: two, directory: staging.appendingPathComponent(two.id))],
+                                                        recordID: f.record.id)
+            let done = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env, refresh: true, tweaks: asked)
+            await f.library.releaseTweaks(again, recordID: f.record.id)
+            #expect(ids(await f.log.options.last) == [two.id])
+            #expect(done.tweaks == asked)
+            #expect(await f.library.records().first?.installations.first?.tweaks == asked)
+        }
+    }
+
     /// The device's enabled tweaks go into each refresh, with its iOS version, and the result is kept.
     @Test func tweaksAreKeptAcrossARefresh() async throws {
         let f = try await Fixture(); defer { f.cleanup() }
@@ -1766,4 +1812,5 @@ private final class TestClock: @unchecked Sendable {
         get { lock.lock(); defer { lock.unlock() }; return value }
         set { lock.lock(); value = newValue; lock.unlock() }
     }
+
 }

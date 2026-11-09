@@ -262,6 +262,9 @@ struct TweakDraft: Identifiable {
     var listedDevices: Set<String> = []
     /// Devices it got a starting choice for; one checked later gets its own then.
     var seenDevices: Set<String> = []
+    /// Devices whose last signing injected it: a ❌ from the check made here (without the app's
+    /// files or the SDK) doesn't switch it off there; the signing checks it again.
+    var injectedOn: Set<String> = []
 
     var id: String { package.id }
 
@@ -275,7 +278,7 @@ struct TweakDraft: Identifiable {
     /// Goes in the app on `deviceID`: its switch on and not ❌ there.
     func isEnabled(on deviceID: String) -> Bool {
         guard enabledDevices.contains(deviceID), let v = verdict(on: deviceID) else { return false }
-        if case .incompatible = v { return false }
+        if case .incompatible = v { return injectedOn.contains(deviceID) }
         return true
     }
 

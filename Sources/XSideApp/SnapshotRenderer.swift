@@ -203,7 +203,7 @@ enum SnapshotRenderer {
                                      iPad: .incompatible(.madeForAnotherApp(["com.burbn.instagram"]))],
                       forced: [iPhone: .compatible, iPad: .compatible], force: [iPhone]),
             ]
-            flow.tweakErrors = [L("tweaks.error.unreadable", "Cracked-Tweak.deb")]
+            flow.tweakErrors = [L("tweaks.error.unreadable", "Broken-Tweak.deb")]
             return flow
         }
 

@@ -98,13 +98,16 @@ struct TweakRow: Identifiable {
     let isForced: Bool
     /// Settings > Mes apps: what the last signing did with it.
     var result: String?
+    /// Its last signing on this device injected it: a ❌ from the check made here (no app files,
+    /// no SDK) doesn't switch it off; the next signing checks it again.
+    var signedAnyway = false
 
     var id: String { deviceID }
 
     /// What applies: the forced verdict when « Injecter quand même » is on and allowed.
     var applied: TweakVerdict? { isForced && verdict?.canOverride == true ? forcedVerdict ?? verdict : verdict }
     var isBlocked: Bool {
-        if case .incompatible? = applied { return true }
+        if case .incompatible? = applied { return !signedAnyway }
         return false
     }
 }
@@ -194,13 +197,21 @@ private struct TweakDeviceRow: View {
                     Text(label).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
                 }
                 if let verdict = row.verdict {
-                    explanation(verdict)
+                    if verdict.canOverride, row.isForced, case .incompatible(let problem) = verdict {
+                        forcedExplanation(problem)
+                    } else {
+                        explanation(verdict)
+                    }
                     if verdict.canOverride {
                         Toggle(L(TweakVerdict.overrideKey), isOn: Binding(get: { row.isForced }, set: setForce))
                             .toggleStyle(.checkbox)
                             .font(.system(size: 11))
-                        // Forced: what then applies, explained too.
-                        if row.isForced, let forced = row.forcedVerdict { explanation(forced) }
+                    }
+                    if row.signedAnyway, case .incompatible? = row.applied {
+                        Label(L("tweaks.signedAnyway"), systemImage: "info.circle")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 if let result = row.result {
@@ -223,6 +234,19 @@ private struct TweakDeviceRow: View {
         .accessibilityElement(children: .contain)
     }
 
+    /// « Injecter quand même » on: one line, « Injecté quand même — fait pour une autre app (…) »,
+    /// then what XSide changes when the forced tweak is converted. Another problem still stands.
+    @ViewBuilder private func forcedExplanation(_ problem: TweakProblem) -> some View {
+        if case .incompatible? = row.forcedVerdict, let forced = row.forcedVerdict {
+            explanation(forced)
+        } else {
+            let reason = TweakText.problem(problem, package: package, deviceName: row.deviceName)
+            TweakStatusLine(text: L("tweaks.status.forced") + " — " + (reason.first.map { $0.lowercased() } ?? "") + reason.dropFirst(),
+                            kind: .forced)
+            if case .converted(let list)? = row.forcedVerdict { conversions(list) }
+        }
+    }
+
     /// The status line (highlighted, with the reason for ❌), then for 🔧 every change, always shown.
     @ViewBuilder private func explanation(_ verdict: TweakVerdict) -> some View {
         switch verdict {
@@ -230,6 +254,15 @@ private struct TweakDeviceRow: View {
             TweakStatusLine(text: L("tweaks.status.compatible"), kind: .compatible)
         case .converted(let list):
             TweakStatusLine(text: L("tweaks.status.converted"), kind: .converted)
+            conversions(list)
+        case .incompatible(let problem):
+            TweakStatusLine(text: L("tweaks.status.incompatible") + " — "
+                                + TweakText.problem(problem, package: package, deviceName: row.deviceName),
+                            kind: .incompatible)
+        }
+    }
+
+    private func conversions(_ list: [TweakConversion]) -> some View {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(Array(list.enumerated()), id: \.offset) { _, c in
                     HStack(alignment: .firstTextBaseline, spacing: 5) {
@@ -241,17 +274,12 @@ private struct TweakDeviceRow: View {
             .font(.system(size: 11))
             .foregroundStyle(.secondary)
             .padding(.leading, 4)
-        case .incompatible(let problem):
-            TweakStatusLine(text: L("tweaks.status.incompatible") + " — "
-                                + TweakText.problem(problem, package: package, deviceName: row.deviceName),
-                            kind: .incompatible)
-        }
     }
 }
 
 /// ✅ / 🔧 / ❌ on a tinted line.
 struct TweakStatusLine: View {
-    enum Kind { case compatible, converted, incompatible }
+    enum Kind { case compatible, converted, incompatible, forced }
     let text: String
     let kind: Kind
 
@@ -260,6 +288,7 @@ struct TweakStatusLine: View {
         case .compatible: Color(nsColor: .systemGreen)
         case .converted: Color(nsColor: .systemOrange)
         case .incompatible: Color(nsColor: .systemRed)
+        case .forced: Color(nsColor: .systemOrange)
         }
     }
 
@@ -268,6 +297,7 @@ struct TweakStatusLine: View {
         case .compatible: "checkmark.seal.fill"
         case .converted: "wrench.and.screwdriver.fill"
         case .incompatible: "xmark.octagon.fill"
+        case .forced: "exclamationmark.triangle.fill"
         }
     }
 
@@ -310,7 +340,8 @@ struct InstallTweaksSection: View {
             let name = model.devices.first { $0.id == id }?.name ?? L("popover.unknownDevice")
             return TweakRow(deviceID: id, label: several ? name : nil, deviceName: name,
                             verdict: draft.verdicts[id], forcedVerdict: draft.forcedVerdicts[id],
-                            isOn: draft.enabledDevices.contains(id), isForced: draft.force.contains(id))
+                            isOn: draft.enabledDevices.contains(id), isForced: draft.force.contains(id),
+                            signedAnyway: draft.injectedOn.contains(id))
         }
     }
 }
@@ -340,7 +371,10 @@ struct InstalledTweaksSection<Notice: View>: View {
                                           verdict: v.verdict, forcedVerdict: v.forced, isOn: use.enabled,
                                           isForced: use.force == true,
                                           result: TweakText.result(entry.installation.tweakResults?[package.id], package: package,
-                                                                   enabled: use.enabled, signed: signed, deviceName: deviceName))],
+                                                                   enabled: use.enabled, signed: signed, deviceName: deviceName),
+                                          signedAnyway: {
+                                              if case .injected? = entry.installation.tweakResults?[package.id] { true } else { false }
+                                          }())],
                           removeHelp: L("tweaks.remove.helpOne"),
                           setOn: { _, on in Task { await model.setTweak(package.id, enabled: on, for: entry) } },
                           setForce: { _, on in Task { await model.setTweakForce(package.id, on, for: entry) } },

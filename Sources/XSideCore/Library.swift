@@ -1045,14 +1045,16 @@ extension AppLibrary {
     }
 
     /// The install window's tweaks, analysed into its own staging folder (`StagedTweak`), put in
-    /// the app's pool when Install is pressed, with each device of the run's list (`uses`, by
-    /// device id; a device without an installation keeps it in `pendingTweakUses`), in one save
-    /// so no collection can drop them in between. Each folder is copied (the window keeps its own
-    /// until it closes); one already in the pool is not copied again. A staged tweak takes the
-    /// place of `replacing`, or of any version of the same package id, on every device (like
-    /// `replaceTweak`); otherwise it goes at the end of the pool. All or nothing: a staged folder
-    /// that isn't a real folder named by a package id is refused and nothing changes.
-    public func adoptTweaks(_ staged: [StagedTweak], uses: [String: [TweakUse]], recordID: UUID) throws {
+    /// the app's pool when a device's install starts, and held (`reserveTweaks`) in the same step
+    /// so no collection drops them before the job holds them itself: the caller releases the
+    /// returned ids when the job ends (`releaseTweaks`). No device's list changes here: the job
+    /// records it when the install succeeds, so a failed or cancelled one leaves each device's
+    /// list as it was. Each folder is copied (the window keeps its own until it closes); one
+    /// already in the pool is not copied again. A staged tweak takes the place of `replacing`, or
+    /// of any version of the same package id, on every device (like `replaceTweak`, which the
+    /// person confirmed); otherwise it goes at the end of the pool. All or nothing: a staged
+    /// folder that isn't a real folder named by a package id is refused and nothing changes.
+    public func adoptTweaks(_ staged: [StagedTweak], recordID: UUID) throws -> [String] {
         let index = try indexOf(recordID)
         for s in staged {
             guard Self.isTweakID(s.package.id), s.package.origin != .embedded, Self.isDirectory(s.directory) else {
@@ -1100,20 +1102,15 @@ extension AppLibrary {
             if let list = items[index].installations[i].tweaks { items[index].installations[i].tweaks = renamed(list) }
         }
         if let pending = items[index].pendingTweakUses { items[index].pendingTweakUses = pending.mapValues(renamed) }
-        for (deviceID, list) in uses {
-            let wanted = Self.ordered(list, pool: pool)
-            if let i = items[index].installations.firstIndex(where: { $0.deviceID == deviceID }) {
-                items[index].installations[i].tweaks = wanted
-            } else {
-                setPending(wanted, deviceID: deviceID, at: index)
-            }
-        }
         do { try save() } catch {
             items = previous
             undoCopies()
             throw error
         }
+        let held = staged.map(\.package.id)
+        reserveTweaks(held, recordID: recordID)
         if !renames.isEmpty { collectUnusedTweaks(recordID: recordID) }
+        return held
     }
 
     /// Sets the tweaks chosen for one device, from its next signing on: ids not in the pool are

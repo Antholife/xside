@@ -39,7 +39,10 @@ extension AppModel {
             return TweakDraft(package: package, directory: library.tweakDirectory(recordID: record.id, id: package.id),
                               enabledDevices: Set(uses.filter(\.value.enabled).map(\.key)),
                               force: Set(uses.filter { $0.value.force == true }.map(\.key)),
-                              verdicts: [:], stored: true, listedDevices: listed, seenDevices: Set(lists.keys))
+                              verdicts: [:], stored: true, listedDevices: listed, seenDevices: Set(lists.keys),
+                              injectedOn: Set(record.installations.filter {
+                                  if case .injected? = $0.tweakResults?[package.id] { true } else { false }
+                              }.map(\.deviceID)))
         }
         refreshTweakVerdicts(flow)
     }
@@ -114,7 +117,14 @@ extension AppModel {
                 flow.tweakErrors.append(Self.tweakErrorText(error, name: name))
                 continue
             }
-            guard install === flow, !flow.isRunning else { return }
+            // The window closed (or the install started) meanwhile: the analysis leaves nothing.
+            guard install === flow, !flow.isRunning else {
+                if !flow.tweaks.contains(where: { $0.id == package.id }) {
+                    try? FileManager.default.removeItem(at: staging.appendingPathComponent(package.id))
+                }
+                if flow.tweakStaging == nil { try? FileManager.default.removeItem(at: staging) }
+                return
+            }
             if flow.tweaks.contains(where: { $0.id == package.id }) { continue } // the same bytes again
             var draft = TweakDraft(package: package, directory: staging.appendingPathComponent(package.id),
                                    enabledDevices: [], force: [], verdicts: [:])
@@ -181,36 +191,42 @@ extension AppModel {
         }
     }
 
-    /// Hands the window's tweaks to the library with `deviceID`'s list, right before its job.
-    func handOverTweaks(_ flow: InstallFlow, uses: [TweakUse], deviceID: String, recordID: UUID) async throws {
+    /// Puts the tweaks added in the window into the app's pool, held until `releaseTweaks` with
+    /// the ids returned (the device's job holds them too). The device's list itself is recorded
+    /// by its job, only when the install succeeds.
+    func handOverTweaks(_ flow: InstallFlow, recordID: UUID) async throws -> [String] {
         let staged = flow.tweaks.filter { !$0.stored }.map {
             StagedTweak(package: $0.package, directory: $0.directory, replacing: $0.replacing)
         }
-        guard !staged.isEmpty || !uses.isEmpty || flow.existing != nil else { return }
-        try await library.adoptTweaks(staged, uses: [deviceID: uses], recordID: recordID)
+        guard !staged.isEmpty else { return [] }
+        return try await library.adoptTweaks(staged, recordID: recordID)
     }
 
     // MARK: Confirmations
 
-    /// Asks before installing (or turning on) converted tweaks: one alert per tweak, with what
-    /// changed. False as soon as one is cancelled.
+    /// Asks before installing (or turning on) converted tweaks: one alert for all of them, with
+    /// what changed in each. False when cancelled.
     func confirmConvertedTweaks(_ tweaks: [(name: String, conversions: [TweakConversion])],
                                 button: String = L("tweaks.confirm.install")) -> Bool {
-        for tweak in tweaks {
-            let alert = NSAlert()
-            alert.messageText = L("tweaks.confirm.title")
-            let list = tweak.conversions.map { Self.lowercasedFirst(TweakText.conversion($0)) }.joined(separator: " ; ")
-            alert.informativeText = tweak.name + "\n\n" + L("tweaks.confirm.text", list)
-            alert.addButton(withTitle: button)
-            alert.addButton(withTitle: L("install.cancel"))
-            guard alert.runModal() == .alertFirstButtonReturn else { return false }
+        guard !tweaks.isEmpty else { return true }
+        let alert = NSAlert()
+        alert.messageText = L("tweaks.confirm.title")
+        // The spec's sentence once, naming them; then, per tweak, what changed.
+        let names = tweaks.map(\.name).joined(separator: ", ")
+        let details = tweaks.map { t in
+            "• " + t.name + " : " + t.conversions.map { Self.lowercasedFirst(TweakText.conversion($0)) }.joined(separator: " ; ")
         }
-        return true
+        alert.informativeText = L("tweaks.confirm.text", names) + "\n\n" + details.joined(separator: "\n")
+        alert.addButton(withTitle: button)
+        alert.addButton(withTitle: L("install.cancel"))
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     func confirmReplace(old: TweakPackage, new: TweakPackage) -> Bool {
         let alert = NSAlert()
         alert.messageText = L("tweaks.replace.title", old.name, old.version ?? "", new.version ?? new.name)
+        // The new version takes the old one's place on every device of this app that has it.
+        alert.informativeText = L("tweaks.replace.text")
         alert.addButton(withTitle: L("tweaks.replace.button"))
         alert.addButton(withTitle: L("install.cancel"))
         return alert.runModal() == .alertFirstButtonReturn

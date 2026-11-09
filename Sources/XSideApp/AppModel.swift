@@ -1070,17 +1070,25 @@ final class AppModel {
             if let options { try await library.setOptions(options, for: record.id) }
             imported(record.id) // options saved too: later devices install this record as is
         }
-        // The window's tweaks go into the app's pool, with this device's list, before its job.
-        if let tweaks, let flow = install, flow.ipa == ipa {
-            try await handOverTweaks(flow, uses: tweaks, deviceID: device.id, recordID: record.id)
+        // The tweaks added in the window go into the app's pool, held for the job; this device's
+        // list is the pipeline's to record, only if the install succeeds.
+        var held: [String] = []
+        if tweaks != nil, let flow = install, flow.ipa == ipa {
+            held = try await handOverTweaks(flow, recordID: record.id)
         }
         await reloadRecords()
         // Preparation is over: until the pipeline reports its first step the job may be queued
         // (provisioning lock, or another job on the same device).
         if jobs[key] == .preparing { jobs[key] = .waiting }
         progress(jobs[key] ?? .waiting) // never replaces a real step another holder already reported
-        try await run(key: key, device: device, inApp: inApp, duoCompatibility: duoCompatibility,
-                      iCloudSignedOut: iCloudSignedOut, tweaks: tweaks, progress: progress, duoOutcome: duoOutcome)
+        do {
+            try await run(key: key, device: device, inApp: inApp, duoCompatibility: duoCompatibility,
+                          iCloudSignedOut: iCloudSignedOut, tweaks: tweaks, progress: progress, duoOutcome: duoOutcome)
+        } catch {
+            if !held.isEmpty { await library.releaseTweaks(held, recordID: record.id) }
+            throw error
+        }
+        if !held.isEmpty { await library.releaseTweaks(held, recordID: record.id) }
         return records.first { $0.id == record.id } ?? record
     }
 
