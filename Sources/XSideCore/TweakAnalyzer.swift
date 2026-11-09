@@ -99,8 +99,9 @@ public enum TweakAnalyzer {
         private var _settings = false, _other = false
         func note(_ path: String) {
             let settings = settingsPrefixes.contains { (path + "/").hasPrefix($0) }
-            // The folders on the way to a copied prefix (`Library`, `usr`) are not files left out.
-            let onTheWay = copiedPrefixes.contains { $0.hasPrefix(path + "/") }
+            // The folders on the way to a copied prefix (`Library`, `usr`, a rootless `.deb`'s `var`
+            // before `var/jb`) are not files left out.
+            let onTheWay = path == "var" || copiedPrefixes.contains { $0.hasPrefix(path + "/") }
             lock.withLock {
                 if settings { _settings = true } else if !onTheWay { _other = true }
             }

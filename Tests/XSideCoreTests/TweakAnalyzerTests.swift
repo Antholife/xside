@@ -69,6 +69,21 @@ struct TweakAnalyzerTests {
         #expect(p.files.allSatisfy { !$0.hasPrefix("var/") })
     }
 
+    /// A rootless `.deb` lists `./var/` and `./var/jb/` as folders (dpkg-deb does): the way to its
+    /// files, not files left out.
+    @Test func rootlessFolderEntriesAreNotFilesIgnored() async throws {
+        let src = try await deb([.dir("./"), .dir("./var/"), .dir("./var/jb/"), .dir("./var/jb/Library/"),
+                                 .dir("./var/jb/Library/MobileSubstrate/"),
+                                 .dir("./var/jb/Library/MobileSubstrate/DynamicLibraries/"),
+                                 .file("./var/jb/Library/MobileSubstrate/DynamicLibraries/Example.dylib", dylib()),
+                                 .file("./var/jb/Library/MobileSubstrate/DynamicLibraries/Example.plist",
+                                       try filterPlist(["com.example.app"]))])
+        let storage = scratch("store")
+        defer { cleanup(src, storage) }
+        let p = try await analyze(src, into: storage)
+        #expect(p.notes.isEmpty)
+    }
+
     @Test func preferenceBundlesAreDroppedWithANote() async throws {
         let src = try await deb([.file("./Library/MobileSubstrate/DynamicLibraries/Example.dylib", dylib()),
                                  .file("./Library/MobileSubstrate/DynamicLibraries/Example.plist", try filterPlist(["com.example.app"])),
