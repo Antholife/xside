@@ -154,6 +154,7 @@ public enum TweakClassifier {
         "springboard", "backboardd", "mediaserverd", "assertiond", "locationd", "installd", "lsd", "imagent",
         "nsurlsessiond", "preferences", "mobilesafari", "mobilesms", "mobilephone", "commcenter", "runningboardd",
         "searchd", "sharingd", "mediaremoted", "healthd", "powerd", "wifid", "bluetoothd",
+        "kbd", "lockdownd", "configd", "usereventagent",
     ]
     /// The verdict. With `overridingFilter` (« Injecter quand même »), a filter problem
     /// (`madeForAnotherApp`, `noFilter`) is ignored and the verdict that then applies is returned,
@@ -173,10 +174,12 @@ public enum TweakClassifier {
 
     /// Each `Depends` group's satisfied alternative, or its first one.
     public static func dependencies(_ package: TweakPackage, _ context: TweakContext) -> [(DebDependency, DependencyStatus)] {
-        let others = context.others.filter { $0.id != package.id }
+        // The same providers the verdict may use.
+        let usable = { (p: TweakPackage) in p.id != package.id && !isJailbreakOnlyPackage(p) }
+        let others = context.others.filter(usable), embedded = context.embedded.filter(usable)
         return package.depends.compactMap { group in
             guard let first = group.first else { return nil }
-            let statuses = group.map { alt -> (DebDependency, DependencyStatus) in (alt, status(alt, others, context.embedded, context)) }
+            let statuses = group.map { alt -> (DebDependency, DependencyStatus) in (alt, status(alt, others, embedded, context)) }
             return statuses.first { s in
                 switch s.1 {
                 case .addedByYou, .providedByXSide, .notNeeded: true
@@ -258,9 +261,18 @@ public enum TweakClassifier {
         "libsparkcolourpicker": nil, "libsparkapplist": nil, "libhooker": nil, "libblackjack": nil, "libpddokdo": nil,
     ]
 
+    /// By file name, or by framework folder (`RocketBootstrap.framework` matches `librocketbootstrap`).
     private static func jailbreakOnlyImage(_ path: String) -> String?? {
-        guard let file = path.split(separator: "/").last, let base = file.split(separator: ".").first else { return nil }
-        return jailbreakOnlyImages[base.lowercased()]
+        let parts = path.split(separator: "/")
+        if let file = parts.last, let base = file.split(separator: ".").first,
+           let hit = jailbreakOnlyImages[base.lowercased()] { return hit }
+        for folder in parts.dropLast() where folder.lowercased().hasSuffix(".framework") {
+            let base = folder.dropLast(".framework".count).lowercased()
+            if let hit = jailbreakOnlyImages[base] ?? jailbreakOnlyImages["lib" + base] {
+                return hit ?? String(folder)
+            }
+        }
+        return nil
     }
 
     /// `com.apple.<x>` ids that are processes or Apple's own apps, never a framework an app links
@@ -526,6 +538,11 @@ public enum TweakClassifier {
         }
         if case .satisfied(let c)? = outcomes.last {
             if let c { a.convert(c) }
+        } else if let jb = outcomes.lazy.compactMap({ o -> TweakProblem? in
+            if case .problem(.needsJailbreak(let n)) = o { .needsJailbreak(n) } else { nil }
+        }).first {
+            // Nothing satisfied and one way needs a jailbreak: an unknown alternative doesn't hide it.
+            a.fail(jb)
         } else if outcomes.contains(where: { if case .unknown = $0 { true } else { false } }) {
             return
         } else if case .problem(let p)? = outcomes.first {

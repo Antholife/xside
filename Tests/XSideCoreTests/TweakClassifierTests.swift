@@ -483,6 +483,45 @@ struct TweakClassifierTests {
         #expect(verdict(package([entry(linked: ["@rpath/libhooker.dylib"])]), context(libhooker: true)) == .converted([.hookingLibrary]))
     }
 
+    @Test func aJailbreakAlternativeIsNotDroppedForAnUnknownOne() {
+        let p = package([entry()], depends: [[DebDependency(package: "com.rpetrich.rocketbootstrap"),
+                                               DebDependency(package: "com.unknown.thing")]])
+        #expect(verdict(p) == .incompatible(.needsJailbreak("RocketBootstrap")))
+        let flipped = package([entry()], depends: [[DebDependency(package: "com.unknown.thing"),
+                                                     DebDependency(package: "com.rpetrich.rocketbootstrap")]])
+        #expect(verdict(flipped) == .incompatible(.needsJailbreak("RocketBootstrap")))
+        // A real alternative that is satisfied still wins.
+        let ok = package([entry()], depends: [[DebDependency(package: "com.rpetrich.rocketbootstrap"),
+                                                DebDependency(package: "ws.hbang.common")]])
+        #expect(verdict(ok, context(embedded: [embeddedCephei()])) == .converted([.dependencyAdded("Cephei")]))
+    }
+
+    @Test func dependenciesNeverOfferAJailbreakOnlyPackage() {
+        let rb = package([library("usr/lib/librocketbootstrap.dylib")], id: "ffffffffffffffff",
+                         packageID: "com.rpetrich.rocketbootstrap", name: "RocketBootstrap", provides: ["com.foo.ipc"])
+        let p = package([entry()], depends: [dep("com.foo.ipc")])
+        let c = context(others: [rb])
+        #expect(TweakClassifier.dependencies(p, c).map(\.1) == [.missing(DebDependency(package: "com.foo.ipc"))])
+        #expect(verdict(p, c) == .compatible)   // unknown and nobody usable provides it: left to the linked names
+    }
+
+    @Test func jailbreakOnlyFrameworksAreNamed() {
+        for (path, name) in [("/Library/Frameworks/RocketBootstrap.framework/RocketBootstrap", "RocketBootstrap"),
+                             ("@rpath/Activator.framework/Activator", "Activator"),
+                             ("/var/jb/Library/Frameworks/AppList.framework/AppList", "AppList"),
+                             ("@rpath/libSandy.framework/libSandy", "libSandy")] {
+            #expect(verdict(package([entry(linked: [path])])) == .incompatible(.needsJailbreak(name)), "\(path)")
+        }
+    }
+
+    @Test func commonDaemonsNeedAJailbreakAtAddTime() {
+        for daemon in ["kbd", "lockdownd", "backboardd", "mediaserverd", "assertiond", "locationd", "imagent", "bluetoothd",
+                       "wifid", "configd", "UserEventAgent"] {
+            let p = package([entry(filter: TweakFilter(executables: [daemon]))])
+            #expect(verdict(p, context(executable: nil)) == .incompatible(.needsJailbreak(daemon)), "\(daemon)")
+        }
+    }
+
     @Test func libhookerDependsNeedsElleKitsLibhooker() {
         let p = package([entry()], depends: [dep("org.coolstar.libhooker")])
         #expect(verdict(p) == .incompatible(.needsJailbreak("libhooker")))
