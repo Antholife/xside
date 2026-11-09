@@ -307,6 +307,25 @@ struct InstallSummaryTests {
         #expect(fixes(nil) == [.legacy32(nil)])
     }
 
+    /// The tweaks, one line per device (its name only with several): how many go in, how many
+    /// of them converted; their own group, listed even when a device gets none.
+    @Test func tweaksAreListedPerDevice() {
+        func tweaks(_ devices: [InstallSummary.DeviceTweaks]) -> [InstallSummary.Line] {
+            InstallSummary.lines(options: InstallOptions(), inApp: InAppSettings.defaults(reminder: true, at: t0),
+                                 withoutXSideFeatures: false, openAppAfter: false, openTrustPage: false,
+                                 offersKeychain: false, tweaks: devices).tweaks
+        }
+        #expect(tweaks([InstallSummary.DeviceTweaks(device: "iPhone", count: 2, converted: 1),
+                        InstallSummary.DeviceTweaks(device: "iPad", count: 0, converted: 0)])
+                == [.tweaks(device: "iPhone", count: 2, converted: 1), .tweaks(device: "iPad", count: 0, converted: 0)])
+        #expect(tweaks([InstallSummary.DeviceTweaks(device: "iPhone", count: 1, converted: 0)])
+                == [.tweaks(device: nil, count: 1, converted: 0)])
+        #expect(tweaks([]) == [])
+        // Never more converted than added.
+        #expect(tweaks([InstallSummary.DeviceTweaks(device: "iPhone", count: 1, converted: 3)])
+                == [.tweaks(device: nil, count: 1, converted: 1)])
+    }
+
     @Test func withoutFeaturesListsOnlyThat() {
         let s = InstallSummary.lines(options: InstallOptions(), inApp: InAppSettings.defaults(reminder: true, at: t0),
                                      withoutXSideFeatures: true, openAppAfter: true, openTrustPage: true,

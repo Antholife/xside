@@ -946,8 +946,27 @@ public actor AppLibrary {
 
 // MARK: Tweaks
 
+/// A tweak the install window analysed into its own folder (`TweakAnalyzer.analyze`), before the
+/// app is in the library: `directory` is the package's folder there. `replacing`: the pool's
+/// package it replaces (the person confirmed).
+public struct StagedTweak: Sendable, Equatable {
+    public var package: TweakPackage
+    public var directory: URL
+    public var replacing: String?
+
+    public init(package: TweakPackage, directory: URL, replacing: String? = nil) {
+        self.package = package
+        self.directory = directory
+        self.replacing = replacing
+    }
+}
+
 extension AppLibrary {
     private static let sweptTemporaryFolders = OSAllocatedUnfairLock(initialState: Set<String>())
+
+    /// Inside the library: one `<UUID>` folder per install window, where it analyses the tweaks
+    /// added before Install (`StagedTweak`); deleted when the window's flow ends.
+    public static let stagingFolder = "staging"
 
     /// A leftover this old (or older) is XSide's own and no longer in use.
     static let leftoverAge: TimeInterval = 3600
@@ -1023,6 +1042,78 @@ extension AppLibrary {
         do { try save() } catch { items = previous; throw error }
         offeredTweaks[recordID]?.remove(new.id)
         collectUnusedTweaks(recordID: recordID, keeping: keepingTweaks)
+    }
+
+    /// The install window's tweaks, analysed into its own staging folder (`StagedTweak`), put in
+    /// the app's pool when Install is pressed, with each device of the run's list (`uses`, by
+    /// device id; a device without an installation keeps it in `pendingTweakUses`), in one save
+    /// so no collection can drop them in between. Each folder is copied (the window keeps its own
+    /// until it closes); one already in the pool is not copied again. A staged tweak takes the
+    /// place of `replacing`, or of any version of the same package id, on every device (like
+    /// `replaceTweak`); otherwise it goes at the end of the pool. All or nothing: a staged folder
+    /// that isn't a real folder named by a package id is refused and nothing changes.
+    public func adoptTweaks(_ staged: [StagedTweak], uses: [String: [TweakUse]], recordID: UUID) throws {
+        let index = try indexOf(recordID)
+        for s in staged {
+            guard Self.isTweakID(s.package.id), s.package.origin != .embedded, Self.isDirectory(s.directory) else {
+                throw TweakError.unreadable("a staged tweak isn't a stored package folder")
+            }
+        }
+        let fm = FileManager.default
+        let folder = tweaksFolder(recordID)
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        var copied: [URL] = []
+        func undoCopies() { for url in copied { try? fm.removeItem(at: url) } }
+        let previous = items
+        var pool = items[index].tweaks ?? []
+        var renames: [String: String] = [:]
+        do {
+            for s in staged {
+                let id = s.package.id
+                let destination = tweakDirectory(recordID: recordID, id: id)
+                if !Self.isDirectory(destination) {
+                    let temp = folder.appendingPathComponent(".incoming-\(UUID().uuidString)")
+                    try fm.copyItem(at: s.directory, to: temp)
+                    do { try fm.moveItem(at: temp, to: destination) } catch {
+                        try? fm.removeItem(at: temp)
+                        throw error
+                    }
+                    copied.append(destination)
+                }
+                guard !pool.contains(where: { $0.id == id }) else { continue }
+                if let position = pool.firstIndex(where: { $0.id == s.replacing || $0.packageID == s.package.packageID }) {
+                    renames[pool[position].id] = id
+                    pool[position] = s.package
+                } else {
+                    pool.append(s.package)
+                }
+            }
+        } catch {
+            undoCopies()
+            throw error
+        }
+        items[index].tweaks = pool
+        func renamed(_ list: [TweakUse]) -> [TweakUse] {
+            Self.ordered(list.map { u in renames[u.id].map { TweakUse(id: $0, enabled: u.enabled, force: u.force) } ?? u }, pool: pool)
+        }
+        for i in items[index].installations.indices {
+            if let list = items[index].installations[i].tweaks { items[index].installations[i].tweaks = renamed(list) }
+        }
+        if let pending = items[index].pendingTweakUses { items[index].pendingTweakUses = pending.mapValues(renamed) }
+        for (deviceID, list) in uses {
+            let wanted = Self.ordered(list, pool: pool)
+            if let i = items[index].installations.firstIndex(where: { $0.deviceID == deviceID }) {
+                items[index].installations[i].tweaks = wanted
+            } else {
+                setPending(wanted, deviceID: deviceID, at: index)
+            }
+        }
+        do { try save() } catch {
+            items = previous
+            undoCopies()
+            throw error
+        }
+        if !renames.isEmpty { collectUnusedTweaks(recordID: recordID) }
     }
 
     /// Sets the tweaks chosen for one device, from its next signing on: ids not in the pool are
@@ -1189,7 +1280,7 @@ extension AppLibrary {
     /// Removes what a run XSide was killed in the middle of left behind, once it is an hour old
     /// (so work in progress, of this XSide or of another one sharing the folder, is never
     /// touched): `.incoming-*` and `.stale-*` in each app's tweak storage, `.incoming-*` in the
-    /// download cache, and, in the temporary folder, only XSide's own `deb-<UUID>`,
+    /// download cache, the install windows' `staging/<UUID>` folders, and, in the temporary folder, only XSide's own `deb-<UUID>`,
     /// `bzip2-<UUID>` and `tweak-src-<UUID>.deb`.
     static func sweepLeftovers(root: URL, temporaryDirectory: URL, now: Date = Date()) {
         let fm = FileManager.default
@@ -1209,6 +1300,7 @@ extension AppLibrary {
             sweep(apps.appendingPathComponent(app).appendingPathComponent("tweaks"), staging)
         }
         sweep(root.appendingPathComponent("downloads")) { $0.hasPrefix(".incoming-") }
+        sweep(root.appendingPathComponent(stagingFolder)) { UUID(uuidString: $0) != nil }
         // The temporary folder is shared and can be large: once per process is enough.
         guard sweptTemporaryFolders.withLock({ $0.insert(temporaryDirectory.standardizedFileURL.path).inserted }) else { return }
         sweep(temporaryDirectory) { name in

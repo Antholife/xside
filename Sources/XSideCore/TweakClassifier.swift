@@ -64,6 +64,13 @@ public enum TweakProblem: Codable, Equatable, Sendable {
         }
     }
 
+    /// `stringKey`, worded for this package: a `needsJailbreak` that isn't one of its filter's
+    /// targets (where it loads) is a library it uses, which has its own text.
+    public func stringKey(for package: TweakPackage) -> String {
+        if case .needsJailbreak(let name) = self, !package.filterNames(name) { return "tweaks.problem.needsJailbreakLibrary" }
+        return stringKey
+    }
+
     public var arguments: [String] {
         switch self {
         case .needsJailbreak(let s), .missingDependency(let s), .unreadableRequirement(let s): [s]

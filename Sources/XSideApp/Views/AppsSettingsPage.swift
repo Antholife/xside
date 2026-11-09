@@ -306,6 +306,7 @@ private struct AppSettingsContent: View {
                         iCloudOption
                         CompatibilityFixCard { Legacy32InfoRow(appName: appName, applied: entry.record.legacy32) }
                     }
+                    InstalledTweaksSection(model: model, entry: entry, deviceName: deviceName) { pendingNotice(.tweaks) }
                 }
                 .padding(16)
                 .reportsPaneHeight("detail", adding: 64) // the header above

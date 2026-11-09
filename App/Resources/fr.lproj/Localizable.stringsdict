@@ -114,5 +114,36 @@
 			<string>Tous les rafraîchissements en pause · expire dans %ld jours</string>
 		</dict>
 	</dict>
+	<key>install.summary.tweaks.count</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$#@tweaks@%2$#@converted@</string>
+		<key>tweaks</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>zero</key>
+			<string>Aucun</string>
+			<key>one</key>
+			<string>%1$d tweak</string>
+			<key>other</key>
+			<string>%1$d tweaks</string>
+		</dict>
+		<key>converted</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>zero</key>
+			<string></string>
+			<key>one</key>
+			<string> (%2$d converti)</string>
+			<key>other</key>
+			<string> (%2$d convertis)</string>
+		</dict>
+	</dict>
 </dict>
 </plist>

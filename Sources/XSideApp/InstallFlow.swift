@@ -52,6 +52,17 @@ final class InstallFlow {
     /// Devices getting "Simulate signed-out iCloud" (step ②), prefilled with those that have it.
     var iCloudDevices: Set<String> = []
 
+    /// The tweaks of step ②, in load order: the app's own (already in the library, each device
+    /// from its installation's list) and those added in this window (analysed into `tweakStaging`).
+    var tweaks: [TweakDraft] = []
+    /// Why the last files added couldn't be (orange lines in the section, never an alert).
+    var tweakErrors: [String] = []
+    /// Names of the files being analysed right now.
+    var tweaksBeingAdded: [String] = []
+    /// This window's folder for the tweaks added before Install (`AppLibrary.stagingFolder`),
+    /// deleted when the flow ends.
+    var tweakStaging: URL?
+
     /// Applies a step ③ change, remembering which fields it touched.
     func editInApp(_ change: (InAppSettings) -> InAppSettings) {
         let edited = change(inApp)
@@ -90,6 +101,8 @@ final class InstallFlow {
     var runDuo: Set<String> = []
     /// Devices of the last run getting "Simulate signed-out iCloud", reused by "Retry failed".
     var runICloud: Set<String> = []
+    /// Each device's tweak list for the last run (by device id), reused by "Retry failed".
+    var runTweaks: [String: [TweakUse]] = [:]
     /// The app has old 32-bit code to remove: its step is listed from the start.
     var runLegacy32 = false
     /// The last run installs the app without XSide's features (the progress says so).
@@ -105,7 +118,8 @@ final class InstallFlow {
     func runSteps(for deviceID: String? = nil) -> [ProgressStep] {
         let id = deviceID ?? runs.first?.deviceID
         return ProgressStep.list(includingWifiCheck: wifiStepPlanned, includingDuo: id.map(runDuo.contains) ?? false,
-                                 includingLegacy32: runLegacy32, includingICloud: id.map(runICloud.contains) ?? false)
+                                 includingLegacy32: runLegacy32, includingICloud: id.map(runICloud.contains) ?? false,
+                                 includingTweaks: id.map { runTweaks[$0]?.contains(where: \.enabled) == true } ?? false)
     }
 
     /// `skippedRunSteps`, and the Duo step on a device where it added nothing.
@@ -213,10 +227,63 @@ final class InstallFlow {
         appIcon = nil
     }
 
+    /// Deletes the tweaks analysed in this window (the flow is over; those installed were copied
+    /// into the library).
+    func removeTweakStaging() {
+        if let tweakStaging { try? FileManager.default.removeItem(at: tweakStaging) }
+        tweakStaging = nil
+    }
+
     /// Ends the current Wi-Fi check and the queued ones (the window closed).
     func skipAllWifiChecks() {
         wifiQueue = []
         nextWifiCheck()
+    }
+}
+
+/// One tweak of step ②, with each selected device's choice and verdict.
+struct TweakDraft: Identifiable {
+    let package: TweakPackage
+    /// The package's stored folder: in the library for the app's own, in `tweakStaging` otherwise.
+    let directory: URL
+    /// Devices where its switch is on.
+    var enabledDevices: Set<String>
+    /// Devices where « Injecter quand même » is on.
+    var force: Set<String>
+    /// The verdict on each device, as is (`TweakClassifier.classify`).
+    var verdicts: [String: TweakVerdict]
+    /// …and with « Injecter quand même » (differs only for an overridable ❌).
+    var forcedVerdicts: [String: TweakVerdict] = [:]
+    /// Already in the app's pool (the library): nothing to hand over at Install.
+    var stored = false
+    /// The pool's package it replaces (another version of the same package id, confirmed).
+    var replacing: String?
+    /// Devices whose stored list has it (on or off): they keep it, off, when its switch is off.
+    var listedDevices: Set<String> = []
+    /// Devices it got a starting choice for; one checked later gets its own then.
+    var seenDevices: Set<String> = []
+
+    var id: String { package.id }
+
+    /// What applies on `deviceID`: the forced verdict when « Injecter quand même » is on there.
+    func verdict(on deviceID: String) -> TweakVerdict? {
+        let base = verdicts[deviceID]
+        guard force.contains(deviceID), base?.canOverride == true else { return base }
+        return forcedVerdicts[deviceID] ?? base
+    }
+
+    /// Goes in the app on `deviceID`: its switch on and not ❌ there.
+    func isEnabled(on deviceID: String) -> Bool {
+        guard enabledDevices.contains(deviceID), let v = verdict(on: deviceID) else { return false }
+        if case .incompatible = v { return false }
+        return true
+    }
+
+    /// Its entry in `deviceID`'s list for the run: on, off (kept, for a device that had it), or none.
+    func use(on deviceID: String) -> TweakUse? {
+        let forced: Bool? = force.contains(deviceID) ? true : nil
+        if isEnabled(on: deviceID) { return TweakUse(id: id, enabled: true, force: forced) }
+        return listedDevices.contains(deviceID) ? TweakUse(id: id, enabled: false, force: forced) : nil
     }
 }
 

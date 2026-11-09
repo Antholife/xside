@@ -213,6 +213,22 @@ public enum InstallSummary {
         case showValidity(Bool), alertLate(Bool), refreshCard(Bool), reminder(Bool)
         case language(MessageLanguage)
         case autoRefresh(Bool)
+        /// The tweaks one device gets: how many, how many of them converted. `device`: its name,
+        /// nil when the install has one device only.
+        case tweaks(device: String?, count: Int, converted: Int)
+    }
+
+    /// What one device of the install gets of the tweaks (step ②'s enabled ones there).
+    public struct DeviceTweaks: Equatable, Sendable {
+        public var device: String
+        public var count: Int
+        public var converted: Int
+
+        public init(device: String, count: Int, converted: Int) {
+            self.device = device
+            self.count = count
+            self.converted = converted
+        }
     }
 
     /// `install`: the app and what happens after the install; `fixes`: the compatibility fixes
@@ -224,12 +240,14 @@ public enum InstallSummary {
     /// then shows even when none gets it). `iCloudDevices` / `offersICloud`: the same for
     /// "Simulate signed-out iCloud" (offered whenever step ② shows it: any target). `legacy32`:
     /// whether the .ipa has 32-bit ARM code; its line is always listed (an automatic fix, no switch).
+    /// `tweaks`: one entry per target device, in install order; `tweaks` lines, their own group.
     public static func lines(options o: InstallOptions, inApp s: InAppSettings, withoutXSideFeatures: Bool,
                              openAppAfter: Bool, openTrustPage: Bool,
                              offersKeychain: Bool, duoDevices: [String] = [],
                              offersDuo: Bool = false, iCloudDevices: [String] = [],
                              offersICloud: Bool = false,
-                             legacy32: Bool? = nil) -> (install: [Line], fixes: [Line], inApp: [Line]) {
+                             legacy32: Bool? = nil,
+                             tweaks devices: [DeviceTweaks] = []) -> (install: [Line], fixes: [Line], inApp: [Line], tweaks: [Line]) {
         var install: [Line] = []
         if let v = o.displayName { install.append(.displayName(v)) }
         if let v = o.customBundleID { install.append(.bundleID(v)) }
@@ -247,12 +265,16 @@ public enum InstallSummary {
         fixes.append(.legacy32(legacy32))
         install.append(.openAppAfter(openAppAfter))
         if openAppAfter { install.append(.openTrustPage(openTrustPage)) }
+        let tweaks: [Line] = devices.map { d in
+            let count = max(d.count, 0)
+            return .tweaks(device: devices.count > 1 ? d.device : nil, count: count, converted: min(max(d.converted, 0), count))
+        }
 
-        guard !withoutXSideFeatures else { return (install, fixes, [.xsideFeatures(false)]) }
+        guard !withoutXSideFeatures else { return (install, fixes, [.xsideFeatures(false)], tweaks) }
         let inApp: [Line] = [.xsideFeatures(true), .messages(s.derivedLevel), .showValidity(s.showValidity.value),
                              .alertLate(s.alertLate.value), .refreshCard(s.refreshCard.value),
                              .reminder(s.reminder.value), .language(s.language.value),
                              .autoRefresh(s.autoRefresh.value)]
-        return (install, fixes, inApp)
+        return (install, fixes, inApp, tweaks)
     }
 }

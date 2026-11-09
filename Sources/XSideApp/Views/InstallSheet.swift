@@ -311,6 +311,7 @@ struct InstallSheet: View {
                         ICloudOptionsCard(model: model, flow: flow)
                         CompatibilityFixCard { Legacy32InfoRow(appName: flow.appDisplayName, applied: flow.info?.hasLegacy32) }
                     }
+                    InstallTweaksSection(model: model, flow: flow)
                 }
                 // What this step's fields cause (minimum iOS, a new App ID, an older version).
                 PreflightNotes(warnings: model.preflightWarnings(for: flow).filter(\.followsInstallOptions),

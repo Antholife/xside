@@ -28,7 +28,7 @@ enum SnapshotRenderer {
         NSApplication.shared.setActivationPolicy(.prohibited)
         UserDefaults.standard.set(true, forKey: JourneyStep.completedKey)
 
-        SettingsView.snapshotScreenHeight = 1_800
+        SettingsView.snapshotScreenHeight = 3_200
         let model = AppModel(startsServices: false)
         let now = Date()
         let sample = Sample(now: now, library: out.appendingPathComponent("library", isDirectory: true))
@@ -73,12 +73,25 @@ enum SnapshotRenderer {
                         ICloudOptionsCard(model: model, flow: flow)
                         CompatibilityFixCard { Legacy32InfoRow(appName: flow.appDisplayName, applied: flow.info?.hasLegacy32) }
                     }
+                    InstallTweaksSection(model: model, flow: flow)
                 }
                 .padding(20).frame(width: InstallWindow.width).background(Color(nsColor: .windowBackgroundColor)),
                        dark: dark, to: out.appendingPathComponent("install-step2-\(language)-\(scheme).png"))
                 render(InstallSummaryView(model: model, flow: flow)
                         .padding(20).frame(width: InstallWindow.width).background(Color(nsColor: .windowBackgroundColor)),
                        dark: dark, to: out.appendingPathComponent("install-summary-\(language)-\(scheme).png"))
+                // The tweaks on two devices: ✅ on both; 🔧 with every change and a note; ❌ needs a
+                // jailbreak; ✅ on one and ❌ iOS on the other; made for another app, forced on one.
+                render(InstallTweaksSection(model: model, flow: flow)
+                        .padding(20).frame(width: InstallWindow.width).background(Color(nsColor: .windowBackgroundColor)),
+                       dark: dark, to: out.appendingPathComponent("tweaks-\(language)-\(scheme).png"))
+                // One device, no tweak: « Aucun ».
+                let single = sample.flow()
+                single.deviceIDs = [sample.deviceIDs[1]]
+                single.tweaks = []
+                render(InstallSummaryView(model: model, flow: single)
+                        .padding(20).frame(width: InstallWindow.width).background(Color(nsColor: .windowBackgroundColor)),
+                       dark: dark, to: out.appendingPathComponent("install-summary-single-\(language)-\(scheme).png"))
                 model.settingsPane = .apps
             }
         }
@@ -165,12 +178,53 @@ enum SnapshotRenderer {
                                 hasLegacy32: true)
             flow.deviceIDs = deviceIDs
             flow.duoDevices = [deviceIDs[0]]
+            let (iPhone, iPad) = (deviceIDs[0], deviceIDs[1])
+            let both = Set(deviceIDs)
+            func draft(_ p: TweakPackage, on: Set<String>, _ verdicts: [String: TweakVerdict],
+                       forced: [String: TweakVerdict] = [:], force: Set<String> = []) -> TweakDraft {
+                TweakDraft(package: p, directory: URL(fileURLWithPath: "/tmp/\(p.id)"), enabledDevices: on, force: force,
+                           verdicts: verdicts, forcedVerdicts: forced, seenDevices: both)
+            }
+            let converted = TweakVerdict.converted([.hookingLibrary, .jailbreakPaths, .dependency("Alderis"),
+                                                    .dependencyAdded("Cephei")])
+            flow.tweaks = [
+                draft(Self.tweak(1, "Dark Mode Pro", version: "1.4", author: "Lumen", bundles: [legacyApp.originalBundleID]),
+                      on: both, [iPhone: .compatible, iPad: .compatible]),
+                draft(Self.tweak(2, "InstaPlus Reborn", version: "3.2.1", author: "Alex Rivera", bundles: [legacyApp.originalBundleID],
+                                 notes: [.settingsNotConverted]),
+                      on: both, [iPhone: converted, iPad: converted]),
+                draft(Self.tweak(3, "Spotlight Shortcuts", version: "2.0", author: nil, bundles: ["com.apple.springboard"]),
+                      on: [], [iPhone: .incompatible(.needsJailbreak("com.apple.springboard")),
+                               iPad: .incompatible(.needsJailbreak("com.apple.springboard"))]),
+                draft(Self.tweak(4, "Swipe Speed", version: "0.9", author: "kb", bundles: nil),
+                      on: [iPhone], [iPhone: .compatible, iPad: .incompatible(.iOSVersion(required: "≥ 18.0", device: "17.5"))]),
+                draft(Self.tweak(5, "ReelsBlock", version: "1.0", author: "Nora", bundles: ["com.burbn.instagram"]),
+                      on: [iPhone], [iPhone: .incompatible(.madeForAnotherApp(["com.burbn.instagram"])),
+                                     iPad: .incompatible(.madeForAnotherApp(["com.burbn.instagram"]))],
+                      forced: [iPhone: .compatible, iPad: .compatible], force: [iPhone]),
+            ]
+            flow.tweakErrors = [L("tweaks.error.unreadable", "Cracked-Tweak.deb")]
             return flow
+        }
+
+        /// A made-up tweak: one entry (or, `entry: false`, a library) for `bundles` (nil: a
+        /// dropped .dylib, made for this app).
+        static func tweak(_ n: Int, _ name: String, version: String, author: String?, bundles: [String]?,
+                          notes: [TweakNote] = [], entry: Bool = true) -> TweakPackage {
+            let file = (entry ? "Library/MobileSubstrate/DynamicLibraries/" : "usr/lib/") + name.replacingOccurrences(of: " ", with: "") + ".dylib"
+            let binary = TweakBinary(path: file, isEntry: entry, filter: bundles.map { TweakFilter(bundles: $0) },
+                                     slices: [TweakSlice(arch: "arm64", platform: 2, minOS: "15.0")],
+                                     linked: ["/usr/lib/libobjc.A.dylib"], mentionsJailbreakPaths: false,
+                                     imageName: (file as NSString).lastPathComponent)
+            return TweakPackage(id: String(format: "5a5a%012lx", n), kind: .deb, origin: .added,
+                                packageID: "com.example.tweak\(n)", name: name, version: version, author: author,
+                                files: [file], binaries: [binary], notes: notes, addedAt: Date(timeIntervalSince1970: 1_800_000_000))
         }
 
         init(now: Date, library: URL) {
             let iPad = Device(id: "snapshot-ipad", udid: nil, name: "Anthony's iPad Air 5", model: "iPad Air (5th generation)",
-                              kind: .iPad, transport: .network, isPaired: true, isAvailable: true, developerModeEnabled: true)
+                              kind: .iPad, transport: .network, isPaired: true, isAvailable: true, developerModeEnabled: true,
+                              osVersion: "17.5")
             let iPhone = Device(id: "snapshot-iphone", udid: nil, name: "iPhone Duo de Anthony", model: "iPhone",
                                 kind: .iPhone, transport: .usb, isPaired: true, isAvailable: true, developerModeEnabled: true,
                                 productType: "iPhone19,4")
@@ -202,6 +256,18 @@ enum SnapshotRenderer {
             video.installations[1].iCloudSignedOut = true
             video.installations[1].signedChoices = SigningChoices(withoutXSideFeatures: false, duoCompatibility: false,
                                                                   iCloudSignedOut: false)
+            // The iPhone's tweaks (Settings > Mes apps): one in the app, one forced that had no room,
+            // a library no enabled tweak used, and one added since (pending).
+            let ok = Self.tweak(11, "Return YouTube Dislike", version: "1.11", author: "Lillie", bundles: [video.originalBundleID])
+            let other = Self.tweak(12, "Shorts Remover", version: "2.0", author: nil, bundles: ["com.google.ios.youtube"])
+            let lib = Self.tweak(13, "Alderis", version: "1.2", author: "hbang", bundles: nil, entry: false)
+            let added = Self.tweak(14, "YouPiP", version: "1.8", author: "PoomSmart", bundles: [video.originalBundleID])
+            video.tweaks = [ok, other, lib, added]
+            video.installations[1].tweaks = [TweakUse(id: ok.id), TweakUse(id: other.id, force: true), TweakUse(id: lib.id),
+                                             TweakUse(id: added.id)]
+            video.installations[1].signedChoices?.tweaks = [ok.id, other.id, lib.id]
+            video.installations[1].signedChoices?.forcedTweaks = [other.id]
+            video.installations[1].tweakResults = [ok.id: .injected(converted: false), other.id: .skipped(.noRoom)]
             video.installations[0].withoutXSideFeatures = true // the iPad: already signed that way, nothing pending
             video.installations[0].signedChoices = SigningChoices(withoutXSideFeatures: true, duoCompatibility: false,
                                                                   iCloudSignedOut: false)

@@ -103,6 +103,19 @@ public struct TweakPackage: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
+extension TweakPackage {
+    /// One of its entries' filters names `target` (a bundle id, executable or class).
+    public func filterNames(_ target: String) -> Bool {
+        entries.contains { b in
+            guard let f = b.filter else { return false }
+            return f.bundles.contains(target) || f.executables.contains(target) || f.classes.contains(target)
+        }
+    }
+
+    /// The app it says it's for: its first entry's first filter bundle id (nil: none named).
+    public var targetBundleID: String? { entries.lazy.compactMap { $0.filter?.bundles.first }.first }
+}
+
 /// Where tweaks go inside a signed app.
 public enum TweakLayout {
     /// Relative to the `.app`.

@@ -673,4 +673,18 @@ struct TweakClassifierTests {
         #expect(fr[TweakVerdict.overrideKey] == "Injecter quand même")
         #expect(fr[TweakConversion.dependencyAdded("x").stringKey] == "Dépendance ajoutée : %@")
     }
+
+    /// « Demande un jailbreak » reads differently for where the tweak loads (its filter) and for a
+    /// library it uses: the text key says which.
+    @Test func needsJailbreakIsWordedForAProcessOrALibrary() {
+        let sb = package([entry(filter: TweakFilter(bundles: ["com.apple.springboard"], executables: ["SpringBoard"],
+                                                    classes: ["SBIconController"]))])
+        for target in ["com.apple.springboard", "SpringBoard", "SBIconController"] {
+            #expect(TweakProblem.needsJailbreak(target).stringKey(for: sb) == "tweaks.problem.needsJailbreak")
+        }
+        #expect(TweakProblem.needsJailbreak("RocketBootstrap").stringKey(for: sb) == "tweaks.problem.needsJailbreakLibrary")
+        #expect(TweakProblem.needsJailbreak("RocketBootstrap").stringKey(for: package([entry(filter: nil)]))
+                == "tweaks.problem.needsJailbreakLibrary")
+        #expect(TweakProblem.notForIOS.stringKey(for: sb) == TweakProblem.notForIOS.stringKey)
+    }
 }

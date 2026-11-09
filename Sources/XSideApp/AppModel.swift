@@ -64,7 +64,7 @@ struct DeviceGroup: Identifiable {
 
 @MainActor @Observable
 final class AppModel {
-    private static let logger = Log("model")
+    static let logger = Log("model")
 
     private(set) var environment: Result<SigningEnvironment, XSideError>? {
         didSet {
@@ -150,6 +150,10 @@ final class AppModel {
     private(set) var jobs: [JobKey: JobStage] = [:]
     private(set) var pairing: Set<String> = []
     private(set) var pairErrors: [String: String] = [:]
+    /// Settings > Mes apps: why the last tweak files added to an installation couldn't be
+    /// (orange lines in its Tweaks section), and the names being analysed.
+    var tweakErrors: [JobKey: [String]] = [:]
+    var tweaksBeingAdded: [JobKey: [String]] = [:]
 
     /// The `.ipa` shown in the install window. Setting it requests an install of that file: it
     /// starts a new flow, or is queued while an install is running.
@@ -162,6 +166,7 @@ final class AppModel {
         didSet {
             if oldValue !== install {
                 oldValue?.removeAppIcon()
+                oldValue?.removeTweakStaging()
                 dropKeptEmptyRecords()
             }
         }
@@ -191,7 +196,7 @@ final class AppModel {
     /// The app Settings > Mes apps shows (set by the "…" menu of a row); nil: the first one.
     var settingsApp: JobKey?
     /// Runs every tool with `DEVELOPER_DIR` set to the Xcode in use (see `resolveXcode`).
-    private let runner: ProcessRunner
+    let runner: ProcessRunner
     /// Without the override: what `xcode-select -p` itself points to.
     private let plainRunner = ProcessRunner()
     /// The developer directory passed as `DEVELOPER_DIR`, nil to inherit XSide's environment.
@@ -272,7 +277,11 @@ final class AppModel {
                                // Its own library, not XSide's module: kept with XSIDE_NO_FEATURES.
                                iCloudLibrary: Bundle.main.url(forResource: "XSideICloud", withExtension: "dylib"),
                                // The iPhone Duo option's module for apps without scenes: not XSide's module either.
-                               duoLegacyLibrary: Bundle.main.url(forResource: "XSideDuoLegacy", withExtension: "dylib")),
+                               duoLegacyLibrary: Bundle.main.url(forResource: "XSideDuoLegacy", withExtension: "dylib"),
+                               // Tweaks: their own libraries, kept with XSIDE_NO_FEATURES too.
+                               elleKitLibrary: TweakResources.elleKit, elleKitLicense: TweakResources.elleKitLicense,
+                               tweakSupportLibrary: TweakResources.support, tweakDependencies: TweakResources.dependencies,
+                               elleKitHasLibhooker: TweakResources.elleKitHasLibhooker),
             installer: Installer(runner: runner),
             workRoot: paths.jobsWork, now: { Date() }, macIsBeta: XcodeLauncher.macIsBeta,
             inAppDefaults: { AppModel.inAppDefaults(at: $0) },
@@ -1032,6 +1041,7 @@ final class AppModel {
     @discardableResult
     func importAndInstall(_ ipa: URL, on device: Device, options: InstallOptions? = nil,
                           inApp: InAppDraft? = nil, duoCompatibility: Bool? = nil, iCloudSignedOut: Bool? = nil,
+                          tweaks: [TweakUse]? = nil,
                           importedInto recordID: UUID? = nil,
                           imported: @MainActor (UUID) -> Void = { _ in },
                           progress: @escaping @MainActor @Sendable (JobStage) -> Void = { _ in },
@@ -1060,13 +1070,17 @@ final class AppModel {
             if let options { try await library.setOptions(options, for: record.id) }
             imported(record.id) // options saved too: later devices install this record as is
         }
+        // The window's tweaks go into the app's pool, with this device's list, before its job.
+        if let tweaks, let flow = install, flow.ipa == ipa {
+            try await handOverTweaks(flow, uses: tweaks, deviceID: device.id, recordID: record.id)
+        }
         await reloadRecords()
         // Preparation is over: until the pipeline reports its first step the job may be queued
         // (provisioning lock, or another job on the same device).
         if jobs[key] == .preparing { jobs[key] = .waiting }
         progress(jobs[key] ?? .waiting) // never replaces a real step another holder already reported
         try await run(key: key, device: device, inApp: inApp, duoCompatibility: duoCompatibility,
-                      iCloudSignedOut: iCloudSignedOut, progress: progress, duoOutcome: duoOutcome)
+                      iCloudSignedOut: iCloudSignedOut, tweaks: tweaks, progress: progress, duoOutcome: duoOutcome)
         return records.first { $0.id == record.id } ?? record
     }
 
@@ -2005,7 +2019,7 @@ final class AppModel {
     /// The caller must hold a claim on `key`. `refresh`: see `SideloadPipeline.install`.
     private func run(key: JobKey, device: Device, refresh: Bool = false,
                      automatic: Bool = false, inApp: InAppDraft? = nil, duoCompatibility: Bool? = nil,
-                     iCloudSignedOut: Bool? = nil,
+                     iCloudSignedOut: Bool? = nil, tweaks: [TweakUse]? = nil,
                      progress: @escaping @MainActor @Sendable (JobStage) -> Void = { _ in },
                      duoOutcome: @escaping @MainActor @Sendable (DuoOutcome) -> Void = { _ in }) async throws {
         let job = RefreshJob(recordID: key.recordID, deviceID: key.deviceID)
@@ -2026,7 +2040,7 @@ final class AppModel {
                 try await pipeline.install(recordID: key.recordID, device: device, environment: environment,
                                            refresh: refresh, inApp: inApp,
                                            duoCompatibility: duoCompatibility,
-                                           iCloudSignedOut: iCloudSignedOut) { step in
+                                           iCloudSignedOut: iCloudSignedOut, tweaks: tweaks) { step in
                     await MainActor.run {
                         self.jobs[key] = .step(step)
                         self.stepPercent[key] = nil // a new step starts from nothing
@@ -2095,6 +2109,7 @@ final class AppModel {
                 flow.draft = OptionsDraft(existing?.options ?? InstallOptions())
                 flow.duoDevices = Set(existing?.installations.filter { $0.duoCompatibility == true }.map(\.deviceID) ?? [])
                 flow.iCloudDevices = Set(existing?.installations.filter { $0.iCloudSignedOut == true }.map(\.deviceID) ?? [])
+                prefillTweaks(flow)
                 // The app's last-used values; a reinstall refreshes it again (as before 1.1), so
                 // automatic refresh starts on.
                 if let used = existing.flatMap({ InAppSettings.lastUsed(in: $0.installations) }) {
@@ -2166,6 +2181,8 @@ final class AppModel {
             flow.go(to: 1) // where the identifier field is
             return
         }
+        // A converted tweak on any device: asked first; Cancel stays on the step.
+        guard confirmConvertedTweaks(convertedTweaks(in: flow, on: targets)) else { return }
         flow.runs = targets.map { id in DeviceRun(deviceID: id, name: devices.first { $0.id == id }?.name ?? id) }
         flow.runOptions = flow.draft.options
         flow.runInApp = InAppDraft(settings: flow.inApp, touched: flow.inAppTouched)
@@ -2173,6 +2190,7 @@ final class AppModel {
         flow.runLegacy32 = flow.info?.hasLegacy32 == true
         flow.runDuo = flow.duoDevices.filter { duoState(for: $0, app: flow.info?.duo).canTurnOn }
         flow.runICloud = flow.iCloudDevices
+        flow.runTweaks = Dictionary(uniqueKeysWithValues: targets.map { id in (id, flow.tweaks.compactMap { $0.use(on: id) }) })
         // A new run imports again (the options may have changed); only its later devices reuse it.
         flow.importedRecordID = nil
         flow.guides = []
@@ -2271,6 +2289,7 @@ final class AppModel {
             let installed = try await importAndInstall(flow.ipa, on: device, options: flow.runOptions,
                                        inApp: flow.runInApp, duoCompatibility: flow.runDuo.contains(deviceID),
                                        iCloudSignedOut: flow.runICloud.contains(deviceID),
+                                       tweaks: flow.runTweaks[deviceID],
                                        importedInto: flow.importedRecordID,
                                        imported: { flow.importedRecordID = $0 },
                                        progress: { stage in

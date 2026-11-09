@@ -107,12 +107,19 @@ struct InstallSummaryView: View {
                                          iCloudDevices: iCloudOn.map(deviceName),
                                          // Step ② shows the iCloud card for every target (morning review M5).
                                          offersICloud: !flow.deviceIDs.isEmpty,
-                                         legacy32: info?.hasLegacy32)
+                                         legacy32: info?.hasLegacy32,
+                                         tweaks: flow.deviceIDs.map { id in
+                                             let on = flow.tweaks.filter { $0.isEnabled(on: id) }
+                                             let converted = on.filter { if case .converted? = $0.verdict(on: id) { true } else { false } }
+                                             return InstallSummary.DeviceTweaks(device: deviceName(id), count: on.count,
+                                                                                converted: converted.count)
+                                         })
         VStack(alignment: .leading, spacing: 10) {
             SectionTitle(L("install.summary.title"))
             group(L("install.optionsTitle"), lines.install, step: 1)
             // The compatibility fixes, apart (step ② edits them too).
             if !lines.fixes.isEmpty { group(L("fixes.section"), lines.fixes, step: 1) }
+            if !lines.tweaks.isEmpty { group(L("tweaks.section"), lines.tweaks, step: 1) }
             group(L("install.steps.inApp"), lines.inApp, step: 2)
             Text(L("install.summary.note", info?.name ?? ""))
                 .font(.system(size: 11))
@@ -191,6 +198,8 @@ struct InstallSummaryView: View {
         case .reminder(let on): (InAppOption.reminder.title, yesNo(on))
         case .language(let language): (L("inApp.language"), language.label)
         case .autoRefresh(let on): (L("inApp.autoRefresh"), yesNo(on))
+        case .tweaks(let device, let count, let converted):
+            (device ?? L("install.summary.tweaks"), L("install.summary.tweaks.count", count, converted))
         }
     }
 }
