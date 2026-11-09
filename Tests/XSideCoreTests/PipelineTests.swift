@@ -1672,6 +1672,23 @@ struct PipelineTweakTests {
         #expect(stored.injectedTweaks == [InjectedTweak(one, conversions: nil)] && stored.tweakSupportImages == ["Cephei"])
     }
 
+    /// « Désactiver ce tweak » after a crash (device test 2026-11-09: 5 tweaks, then a refresh with
+    /// 4): the crashing one is not in the refresh's job, the others are, and it stays listed off.
+    @Test func aTweakDisabledAfterACrashIsLeftOutOfTheRefresh() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let crash = try await addTweak(f, "Crash.dylib", deviceIDs: ["dev-1"])
+        let other = try await addTweak(f, "Other.dylib", deviceIDs: ["dev-1"])
+        _ = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
+        #expect(ids(await f.log.options.last) == [crash.id, other.id])
+        let d = CrashDiagnosis(cause: .tweak, subject: "Crash.dylib")
+        #expect(try await f.library.disableTweaksAfterCrash(.disableTweak, diagnosis: d, recordID: f.record.id,
+                                                            deviceID: "dev-1", allDevices: false))
+        let done = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env, refresh: true)
+        #expect(ids(await f.log.options.last) == [other.id])
+        #expect(done.tweaks == [TweakUse(id: crash.id, enabled: false), TweakUse(id: other.id)])
+        #expect(done.tweakResults?.keys.sorted() == [other.id])
+    }
+
     /// Same app, two devices, each with its own list: each signing gets that device's only.
     @Test func eachDeviceGetsItsOwnTweaks() async throws {
         let f = try await Fixture(); defer { f.cleanup() }

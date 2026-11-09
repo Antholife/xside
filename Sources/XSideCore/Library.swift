@@ -1416,6 +1416,51 @@ extension AppLibrary {
         return found
     }
 
+    /// Every kept download whose file is there, with its size and the apps whose pool uses it
+    /// (a package stored with its `.downloaded` origin); by package id, newest first.
+    public func downloadUsage() -> [DownloadUsage] {
+        var users: [String: Set<String>] = [:]
+        for record in items {
+            for p in record.tweaks ?? [] {
+                if case .downloaded(_, _, let sha) = p.origin { users[sha.lowercased(), default: []].insert(record.displayName) }
+            }
+        }
+        return readDownloadIndex().compactMap { e -> DownloadUsage? in
+            let sha = e.sha256.lowercased()
+            guard Self.isSHA256(sha), let stamp = Self.stamp(downloadURL(sha)) else { return nil }
+            return DownloadUsage(sha256: sha, packageID: e.packageID, version: e.version, repo: e.repo,
+                                 repoName: TrustedRepos.all.first { $0.id == e.repo }?.name ?? e.repo,
+                                 size: stamp.size, downloadedAt: e.downloadedAt, apps: (users[sha] ?? []).sorted())
+        }
+        .sorted {
+            $0.packageID != $1.packageID ? $0.packageID < $1.packageID
+                : DebVersion.compare($0.version, $1.version) == .orderedDescending
+        }
+    }
+
+    /// Deletes a kept download no app's pool uses. False (nothing deleted) when one does, or
+    /// for an id that isn't a SHA-256.
+    @discardableResult
+    public func removeUnusedDownload(sha256: String) -> Bool {
+        let sha = sha256.lowercased()
+        guard Self.isSHA256(sha) else { return false }
+        let used = items.contains { r in
+            (r.tweaks ?? []).contains { if case .downloaded(_, _, let s) = $0.origin { s.lowercased() == sha } else { false } }
+        }
+        guard !used else { return false }
+        removeDownload(sha256: sha)
+        return true
+    }
+
+    /// « Tout nettoyer »: every kept download no app uses. How many and how many bytes went.
+    public func removeUnusedDownloads() -> (count: Int, bytes: Int64) {
+        var count = 0, bytes: Int64 = 0
+        for u in downloadUsage() where !u.isUsed {
+            if removeUnusedDownload(sha256: u.sha256) { count += 1; bytes += u.size }
+        }
+        return (count, bytes)
+    }
+
     /// Forgets a kept download: its index entry and its file.
     public func removeDownload(sha256: String) {
         let sha = sha256.lowercased()
