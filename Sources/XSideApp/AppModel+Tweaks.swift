@@ -48,7 +48,7 @@ extension AppModel {
     }
 
     /// Every device's list: its installation's, else the one waiting for its first install.
-    private func tweakLists(_ record: AppRecord) -> [String: [TweakUse]] {
+    func tweakLists(_ record: AppRecord) -> [String: [TweakUse]] {
         var lists = record.pendingTweakUses ?? [:]
         for i in record.installations { if let t = i.tweaks { lists[i.deviceID] = t } }
         return lists
@@ -98,13 +98,9 @@ extension AppModel {
     func addTweaks(_ urls: [URL], to flow: InstallFlow) async {
         flow.tweakErrors = []
         guard !urls.isEmpty else { return }
-        let staging: URL
-        if let existing = flow.tweakStaging {
-            staging = existing
-        } else {
-            staging = libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent(UUID().uuidString)
-            flow.tweakStaging = staging
-        }
+        let staging = tweakStaging(flow)
+        var added: [String] = []
+        defer { openDependenciesIfMissing(added.map { DependencyTarget.draft(tweakID: $0) }) }
         for url in urls {
             let name = url.lastPathComponent
             flow.tweaksBeingAdded.append(name)
@@ -150,8 +146,17 @@ extension AppModel {
                 flow.tweaks.append(draft)
                 syncTweakDevices(flow)
             }
+            added.append(package.id)
         }
         refreshTweakVerdicts(flow)
+    }
+
+    /// The window's staging folder (`AppLibrary.stagingFolder`), made on first use.
+    func tweakStaging(_ flow: InstallFlow) -> URL {
+        if let existing = flow.tweakStaging { return existing }
+        let staging = libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent(UUID().uuidString)
+        flow.tweakStaging = staging
+        return staging
     }
 
     func setTweak(_ id: String, enabled: Bool, for deviceID: String, in flow: InstallFlow) {
@@ -265,6 +270,8 @@ extension AppModel {
     func addTweaks(_ urls: [URL], for entry: AppEntry) async {
         let key = entry.id
         tweakErrors[key] = nil
+        var added: [String] = []
+        defer { openDependenciesIfMissing(added.map { DependencyTarget.entry(key, tweakID: $0) }) }
         for url in urls {
             let name = url.lastPathComponent
             tweaksBeingAdded[key, default: []].append(name)
@@ -284,6 +291,7 @@ extension AppModel {
                 }
                 await reloadRecords()
                 guard let current = currentEntry(key) else { continue }
+                added.append(package.id)
                 let verdict = tweakVerdicts(package, for: current).verdict
                 switch verdict {
                 case .incompatible:
@@ -406,6 +414,239 @@ enum TweakText {
         case nil:
             // A library no enabled tweak relied on: the signing left it out, and says nothing.
             return enabled && signed && package.entries.isEmpty ? L("tweaks.result.notUsed") : nil
+        }
+    }
+}
+
+// MARK: - « Dépendances »
+
+/// Whose dependencies the sheet shows: a tweak of the install window (step ②), or one of an
+/// installation (Settings > Mes apps).
+enum DependencyTarget: Hashable {
+    case draft(tweakID: String)
+    case entry(JobKey, tweakID: String)
+
+    var tweakID: String {
+        switch self {
+        case .draft(let id), .entry(_, let id): id
+        }
+    }
+}
+
+struct DependencySheet: Identifiable, Equatable {
+    let target: DependencyTarget
+    var id: DependencyTarget { target }
+}
+
+extension AppModel {
+    /// « Dépendances… », and by itself after adding a tweak with a « Manquante » one.
+    func showDependencies(for target: DependencyTarget) {
+        dependencyErrors = [:]
+        dependencySheet = DependencySheet(target: target)
+    }
+
+    func closeDependencies() {
+        dependencySheet = nil
+        dependencyErrors = [:]
+    }
+
+    /// The first of `targets` that has a missing dependency, unless a sheet is already shown.
+    func openDependenciesIfMissing(_ targets: [DependencyTarget]) {
+        guard dependencySheet == nil else { return }
+        for target in targets {
+            guard let (_, lines) = dependencyLines(target) else { continue }
+            if lines.contains(where: { if case .missing = $0.status { true } else { false } }) {
+                showDependencies(for: target)
+                return
+            }
+        }
+    }
+
+    /// The tweak and one line per `Depends` group, with the other tweaks enabled where it is.
+    /// Nothing here reaches the network or the disk.
+    func dependencyLines(_ target: DependencyTarget) -> (package: TweakPackage, lines: [DependencyLine])? {
+        let package: TweakPackage, context: TweakContext
+        switch target {
+        case .draft(let id):
+            guard let flow = install, let draft = flow.tweaks.first(where: { $0.id == id }) else { return nil }
+            let on = draft.enabledDevices.isEmpty ? Set(flow.deviceIDs) : draft.enabledDevices
+            let others = flow.tweaks.filter { $0.id != id && !$0.enabledDevices.isDisjoint(with: on) }.map(\.package)
+            package = draft.package
+            let first = flow.deviceIDs.first { on.contains($0) }
+            context = TweakResources.context(bundleID: flow.info?.bundleID ?? "", executable: flow.info?.executable,
+                                             deviceOS: devices.first { $0.id == first }?.osVersion, others: others)
+        case .entry(let key, let id):
+            guard let entry = currentEntry(key), let p = entry.record.tweaks?.first(where: { $0.id == id }) else { return nil }
+            let enabled = Set(entry.installation.enabledTweakIDs)
+            let others = (entry.record.tweaks ?? []).filter { $0.id != id && enabled.contains($0.id) }
+            package = p
+            context = TweakResources.context(bundleID: entry.record.originalBundleID, executable: entry.record.executable,
+                                             deviceOS: devices.first { $0.id == key.deviceID }?.osVersion, others: others)
+        }
+        let lines = TweakClassifier.dependencies(package, context).enumerated().map { i, pair in
+            var line = DependencyLine(id: i, dependency: pair.0, status: pair.1)
+            if case .addedByYou(let name) = pair.1 {
+                line.addedVersion = context.others.first { $0.name == name && ($0.packageID == pair.0.package || $0.provides.contains(pair.0.package)) }?.version
+            }
+            return line
+        }
+        return (package, lines)
+    }
+
+    /// « Ajouter son .deb… »: kept only if it is that package in a version that will do.
+    func addDependencyDeb(_ urls: [URL], for dependency: DebDependency, target: DependencyTarget) async {
+        guard let url = urls.first else { return }
+        await addingDependency(dependency) {
+            try await self.addDependency(url, origin: .added, for: dependency, target: target)
+        }
+    }
+
+    /// « Télécharger »: a kept copy that satisfies it is reused without network; otherwise the
+    /// trusted repo is asked now (only after the click), the person confirms what, from where and
+    /// how big, then it is downloaded, checked, kept and added on the devices that use the tweak.
+    func downloadDependency(_ dependency: DebDependency, for tweak: TweakPackage, target: DependencyTarget) async {
+        let repoName = TrustedRepos.offering(dependency.package).first?.name ?? dependency.package
+        await addingDependency(dependency) {
+            let work = self.libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: work) }
+            let downloader = DependencyDownloader(library: self.library,
+                                                  client: RepoClient(fetcher: self.repoFetcher, runner: self.runner, workDir: work))
+            let source: DependencySource
+            do {
+                source = try await downloader.prepare(dependency, preferredArchitecture: tweak.architecture)
+            } catch {
+                throw DependencyFailure(text: Self.downloadErrorText(error, dependency: dependency, repoName: repoName))
+            }
+            guard self.confirmDownload(source, dependency: dependency) else { return nil }
+            let fetched: (file: URL, origin: TweakOrigin)
+            do {
+                fetched = try await downloader.fetch(source)
+            } catch {
+                throw DependencyFailure(text: Self.downloadErrorText(error, dependency: dependency, repoName: source.repoName))
+            }
+            return try await self.addDependency(fetched.file, origin: fetched.origin, for: dependency, target: target)
+        }
+    }
+
+    private struct DependencyFailure: Error { let text: String }
+
+    /// Runs one add for a dependency's row: its spinner, then its orange line on a failure.
+    private func addingDependency(_ dependency: DebDependency, _ work: @escaping () async throws -> String?) async {
+        let key = dependency.package
+        guard !dependenciesBeingAdded.contains(key) else { return }
+        dependencyErrors[key] = nil
+        dependenciesBeingAdded.insert(key)
+        defer { dependenciesBeingAdded.remove(key) }
+        do {
+            if let problem = try await work() { dependencyErrors[key] = problem }
+        } catch let failure as DependencyFailure {
+            dependencyErrors[key] = failure.text
+        } catch {
+            Self.logger.notice("dependency \(key) not added: \(String(describing: error))")
+            dependencyErrors[key] = Self.tweakErrorText(error, name: key)
+        }
+    }
+
+    private static func downloadErrorText(_ error: any Error, dependency: DebDependency, repoName: String) -> String {
+        logger.notice("dependency \(dependency.package) not downloaded: \(String(describing: error))")
+        switch DependencyDownloader.failure(error) {
+        case .hash: return L("deps.error.hash")
+        case .notFound: return L("deps.error.notFound", DependencyLine.displayName(dependency.package))
+        case .network: return L("deps.error.network", repoName)
+        }
+    }
+
+    /// What, from where, how big (or that the kept copy is used), and the `.deb`'s URL.
+    private func confirmDownload(_ source: DependencySource, dependency: DebDependency) -> Bool {
+        let name: String
+        switch source {
+        case .cached: name = DependencyLine.displayName(dependency.package)
+        case .repo(let o): name = o.name
+        }
+        let alert = NSAlert()
+        alert.messageText = L("deps.confirm.title", name, source.version)
+        var text: String
+        if let size = source.size {
+            text = L("deps.confirm.text", name + " " + source.version,
+                     ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file),
+                     source.repoName, source.repoURL?.absoluteString ?? "")
+        } else {
+            text = L("deps.confirm.cached")
+        }
+        text += "\n\n" + L("deps.confirm.file", source.debURL)
+        alert.informativeText = text
+        alert.addButton(withTitle: L("deps.download"))
+        alert.addButton(withTitle: L("install.cancel"))
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    /// Analyses `url`, checks it is `dependency` (else the orange line's text), and adds it on the
+    /// devices where the tweak that needs it is on.
+    private func addDependency(_ url: URL, origin: TweakOrigin, for dependency: DebDependency,
+                               target: DependencyTarget) async throws -> String? {
+        switch target {
+        case .draft(let tweakID):
+            guard let flow = install, !flow.isRunning else { return nil }
+            let staging = tweakStaging(flow)
+            let package = try await TweakAnalyzer.analyze(url, into: staging, origin: origin, runner: runner, now: Date())
+            let known = flow.tweaks.contains { $0.id == package.id }
+            let directory = staging.appendingPathComponent(package.id)
+            guard install === flow, !flow.isRunning else {
+                if !known { try? FileManager.default.removeItem(at: directory) }
+                return nil
+            }
+            if let problem = Self.mismatchText(DependencyDirectory.check(package, for: dependency)) {
+                if !known { try? FileManager.default.removeItem(at: directory) }
+                return problem
+            }
+            let devices = flow.tweaks.first { $0.id == tweakID }.map { $0.enabledDevices.isEmpty ? Set(flow.deviceIDs) : $0.enabledDevices }
+                ?? Set(flow.deviceIDs)
+            if let i = flow.tweaks.firstIndex(where: { $0.id == package.id }) {
+                flow.tweaks[i].enabledDevices.formUnion(devices)
+            } else if let i = flow.tweaks.firstIndex(where: { $0.package.packageID == package.packageID }) {
+                let old = flow.tweaks[i]
+                guard confirmReplace(old: old.package, new: package) else {
+                    try? FileManager.default.removeItem(at: directory)
+                    return nil
+                }
+                var draft = TweakDraft(package: package, directory: directory, enabledDevices: old.enabledDevices.union(devices),
+                                       force: old.force, verdicts: [:])
+                draft.listedDevices = old.listedDevices
+                draft.seenDevices = old.seenDevices.union(flow.deviceIDs)
+                draft.replacing = old.stored ? old.id : old.replacing
+                flow.tweaks[i] = draft
+                if !old.stored { try? FileManager.default.removeItem(at: old.directory) }
+            } else {
+                var draft = TweakDraft(package: package, directory: directory, enabledDevices: devices, force: [], verdicts: [:])
+                draft.seenDevices = Set(flow.deviceIDs)
+                flow.tweaks.append(draft)
+            }
+            refreshTweakVerdicts(flow)
+            return nil
+        case .entry(let key, let tweakID):
+            // Checked from a scratch copy first: a wrong one never enters the app's pool.
+            let scratch = libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: scratch) }
+            let checked = try await TweakAnalyzer.analyze(url, into: scratch, origin: origin, runner: runner, now: Date())
+            if let problem = Self.mismatchText(DependencyDirectory.check(checked, for: dependency)) { return problem }
+            guard let record = records.first(where: { $0.id == key.recordID }) else { return nil }
+            let devices = tweakLists(record).filter { $0.value.contains { $0.id == tweakID && $0.enabled } }.map(\.key)
+            let (package, replacing) = try await library.addTweak(url, origin: origin, recordID: key.recordID,
+                                                                  deviceIDs: devices.isEmpty ? [key.deviceID] : devices.sorted(),
+                                                                  runner: runner, now: Date())
+            if let replacing, confirmReplace(old: replacing, new: package) {
+                try await library.replaceTweak(replacing.id, with: package, recordID: key.recordID)
+            }
+            await reloadRecords()
+            return nil
+        }
+    }
+
+    private static func mismatchText(_ match: DependencyMatch) -> String? {
+        switch match {
+        case .matches: nil
+        case .wrongPackage(let found, let wanted): L("deps.wrongPackage", found, wanted)
+        case .tooOld(let found, let needed): L("deps.tooOld", found, needed)
         }
     }
 }

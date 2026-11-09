@@ -1000,7 +1000,7 @@
 "tweaks.remove" = "Remove";
 "tweaks.remove.help" = "Removes it from this app on every device of this install.";
 "tweaks.remove.helpOne" = "Removes it from this app on this device, at its next refresh.";
-"tweaks.dependencies.help" = "Coming soon: what this tweak depends on and where to find it.";
+"tweaks.dependencies.help" = "What this tweak depends on, and where to find what's missing.";
 "tweaks.enable.a11y" = "Add %1$@ on %2$@";
 "tweaks.confirm.title" = "Install with a converted tweak?";
 "tweaks.confirm.text" = "This tweak was converted to work without a jailbreak (%@). Unexpected problems can happen: the app may crash or the tweak may not behave correctly.";
@@ -1020,3 +1020,32 @@
 "tweaks.result.injectedConverted" = "In the app since its last signing, converted.";
 "tweaks.result.notUsed" = "Not used by an enabled tweak";
 "install.summary.tweaks" = "Tweaks";
+
+/* Tweak dependencies */
+"deps.title" = "Dependencies of %@";
+"deps.missingTitle" = "Missing dependencies";
+"deps.caption" = "What the tweak needs to work, one line per Depends entry.";
+"deps.none" = "This tweak depends on nothing.";
+"deps.status.xside" = "Provided by XSide";
+"deps.status.yours" = "Added by you";
+"deps.status.missing" = "Missing";
+"deps.status.jailbreak" = "Needs a jailbreak";
+"deps.status.notNeeded" = "Not needed";
+"deps.status.builtIn" = "Built into the tweak";
+"deps.where" = "Where to find it";
+"deps.unknown" = "Can't be found automatically: XSide doesn't know where this package lives.";
+"deps.search" = "Search";
+"deps.otherSearch" = "Other search";
+"deps.addDeb" = "Add its .deb…";
+"deps.download" = "Download";
+"deps.drop" = "Drop its .deb here";
+"deps.checking" = "Checking…";
+"deps.wrongPackage" = "This .deb is %1$@, not %2$@.";
+"deps.tooOld" = "Version %1$@ is too old: %2$@ needed.";
+"deps.confirm.title" = "Download %1$@ %2$@?";
+"deps.confirm.text" = "XSide will download %1$@ (%2$@) from %3$@ (%4$@) and check it against the repo's fingerprint before adding it.";
+"deps.confirm.cached" = "Already downloaded: XSide uses the copy it kept.";
+"deps.confirm.file" = "File: %@";
+"deps.error.hash" = "The downloaded file doesn't match the repo's fingerprint: not added.";
+"deps.error.network" = "Couldn't reach %@.";
+"deps.error.notFound" = "%@ isn't in that repo in a suitable version.";

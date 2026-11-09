@@ -154,6 +154,13 @@ final class AppModel {
     /// (orange lines in its Tweaks section), and the names being analysed.
     var tweakErrors: [JobKey: [String]] = [:]
     var tweaksBeingAdded: [JobKey: [String]] = [:]
+    /// The « Dépendances » sheet shown (nil: none), why its last action on a dependency failed
+    /// (by package id, an orange line under its row) and the dependencies being added.
+    var dependencySheet: DependencySheet?
+    var dependencyErrors: [String: String] = [:]
+    var dependenciesBeingAdded: Set<String> = []
+    /// Trusted repos are reached only through this (tests and snapshots never use the network).
+    var repoFetcher: any HTTPFetching = URLSessionFetcher()
 
     /// The `.ipa` shown in the install window. Setting it requests an install of that file: it
     /// starts a new flow, or is queued while an install is running.
@@ -167,6 +174,7 @@ final class AppModel {
             if oldValue !== install {
                 oldValue?.removeAppIcon()
                 oldValue?.removeTweakStaging()
+                if case .draft? = dependencySheet?.target { closeDependencies() }
                 dropKeptEmptyRecords()
             }
         }

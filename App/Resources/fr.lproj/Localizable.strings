@@ -1000,7 +1000,7 @@
 "tweaks.remove" = "Retirer";
 "tweaks.remove.help" = "Le retire de cette app sur tous les appareils de cette installation.";
 "tweaks.remove.helpOne" = "Le retire de cette app sur cet appareil, à son prochain rafraîchissement.";
-"tweaks.dependencies.help" = "Bientôt : ce dont ce tweak dépend et où le trouver.";
+"tweaks.dependencies.help" = "Ce dont ce tweak dépend, et où trouver ce qui manque.";
 "tweaks.enable.a11y" = "Ajouter %1$@ sur %2$@";
 "tweaks.confirm.title" = "Installer avec un tweak converti ?";
 "tweaks.confirm.text" = "Ce tweak a été converti pour fonctionner sans jailbreak (%@). Des problèmes inattendus peuvent survenir : l'app peut planter ou le tweak ne pas se comporter correctement.";
@@ -1020,3 +1020,32 @@
 "tweaks.result.injectedConverted" = "Dans l'app depuis sa dernière signature, converti.";
 "tweaks.result.notUsed" = "Pas utilisée par un tweak activé";
 "install.summary.tweaks" = "Tweaks";
+
+/* Dépendances des tweaks */
+"deps.title" = "Dépendances de %@";
+"deps.missingTitle" = "Dépendances manquantes";
+"deps.caption" = "Ce dont le tweak a besoin pour marcher, une ligne par entrée Depends.";
+"deps.none" = "Ce tweak ne dépend de rien.";
+"deps.status.xside" = "Fournie par XSide";
+"deps.status.yours" = "Ajoutée par toi";
+"deps.status.missing" = "Manquante";
+"deps.status.jailbreak" = "Demande un jailbreak";
+"deps.status.notNeeded" = "Pas nécessaire";
+"deps.status.builtIn" = "Intégrée au tweak";
+"deps.where" = "Où la trouver";
+"deps.unknown" = "Introuvable automatiquement : XSide ne connaît pas d'adresse pour ce paquet.";
+"deps.search" = "Chercher";
+"deps.otherSearch" = "Autre recherche";
+"deps.addDeb" = "Ajouter son .deb…";
+"deps.download" = "Télécharger";
+"deps.drop" = "Dépose son .deb ici";
+"deps.checking" = "Vérification…";
+"deps.wrongPackage" = "Ce .deb est %1$@, pas %2$@.";
+"deps.tooOld" = "La version %1$@ est trop ancienne : il faut %2$@.";
+"deps.confirm.title" = "Télécharger %1$@ %2$@ ?";
+"deps.confirm.text" = "XSide va télécharger %1$@ (%2$@) depuis %3$@ (%4$@) et le vérifier avec l'empreinte du dépôt avant de l'ajouter.";
+"deps.confirm.cached" = "Déjà téléchargé : XSide utilise la copie qu'il a gardée.";
+"deps.confirm.file" = "Fichier : %@";
+"deps.error.hash" = "Le fichier téléchargé ne correspond pas à l'empreinte du dépôt : pas ajouté.";
+"deps.error.network" = "Impossible de joindre %@.";
+"deps.error.notFound" = "%@ n'est pas dans ce dépôt dans une version qui convient.";

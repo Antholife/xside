@@ -85,6 +85,11 @@ enum SnapshotRenderer {
                 render(InstallTweaksSection(model: model, flow: flow)
                         .padding(20).frame(width: InstallWindow.width).background(Color(nsColor: .windowBackgroundColor)),
                        dark: dark, to: out.appendingPathComponent("tweaks-\(language)-\(scheme).png"))
+                // « Dépendances »: every status, then missing ones with each kind of action (a known
+                // page and a trusted repo with the last add's error, a known page only, two searches
+                // while a .deb is checked, an id too odd to search for).
+                render(Self.dependencies.background(Color(nsColor: .windowBackgroundColor)),
+                       dark: dark, to: out.appendingPathComponent("deps-\(language)-\(scheme).png"))
                 // One device, no tweak: « Aucun ».
                 let single = sample.flow()
                 single.deviceIDs = [sample.deviceIDs[1]]
@@ -133,6 +138,29 @@ enum SnapshotRenderer {
                 Legacy32InfoRow(appName: "Duolingo", applied: nil)
             }
         }
+    }
+
+    @MainActor private static var dependencies: some View {
+        func line(_ i: Int, _ id: String, _ relation: String? = nil, _ version: String? = nil,
+                  is status: (DebDependency) -> DependencyStatus, added: String? = nil) -> DependencyLine {
+            let dep = DebDependency(package: id, relation: relation, version: version)
+            return DependencyLine(id: i, dependency: dep, status: status(dep), addedVersion: added)
+        }
+        let lines = [
+            line(0, "ws.hbang.common", ">=", "1.16", is: { _ in .providedByXSide("Cephei") }),
+            line(1, "com.hbang.alderis", is: { _ in .addedByYou("Alderis") }, added: "1.2.1"),
+            line(2, "libroot", is: { _ in .builtIntoTweak("libroot") }),
+            line(3, "mobilesubstrate", is: { _ in .notNeeded }),
+            line(4, "com.rpetrich.rocketbootstrap", is: { _ in .jailbreakOnly("RocketBootstrap") }),
+            line(5, "com.opa334.altlist", ">=", "1.0", is: { .missing($0) }),
+            line(6, "com.mrgcgamer.libgcuniversal", is: { .missing($0) }),
+            line(7, "com.example.libfancy", ">>", "2.0", is: { .missing($0) }),
+            line(8, "lib_odd name", is: { .missing($0) }),
+        ]
+        return TweakDependenciesView(tweakName: "InstaPlus Reborn", lines: lines,
+                                     errors: ["com.opa334.altlist": L("deps.tooOld", "0.9", "≥ 1.0")],
+                                     beingAdded: ["com.example.libfancy"],
+                                     open: { _ in }, addDeb: { _, _ in }, download: { _ in }, done: {})
     }
 
     /// Lays the view out in an off-screen window at its own size, lets SwiftUI settle (pages report

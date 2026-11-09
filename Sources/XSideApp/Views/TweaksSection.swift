@@ -122,6 +122,7 @@ struct TweakCard: View {
     let setOn: (String, Bool) -> Void
     let setForce: (String, Bool) -> Void
     let remove: () -> Void
+    let showDependencies: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -165,9 +166,7 @@ struct TweakCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 HStack(spacing: 8) {
-                    // The dependencies screen comes with Task 18.
-                    Button(L("tweaks.dependencies")) {}
-                        .disabled(true)
+                    Button(L("tweaks.dependencies"), action: showDependencies)
                         .help(L("tweaks.dependencies.help"))
                     Button(L("tweaks.remove"), action: remove)
                         .help(removeHelp)
@@ -327,10 +326,12 @@ struct InstallTweaksSection: View {
                 TweakCard(package: draft.package, rows: rows(draft), removeHelp: L("tweaks.remove.help"),
                           setOn: { id, on in model.setTweak(draft.id, enabled: on, for: id, in: flow) },
                           setForce: { id, on in model.setTweakForce(draft.id, on, for: id, in: flow) },
-                          remove: { model.removeTweak(draft.id, from: flow) })
+                          remove: { model.removeTweak(draft.id, from: flow) },
+                          showDependencies: { model.showDependencies(for: .draft(tweakID: draft.id)) })
             }
         }
         .disabled(flow.isRunning)
+        .dependenciesSheet(model, isDisabled: flow.isRunning) { if case .draft = $0 { true } else { false } }
         .onChange(of: flow.deviceIDs, initial: true) { model.syncTweakDevices(flow) }
     }
 
@@ -378,10 +379,14 @@ struct InstalledTweaksSection<Notice: View>: View {
                           removeHelp: L("tweaks.remove.helpOne"),
                           setOn: { _, on in Task { await model.setTweak(package.id, enabled: on, for: entry) } },
                           setForce: { _, on in Task { await model.setTweakForce(package.id, on, for: entry) } },
-                          remove: { Task { await model.removeTweak(package.id, for: entry) } })
+                          remove: { Task { await model.removeTweak(package.id, for: entry) } },
+                          showDependencies: { model.showDependencies(for: .entry(entry.id, tweakID: package.id)) })
             }
             pendingNotice
         }
         .disabled(disabled)
+        .dependenciesSheet(model, isDisabled: disabled) { target in
+            if case .entry(let key, _) = target { key == entry.id } else { false }
+        }
     }
 }

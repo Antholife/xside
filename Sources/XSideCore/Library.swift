@@ -1319,6 +1319,18 @@ struct FileStamp: Equatable, Sendable {
     var ctime: [Int64]
 }
 
+/// A kept download (`AppLibrary.cachedDownloadEntry`): the file and what the index says of it.
+public struct CachedDownload: Equatable, Sendable {
+    public let url: URL
+    public let sha256: String
+    public let packageID: String
+    public let version: String
+    /// The trusted repo's id.
+    public let repo: String
+    /// The `.deb`'s URL it was downloaded from.
+    public let source: String
+}
+
 /// One `.deb` XSide downloaded (`downloads/index.json`).
 struct DownloadCacheEntry: Codable, Equatable, Sendable {
     var sha256: String
@@ -1374,18 +1386,25 @@ extension AppLibrary {
     /// nil when none. Entries whose file is gone, or whose bytes no longer hash to their name,
     /// are dropped (a damaged file is deleted).
     public func cachedDownload(packageID: String, satisfying dependency: DebDependency) -> URL? {
+        cachedDownloadEntry(packageID: packageID, satisfying: dependency)?.url
+    }
+
+    /// `cachedDownload`, with where the file came from (for its origin and the confirmation).
+    public func cachedDownloadEntry(packageID: String, satisfying dependency: DebDependency) -> CachedDownload? {
         let all = readDownloadIndex()
         var entries = all.filter { Self.isSHA256($0.sha256) && Self.isRegularFile(downloadURL($0.sha256)) }
         let candidates = entries.filter { $0.packageID == packageID && dependency.isSatisfied(by: $0.version) }
             .sorted { DebVersion.compare($0.version, $1.version) == .orderedDescending }
-        var found: URL?
+        var found: CachedDownload?
         for entry in candidates {
             let url = downloadURL(entry.sha256)
+            let hit = CachedDownload(url: url, sha256: entry.sha256, packageID: entry.packageID, version: entry.version,
+                                     repo: entry.repo, source: entry.url)
             // Checked before and unchanged since (same size and date): not hashed again.
-            if let known = verifiedDownloads[entry.sha256], known == Self.stamp(url) { found = url; break }
+            if let known = verifiedDownloads[entry.sha256], known == Self.stamp(url) { found = hit; break }
             if Self.hashFile(url, maxBytes: DebLimits.maxDebBytes) == entry.sha256 {
                 verifiedDownloads[entry.sha256] = Self.stamp(url)
-                found = url
+                found = hit
                 break
             }
             verifiedDownloads[entry.sha256] = nil
