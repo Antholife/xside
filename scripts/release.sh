@@ -38,9 +38,16 @@ DUOLEGACY="$APP/Contents/Resources/XSideDuoLegacy.dylib"
 # Its manifest names this class: it must be in the library.
 nm -gU "$DUOLEGACY" 2>/dev/null | grep -q '_OBJC_CLASS_$_XSDuoSceneDelegate' \
     || { echo "$DUOLEGACY has no XSDuoSceneDelegate class" >&2; exit 1; }
+# Converted tweaks get this path redirect: without it they'd look for their files in /Library/...
+TWEAKSUPPORT="$APP/Contents/Resources/XSideTweakSupport.dylib"
+[ -f "$TWEAKSUPPORT" ] || { echo "No $TWEAKSUPPORT (iOS SDK missing?): not releasing without it" >&2; exit 1; }
+# Its C core, and its switch: inert unless the app's Info.plist says XSideTweakPaths.
+nm -gU "$TWEAKSUPPORT" 2>/dev/null | grep ' _xs_tweak_redirect$' >/dev/null \
+    && strings -a "$TWEAKSUPPORT" | grep -x 'XSideTweakPaths' >/dev/null \
+    || { echo "$TWEAKSUPPORT has no xs_tweak_redirect or no XSideTweakPaths switch" >&2; exit 1; }
 # All are injected into iOS apps: an arm64 iOS Mach-O each, nothing else (a wrong build would only
 # show on a device).
-for LIB in "$WELCOME" "$ICLOUD" "$DUOLEGACY"; do
+for LIB in "$WELCOME" "$ICLOUD" "$DUOLEGACY" "$TWEAKSUPPORT"; do
     [ "$(lipo -archs "$LIB" 2>/dev/null)" = arm64 ] || { echo "$LIB is not an arm64-only library" >&2; exit 1; }
     vtool -show-build "$LIB" 2>/dev/null | grep -qE 'platform IOS$' || { echo "$LIB is not built for iOS" >&2; exit 1; }
 done
@@ -57,6 +64,28 @@ codesign --verify --strict "$UNZSTD" 2>/dev/null || { echo "$UNZSTD is not code-
 grep -q "^zstd $ZSTD_TAG (${ZSTD_COMMIT:0:7}) " "$APP/Contents/Resources/Acknowledgements.txt" 2>/dev/null \
     && grep -q "BSD License" "$APP/Contents/Resources/Acknowledgements.txt" \
     || { echo "Acknowledgements.txt has no zstd section: not releasing without it" >&2; exit 1; }
+# ElleKit (Substrate tweaks' hooking library), built from pinned source: both iOS architectures,
+# the Substrate API, nothing linked outside the system, and its BSD licence shipped twice
+# (Acknowledgements.txt, and ElleKit-LICENSE.txt that XSide copies next to it in each app).
+ELLEKIT="$APP/Contents/Resources/ElleKit.dylib"
+[ -f "$ELLEKIT" ] || { echo "No $ELLEKIT (ElleKit source or iOS SDK missing?): not releasing without it" >&2; exit 1; }
+[ -f "$APP/Contents/Resources/ElleKit-LICENSE.txt" ] || { echo "No ElleKit-LICENSE.txt: not releasing without it" >&2; exit 1; }
+[ "$(lipo -archs "$ELLEKIT" 2>/dev/null)" = "arm64 arm64e" ] || { echo "$ELLEKIT is not exactly arm64 + arm64e" >&2; exit 1; }
+[ "$(vtool -show-build "$ELLEKIT" 2>/dev/null | grep -cE 'platform IOS$')" = 2 ] \
+    || { echo "$ELLEKIT is not built for iOS in both architectures" >&2; exit 1; }
+for SYM in _MSHookMessageEx _MSHookFunction _MSFindSymbol _MSGetImageByName; do
+    nm -gU "$ELLEKIT" 2>/dev/null | grep " $SYM$" >/dev/null || { echo "$ELLEKIT doesn't export $SYM" >&2; exit 1; }
+done
+ELLEKIT_ID="$(otool -D "$ELLEKIT" 2>/dev/null | sed -n 2p)"
+[ "$ELLEKIT_ID" = @executable_path/Frameworks/XSideTweaks/ElleKit.dylib ] || { echo "$ELLEKIT has the id '$ELLEKIT_ID'" >&2; exit 1; }
+OUTSIDE="$(otool -L "$ELLEKIT" 2>/dev/null | awk 'NF > 1 && /^\t/ { print $1 }' | grep -vE '^(/usr/lib/|/System/)' | grep -vxF "$ELLEKIT_ID" || true)"
+[ -z "$OUTSIDE" ] || { echo "$ELLEKIT links outside the system: $OUTSIDE" >&2; exit 1; }
+. scripts/ellekit.env
+grep -q "^ElleKit $ELLEKIT_TAG (${ELLEKIT_COMMIT:0:7}) " "$APP/Contents/Resources/Acknowledgements.txt" 2>/dev/null \
+    && grep -q "Neither ElleKit nor the names of its" "$APP/Contents/Resources/Acknowledgements.txt" \
+    || { echo "Acknowledgements.txt has no ElleKit section: not releasing without it" >&2; exit 1; }
+plutil -extract XSideElleKitLibhooker raw "$APP/Contents/Info.plist" >/dev/null 2>&1 \
+    || { echo "Info.plist has no XSideElleKitLibhooker" >&2; exit 1; }
 ZIP="build/release/XSide-$TAG.zip"
 mkdir -p build/release
 rm -f "$ZIP"

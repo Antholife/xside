@@ -104,6 +104,48 @@ if xcrun -sdk iphoneos --show-sdk-path >/dev/null 2>&1; then
         -I App/TweakSupport -framework Foundation \
         -install_name @executable_path/Frameworks/XSideTweaks/XSideTweakSupport.dylib \
         -o "$APP/Contents/Resources/XSideTweakSupport.dylib" App/TweakSupport/*.m App/TweakSupport/*.c
+    # ElleKit (scripts/ellekit.env): the hooking library that replaces Substrate in converted
+    # tweaks, added under Frameworks/XSideTweaks/ with its licence (ElleKit-LICENSE.txt).
+    # Its Xcode project's "ellekit" scheme builds the hooking library alone (target ellekit,
+    # libellekit.dylib, sources ellekit/ + ellekitc/), without the injector, launchd hook, pspawn
+    # loader or safe mode. No Theos needed. Always a Release build, in build/ellekit (derived data
+    # included, nothing in ~/Library).
+    . scripts/ellekit.env
+    ELLEKIT_STATUS=0
+    ELLEKIT_SRC="$(scripts/fetch-pinned.sh ellekit "$ELLEKIT_REPO" "$ELLEKIT_COMMIT")" || ELLEKIT_STATUS=$?
+    if [ "$ELLEKIT_STATUS" = 0 ]; then
+        ELLEKIT_OUT=build/ellekit
+        mkdir -p "$ELLEKIT_OUT"
+        if ! xcodebuild -quiet -project "$ELLEKIT_SRC/ellekit.xcodeproj" -scheme ellekit -configuration Release \
+            -destination 'generic/platform=iOS' -derivedDataPath "$ELLEKIT_OUT" \
+            ARCHS="arm64 arm64e" ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO IPHONEOS_DEPLOYMENT_TARGET=15.0 \
+            build > "$ELLEKIT_OUT/build.log" 2>&1; then
+            grep -E 'error:' "$ELLEKIT_OUT/build.log" | head -20 >&2
+            echo "error: ElleKit build failed (log: $ELLEKIT_OUT/build.log)" >&2
+            exit 1
+        fi
+        ELLEKIT_LIB="$APP/Contents/Resources/ElleKit.dylib"
+        cp "$ELLEKIT_OUT/Build/Products/Release-iphoneos/libellekit.dylib" "$ELLEKIT_LIB"
+        install_name_tool -id @executable_path/Frameworks/XSideTweaks/ElleKit.dylib "$ELLEKIT_LIB" 2>/dev/null
+        # install_name_tool voids the linker's ad-hoc signature (XSide signs it again at each install).
+        codesign -s - --force "$ELLEKIT_LIB" 2>/dev/null
+        cp "$ELLEKIT_SRC/LICENSE" "$APP/Contents/Resources/ElleKit-LICENSE.txt"
+        {
+            echo "ElleKit $ELLEKIT_TAG (${ELLEKIT_COMMIT:0:7}) ${ELLEKIT_REPO%.git}"
+            echo
+            cat "$ELLEKIT_SRC/LICENSE"
+            echo
+        } >> "$ACK"
+        # libhooker's API (LHHookFunctions...): tweaks linking libhooker count as converted only
+        # when this ElleKit has it.
+        LIBHOOKER=false
+        nm -gU "$ELLEKIT_LIB" | grep ' _LHHookFunctions$' >/dev/null && LIBHOOKER=true
+        plutil -replace XSideElleKitLibhooker -bool "$LIBHOOKER" "$APP/Contents/Info.plist"
+    elif [ "$ELLEKIT_STATUS" = 3 ]; then
+        echo "warning: building without ElleKit (no source): Substrate tweaks can't be converted; release.sh will refuse this build" >&2
+    else
+        exit "$ELLEKIT_STATUS"
+    fi
 else
     echo "warning: no iOS SDK, building without the welcome popup, signed-out iCloud, iPhone Duo compatibility and tweak support libraries" >&2
 fi
