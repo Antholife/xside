@@ -99,11 +99,15 @@ enum SnapshotRenderer {
                        dark: dark, to: out.appendingPathComponent("install-summary-\(language)-\(scheme).png"))
                 // Step ③ as the approved mockup (A): two devices, then one; empty (B); the kept
                 // downloads (C).
-                for (suffix, ids) in [("", sample.deviceIDs), ("-single", [sample.deviceIDs[0]])] {
+                // « -shared »: AltList's download failed; its line is on Rocket's card, uYouPlus says « voir … ».
+                for (suffix, ids) in [("", sample.deviceIDs), ("-single", [sample.deviceIDs[0]]), ("-shared", sample.deviceIDs)] {
                     let step = sample.flow()
                     step.deviceIDs = ids
                     step.step = 2
                     model.showSnapshotFlow(step)
+                    if suffix == "-shared" {
+                        model.dependencyErrors = ["com.opa334.altlist": L("deps.error.notFound.github", "AltList")]
+                    }
                     render(VStack(alignment: .leading, spacing: 14) {
                         StepBar(flow: step)
                         InstallTweaksSection(model: model, flow: step)
@@ -255,7 +259,7 @@ enum SnapshotRenderer {
                 draft(Self.tweak(1, "YouPiP", version: "1.8.6", author: "PoomSmart", bundles: [app]),
                       on: both, [iPhone: .compatible, iPad: .compatible]),
                 draft(Self.tweak(2, "uYouPlus", version: "3.0.5", author: "MiRO92", bundles: [app], notes: [.settingsNotConverted],
-                                 depends: [[altlistNeed]]),
+                                 depends: [[altlistNeed]], cFunctionHooks: ["MSHookFunction"]),
                       on: [iPhone], [iPhone: converted, iPad: converted]),
                 draft(Self.tweak(3, "AltList", version: "1.0.4", author: "opa334", bundles: nil, entry: false,
                                  packageID: "com.opa334.altlist",
@@ -284,12 +288,12 @@ enum SnapshotRenderer {
         /// dropped .dylib, made for this app).
         static func tweak(_ n: Int, _ name: String, version: String, author: String?, bundles: [String]?,
                           notes: [TweakNote] = [], entry: Bool = true, depends: [[DebDependency]] = [],
-                          packageID: String? = nil, origin: TweakOrigin = .added) -> TweakPackage {
+                          packageID: String? = nil, origin: TweakOrigin = .added, cFunctionHooks: [String] = []) -> TweakPackage {
             let file = (entry ? "Library/MobileSubstrate/DynamicLibraries/" : "usr/lib/") + name.replacingOccurrences(of: " ", with: "") + ".dylib"
             let binary = TweakBinary(path: file, isEntry: entry, filter: bundles.map { TweakFilter(bundles: $0) },
                                      slices: [TweakSlice(arch: "arm64", platform: 2, minOS: "15.0")],
                                      linked: ["/usr/lib/libobjc.A.dylib"], mentionsJailbreakPaths: false,
-                                     imageName: (file as NSString).lastPathComponent)
+                                     imageName: (file as NSString).lastPathComponent, cFunctionHooks: cFunctionHooks)
             return TweakPackage(id: String(format: "5a5a%012lx", n), kind: .deb, origin: origin,
                                 packageID: packageID ?? "com.example.tweak\(n)", name: name, version: version, author: author,
                                 depends: depends, files: [file], binaries: [binary], notes: notes,

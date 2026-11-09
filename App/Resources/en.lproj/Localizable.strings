@@ -1098,6 +1098,7 @@
 "deps.progress.looking" = "Looking in %@…";
 "deps.progress.downloading" = "Downloading from %1$@… %2$@";
 "deps.progress.cached" = "Using the copy already downloaded…";
+"deps.seeOther" = "see %@";
 "deps.upToDate" = "%1$@ %2$@ is up to date.";
 "deps.updated" = "%1$@ updated to %2$@, on the same devices.";
 "deps.remove.title" = "Remove %@?";

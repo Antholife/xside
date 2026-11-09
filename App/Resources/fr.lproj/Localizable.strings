@@ -1098,6 +1098,7 @@
 "deps.progress.looking" = "Recherche dans %@…";
 "deps.progress.downloading" = "Téléchargement depuis %1$@… %2$@";
 "deps.progress.cached" = "Copie déjà téléchargée…";
+"deps.seeOther" = "voir %@";
 "deps.upToDate" = "%1$@ %2$@ est à jour.";
 "deps.updated" = "%1$@ mise à jour en %2$@, sur les mêmes appareils.";
 "deps.remove.title" = "Retirer %@ ?";

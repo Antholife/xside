@@ -269,23 +269,24 @@ struct TweakCard: View {
 
     @ViewBuilder private var details: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // The chips gave way to « manque … »: the switches are here.
-            if missingCount > 0, !needsJailbreak { deviceChips }
-            if isDependency {
-                TweakStatusLine(text: L("tweaks.dependencyFor", dependencyOf.joined(separator: ", ")),
-                                kind: .compatible)
-                if rows.contains(where: { if case .compatible? = $0.applied { false } else { $0.applied != nil } }) { verdicts }
-            } else {
-                verdicts
+            // A missing dependency: only it, until it is settled (the verdicts and switches come back then).
+            if missingCount == 0 {
+                if isDependency {
+                    TweakStatusLine(text: L("tweaks.dependencyFor", dependencyOf.joined(separator: ", ")),
+                                    kind: .compatible)
+                    if rows.contains(where: { if case .compatible? = $0.applied { false } else { $0.applied != nil } }) { verdicts }
+                } else {
+                    verdicts
+                }
+                overrides
             }
-            overrides
             ForEach(Array(warnings.enumerated()), id: \.offset) { _, warning in
                 Label(TweakText.warning(warning), systemImage: "exclamationmark.triangle.fill")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Color(nsColor: .systemOrange))
                     .fixedSize(horizontal: false, vertical: true)
             }
-            ForEach(package.notes, id: \.self) { note in
+            ForEach(missingCount == 0 ? package.notes : [], id: \.self) { note in
                 Label(TweakText.note(note), systemImage: "info.circle")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
@@ -548,14 +549,29 @@ struct TweakStatusLine: View {
 
 extension AppModel {
     /// A card's dependencies, with this model's lines and actions.
-    func dependencyState(_ target: DependencyTarget, rows: [DependencyRow], names: [String: String]) -> TweakDependencyState {
+    func dependencyState(_ target: DependencyTarget, rows: [DependencyRow], names: [String: String],
+                         elsewhere: [String: String] = [:]) -> TweakDependencyState {
         TweakDependencyState(rows: rows, deviceNames: names, errors: dependencyErrors, notices: dependencyNotices,
-                             progress: dependencyProgress, beingAdded: dependenciesBeingAdded,
+                             progress: dependencyProgress, beingAdded: dependenciesBeingAdded, elsewhere: elsewhere,
                              addDeb: { dep, urls in Task { await self.addDependencyDeb(urls, for: dep, target: target) } },
                              download: { dep in
                                  guard let tweak = self.dependencyRows(target)?.package else { return }
                                  Task { await self.downloadDependency(dep, for: tweak, target: target) }
                              })
+    }
+
+    /// Per card (by tweak id): the package ids whose lines another card shows, with that card's
+    /// tweak name (`DependencyRows.lineCards`).
+    func dependencyLinesElsewhere(_ cards: [TweakPackage], target: (String) -> DependencyTarget) -> [String: [String: String]] {
+        let owners = DependencyRows.lineCards(cards.compactMap { p in dependencyRows(target(p.id)).map { (p.id, $0.rows) } })
+        let names = Dictionary(cards.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
+        var out: [String: [String: String]] = [:]
+        for p in cards {
+            for (package, owner) in owners where owner != p.id {
+                if let name = names[owner] { out[p.id, default: [:]][package] = name }
+            }
+        }
+        return out
     }
 
     /// Its own lines (« Mettre à jour »).
@@ -572,6 +588,7 @@ struct InstallTweaksSection: View {
 
     var body: some View {
         let order = DependencyRows.cardOrder(flow.tweaks.map(\.package))
+        let elsewhere = model.dependencyLinesElsewhere(order.map(\.package)) { DependencyTarget.draft(tweakID: $0) }
         TweaksSection(isEmpty: flow.tweaks.isEmpty, emptyIntro: L("tweaks.intro.empty"),
                       beingAdded: flow.tweaksBeingAdded, errors: flow.tweakErrors, isDisabled: flow.isRunning,
                       add: { urls in Task { await model.addTweaks(urls, to: flow) } }) {
@@ -579,7 +596,7 @@ struct InstallTweaksSection: View {
         } cards: {
             ForEach(order, id: \.package.id) { item in
                 if let draft = flow.tweaks.first(where: { $0.id == item.package.id }) {
-                    card(draft, dependencyOf: item.dependencyOf)
+                    card(draft, dependencyOf: item.dependencyOf, elsewhere: elsewhere[draft.id] ?? [:])
                 }
             }
         }
@@ -587,12 +604,13 @@ struct InstallTweaksSection: View {
         .onChange(of: flow.deviceIDs, initial: true) { model.syncTweakDevices(flow) }
     }
 
-    private func card(_ draft: TweakDraft, dependencyOf: [String]) -> some View {
+    private func card(_ draft: TweakDraft, dependencyOf: [String], elsewhere: [String: String]) -> some View {
         let target = DependencyTarget.draft(tweakID: draft.id)
         let found = model.dependencyRows(target)
         let isDependency = !dependencyOf.isEmpty
         return TweakCard(package: draft.package, rows: rows(draft), dependencyOf: dependencyOf,
-                         dependencies: found.map { model.dependencyState(target, rows: $0.rows, names: $0.deviceNames) },
+                         dependencies: found.map { model.dependencyState(target, rows: $0.rows, names: $0.deviceNames,
+                                                                         elsewhere: elsewhere) },
                          ownState: isDependency ? model.ownDependencyState : nil,
                          isDisabled: flow.isRunning, removeHelp: L("tweaks.remove.help"),
                          setOn: { id, on in model.setTweak(draft.id, enabled: on, for: id, in: flow) },
@@ -636,6 +654,7 @@ struct InstalledTweaksSection<Notice: View>: View {
         let disabled = !model.canManage(entry)
         let listed = listed
         let order = DependencyRows.cardOrder(listed.map(\.0))
+        let elsewhere = model.dependencyLinesElsewhere(order.map(\.package)) { DependencyTarget.entry(entry.id, tweakID: $0) }
         TweaksSection(isEmpty: listed.isEmpty, beingAdded: model.tweaksBeingAdded[entry.id] ?? [],
                       errors: model.tweakErrors[entry.id] ?? [], isDisabled: disabled,
                       add: { urls in Task { await model.addTweaks(urls, for: entry) } }) {
@@ -645,7 +664,8 @@ struct InstalledTweaksSection<Notice: View>: View {
         } cards: {
             ForEach(order, id: \.package.id) { item in
                 if let pair = listed.first(where: { $0.0.id == item.package.id }) {
-                    card(pair.0, use: pair.1, dependencyOf: item.dependencyOf, disabled: disabled)
+                    card(pair.0, use: pair.1, dependencyOf: item.dependencyOf, disabled: disabled,
+                         elsewhere: elsewhere[pair.0.id] ?? [:])
                 }
             }
             pendingNotice
@@ -655,7 +675,8 @@ struct InstalledTweaksSection<Notice: View>: View {
         }
     }
 
-    private func card(_ package: TweakPackage, use: TweakUse, dependencyOf: [String], disabled: Bool) -> some View {
+    private func card(_ package: TweakPackage, use: TweakUse, dependencyOf: [String], disabled: Bool,
+                      elsewhere: [String: String]) -> some View {
         let target = DependencyTarget.entry(entry.id, tweakID: package.id)
         let found = model.dependencyRows(target)
         let isDependency = !dependencyOf.isEmpty
@@ -670,7 +691,8 @@ struct InstalledTweaksSection<Notice: View>: View {
                            }(),
                            missingHere: !model.missingDependencies(package, for: entry).isEmpty)
         return TweakCard(package: package, rows: [row], dependencyOf: dependencyOf,
-                         dependencies: found.map { model.dependencyState(target, rows: $0.rows, names: $0.deviceNames) },
+                         dependencies: found.map { model.dependencyState(target, rows: $0.rows, names: $0.deviceNames,
+                                                                         elsewhere: elsewhere) },
                          ownState: isDependency ? model.ownDependencyState : nil,
                          isDisabled: disabled, removeHelp: L("tweaks.remove.helpOne"),
                          setOn: { _, on in Task { await model.setTweak(package.id, enabled: on, for: entry) } },

@@ -146,6 +146,21 @@ public enum DeviceShortName {
 }
 
 extension DependencyRows {
+    /// Which card shows a dependency's progress and result lines (by package id: the line key),
+    /// `cards` in card order: the first that misses it on some device, else the first that lists
+    /// it. The others say « voir … ».
+    public static func lineCards(_ cards: [(id: String, rows: [DependencyRow])]) -> [String: String] {
+        var missing: [String: String] = [:], listed: [String: String] = [:]
+        for card in cards {
+            for row in card.rows {
+                let key = (row.missingDependency ?? row.dependency).package
+                if listed[key] == nil { listed[key] = card.id }
+                if row.isMissingAnywhere, missing[key] == nil { missing[key] = card.id }
+            }
+        }
+        return listed.merging(missing) { _, firstMissing in firstMissing }
+    }
+
     /// The cards' order: the tweaks in load order, each followed by the dependencies it is the
     /// first to need (and theirs), each with who needs it (« Dépendance de … »). A package no
     /// other one needs is a tweak of its own.

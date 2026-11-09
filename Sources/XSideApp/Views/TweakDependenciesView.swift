@@ -22,6 +22,9 @@ struct TweakDependencyState {
     var notices: [String: String] = [:]
     var progress: [String: String] = [:]
     var beingAdded: Set<String> = []
+    /// Package ids whose progress and result another card shows (by its tweak's name): this card
+    /// says « voir … » instead.
+    var elsewhere: [String: String] = [:]
     var open: (URL) -> Void = { NSWorkspace.shared.open($0) }
     var addDeb: (DebDependency, [URL]) -> Void = { _, _ in }
     var download: (DebDependency) -> Void = { _ in }
@@ -73,25 +76,15 @@ private struct DependencyRowLines: View {
                 DependencyStatusLine(status: s, deviceName: s.deviceID.map { state.deviceNames[$0] ?? $0 })
             }
             if missing != nil, !isAdding { actions }
-            if isAdding {
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.mini)
-                    Text(state.progress[packageID] ?? L("deps.checking"))
+            if let other = state.elsewhere[packageID] {
+                // Two tweaks need it: its lines are on the first one's card.
+                if isAdding || state.notices[packageID] != nil || state.errors[packageID] != nil {
+                    Label(L("deps.seeOther", other), systemImage: "arrow.up.forward")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-            }
-            if let notice = state.notices[packageID] {
-                Label(notice, systemImage: "checkmark.circle.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color(nsColor: .systemGreen))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if let error = state.errors[packageID] {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color(nsColor: .systemOrange))
-                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                lines
             }
         }
         .padding(isTargeted ? 4 : 0)
@@ -102,6 +95,30 @@ private struct DependencyRowLines: View {
             state.addDeb(missing, files)
             return true
         } isTargeted: { isTargeted = $0 && missing != nil && !isDisabled }
+    }
+
+    /// The add's progress, then how it went.
+    @ViewBuilder private var lines: some View {
+        if isAdding {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.mini)
+                Text(state.progress[packageID] ?? L("deps.checking"))
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        if let notice = state.notices[packageID] {
+            Label(notice, systemImage: "checkmark.circle.fill")
+                .font(.system(size: 11))
+                .foregroundStyle(Color(nsColor: .systemGreen))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        if let error = state.errors[packageID] {
+            Label(error, systemImage: "exclamationmark.triangle.fill")
+                .font(.system(size: 11))
+                .foregroundStyle(Color(nsColor: .systemOrange))
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     @ViewBuilder private var actions: some View {

@@ -257,6 +257,31 @@ struct TweakCardLogicTests {
         #expect(DependencyRows.cardOrder([]).isEmpty)
     }
 
+    /// Two tweaks miss AltList: its download's progress and result show on the first card (in
+    /// card order) that misses it; the others say « voir … ». Once no card misses it, the first
+    /// card that lists it.
+    @Test func aSharedDependencysLinesShowOnOneCard() {
+        let need = DebDependency(package: "com.opa334.altlist", relation: ">=", version: "1.0")
+        func row(_ status: DependencyStatus, device: String? = nil) -> DependencyRow {
+            DependencyRow(id: 0, statuses: [DependencyDeviceStatus(deviceID: device, dependency: need, status: status, addedVersion: nil)])
+        }
+        let cephei = DependencyRow(id: 1, statuses: [DependencyDeviceStatus(deviceID: nil, dependency: DebDependency(package: "ws.hbang.common"),
+                                                                             status: .providedByXSide("Cephei"), addedVersion: nil)])
+        let missing = row(.missing(need)), added = row(.addedByYou("AltList"))
+        // uYouPlus has it, Rocket and ReelsBlock miss it: Rocket shows the lines.
+        let owners = DependencyRows.lineCards([("u", [added, cephei]), ("r", [cephei, missing]), ("b", [missing])])
+        #expect(owners["com.opa334.altlist"] == "r")
+        #expect(owners["ws.hbang.common"] == "u")
+        // Missing on one device only counts too.
+        let partly = DependencyRow(id: 0, statuses: [
+            DependencyDeviceStatus(deviceID: "phone", dependency: need, status: .addedByYou("AltList"), addedVersion: "1.0.4"),
+            DependencyDeviceStatus(deviceID: "pad", dependency: need, status: .missing(need), addedVersion: nil)])
+        #expect(DependencyRows.lineCards([("u", [added]), ("r", [partly])])["com.opa334.altlist"] == "r")
+        // Settled everywhere: the first card listing it.
+        #expect(DependencyRows.lineCards([("u", [added]), ("r", [added])])["com.opa334.altlist"] == "u")
+        #expect(DependencyRows.lineCards([]).isEmpty)
+    }
+
     @Test func aKeptDownloadSaysWhichTweaksUseItWhere() async throws {
         try await withTemporaryDirectory("deps-users") { dir in
             let lib = AppLibrary(root: dir.appendingPathComponent("lib"))
