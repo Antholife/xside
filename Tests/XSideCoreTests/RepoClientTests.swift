@@ -9,7 +9,7 @@ final class FakeFetcher: HTTPFetching, @unchecked Sendable {
     enum Route { case data(Data, final: URL?), failure(RepoError) }
     private let lock = NSLock()
     private var routes: [URL: Route] = [:]
-    private var _fetched: [(url: URL, maxBytes: Int, origin: URL?)] = []
+    private var _fetched: [(url: URL, maxBytes: Int, origin: URL?, hosts: Set<String>?)] = []
 
     func serve(_ url: String, _ data: Data, final: String? = nil) {
         lock.withLock { routes[URL(string: url)!] = .data(data, final: final.map { URL(string: $0)! }) }
@@ -18,9 +18,18 @@ final class FakeFetcher: HTTPFetching, @unchecked Sendable {
     var fetched: [URL] { lock.withLock { _fetched.map(\.url) } }
     func maxBytes(for url: String) -> Int? { lock.withLock { _fetched.last { $0.url.absoluteString == url }?.maxBytes } }
     func origin(for url: String) -> URL?? { lock.withLock { _fetched.last { $0.url.absoluteString == url }.map(\.origin) } }
+    func hosts(for url: String) -> Set<String>? { lock.withLock { _fetched.last { $0.url.absoluteString == url }?.hosts } }
 
     func fetch(_ url: URL, maxBytes: Int, to file: URL, stayingOn origin: URL?) async throws -> URL {
-        let route = lock.withLock { () -> Route? in _fetched.append((url, maxBytes, origin)); return routes[url] }
+        try await serve(url, maxBytes: maxBytes, to: file, origin: origin, hosts: nil)
+    }
+
+    func fetch(_ url: URL, maxBytes: Int, to file: URL, redirectingWithin hosts: Set<String>) async throws -> URL {
+        try await serve(url, maxBytes: maxBytes, to: file, origin: nil, hosts: hosts)
+    }
+
+    private func serve(_ url: URL, maxBytes: Int, to file: URL, origin: URL?, hosts: Set<String>?) async throws -> URL {
+        let route = lock.withLock { () -> Route? in _fetched.append((url, maxBytes, origin, hosts)); return routes[url] }
         try? FileManager.default.removeItem(at: file)
         switch route {
         case nil: throw RepoError.httpStatus(404)

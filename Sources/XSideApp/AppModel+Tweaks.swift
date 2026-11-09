@@ -415,7 +415,7 @@ enum TweakText {
     static func origin(_ o: TweakOrigin) -> String {
         switch o {
         case .added: L("tweaks.origin.added")
-        case .downloaded(let repo, _, _): L("tweaks.origin.downloaded", TrustedRepos.all.first { $0.id == repo }?.name ?? repo)
+        case .downloaded(let repo, _, _): L("tweaks.origin.downloaded", DependencySources.name(forRepoID: repo))
         case .embedded: L("tweaks.origin.embedded")
         }
     }
@@ -514,7 +514,7 @@ extension AppModel {
     /// trusted repo is asked now (only after the click), the person confirms what, from where and
     /// how big, then it is downloaded, checked, kept and added on the devices that use the tweak.
     func downloadDependency(_ dependency: DebDependency, for tweak: TweakPackage, target: DependencyTarget) async {
-        let repoName = TrustedRepos.offering(dependency.package).first?.name ?? dependency.package
+        let repoName = DependencySources.name(for: dependency.package)
         await addingDependency(dependency) {
             let work = self.libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent(UUID().uuidString)
             defer { try? FileManager.default.removeItem(at: work) }
@@ -582,9 +582,12 @@ extension AppModel {
 
     private static func downloadErrorText(_ error: any Error, dependency: DebDependency, repoName: String) -> String {
         logger.notice("dependency \(dependency.package) not downloaded: \(String(describing: error))")
+        let name = DependencyNames.display(dependency.package)
+        let fromGitHub = TrustedRepos.offering(dependency.package).isEmpty && AuthorReleases.source(for: dependency.package) != nil
         switch DependencyDownloader.failure(error) {
         case .hash: return L("deps.error.hash")
-        case .notFound: return L("deps.error.notFound", DependencyNames.display(dependency.package))
+        case .mismatch: return L("deps.error.mismatch", name)
+        case .notFound: return fromGitHub ? L("deps.error.notFound.github", name) : L("deps.error.notFound", name)
         case .network: return L("deps.error.network", repoName)
         }
     }
@@ -595,11 +598,14 @@ extension AppModel {
         switch source {
         case .cached: name = DependencyNames.display(dependency.package)
         case .repo(let o): name = o.name
+        case .authorRelease: name = DependencyNames.display(dependency.package)
         }
         let alert = NSAlert()
         alert.messageText = L("deps.confirm.title", name, source.version)
         var text: String
-        if let size = source.size {
+        if case .authorRelease(let o) = source {
+            text = L("deps.confirm.github", name + " " + source.version, fileSize(Int64(o.size)), o.source.page.absoluteString)
+        } else if let size = source.size {
             text = L("deps.confirm.text", name + " " + source.version,
                      fileSize(Int64(size)),
                      source.repoName, source.repoURL?.absoluteString ?? "")
@@ -738,22 +744,21 @@ extension AppModel {
             .first { $0.package == package.packageID || package.provides.contains($0.package) }
         let dependency = wanted.map { DebDependency(package: package.packageID, relation: $0.relation, version: $0.version) }
             ?? DebDependency(package: package.packageID)
-        let repoName = TrustedRepos.offering(package.packageID).first?.name ?? package.packageID
+        let repoName = DependencySources.name(for: package.packageID)
         await addingDependency(dependency) {
             let work = self.libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent(UUID().uuidString)
             defer { try? FileManager.default.removeItem(at: work) }
             let downloader = DependencyDownloader(library: self.library,
                                                   client: RepoClient(fetcher: self.repoFetcher, runner: self.runner, workDir: work))
             self.dependencyProgress[dependency.package] = L("deps.progress.looking", repoName)
-            let offer: RepoOffer?
+            let offer: DependencySource?
             do {
                 offer = try await downloader.update(dependency, installed: package.version ?? "0",
                                                     preferredArchitecture: package.architecture)
             } catch {
                 throw DependencyFailure(text: Self.downloadErrorText(error, dependency: dependency, repoName: repoName))
             }
-            guard let offer else { return .added(L("deps.upToDate", package.name, package.version ?? "?")) }
-            let source = DependencySource.repo(offer)
+            guard let source = offer else { return .added(L("deps.upToDate", package.name, package.version ?? "?")) }
             guard self.confirmDownload(source, dependency: dependency) else { return .cancelled("update not confirmed") }
             self.dependencyProgress[dependency.package] = Self.downloadingText(source)
             let fetched: (file: URL, origin: TweakOrigin)
@@ -765,7 +770,7 @@ extension AppModel {
             // Placed like the version it replaces (the card's own id as the « tweak »).
             let outcome = try await self.addDependency(fetched.file, origin: fetched.origin, for: dependency,
                                                        target: target, askReplace: false)
-            if case .added = outcome { return .added(L("deps.updated", package.name, offer.version)) }
+            if case .added = outcome { return .added(L("deps.updated", package.name, source.version)) }
             return outcome
         }
     }

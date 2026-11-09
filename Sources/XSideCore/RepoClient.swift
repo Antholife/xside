@@ -39,6 +39,9 @@ public struct RepoClient: Sendable {
         self.workDir = workDir
     }
 
+    /// The same fetcher, runner and work folder, for the pinned authors' GitHub releases.
+    var authorReleases: AuthorReleaseClient { AuthorReleaseClient(fetcher: fetcher, runner: runner, workDir: workDir) }
+
     // MARK: - Offer
 
     public func offer(for dependency: DebDependency, preferredArchitecture: String?) async throws -> RepoOffer {

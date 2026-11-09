@@ -108,11 +108,11 @@ private struct DependencyRowLines: View {
         let page = DependencyDirectory.page(for: packageID)
         let searches = DependencyDirectory.searchURLs(for: packageID)
         HStack(spacing: 8) {
-            if let missing, !TrustedRepos.offering(packageID).isEmpty {
+            if let missing, DependencySources.canDownload(packageID) {
                 Button(L("deps.download")) { state.download(missing) }
                     .buttonStyle(.borderedProminent)
                     .tint(Theme.violet)
-                    .help(TrustedRepos.offering(packageID).map { $0.base.absoluteString }.joined(separator: ", "))
+                    .help(DependencySources.places(for: packageID).joined(separator: ", "))
             }
             if let page {
                 Button(L("deps.where")) { state.open(page) }.help(page.absoluteString)

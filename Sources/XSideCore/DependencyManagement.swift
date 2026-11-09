@@ -75,12 +75,13 @@ extension DependencyRows {
 }
 
 extension DependencyDownloader {
-    /// « Mettre à jour »: the trusted repo is asked (only on the click), and its best version that
-    /// still satisfies `dependency` is returned when it is newer than `installed`; nil when up to date.
+    /// « Mettre à jour »: the trusted repo (or the author's pinned releases) is asked, only on the
+    /// click, and its best version that still satisfies `dependency` is returned when it is newer
+    /// than `installed`; nil when up to date.
     public func update(_ dependency: DebDependency, installed: String,
-                       preferredArchitecture: String?) async throws -> RepoOffer? {
-        guard !TrustedRepos.offering(dependency.package).isEmpty else { throw RepoError.notAllowlisted }
-        let offer = try await client.offer(for: dependency, preferredArchitecture: preferredArchitecture)
+                       preferredArchitecture: String?) async throws -> DependencySource? {
+        guard DependencySources.canDownload(dependency.package) else { throw RepoError.notAllowlisted }
+        let offer = try await offer(dependency, preferredArchitecture: preferredArchitecture)
         return DebVersion.compare(offer.version, installed) == .orderedDescending ? offer : nil
     }
 }

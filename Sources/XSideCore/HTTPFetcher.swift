@@ -3,7 +3,9 @@ import Foundation
 /// Why a trusted-repo lookup or download stopped.
 public enum RepoError: Error, Equatable {
     case notHTTPS, tooManyRedirects, tooLarge, timedOut, httpStatus(Int), noIndex, indexHashMismatch,
-         notFound(String), noVersionSatisfying(String), badFilename, sizeMismatch, hashMismatch, notAllowlisted
+         notFound(String), noVersionSatisfying(String), badFilename, sizeMismatch, hashMismatch, notAllowlisted,
+         /// A downloaded `.deb` whose control is not the package asked for, or not a version that will do.
+         packageMismatch
 }
 
 /// Downloads one URL into a file, capped.
@@ -13,6 +15,9 @@ public protocol HTTPFetching: Sendable {
     /// With `origin`, a redirect hop to another scheme, host or port is refused before it is
     /// followed (`RepoError.notAllowlisted`).
     func fetch(_ url: URL, maxBytes: Int, to file: URL, stayingOn origin: URL?) async throws -> URL
+    /// Same, but the URL and every redirect hop must be `https` on one of `hosts` (lowercased, default
+    /// port): anything else is refused before it is asked (`RepoError.notAllowlisted`).
+    func fetch(_ url: URL, maxBytes: Int, to file: URL, redirectingWithin hosts: Set<String>) async throws -> URL
 }
 
 extension HTTPFetching {
@@ -47,6 +52,35 @@ public enum RedirectPolicy {
     /// Same scheme (https), host and port.
     static func sameOrigin(_ a: URL, _ b: URL) -> Bool {
         isHTTPS(a) && isHTTPS(b) && a.host?.lowercased() == b.host?.lowercased() && a.port == b.port
+    }
+
+    /// `https`, on one of `hosts`, default port, no user info.
+    static func isOn(_ url: URL, _ hosts: Set<String>) -> Bool {
+        isHTTPS(url) && url.port == nil && url.user == nil && url.password == nil
+            && hosts.contains(url.host?.lowercased() ?? "")
+    }
+}
+
+/// Where a fetch may go: anywhere `https` (within `RedirectPolicy`), one origin, or a set of hosts.
+enum RedirectScope {
+    case any
+    case origin(URL)
+    case hosts(Set<String>)
+
+    func allows(_ url: URL) -> Bool {
+        switch self {
+        case .any: true
+        case .origin(let o): RedirectPolicy.sameOrigin(url, o)
+        case .hosts(let h): RedirectPolicy.isOn(url, h)
+        }
+    }
+
+    var display: String {
+        switch self {
+        case .any: "any host"
+        case .origin(let o): RepoLog.display(o)
+        case .hosts(let h): h.sorted().joined(separator: ", ")
+        }
     }
 }
 
@@ -86,10 +120,22 @@ public struct URLSessionFetcher: HTTPFetching {
     }
 
     public func fetch(_ url: URL, maxBytes: Int, to file: URL, stayingOn origin: URL?) async throws -> URL {
+        try await fetch(url, maxBytes: maxBytes, to: file, scope: origin.map(RedirectScope.origin) ?? .any)
+    }
+
+    public func fetch(_ url: URL, maxBytes: Int, to file: URL, redirectingWithin hosts: Set<String>) async throws -> URL {
+        try await fetch(url, maxBytes: maxBytes, to: file, scope: .hosts(Set(hosts.map { $0.lowercased() })))
+    }
+
+    private func fetch(_ url: URL, maxBytes: Int, to file: URL, scope: RedirectScope) async throws -> URL {
         try? FileManager.default.removeItem(at: file)
         guard RedirectPolicy.isHTTPS(url) else {
             log.error("refused (not https): \(RepoLog.display(url))")
             throw RepoError.notHTTPS
+        }
+        if case .hosts = scope, !scope.allows(url) {
+            log.error("refused (not on \(scope.display)): \(RepoLog.display(url))")
+            throw RepoError.notAllowlisted
         }
         guard maxBytes >= 0 else { throw RepoError.tooLarge }
         try Task.checkCancellation()
@@ -97,7 +143,7 @@ public struct URLSessionFetcher: HTTPFetching {
         var request = URLRequest(url: url)
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         request.httpShouldHandleCookies = false
-        let delegate = FetchDelegate(file: file, maxBytes: maxBytes, origin: origin)
+        let delegate = FetchDelegate(file: file, maxBytes: maxBytes, scope: scope)
         let session = URLSession(configuration: Self.configuration(protocolClasses: protocolClasses),
                                  delegate: delegate, delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
@@ -127,7 +173,7 @@ private final class FetchDelegate: NSObject, URLSessionDataDelegate, @unchecked 
     private let lock = NSLock()
     private let file: URL
     private let maxBytes: Int
-    private let origin: URL?
+    private let scope: RedirectScope
     private var handle: FileHandle?
     private var written = 0
     private var redirects = 0
@@ -135,10 +181,10 @@ private final class FetchDelegate: NSObject, URLSessionDataDelegate, @unchecked 
     private var _status: Int?
     private var continuation: CheckedContinuation<URL, Error>?
 
-    init(file: URL, maxBytes: Int, origin: URL?) {
+    init(file: URL, maxBytes: Int, scope: RedirectScope) {
         self.file = file
         self.maxBytes = maxBytes
-        self.origin = origin
+        self.scope = scope
     }
 
     var bytes: Int { lock.withLock { written } }
@@ -162,8 +208,8 @@ private final class FetchDelegate: NSObject, URLSessionDataDelegate, @unchecked 
             completionHandler(nil)
             return
         }
-        if let origin, !RedirectPolicy.sameOrigin(next, origin) {
-            Log("repo").error("redirect refused (off \(RepoLog.display(origin))): \(RepoLog.display(next))")
+        if !scope.allows(next) {
+            Log("repo").error("redirect refused (off \(scope.display)): \(RepoLog.display(next))")
             fail(RepoError.notAllowlisted, task)
             completionHandler(nil)
             return

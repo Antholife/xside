@@ -175,6 +175,41 @@ struct HTTPFetcherTests {
         }
     }
 
+    /// A GitHub release asset: github.com redirects to its CDN, and only the listed hosts may be
+    /// reached, before each hop is followed; the first URL too.
+    @Test func redirectsStayWithinTheGivenHosts() async throws {
+        try await withTemporaryDirectory("http") { dir in
+            let h = host(), cdn = host(), other = host()
+            StubURLProtocol.set("https://\(h)/a.deb", .redirect(to: "https://\(cdn)/blob", status: 302))
+            StubURLProtocol.set("https://\(cdn)/blob", .body(status: 200, headers: [:], chunks: [Data("deb".utf8)]))
+            let out = dir.appendingPathComponent("r")
+            let final = try await fetcher.fetch(URL(string: "https://\(h)/a.deb")!, maxBytes: 10, to: out,
+                                                redirectingWithin: [h, cdn])
+            #expect(final.host == cdn)
+            #expect(try Data(contentsOf: out) == Data("deb".utf8))
+            // A hop to a host off the list is refused before it is followed.
+            StubURLProtocol.set("https://\(h)/b.deb", .redirect(to: "https://\(other)/blob", status: 302))
+            StubURLProtocol.set("https://\(other)/blob", .body(status: 200, headers: [:], chunks: [Data("evil".utf8)]))
+            await #expect(throws: RepoError.notAllowlisted) {
+                try await fetcher.fetch(URL(string: "https://\(h)/b.deb")!, maxBytes: 10, to: out, redirectingWithin: [h, cdn])
+            }
+            #expect(StubURLProtocol.requests(host: other).isEmpty)
+            #expect(!FileManager.default.fileExists(atPath: out.path))
+            // A first URL off the list is not even asked; nor one with another port.
+            await #expect(throws: RepoError.notAllowlisted) {
+                try await fetcher.fetch(URL(string: "https://\(other)/blob")!, maxBytes: 10, to: out, redirectingWithin: [h])
+            }
+            await #expect(throws: RepoError.notAllowlisted) {
+                try await fetcher.fetch(URL(string: "https://\(h):8443/a.deb")!, maxBytes: 10, to: out, redirectingWithin: [h])
+            }
+            #expect(StubURLProtocol.requests(host: other).isEmpty)
+            // Plain http stays refused.
+            await #expect(throws: RepoError.notHTTPS) {
+                try await fetcher.fetch(URL(string: "http://\(h)/a.deb")!, maxBytes: 10, to: out, redirectingWithin: [h])
+            }
+        }
+    }
+
     @Test func loggedURLsDropQueryAndCredentials() {
         let u = URL(string: "https://user:pw@objects.example/a/b.deb?X-Amz-Signature=secret&x=1#frag")!
         #expect(RepoLog.display(u) == "https://objects.example/a/b.deb")

@@ -47,6 +47,24 @@ public enum DebReader {
         }
     }
 
+    /// The `control` file only (nothing of `data.tar` is decompressed or extracted), under the
+    /// same caps; a work folder in the temporary directory, gone on return.
+    public static func control(of deb: URL, runner: CommandRunning) async throws -> String {
+        let fm = FileManager.default
+        var st = stat()
+        guard lstat(deb.path, &st) == 0, st.st_mode & S_IFMT == S_IFREG else { throw DebError.notADeb }
+        guard st.st_size <= off_t(DebLimits.maxDebBytes) else { throw DebError.tooLarge }
+        let archive: Data
+        do { archive = try Data(contentsOf: deb, options: .mappedIfSafe) } catch { throw DebError.notADeb }
+        let parts = try DebArchive.controlAndData(archive)
+        let work = fm.temporaryDirectory.appendingPathComponent("deb-\(UUID().uuidString)")
+        try fm.createDirectory(at: work, withIntermediateDirectories: false)
+        defer { try? fm.removeItem(at: work) }
+        let controlTar = try await normalised(archive, parts.control, as: "control", in: work,
+                                              cap: UInt64(DebLimits.maxControlTarBytes), runner: runner)
+        return try controlText(try Data(contentsOf: controlTar))
+    }
+
     private static func readInto(_ deb: URL, root: URL, runner: CommandRunning, keep: @escaping @Sendable (String) -> Bool,
                                  maxDataBytes: UInt64) async throws -> DebContents {
         let fm = FileManager.default

@@ -1054,11 +1054,14 @@
 "deps.tooOld" = "La version %1$@ est trop ancienne : il faut %2$@.";
 "deps.confirm.title" = "Télécharger %1$@ %2$@ ?";
 "deps.confirm.text" = "XSide va télécharger %1$@ (%2$@) depuis %3$@ (%4$@) et le vérifier avec l'empreinte du dépôt avant de l'ajouter.";
+"deps.confirm.github" = "XSide va télécharger %1$@ (%2$@) depuis les versions GitHub de l'auteur (sans empreinte publiée) : %3$@. Avant de l'ajouter, XSide vérifie que le fichier est bien ce paquet, dans une version qui convient.";
 "deps.confirm.cached" = "Déjà téléchargé : XSide utilise la copie qu'il a gardée.";
 "deps.confirm.file" = "Fichier : %@";
 "deps.error.hash" = "Le fichier téléchargé ne correspond pas à l'empreinte du dépôt : pas ajouté.";
 "deps.error.network" = "Impossible de joindre %@.";
 "deps.error.notFound" = "%@ n'est pas dans ce dépôt dans une version qui convient.";
+"deps.error.notFound.github" = "%@ n'a pas de version publiée sur GitHub qui convient.";
+"deps.error.mismatch" = "Le fichier téléchargé n'est pas %@ dans une version qui convient : pas ajouté.";
 "deps.tooNew" = "La version %1$@ est trop récente : il faut %2$@.";
 "deps.unsuitable" = "La version %1$@ ne convient pas : il faut %2$@.";
 "deps.added" = "%1$@ ajoutée au pool de l'app, activée sur %2$@.";

@@ -21,7 +21,8 @@ public enum TrustedRepos {
         TrustedRepo(id: "chariz", name: "Chariz", base: URL(string: "https://repo.chariz.com/")!, indexPath: "",
                     packages: ["ws.hbang.common"]),
         // Not opa334.github.io (AltList's author's repo): checked 2026-11-09, its Release lists no
-        // hash at all, so nothing it serves can be checked.
+        // hash at all, so nothing it serves can be checked. AltList comes from its author's GitHub
+        // releases instead (`AuthorReleases`).
     ]
 
     public static func offering(_ packageID: String) -> [TrustedRepo] {

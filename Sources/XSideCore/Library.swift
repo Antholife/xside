@@ -1442,7 +1442,7 @@ extension AppLibrary {
             let sha = e.sha256.lowercased()
             guard Self.isSHA256(sha), let stamp = Self.stamp(downloadURL(sha)) else { return nil }
             return DownloadUsage(sha256: sha, packageID: e.packageID, version: e.version, repo: e.repo,
-                                 repoName: TrustedRepos.all.first { $0.id == e.repo }?.name ?? e.repo,
+                                 repoName: DependencySources.name(forRepoID: e.repo),
                                  size: stamp.size, downloadedAt: e.downloadedAt, apps: (users[sha] ?? []).sorted(),
                                  users: (detail[sha] ?? []).sorted { $0.app < $1.app })
         }

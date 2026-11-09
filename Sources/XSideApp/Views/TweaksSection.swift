@@ -594,7 +594,7 @@ struct InstallTweaksSection: View {
                              guard !isDependency || model.confirmRemovingDependency(draft.package, target: target) else { return }
                              model.removeTweak(draft.id, from: flow)
                          },
-                         update: isDependency && !TrustedRepos.offering(draft.package.packageID).isEmpty
+                         update: isDependency && DependencySources.canDownload(draft.package.packageID)
                              ? { Task { await model.updateDependency(draft.package, target: target) } } : nil)
             .id(draft.id)
     }
@@ -672,7 +672,7 @@ struct InstalledTweaksSection<Notice: View>: View {
                              guard !isDependency || model.confirmRemovingDependency(package, target: target) else { return }
                              Task { await model.removeTweak(package.id, for: entry) }
                          },
-                         update: isDependency && !TrustedRepos.offering(package.packageID).isEmpty
+                         update: isDependency && DependencySources.canDownload(package.packageID)
                              ? { Task { await model.updateDependency(package, target: target) } } : nil)
             .id(package.id)
     }

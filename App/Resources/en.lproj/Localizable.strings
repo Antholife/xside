@@ -1054,11 +1054,14 @@
 "deps.tooOld" = "Version %1$@ is too old: %2$@ needed.";
 "deps.confirm.title" = "Download %1$@ %2$@?";
 "deps.confirm.text" = "XSide will download %1$@ (%2$@) from %3$@ (%4$@) and check it against the repo's fingerprint before adding it.";
+"deps.confirm.github" = "XSide will download %1$@ (%2$@) from the author's GitHub releases (no published fingerprint): %3$@. Before adding it, XSide checks that the file is that package, in a suitable version.";
 "deps.confirm.cached" = "Already downloaded: XSide uses the copy it kept.";
 "deps.confirm.file" = "File: %@";
 "deps.error.hash" = "The downloaded file doesn't match the repo's fingerprint: not added.";
 "deps.error.network" = "Couldn't reach %@.";
 "deps.error.notFound" = "%@ isn't in that repo in a suitable version.";
+"deps.error.notFound.github" = "%@ has no suitable version in its GitHub releases.";
+"deps.error.mismatch" = "The downloaded file isn't %@ in a suitable version: not added.";
 "deps.tooNew" = "Version %1$@ is too recent: %2$@ needed.";
 "deps.unsuitable" = "Version %1$@ doesn't fit: %2$@ needed.";
 "deps.added" = "%1$@ added to the app's pool, turned on for %2$@.";
