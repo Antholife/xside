@@ -38,8 +38,16 @@ NSDictionary *XSCheckInBody(NSDictionary *settings, NSDictionary *_Nullable last
                             NSString *_Nullable appVersion, NSTimeInterval pollEvery);
 /// A check-in that keeps the connection open while the app is in front (device feedback 4): the
 /// first line is the check-in's `settings` reply, then XSide writes `live`/`alive` lines on it.
+/// `saysBye`: the app writes `bye` (XSByeBody) on it before closing it as it leaves the front, so
+/// XSide can tell a watch that ended because the app vanished (a crash) and look at once.
 NSDictionary *XSWatchBody(NSDictionary *settings, NSDictionary *_Nullable lastRefresh,
-                          NSString *_Nullable appVersion);
+                          NSString *_Nullable appVersion, BOOL saysBye);
+/// {"type":"bye"}: written on a watch, sealed like any request, just before the app closes it.
+NSDictionary *XSByeBody(void);
+/// A check-in or watch body carrying how the previous run ended (XSRunMarkerReport:
+/// {ended: "crashed"|"clean", since: NSDate}) as `previousRunEnded` and `previousRunSince`; the
+/// body unchanged when there's no report or it isn't one.
+NSDictionary *XSWithRunReport(NSDictionary *body, NSDictionary *_Nullable report);
 
 typedef NS_ENUM(NSInteger, XSReplyStatus) {
     /// A signed reply to this request: `*body` is its JSON object (with a "type").

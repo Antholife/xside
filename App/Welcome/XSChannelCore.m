@@ -88,11 +88,25 @@ NSDictionary *XSCheckInBody(NSDictionary *settings, NSDictionary *lastRefresh, N
     return body;
 }
 
-NSDictionary *XSWatchBody(NSDictionary *settings, NSDictionary *lastRefresh, NSString *appVersion) {
+NSDictionary *XSWatchBody(NSDictionary *settings, NSDictionary *lastRefresh, NSString *appVersion, BOOL saysBye) {
     // No poll interval: while the watch is open the Mac knows the app is in front.
     NSMutableDictionary *body = [XSCheckInBody(settings, lastRefresh, appVersion, 0) mutableCopy];
     body[@"type"] = @"watch";
+    if (saysBye) body[@"saysBye"] = @YES;
     return body;
+}
+
+NSDictionary *XSByeBody(void) { return @{@"type": @"bye"}; }
+
+NSDictionary *XSWithRunReport(NSDictionary *body, NSDictionary *report) {
+    if (![report isKindOfClass:NSDictionary.class]) return body;
+    id ended = report[@"ended"];
+    id since = report[@"since"];
+    if ((![ended isEqual:@"crashed"] && ![ended isEqual:@"clean"]) || ![since isKindOfClass:NSDate.class]) return body;
+    NSMutableDictionary *with = [body mutableCopy];
+    with[@"previousRunEnded"] = ended;
+    with[@"previousRunSince"] = @(XSMillis(since));
+    return with;
 }
 
 NSData *XSCanonicalBase64(id text) {

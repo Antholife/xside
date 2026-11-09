@@ -17,8 +17,9 @@ final class ChannelServer: @unchecked Sendable {
     /// `watch` request authenticated (`ChannelHandler.watchRequested`). Returns how to write on it,
     /// or nil when refused (no watch slot left, or the connection is gone): the handler then
     /// answers as to a check-in and the connection closes as usual. `ended` runs once, on the
-    /// server's queue, when a held watch closes (either side, lifetime, or replaced by a newer one).
-    typealias Hold = @Sendable (_ installationID: String, _ ended: @escaping @Sendable () -> Void) async -> Push?
+    /// server's queue, when a held watch closes (either side, lifetime, or replaced by a newer one),
+    /// with how: by XSide, or by the phone with the line it wrote first (its `bye`), if any.
+    typealias Hold = @Sendable (_ installationID: String, _ ended: @escaping @Sendable (WatchClose) -> Void) async -> Push?
     /// Called once per connection with its request line (without "\n").
     typealias Handler = @Sendable (_ line: Data, _ send: @escaping Send, _ hold: @escaping Hold) async -> Void
 
@@ -56,7 +57,10 @@ final class ChannelServer: @unchecked Sendable {
             running = false
             listener?.cancel()
             listener = nil
-            for entry in connections.values { entry.connection.cancel() }
+            for (id, entry) in connections {
+                connections[id]?.closedByMac = true
+                entry.connection.cancel()
+            }
         }
     }
 
@@ -150,38 +154,64 @@ final class ChannelServer: @unchecked Sendable {
         guard let entry = connections.removeValue(forKey: id) else { return }
         for timer in entry.timers { timer.cancel() }
         admission.ended(id)
-        entry.watchEnded?()
+        entry.watchEnded?(entry.closedByMac ? .byMac : .byPhone(farewell: entry.farewell))
     }
 
     /// `Hold`, on the queue: the connection becomes the installation's watch if a slot is left
     /// (`ChannelAdmission.watch`). Its 150 s lifetime becomes the watch's own, and it is read again,
-    /// only to notice the phone closing it: a phone sends nothing more on a watch, so any byte
-    /// closes it too.
+    /// only to notice the phone closing it: the phone writes at most one line more (its `bye`,
+    /// kept for `ended`), and the first line, anything over 4 KB, the end or an error closes it.
     private func hold(_ id: ObjectIdentifier, installationID: String,
-                      ended: @escaping @Sendable () -> Void) -> Push? {
+                      ended: @escaping @Sendable (WatchClose) -> Void) -> Push? {
         guard var entry = connections[id], entry.read.gotLine, entry.watchEnded == nil else { return nil }
         switch admission.watch(id, installationID: installationID) {
         case .refuse:
             Self.logger.notice("channel: watch refused (no watch slot left): answered as a check-in")
             return nil
         case .watch(let replaced):
-            if let replaced { connections[replaced]?.connection.cancel() } // a newer watch replaces it
+            if let replaced { // a newer watch replaces it
+                connections[replaced]?.closedByMac = true
+                connections[replaced]?.connection.cancel()
+            }
         }
         let connection = entry.connection
         for timer in entry.timers { timer.cancel() }
-        let lifeTimer = DispatchWorkItem { [weak connection] in connection?.cancel() }
+        let lifeTimer = DispatchWorkItem { [weak self, weak connection] in
+            self?.connections[id]?.closedByMac = true // its lifetime: XSide closes it
+            connection?.cancel()
+        }
         entry.timers = [lifeTimer]
         entry.watchEnded = ended
         connections[id] = entry
         queue.asyncAfter(deadline: .now() + Self.watchLifetime, execute: lifeTimer)
-        watchForClose(connection)
+        watchForClose(connection, id: id, reader: ChannelLineReader(maxLength: ChannelHandler.maxFarewellLength))
         return { data in connection.send(content: data, completion: .contentProcessed { _ in }) }
     }
 
-    /// A held watch: closed when the phone closes it, fails, or writes anything.
-    private func watchForClose(_ connection: NWConnection) {
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 1024) { data, _, isComplete, error in
-            if data?.isEmpty == false || isComplete || error != nil { connection.cancel() }
+    /// A held watch: closed when the phone closes it, fails, writes a line (kept as its farewell,
+    /// its `bye`) or more than 4 KB without one.
+    private func watchForClose(_ connection: NWConnection, id: ObjectIdentifier, reader: ChannelLineReader) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 1024) { [weak self] data, _, isComplete, error in
+            guard let self else { connection.cancel(); return }
+            var reader = reader
+            if let data, !data.isEmpty {
+                switch reader.append(data) {
+                case .line(let line):
+                    self.connections[id]?.farewell = line
+                    connection.cancel()
+                    return
+                case .tooLong:
+                    connection.cancel()
+                    return
+                case .needMore:
+                    break
+                }
+            }
+            if isComplete || error != nil {
+                connection.cancel()
+                return
+            }
+            self.watchForClose(connection, id: id, reader: reader)
         }
     }
 
@@ -245,7 +275,11 @@ private struct Entry {
     let read: ReadState
     var timers: [DispatchWorkItem]
     /// Set once the connection is held as a watch: told when it ends.
-    var watchEnded: (@Sendable () -> Void)?
+    var watchEnded: (@Sendable (WatchClose) -> Void)?
+    /// XSide closed it (lifetime, replaced, stopping): not the phone's doing.
+    var closedByMac = false
+    /// The line the phone wrote on its watch before closing it (its `bye`).
+    var farewell: Data?
 }
 
 /// One connection's read progress (only touched on the server's queue).

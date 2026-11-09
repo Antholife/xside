@@ -910,6 +910,7 @@ final class AppModel {
         UserDefaults.standard.set(names, forKey: Self.namesKey)
         UserDefaults.standard.removeObject(forKey: Self.guideKey(deviceID))
         changeCrashWatch { $0.forgetDevice(deviceID) }
+        crashSchedule.forget(deviceID: deviceID)
         await reloadRecords()
         // After the reload: what it forgets (reminders) is rebuilt from the records left.
         onDeviceRemoved?(deviceID)
@@ -1207,10 +1208,14 @@ final class AppModel {
     /// server if a slot is left, then its first line (`first`, the check-in's reply) and what changed
     /// meanwhile are written. False when the server refused it (answer it as a check-in).
     private func holdWatch(installationID: String, nonce: String, secret: Data, first: ChannelWatchState,
-                           key: JobKey, hold: ChannelServer.Hold) async -> Bool {
+                           key: JobKey, saysBye: Bool, hold: ChannelServer.Hold) async -> Bool {
         let token = UUID()
-        let push = await hold(installationID) { [weak self] in
-            Task { @MainActor in self?.watchEnded(token, key: key) }
+        let opened = Date()
+        let push = await hold(installationID) { [weak self] close in
+            Task { @MainActor in
+                self?.watchEnded(token, key: key, close: close, saysBye: saysBye, installationID: installationID,
+                                 secret: secret, opened: opened)
+            }
         }
         guard let push else { return false }
         do {
@@ -1230,13 +1235,26 @@ final class AppModel {
         return true
     }
 
-    private func watchEnded(_ token: UUID, key: JobKey) {
+    private func watchEnded(_ token: UUID, key: JobKey, close: WatchClose, saysBye: Bool, installationID: String,
+                            secret: Data, opened: Date) {
         if channelWatches.close(token) == nil {
             endedWatchTokens.insert(token) // not registered yet (see `holdWatch`), or already replaced
         } else {
             Self.channelLogger.notice("channel: watch closed for \(key.recordID) on \(key.deviceID)")
         }
         updateLiveInstallations()
+        // The app vanished while in front (no goodbye): its crash logs, at once. Not while XSide
+        // replaces it on the device (an install or refresh ends the app it replaces).
+        let now = Date()
+        if ChannelHandler.watchEndedAbruptly(close, saysBye: saysBye, installationID: installationID, now: now,
+                                             nonces: &channelNonces, secret: secret) {
+            guard !isDeviceBusy(key.deviceID) else {
+                Self.channelLogger.notice("channel: watch of \(key.recordID) on \(key.deviceID) dropped during a job: not a crash")
+                return
+            }
+            Self.channelLogger.notice("channel: watch of \(key.recordID) on \(key.deviceID) dropped without a goodbye: looking for a crash")
+            lookForCrashNow(key, inUseSince: opened, reason: "watch dropped")
+        }
     }
 
     /// One request from an app (see `ChannelHandler`): only the installation that signed it can be
@@ -1271,6 +1289,22 @@ final class AppModel {
         // a refresh or a watch keeps what the last check-in said.
         if case .checkIn = request { channelPollEvery[key] = request.pollEvery.map(TimeInterval.init) }
         updateLiveInstallations(now: now)
+        if request.checkInReport != nil {
+            // An app just checked in: its device's crash logs are looked at more often for a while.
+            crashSchedule.boost(deviceID: key.deviceID, now: now)
+        }
+        // How the app's previous run ended (its module's run marker): a crash is looked for now.
+        if let run = request.previousRun {
+            switch changeCrashWatch({ $0.previousRunReported(recordID: key.recordID, deviceID: key.deviceID, run: run) }) {
+            case .lookForCrash(let since):
+                Self.channelLogger.notice("channel: \(found.recordID) on \(job.deviceID) says its previous run stopped while in use: looking for a crash")
+                lookForCrashNow(key, inUseSince: since, reason: "previous run crashed")
+            case .cleared:
+                Self.channelLogger.notice("channel: \(found.recordID) on \(job.deviceID) ended a run cleanly: crash notice cleared")
+            case .nothing:
+                break
+            }
+        }
         let reply: (ChannelReply) async -> Void = { answer in
             do {
                 await send(try ChannelHandler.replyLine(answer, installationID: installationID, requestNonce: nonce, secret: secret))
@@ -1302,7 +1336,7 @@ final class AppModel {
             if ChannelHandler.watchRequested(received) != nil, case let .settings(first, lastRefresh, pausedUntil) = answer,
                await holdWatch(installationID: installationID, nonce: nonce, secret: secret,
                                first: ChannelWatchState(settings: first, lastRefresh: lastRefresh, pausedUntil: pausedUntil),
-                               key: key, hold: hold) {
+                               key: key, saysBye: request.saysBye, hold: hold) {
                 return
             }
             await reply(answer) // the phone's view is right either way
@@ -1413,11 +1447,18 @@ final class AppModel {
 
     private static func describe(_ request: ChannelRequest) -> String {
         switch request {
-        case .checkIn: request.pollEvery.map { "check-in (polls every \($0) s)" } ?? "check-in"
-        case .watch: "watch"
+        case .checkIn: (request.pollEvery.map { "check-in (polls every \($0) s)" } ?? "check-in") + Self.describeRun(request)
+        case .watch: "watch" + Self.describeRun(request)
+        case .bye: "bye"
         case .refresh: "refresh"
         case .setAutoRefresh(let on): "automatic refresh \(on ? "on" : "off")"
         }
+    }
+
+    /// ", previous run crashed (in front since …)" when a check-in or a watch says so.
+    private static func describeRun(_ request: ChannelRequest) -> String {
+        guard let run = request.previousRun else { return "" }
+        return ", previous run \(run.ended == .crashed ? "crashed" : "ended cleanly") (in front since \(run.since.formatted(.iso8601)))"
     }
 
     private static func describe(_ reply: ChannelReply) -> String {
@@ -1995,6 +2036,8 @@ final class AppModel {
         await reloadRecords()
         // A crash flagged before this install or refresh waits for the next check to go.
         changeCrashWatch { $0.installed(recordID: key.recordID, deviceID: key.deviceID, at: Date()) }
+        // Just installed (and opened, for an install from the window): a crash is most likely now.
+        crashSchedule.boost(deviceID: key.deviceID, now: Date())
         onJobFinished?(job, nil, automatic, wasRefresh)
         await updateAppIDCounter()
     }
@@ -2504,6 +2547,10 @@ final class AppModel {
     private(set) var crashFlags: [String: CrashFlag] = [:]
     /// Devices whose crash logs are being looked at right now.
     @ObservationIgnored private var crashScans: Set<String> = []
+    /// When each device's crash logs are listed (every 2 min, 15 s after an install or a check-in).
+    @ObservationIgnored private var crashSchedule = CrashScanSchedule()
+    /// Installations whose crash logs are being read at once (a crash reported, a watch dropped).
+    @ObservationIgnored private var crashFastLooks: Set<JobKey> = []
     /// The installation the crash window shows.
     var crashWindowKey: JobKey?
     /// Opens the crash window (set by the menu-bar label, which has `openWindow`).
@@ -2611,13 +2658,15 @@ final class AppModel {
     /// A crash XSide found by itself (after an install, or by the quiet look): flags the row
     /// unless it's old news, shows it in the window when nothing newer is there, and tells the
     /// engine when it's new. True when the flag is new.
+    /// `inUseSince`: it stopped a run in use that began then (see `CrashWatch.raise`).
     @discardableResult
-    private func crashFound(_ finding: CrashFinding, key: JobKey) -> Bool {
+    private func crashFound(_ finding: CrashFinding, key: JobKey, inUseSince: Date? = nil) -> Bool {
         guard let installation = records.first(where: { $0.id == key.recordID })?
             .installations.first(where: { $0.deviceID == key.deviceID }) else { return false }
         let isNew = changeCrashWatch {
             $0.raise(recordID: key.recordID, deviceID: key.deviceID, fileName: finding.fileName,
-                     diagnosis: finding.diagnosis, installedAt: installation.installedAt, now: Date())
+                     diagnosis: finding.diagnosis, installedAt: installation.installedAt, now: Date(),
+                     inUseSince: inUseSince)
         }
         // The window: an on-demand look in progress gives its own answer; otherwise this crash
         // replaces nothing newer.
@@ -2634,6 +2683,7 @@ final class AppModel {
     /// a crash flagged before this install goes. A device that can't tell: nothing is said, and
     /// whatever the window shows is left alone. Never holds up the install.
     private func watchLaunch(_ key: JobKey, since: Date, launched: Bool, flow: InstallFlow) {
+        crashSchedule.boost(deviceID: key.deviceID, now: Date())
         guard let attempt = flow.runs.first(where: { $0.deviceID == key.deviceID })?.attempt else { return }
         func setRun(_ change: (inout DeviceRun) -> Void) {
             if let i = flow.runs.firstIndex(where: { $0.deviceID == key.deviceID && $0.attempt == attempt }) { change(&flow.runs[i]) }
@@ -2673,29 +2723,70 @@ final class AppModel {
         }
     }
 
-    /// The quiet look (run by the engine at each evaluation): each reachable device holding XSide
-    /// apps, at most once an hour, with no job running on it, has its crash-log folder listed, and
-    /// only the few new files of its XSide apps are copied and read. A new crash flags its row and
-    /// is notified; an installation reinstalled since its flag and with no new crash is cleared.
-    /// Errors are skipped silently (logged); it never holds up a refresh.
+    /// A job (install, refresh, uninstall) runs on the device: its apps get replaced or removed.
+    private func isDeviceBusy(_ deviceID: String) -> Bool {
+        jobs.keys.contains { $0.deviceID == deviceID }
+            || (install?.isRunning == true && install?.runs.contains { $0.deviceID == deviceID } == true)
+    }
+
+    /// The fast path: the installation's app stopped while in use (its module said so at the next
+    /// launch, or its live connection dropped without a goodbye), so its newest crash report since
+    /// `inUseSince` is read now (the listing, then only the few files that may be its), a few
+    /// seconds apart while ReportCrash may still be writing it. A crash found flags the row and is
+    /// notified at once. One at a time per installation; stops at a job on the device or a device
+    /// that can't be read (the quiet look, backed off, takes over).
+    func lookForCrashNow(_ key: JobKey, inUseSince: Date, reason: String) {
+        guard !crashFastLooks.contains(key), !removingDevices.contains(key.deviceID) else { return }
+        crashFastLooks.insert(key)
+        crashSchedule.boost(deviceID: key.deviceID, now: Date())
+        Task { [weak self] in
+            for wait in Self.fastLookWaits {
+                try? await Task.sleep(for: wait)
+                guard let self else { return }
+                guard !isDeviceBusy(key.deviceID) else { break }
+                let result = await readCrash(key, since: inUseSince.addingTimeInterval(-CrashWatch.runSlack))
+                if case .found(let finding) = result {
+                    Self.logger.notice("crash found at once (\(reason)) on \(key.deviceID): \(finding.diagnosis.summary)")
+                    crashFound(finding, key: key, inUseSince: inUseSince)
+                    break
+                }
+                if case .failed = result { break }
+            }
+            self?.crashFastLooks.remove(key)
+        }
+    }
+
+    /// The fast path's waits before each read: ReportCrash writes the report a moment after the app
+    /// stops (a JetsamEvent can take a few seconds more).
+    static let fastLookWaits: [Duration] = [.seconds(2), .seconds(5), .seconds(10)]
+
+    /// The quiet look (run by the engine every 15 s; `CrashScanSchedule` says when each device is
+    /// due: every 2 minutes, every 15 s for 3 minutes after an install or a check-in, backed off
+    /// after failures, never while a job runs on it): each reachable device holding XSide apps has
+    /// its crash-log folder listed, and only the few new files of its XSide apps are copied and
+    /// read. A new crash flags its row and is notified; an installation reinstalled since its flag
+    /// and with no new crash is cleared. Errors are skipped (logged); it never holds up a refresh.
     func scanCrashesIfDue() {
         let now = Date()
-        let busyDevices = Set(jobs.keys.map(\.deviceID)).union(install?.isRunning == true ? (install?.runs.map(\.deviceID) ?? []) : [])
         var keys: Set<String> = []
         for record in records { for i in record.installations { keys.insert(CrashWatch.key(recordID: record.id, deviceID: i.deviceID)) } }
         changeCrashWatch { $0.prune(keeping: keys, now: now) } // saved only when something went
         for device in devices where device.isAvailable && device.isPaired {
             let id = device.id
-            guard !removingDevices.contains(id), !busyDevices.contains(id), !crashScans.contains(id),
-                  crashWatch.shouldScan(deviceID: id, now: now) else { continue }
+            let busy = isDeviceBusy(id) || crashScans.contains(id) || crashFastLooks.contains { $0.deviceID == id }
+            guard !removingDevices.contains(id),
+                  crashSchedule.isDue(deviceID: id, now: now, busy: busy) else { continue }
             let entries = records.flatMap { r in
                 r.installations.filter { $0.deviceID == id }.map { AppEntry(record: r, installation: $0) }
             }
             let executables = Set(entries.compactMap(\.record.executable))
             guard !executables.isEmpty else { continue }
-            let since = changeCrashWatch { $0.scanStarted(deviceID: id, now: now) }
+            // Not saved for this alone (every 2 minutes): an older date after a restart only reads
+            // back a little further, and read files are skipped anyway.
+            let since = crashWatch.scanStarted(deviceID: id, now: now)
             let seen = crashWatch.seenFiles(deviceID: id)
             crashScans.insert(id)
+            crashSchedule.started(deviceID: id, now: now)
             Task { [weak self, runner] in
                 guard let self else { return }
                 defer { crashScans.remove(id) }
@@ -2708,9 +2799,11 @@ final class AppModel {
                         }
                     }
                 } catch {
-                    Self.logger.info("crash look on \(id) skipped: \(String(describing: error))")
+                    crashSchedule.finished(deviceID: id, succeeded: false)
+                    Self.logger.info("crash look on \(id) skipped (next in \(Int(crashSchedule.interval(deviceID: id, now: Date()))) s): \(String(describing: error))")
                     return
                 }
+                crashSchedule.finished(deviceID: id, succeeded: true)
                 var raised: Set<JobKey> = []
                 for file in found {
                     changeCrashWatch { $0.markSeen(fileName: file.fileName, deviceID: id, at: Date()) }

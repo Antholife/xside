@@ -18,6 +18,7 @@
 #import "XSCommon.h"
 #import "XSSettingsCore.h"
 #import "XSPill.h"
+#import "XSRunMarker.h"
 #import "XSChannel.h"
 #import "XSShortcuts.h"
 
@@ -963,6 +964,8 @@ static void XSReturn(void) {
 }
 
 __attribute__((constructor)) static void XSideWelcomeInit(void) {
+    // How the previous run ended, then this one marked running (off the main thread).
+    XSRunMarkerLaunched();
     XSNoteStartDefaultsDate(); // before the app writes its own preferences at launch
     XSInstallShortcuts(); // before UIApplicationMain sets the app's delegates
     XSWatchSystemAlerts();
@@ -988,4 +991,17 @@ __attribute__((constructor)) static void XSideWelcomeInit(void) {
                                                         object:nil queue:NSOperationQueue.mainQueue
                                                     usingBlock:^(NSNotification *n) { XSNoteLeaving(); }];
     }];
+    // The run marker: in front, or left cleanly (a kill in the background is no crash of interest).
+    [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification
+                                                    object:nil queue:NSOperationQueue.mainQueue
+                                                usingBlock:^(NSNotification *n) { XSRunMarkerInFront(YES, NO); }];
+    [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillEnterForegroundNotification
+                                                    object:nil queue:NSOperationQueue.mainQueue
+                                                usingBlock:^(NSNotification *n) { XSRunMarkerInFront(YES, NO); }];
+    [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidEnterBackgroundNotification
+                                                    object:nil queue:NSOperationQueue.mainQueue
+                                                usingBlock:^(NSNotification *n) { XSRunMarkerInFront(NO, NO); }];
+    [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillTerminateNotification
+                                                    object:nil queue:NSOperationQueue.mainQueue
+                                                usingBlock:^(NSNotification *n) { XSRunMarkerInFront(NO, YES); }];
 }

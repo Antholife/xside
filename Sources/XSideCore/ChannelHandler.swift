@@ -50,7 +50,7 @@ public enum ChannelHandler {
     /// The installation a received line asks to watch: only an authenticated `watch` request (the
     /// one kind of connection XSide keeps open), never a line that failed to authenticate.
     public static func watchRequested(_ received: ChannelReceived) -> String? {
-        guard case let .request(installationID, _, .watch) = received else { return nil }
+        guard case let .request(installationID, _, request) = received, case .watch = request else { return nil }
         return installationID
     }
 
@@ -73,7 +73,7 @@ public enum ChannelHandler {
     public static func handle(_ request: ChannelRequest, installation: Installation, now: Date,
                               reminder: Bool) -> (reply: ChannelReply, update: InstallationUpdate) {
         switch request {
-        case let .checkIn(settings, lastRefresh, _, _), let .watch(settings, lastRefresh, _):
+        case let .checkIn(settings, lastRefresh, _, _, _), let .watch(settings, lastRefresh, _, _, _):
             // A watch is a check-in first (its first line is this reply); the connection then stays open.
             let remote = clamped(settings, now: now)
             let merged = installation.inApp.map { InAppSettings.merge($0, remote) } ?? remote
@@ -94,6 +94,9 @@ public enum ChannelHandler {
             if installation.refreshPaused { return (.paused(by: installation.pausedBy ?? .mac), .none) }
             if phoneRefreshTooSoon(installation, now: now) { return (.busy, .none) }
             return (.accepted, .refreshRequested)
+        case .bye:
+            // Only meaningful on a watch (read there, never answered); on its own connection: nothing.
+            return (.accepted, .none)
         case let .setAutoRefresh(on):
             let current = installation.seededInApp(reminder: reminder, at: now)
             let updated = current.setting(\.autoRefresh, to: on, at: now, by: .device)

@@ -5,6 +5,7 @@
 #import "XSChannelCore.h"
 #import "XSSettingsCore.h"
 #import "XSPill.h"
+#import "XSRunMarker.h"
 #import <Network/Network.h>
 
 static const int XSPolicyDenied = -65570; // kDNSServiceErr_PolicyDenied: local network not allowed
@@ -57,6 +58,9 @@ typedef void (^XSChannelHandler)(XSChannelResult result, NSDictionary *_Nullable
 - (void)start;
 /// Ends it now (the app left the foreground): closes the connection; the handler gets the end.
 - (void)cancel;
+/// A watch that answered: writes `bye` on it (a sealed request, so XSide knows the app left the
+/// front and didn't vanish), then ends it like `cancel`. Anything else: `cancel`.
+- (void)closeSayingBye;
 @end
 
 /// Exchanges in flight, kept alive until they finish.
@@ -118,6 +122,26 @@ static NSMutableSet<XSChannelExchange *> *XSExchanges;
     dispatch_async(_queue, ^{
         if (self->_watching) [self finish:XSChannelWatchEnded reply:nil];
         else [self finish:XSChannelNotFound reply:nil];
+    });
+}
+
+- (void)closeSayingBye {
+    dispatch_async(_queue, ^{
+        nw_connection_t connection = self->_connection;
+        if (!self->_watching || !connection || self->_finished) {
+            [self finish:self->_watching ? XSChannelWatchEnded : XSChannelNotFound reply:nil];
+            return;
+        }
+        NSData *line = XSSealRequest(XSByeBody(), self->_installationID, self->_secret, XSMillis(NSDate.date), XSNewNonce());
+        if (!line) { [self finish:XSChannelWatchEnded reply:nil]; return; }
+        dispatch_data_t data = dispatch_data_create(line.bytes, line.length, self->_queue, DISPATCH_DATA_DESTRUCTOR_DEFAULT);
+        nw_connection_send(connection, data, NW_CONNECTION_DEFAULT_MESSAGE_CONTEXT, true, ^(nw_error_t error) {
+            [self finish:XSChannelWatchEnded reply:nil];
+        });
+        // The network may not take it: closed all the same, a second later.
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), self->_queue, ^{
+            [self finish:XSChannelWatchEnded reply:nil];
+        });
     });
 }
 
@@ -490,10 +514,14 @@ static void XSRunCheckIn(NSTimeInterval find, BOOL anyway, void (^handler)(XSCha
         return;
     }
     XSCheckInRunning = YES;
-    NSDictionary *body = XSCheckInBody(XSCurrentSettings(), XSLastRefresh(), XSAppVersion(), XSPollEveryNow());
+    // How the previous run ended rides along until XSide acknowledges it (a signed reply).
+    NSDictionary *report = XSRunMarkerPendingReport();
+    NSDictionary *body = XSWithRunReport(XSCheckInBody(XSCurrentSettings(), XSLastRefresh(), XSAppVersion(), XSPollEveryNow()),
+                                         report);
     [[[XSChannelExchange alloc] initWithBody:body findTimeout:find waitsOutcome:NO
                                      handler:^(XSChannelResult result, NSDictionary *reply, BOOL final) {
         XSCheckInEnded();
+        if (result == XSChannelReplied) XSRunMarkerSent(report);
         handler(result, XSAdoptCheckInReply(result, reply));
     }] start];
 }
@@ -595,13 +623,15 @@ static void XSOpenWatch(void) {
     NSDate *opened = NSDate.date;
     __block BOOL first = YES;
     __block BOOL answered = NO;
-    NSDictionary *body = XSWatchBody(XSCurrentSettings(), XSLastRefresh(), XSAppVersion());
+    NSDictionary *report = XSRunMarkerPendingReport();
+    NSDictionary *body = XSWithRunReport(XSWatchBody(XSCurrentSettings(), XSLastRefresh(), XSAppVersion(), YES), report);
     __block __weak XSChannelExchange *weakExchange = nil;
     XSChannelHandler handler = ^(XSChannelResult result, NSDictionary *reply, BOOL final) {
         if (first) {
             first = NO;
             XSCheckInEnded();
             answered = result == XSChannelReplied;
+            if (answered) XSRunMarkerSent(report);
             NSArray<NSString *> *byMac = answered ? XSAdoptCheckInReply(result, reply) : nil;
             NSLog(@"XSide: watch: %@ (result %ld)", answered ? @"open" : @"not open, polling", (long)result);
             XSTellLiveChange(byMac, @"watch");
@@ -674,10 +704,11 @@ void XSStartForegroundUpdates(void) {
 void XSStopForegroundUpdates(void) {
     [XSPollTimer invalidate];
     XSPollTimer = nil;
-    // The Mac sees the connection close and stops saying the app is open.
+    // The Mac sees the connection close and stops saying the app is open; the goodbye tells it the
+    // app left the front rather than vanished (a crash, which it then looks at at once).
     XSChannelExchange *watch = XSWatch;
     XSWatch = nil;
-    [watch cancel];
+    [watch closeSayingBye];
 }
 
 // MARK: - Refresh from the phone
@@ -950,11 +981,14 @@ static void XSTellAutoRefreshChangeNow(void) {
     if (XSCheckInRunning) { XSTellQueued = YES; return; } // told once it ends (mega review minor 2)
     XSCheckInRunning = YES;
     BOOL on = XSSettingBool(XSCurrentSettings(), @"autoRefresh");
-    NSDictionary *body = XSCheckInBody(XSCurrentSettings(), XSLastRefresh(), XSAppVersion(), XSPollEveryNow());
+    NSDictionary *report = XSRunMarkerPendingReport();
+    NSDictionary *body = XSWithRunReport(XSCheckInBody(XSCurrentSettings(), XSLastRefresh(), XSAppVersion(), XSPollEveryNow()),
+                                         report);
     [XSPatientExchange(body, NO, ^(XSChannelResult result, NSDictionary *reply, BOOL final) {
         BOOL fr = XSFrench();
         if (result == XSChannelWaiting) { XSShowWaitingPill(NO); return; }
         XSCheckInEnded();
+        if (result == XSChannelReplied) XSRunMarkerSent(report);
         NSArray<NSString *> *byMac = XSAdoptCheckInReply(result, reply);
         if (!byMac) {
             XSPillContent *c = result == XSChannelReplied

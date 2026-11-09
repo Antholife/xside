@@ -868,6 +868,7 @@
 "install.crash.checking" = "Vérification que l'app démarre sur %@…";
 "popover.app.crashLine" = "S'est arrêtée au lancement : %@";
 "popover.app.crashLine.before" = "S'était arrêtée avant la dernière installation : %@";
+"popover.app.crashLine.inUse" = "S'est arrêtée pendant l'utilisation : %@";
 "crash.seeWhy" = "Voir pourquoi";
 "crash.ignore" = "Ignorer";
 "crash.banner.title" = "%1$@ s'est arrêtée au lancement sur %2$@";
@@ -877,8 +878,9 @@
 "crash.action.started" = "Réinstallation lancée : suis-la dans le panneau, puis rouvre l'app.";
 "crash.action.failed" = "XSide n'a pas pu la lancer maintenant (appareil hors de portée ou déjà occupé). Réessaie dans un moment.";
 "notification.crash.title" = "%@ s'est arrêtée au lancement";
+"notification.crash.inUse.title" = "%@ s'est arrêtée pendant l'utilisation";
 "notification.crash.body" = "Sur %1$@ : %2$@. Clique pour voir pourquoi.";
-"settings.notifyCrash" = "Me prévenir quand une app s'arrête au lancement";
-"settings.notifyCrash.note" = "XSide jette un œil aux rapports de plantage des appareils connectés (une fois par heure au plus) et dit pourquoi l'app s'est fermée.";
+"settings.notifyCrash" = "Me prévenir quand une app plante";
+"settings.notifyCrash.note" = "XSide regarde tout de suite quand le module XSide ou sa connexion en direct signale qu'une app s'est arrêtée, et liste les rapports de plantage des appareils connectés toutes les 2 minutes (toutes les 15 secondes juste après une installation ou une ouverture d'app), puis dit pourquoi l'app s'est fermée.";
 "whatsNew.120.crash.title" = "Pourquoi une app plante";
-"whatsNew.120.crash.text" = "Quand une app installée par XSide se ferme au lancement, tu le vois : sa ligne dans le panneau passe au rouge avec la cause et Voir pourquoi, la fenêtre d'installation affiche un bandeau avec le correctif quand XSide peut l'appliquer (réinstaller sans les fonctions XSide ou sans la compatibilité Duo), et une notification te prévient, même pour un plantage survenu plus tard (XSide jette un œil aux rapports de plantage de l'appareil une fois par heure au plus). En clair : scènes d'iOS, bibliothèque manquante, signature, mémoire, iCloud, module XSide… avec quoi faire. Aussi dans le menu … de l'app (« Pourquoi l'app plante ? ») et avec xside crash. Tout reste sur le Mac.";
+"whatsNew.120.crash.text" = "Quand une app installée par XSide plante, au lancement ou pendant que tu l'utilises, XSide le voit presque aussitôt : sa ligne dans le panneau affiche un encadré rouge avec la cause et Voir pourquoi, la fenêtre d'installation affiche un bandeau avec le correctif quand XSide peut l'appliquer (réinstaller sans les fonctions XSide ou sans la compatibilité Duo), et une notification te prévient. Le module XSide dit au Mac quand l'app s'est arrêtée sans se fermer normalement, et XSide liste les rapports de plantage des appareils connectés toutes les 2 minutes (toutes les 15 secondes juste après une installation), aussi pour les apps sans module. En clair : scènes d'iOS, bibliothèque manquante, signature, mémoire, iCloud, module XSide… avec quoi faire. Aussi dans le menu … de l'app (« Pourquoi l'app plante ? ») et avec xside crash. Tout reste sur le Mac.";

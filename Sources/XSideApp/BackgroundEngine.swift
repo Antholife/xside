@@ -136,6 +136,8 @@ final class BackgroundEngine {
     // MARK: - Triggers
 
     private func pollTick() async {
+        // The crash logs' own schedule (every 2 min, 15 s after an install or a check-in).
+        model.scanCrashesIfDue()
         let interval = model.isPopoverOpen ? Self.fastPoll : Self.slowPoll
         // Small tolerance so a 60 s poll isn't pushed to 75 s by tick jitter.
         guard ContinuousClock.now - lastPoll >= interval - .seconds(1) else { return }
@@ -520,7 +522,7 @@ final class BackgroundEngine {
         let device = deviceName(key.deviceID)
         Task { [notifier] in
             guard await notifier.canDeliver() else { return }
-            await notifier.crashFound(appName: appName, deviceName: device, cause: cause,
+            await notifier.crashFound(appName: appName, deviceName: device, cause: cause, duringUse: flag.duringUse == true,
                                       job: RefreshJob(recordID: key.recordID, deviceID: key.deviceID))
         }
     }

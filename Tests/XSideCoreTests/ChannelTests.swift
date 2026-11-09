@@ -128,7 +128,18 @@ import CryptoKit
         var aliveLine: FixtureEntry
         /// Review D–G minor 7: a reply carrying the end of a Mac pause of a while.
         var pausedReply: FixtureEntry
+        /// A check-in saying the previous run stopped while in use (the module's run marker).
+        var crashedRunCheckIn: FixtureEntry
+        /// A watch that says goodbye, reporting a clean previous run, and its `bye`.
+        var byeWatchRequest: FixtureEntry
+        var byeRequest: FixtureEntry
     }
+    static let fixtureCrashedRun = ChannelRequest.checkIn(
+        settings: fixtureSettings, lastRefresh: nil, appVersion: "2.3.1", pollEvery: 15,
+        previousRun: PreviousRun(ended: .crashed, since: Date(timeIntervalSince1970: 1_799_999_900.125)))
+    static let fixtureByeWatch = ChannelRequest.watch(
+        settings: fixtureSettings, lastRefresh: nil, appVersion: "2.3.1", saysBye: true,
+        previousRun: PreviousRun(ended: .clean, since: Date(timeIntervalSince1970: 1_799_999_000)))
     static let fixtureWatch = ChannelRequest.watch(settings: fixtureSettings, lastRefresh: nil, appVersion: "2.3.1")
     /// What the Mac pushes: the fixture settings with the reminder turned back on from the Mac.
     static let fixtureLive = ChannelReply.live(
@@ -170,7 +181,10 @@ import CryptoKit
                     watchRequest: try requestEntry(fixtureWatch, nonce: "n3-watch"),
                     liveLine: try replyEntry(fixtureLive, nonce: "n3-watch"),
                     aliveLine: try replyEntry(.alive(seq: 2), nonce: "n3-watch"),
-                    pausedReply: try replyEntry(fixturePaused, nonce: "n2-checkin"))
+                    pausedReply: try replyEntry(fixturePaused, nonce: "n2-checkin"),
+                    crashedRunCheckIn: try requestEntry(fixtureCrashedRun, nonce: "n4-run"),
+                    byeWatchRequest: try requestEntry(fixtureByeWatch, nonce: "n5-watch"),
+                    byeRequest: try requestEntry(.bye, nonce: "n6-bye"))
     }
     static var fixtureURL: URL {
         URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/channel-fixture.json")
@@ -207,6 +221,67 @@ import CryptoKit
         #expect(reader.open(line: Data(onDisk.aliveLine.line.utf8)) == .alive(seq: 2))
         let paused = try ChannelReplyEnvelope.decode(line: Data(onDisk.pausedReply.line.utf8))
         #expect(paused.open(secret: secret, expectedInstallationID: Self.fixtureID, expectedNonce: "n2-checkin") == Self.fixturePaused)
+        let run = try ChannelEnvelope.decode(line: Data(onDisk.crashedRunCheckIn.line.utf8))
+        #expect(run.open(secret: secret, now: Self.fixtureNow, seen: &seen) == Self.fixtureCrashedRun)
+        let bw = try ChannelEnvelope.decode(line: Data(onDisk.byeWatchRequest.line.utf8))
+        #expect(bw.open(secret: secret, now: Self.fixtureNow, seen: &seen) == Self.fixtureByeWatch)
+        let bye = try ChannelEnvelope.decode(line: Data(onDisk.byeRequest.line.utf8))
+        #expect(bye.open(secret: secret, now: Self.fixtureNow, seen: &seen) == .bye)
+    }
+
+    /// The module's run marker: how the previous run ended, two optional fields of a check-in or a
+    /// watch, inside the signed body. Older dylibs leave them out; one alone or an unknown ending is
+    /// ignored; a malformed date fails like any field.
+    @Test func previousRunIsOptionalAndTolerant() throws {
+        let settings = InAppSettings.defaults(reminder: true, at: now)
+        let since = now.addingTimeInterval(-300)
+        let crashed = ChannelRequest.checkIn(settings: settings, lastRefresh: nil, appVersion: "2",
+                                             previousRun: PreviousRun(ended: .crashed, since: since))
+        let body = try JSONEncoder.channel.encode(crashed)
+        let text = String(decoding: body, as: UTF8.self)
+        #expect(text.contains(#""previousRunEnded":"crashed""#) && text.contains(#""previousRunSince":1799999700000"#))
+        #expect(try JSONDecoder.channel.decode(ChannelRequest.self, from: body) == crashed)
+        #expect(crashed.previousRun == PreviousRun(ended: .crashed, since: since))
+        let old = ChannelRequest.checkIn(settings: settings, lastRefresh: nil, appVersion: "2")
+        #expect(!String(decoding: try JSONEncoder.channel.encode(old), as: UTF8.self).contains("previousRun"))
+        #expect(old.previousRun == nil && ChannelRequest.refresh.previousRun == nil && ChannelRequest.bye.previousRun == nil)
+
+        func decoded(_ extra: String) throws -> ChannelRequest {
+            let settingsJSON = String(decoding: try JSONEncoder.channel.encode(settings), as: UTF8.self)
+            return try JSONDecoder.channel.decode(ChannelRequest.self, from: Data(#"{"type":"checkIn","settings":\#(settingsJSON)\#(extra)}"#.utf8))
+        }
+        #expect(try decoded(#","previousRunEnded":"crashed""#).previousRun == nil) // no date
+        #expect(try decoded(#","previousRunSince":1799999700000"#).previousRun == nil) // no ending
+        #expect(try decoded(#","previousRunEnded":"exploded","previousRunSince":1799999700000"#).previousRun == nil)
+        #expect(try decoded(#","previousRunEnded":"clean","previousRunSince":1799999700000"#).previousRun
+                == PreviousRun(ended: .clean, since: since))
+        #expect(throws: (any Error).self) { try decoded(#","previousRunEnded":"crashed","previousRunSince":"soon""#) }
+        #expect(throws: (any Error).self) { try decoded(#","previousRunEnded":"crashed","previousRunSince":-5"#) }
+        #expect(throws: (any Error).self) { try decoded(#","previousRunEnded":7,"previousRunSince":1799999700000"#) }
+
+        // A watch: the same fields, and whether it says goodbye (false when left out).
+        let watch = ChannelRequest.watch(settings: settings, lastRefresh: nil, appVersion: "2", saysBye: true,
+                                         previousRun: PreviousRun(ended: .clean, since: since))
+        let wb = try JSONEncoder.channel.encode(watch)
+        #expect(String(decoding: wb, as: UTF8.self).contains(#""saysBye":true"#))
+        #expect(try JSONDecoder.channel.decode(ChannelRequest.self, from: wb) == watch)
+        #expect(watch.saysBye && watch.previousRun?.ended == .clean)
+        let oldWatch = ChannelRequest.watch(settings: settings, lastRefresh: nil, appVersion: "2")
+        #expect(!String(decoding: try JSONEncoder.channel.encode(oldWatch), as: UTF8.self).contains("saysBye"))
+        #expect(!oldWatch.saysBye && !crashed.saysBye)
+        #expect(String(decoding: try JSONEncoder.channel.encode(ChannelRequest.bye), as: UTF8.self) == #"{"type":"bye"}"#)
+    }
+
+    /// Changing a field of the run report breaks the MAC: it is part of the signed body.
+    @Test func previousRunIsSigned() throws {
+        var seen = NonceCache()
+        let settings = InAppSettings.defaults(reminder: true, at: now)
+        let clean = ChannelRequest.checkIn(settings: settings, lastRefresh: nil, appVersion: "2",
+                                           previousRun: PreviousRun(ended: .clean, since: now))
+        var env = try seal(clean)
+        env.body = try ChannelEnvelope.encodeBody(.checkIn(settings: settings, lastRefresh: nil, appVersion: "2",
+                                                           previousRun: PreviousRun(ended: .crashed, since: now)))
+        #expect(env.open(secret: secret, now: now, seen: &seen) == nil)
     }
 
     @Test func regenerateFixtureOnDemand() throws {

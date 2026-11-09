@@ -6,6 +6,7 @@
 #import <Foundation/Foundation.h>
 #import "XSChannelCore.h"
 #import "XSSettingsCore.h"
+#import "XSRunMarkerCore.h"
 
 static int failures = 0;
 
@@ -135,7 +136,74 @@ int main(int argc, const char *argv[]) {
 
         // Device feedback 4: the watch request, and the lines XSide writes on it.
         NSDictionary *watchLast = nil;
-        requestCase(fx[@"watchRequest"], secret, XSWatchBody(fixtureSettings(), watchLast, @"2.3.1"), @"watch");
+        requestCase(fx[@"watchRequest"], secret, XSWatchBody(fixtureSettings(), watchLast, @"2.3.1", NO), @"watch");
+
+        // The run marker's report and the watch's goodbye (crashes seen at once).
+        NSDictionary *crashedRun = @{@"ended": @"crashed", @"since": ms(1799999900125)};
+        requestCase(fx[@"crashedRunCheckIn"], secret,
+                    XSWithRunReport(XSCheckInBody(fixtureSettings(), nil, @"2.3.1", 15), crashedRun), @"checkIn with a crashed run");
+        requestCase(fx[@"byeWatchRequest"], secret,
+                    XSWithRunReport(XSWatchBody(fixtureSettings(), nil, @"2.3.1", YES), @{@"ended": @"clean", @"since": ms(1799999000000)}),
+                    @"watch that says goodbye, with a clean run");
+        requestCase(fx[@"byeRequest"], secret, XSByeBody(), @"bye");
+        NSDictionary *plain = XSCheckInBody(fixtureSettings(), nil, @"2.3.1", 15);
+        check([XSWithRunReport(plain, nil) isEqual:plain] && [XSWithRunReport(plain, @{@"ended": @"exploded", @"since": ms(1)}) isEqual:plain]
+              && [XSWithRunReport(plain, @{@"ended": @"crashed", @"since": @1}) isEqual:plain]
+              && [XSWithRunReport(plain, (NSDictionary *)@"x") isEqual:plain], @"run report: none or malformed leaves the body alone");
+
+        // The run marker's state machine.
+        NSDate *l0 = ms(1800000000000), *l1 = ms(1800000060000), *l2 = ms(1800000120000), *l3 = ms(1800000180000);
+        NSDictionary *first = XSRunMarkerAtLaunch(nil, l0);
+        check([first[@"state"] isEqual:@"running"] && [first[@"since"] isEqual:l0] && XSRunMarkerReport(first) == nil,
+              @"marker: first launch, running, nothing to report");
+        // Crashed in front: still "running" on disk at the next launch.
+        NSDictionary *afterCrash = XSRunMarkerAtLaunch(XSRunMarkerPlist(first), l1);
+        NSDictionary *rep = XSRunMarkerReport(afterCrash);
+        check([rep[@"ended"] isEqual:@"crashed"] && XSMillis(rep[@"since"]) == XSMillis(l0) && [afterCrash[@"state"] isEqual:@"running"]
+              && [afterCrash[@"since"] isEqual:l1], @"marker: a run that stopped in front is reported crashed, since its start");
+        // Went to the background, then killed there (or terminated): clean.
+        NSDictionary *bg = XSRunMarkerWithState(first, NO, l1);
+        NSDictionary *afterClean = XSRunMarkerAtLaunch(XSRunMarkerPlist(bg), l2);
+        check([XSRunMarkerReport(afterClean)[@"ended"] isEqual:@"clean"] && XSMillis(XSRunMarkerReport(afterClean)[@"since"]) == XSMillis(l0),
+              @"marker: a run that left the front is reported clean");
+        // Back to the front: running since then; already in front: unchanged.
+        NSDictionary *back = XSRunMarkerWithState(bg, YES, l2);
+        check([back[@"state"] isEqual:@"running"] && [back[@"since"] isEqual:l2]
+              && [XSRunMarkerWithState(back, YES, l3)[@"since"] isEqual:l2], @"marker: back in front, since its return");
+        NSDictionary *crashAfterReturn = XSRunMarkerAtLaunch(XSRunMarkerPlist(back), l3);
+        check([XSRunMarkerReport(crashAfterReturn)[@"ended"] isEqual:@"crashed"]
+              && XSMillis(XSRunMarkerReport(crashAfterReturn)[@"since"]) == XSMillis(l2), @"marker: a crash after a return dates from the return");
+        // The report stays until acknowledged, through state changes.
+        NSDictionary *kept = XSRunMarkerWithState(XSRunMarkerWithState(afterCrash, NO, l2), YES, l3);
+        check([XSRunMarkerReport(kept) isEqual:rep], @"marker: the report survives leaving and coming back");
+        check(XSRunMarkerReport(XSRunMarkerAcknowledged(kept, rep)) == nil, @"marker: acknowledged, the report goes");
+        check([XSRunMarkerReport(XSRunMarkerAcknowledged(kept, @{@"ended": @"clean", @"since": l0})) isEqual:rep]
+              && [XSRunMarkerReport(XSRunMarkerAcknowledged(kept, nil)) isEqual:rep], @"marker: another report's reply leaves it");
+        // Never acknowledged (no Mac around): a crash isn't lost to a later clean run.
+        NSDictionary *unsent = XSRunMarkerWithState(afterCrash, NO, l2);
+        NSDictionary *next = XSRunMarkerAtLaunch(XSRunMarkerPlist(unsent), l3);
+        check([XSRunMarkerReport(next)[@"ended"] isEqual:@"crashed"] && XSMillis(XSRunMarkerReport(next)[@"since"]) == XSMillis(l0),
+              @"marker: an unsent crash outlives a clean run");
+        NSDictionary *twice = XSRunMarkerAtLaunch(XSRunMarkerPlist(afterCrash), l3);
+        check(XSMillis(XSRunMarkerReport(twice)[@"since"]) == XSMillis(l1), @"marker: a newer crash replaces an unsent one");
+        // Whatever is on disk, a launch gets a sound marker.
+        NSArray *hostile = @[@"x", @[], @{}, @{@"state": @"running"}, @{@"state": @"weird", @"since": @1},
+                             @{@"state": @"running", @"since": @YES}, @{@"state": @"running", @"since": @(-5)},
+                             @{@"state": @"running", @"since": @1e300}, @{@"state": @"clean", @"since": @"1"}];
+        BOOL sound = YES;
+        for (id raw in hostile) {
+            NSDictionary *m = XSRunMarkerAtLaunch(raw, l0);
+            sound = sound && [m[@"state"] isEqual:@"running"] && XSRunMarkerReport(m) == nil && XSRunMarkerSanitized(raw) == nil;
+        }
+        check(sound, @"marker: hostile or broken files are ignored");
+        NSDictionary *badReport = XSRunMarkerSanitized(@{@"state": @"clean", @"since": @1800000000000,
+                                                         @"report": @{@"ended": @"crashed", @"since": @"no"}});
+        check(badReport && badReport[@"report"] == nil, @"marker: a broken report is dropped, the rest kept");
+        NSDictionary *round = XSRunMarkerSanitized(XSRunMarkerPlist(afterCrash));
+        check([round[@"state"] isEqual:@"running"] && XSMillis(round[@"since"]) == XSMillis(l1)
+              && [XSRunMarkerReport(round)[@"ended"] isEqual:@"crashed"]
+              && [NSPropertyListSerialization propertyList:XSRunMarkerPlist(afterCrash) isValidForFormat:NSPropertyListBinaryFormat_v1_0],
+              @"marker: stored as a property list and read back");
         NSDictionary *liveEntry = fx[@"liveLine"], *aliveEntry = fx[@"aliveLine"];
         NSString *wnonce = liveEntry[@"nonce"];
         NSData *live = [liveEntry[@"line"] dataUsingEncoding:NSUTF8StringEncoding];

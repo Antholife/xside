@@ -32,8 +32,11 @@ import CryptoKit
 // JSON conventions inside bodies and replies: objects use a "type" discriminator and flat fields;
 // dates are integer epoch milliseconds (1800000000000); nils are omitted.
 //   ChannelRequest: {"type":"refresh"} | {"type":"setAutoRefresh","on":true}
-//                 | {"type":"checkIn","settings":{...},"lastRefresh":{...},"appVersion":"1.2","pollEvery":45}
-//                 | {"type":"watch","settings":{...},"lastRefresh":{...},"appVersion":"1.2"}
+//                 | {"type":"checkIn","settings":{...},"lastRefresh":{...},"appVersion":"1.2","pollEvery":45,
+//                    "previousRunEnded":"crashed","previousRunSince":1800000000000}
+//                 | {"type":"watch","settings":{...},"lastRefresh":{...},"appVersion":"1.2","saysBye":true,
+//                    "previousRunEnded":"clean","previousRunSince":1800000000000}
+//                 | {"type":"bye"} (only on a watch, see below)
 //   ChannelReply:   {"type":"settings","settings":{...},"lastRefresh":{...},"pausedUntil":1800000000000} | {"type":"accepted"} | {"type":"refreshed"}
 //                 | {"type":"failed","reasonKey":"..."} | {"type":"busy"} | {"type":"deviceUnreachable"}
 //                 | {"type":"paused","by":"mac"|"device"} | {"type":"rejected"}
@@ -54,6 +57,13 @@ import CryptoKit
 //   foreground poll interval (15, 45 in Low Power Mode), sent while it is in front. The Mac only
 //   uses it to keep "open, live" until the next poll (counted 15 to 120 s, plus a 10 s margin;
 //   ReachabilityStatus.openWindow); it grants nothing, and a missing one counts as 15 s.
+//   previousRunEnded + previousRunSince (optional, together, inside the signed body; on a check-in
+//   or a watch): how the app's previous run ended, as the module's run marker in the app's
+//   container recorded it: "clean" (it went to the background or was terminated) or "crashed" (it
+//   was still in front when it stopped: a crash, or killed while in use), and since when that run
+//   was in front. Sent until a signed reply acknowledges it. The Mac only uses it to look at the
+//   device's crash logs at once ("crashed") or to end a crash notice ("clean"); it grants nothing,
+//   and an unknown value is ignored.
 // - setAutoRefresh(on) -> settings(...): the installation's settings with autoRefresh stamped by
 //   the device; the Mac pauses or resumes its refreshes.
 // - refresh -> TWO lines when it starts: `accepted` at once, then `refreshed` or
@@ -79,7 +89,14 @@ import CryptoKit
 //   answered and closed as below); one watch per installation (a newer one replaces it), at most
 //   2 per address and 8 in all (beyond that it is answered like a check-in and closed: the phone
 //   polls instead); XSide closes it after 5 min and the phone opens another; the phone closes it
-//   when the app leaves the foreground. A phone writing anything more on a watch is closed.
+//   when the app leaves the foreground. A watch whose request says `saysBye: true` writes, before
+//   closing it that way, one more request line on it: `bye`, a request sealed like any other (its
+//   own fresh nonce and timestamp, the same installation), which XSide authenticates and doesn't
+//   answer. A watch that saysBye and ends from the phone's side without a valid `bye` ended
+//   abruptly (the app vanished: a crash, or killed while in front); XSide then looks at the
+//   device's crash logs at once. Anything else written on a watch (more than one line, or a line
+//   over 4 KB) closes it, as before. A `bye` on its own connection is answered `accepted` and
+//   changes nothing.
 // - A request that doesn't authenticate (unknown installation id, wrong MAC, outside the window,
 //   replayed nonce, unreadable body) gets the bare, UNSIGNED line `{"type":"rejected"}` (not an
 //   envelope: nothing is ever signed for an unauthenticated request). The phone must not act on it
@@ -97,16 +114,25 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
     /// settings. `pollEvery` (optional, whole seconds; older dylibs omit it): how long until the
     /// phone's next poll (15 s, 45 s in Low Power Mode), so the Mac keeps saying "open, live"
     /// until then (device feedback 5, G3). Only the status line reads it.
-    case checkIn(settings: InAppSettings, lastRefresh: RefreshOutcome?, appVersion: String?, pollEvery: Int? = nil)
+    /// `previousRun` (optional): how the app's previous run ended (see `PreviousRun`).
+    case checkIn(settings: InAppSettings, lastRefresh: RefreshOutcome?, appVersion: String?, pollEvery: Int? = nil,
+                 previousRun: PreviousRun? = nil)
     /// "Refresh now" from the phone.
     case refresh
     /// Pause (`false`) or resume (`true`) automatic refresh for this installation.
     case setAutoRefresh(Bool)
     /// A check-in that keeps the connection open while the app is in front: the Mac's changes are
     /// written on it as they happen (`ChannelReply.live`).
-    case watch(settings: InAppSettings, lastRefresh: RefreshOutcome?, appVersion: String?)
+    /// `saysBye`: the phone writes `bye` before closing it, so a watch that ends without one
+    /// ended abruptly (older dylibs leave it out: nothing is read into their ends).
+    case watch(settings: InAppSettings, lastRefresh: RefreshOutcome?, appVersion: String?, saysBye: Bool = false,
+               previousRun: PreviousRun? = nil)
+    /// On a watch, just before the phone closes it as it leaves the foreground: a clean end.
+    case bye
 
-    private enum CodingKeys: String, CodingKey { case type, settings, lastRefresh, appVersion, pollEvery, on }
+    private enum CodingKeys: String, CodingKey {
+        case type, settings, lastRefresh, appVersion, pollEvery, on, saysBye, previousRunEnded, previousRunSince
+    }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -115,11 +141,15 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
             self = .checkIn(settings: try c.decode(InAppSettings.self, forKey: .settings),
                             lastRefresh: try c.decodeIfPresent(RefreshOutcome.self, forKey: .lastRefresh),
                             appVersion: try c.decodeIfPresent(String.self, forKey: .appVersion),
-                            pollEvery: try c.decodeIfPresent(Int.self, forKey: .pollEvery))
+                            pollEvery: try c.decodeIfPresent(Int.self, forKey: .pollEvery),
+                            previousRun: try PreviousRun.decode(from: c))
         case "watch":
             self = .watch(settings: try c.decode(InAppSettings.self, forKey: .settings),
                           lastRefresh: try c.decodeIfPresent(RefreshOutcome.self, forKey: .lastRefresh),
-                          appVersion: try c.decodeIfPresent(String.self, forKey: .appVersion))
+                          appVersion: try c.decodeIfPresent(String.self, forKey: .appVersion),
+                          saysBye: try c.decodeIfPresent(Bool.self, forKey: .saysBye) ?? false,
+                          previousRun: try PreviousRun.decode(from: c))
+        case "bye": self = .bye
         case "refresh": self = .refresh
         case "setAutoRefresh": self = .setAutoRefresh(try c.decode(Bool.self, forKey: .on))
         case let other:
@@ -130,17 +160,21 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case let .checkIn(settings, lastRefresh, appVersion, pollEvery):
+        case let .checkIn(settings, lastRefresh, appVersion, pollEvery, previousRun):
             try c.encode("checkIn", forKey: .type)
             try c.encode(settings, forKey: .settings)
             try c.encodeIfPresent(lastRefresh, forKey: .lastRefresh)
             try c.encodeIfPresent(appVersion, forKey: .appVersion)
             try c.encodeIfPresent(pollEvery, forKey: .pollEvery)
-        case let .watch(settings, lastRefresh, appVersion):
+            try previousRun?.encode(into: &c)
+        case let .watch(settings, lastRefresh, appVersion, saysBye, previousRun):
             try c.encode("watch", forKey: .type)
             try c.encode(settings, forKey: .settings)
             try c.encodeIfPresent(lastRefresh, forKey: .lastRefresh)
             try c.encodeIfPresent(appVersion, forKey: .appVersion)
+            if saysBye { try c.encode(true, forKey: .saysBye) }
+            try previousRun?.encode(into: &c)
+        case .bye: try c.encode("bye", forKey: .type)
         case .refresh: try c.encode("refresh", forKey: .type)
         case let .setAutoRefresh(on):
             try c.encode("setAutoRefresh", forKey: .type)
@@ -151,16 +185,67 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
     /// What a check-in or a watch reports (both are check-ins), nil for the other requests.
     public var checkInReport: (settings: InAppSettings, lastRefresh: RefreshOutcome?)? {
         switch self {
-        case let .checkIn(settings, lastRefresh, _, _), let .watch(settings, lastRefresh, _): (settings, lastRefresh)
-        case .refresh, .setAutoRefresh: nil
+        case let .checkIn(settings, lastRefresh, _, _, _), let .watch(settings, lastRefresh, _, _, _): (settings, lastRefresh)
+        case .refresh, .setAutoRefresh, .bye: nil
         }
+    }
+
+    /// How the app's previous run ended, as a check-in or a watch reports it (nil otherwise).
+    public var previousRun: PreviousRun? {
+        switch self {
+        case let .checkIn(_, _, _, _, run), let .watch(_, _, _, _, run): run
+        case .refresh, .setAutoRefresh, .bye: nil
+        }
+    }
+
+    /// A watch whose phone writes `bye` before closing it.
+    public var saysBye: Bool {
+        if case let .watch(_, _, _, saysBye, _) = self { return saysBye }
+        return false
     }
 
     /// The phone's poll interval a check-in states (device feedback 5, G3), nil for the other
     /// requests and for dylibs that don't say it.
     public var pollEvery: Int? {
-        if case let .checkIn(_, _, _, pollEvery) = self { return pollEvery }
+        if case let .checkIn(_, _, _, pollEvery, _) = self { return pollEvery }
         return nil
+    }
+}
+
+/// How the app's previous run ended, from the XSide module's run marker (a small file in the app's
+/// container written when the app comes to the front and marked clean when it leaves it or is
+/// terminated). Two flat, optional fields of a check-in or a watch: `previousRunEnded` and
+/// `previousRunSince`, both or neither.
+public struct PreviousRun: Equatable, Sendable {
+    public enum Ending: String, Sendable {
+        /// It went to the background, or was terminated, as apps do.
+        case clean
+        /// It was still in front when it stopped: a crash, or killed while in use.
+        case crashed
+    }
+    public var ended: Ending
+    /// Since when that run was in front (its launch, or its last return to the front).
+    public var since: Date
+
+    public init(ended: Ending, since: Date) {
+        self.ended = ended
+        self.since = since
+    }
+
+    /// Both fields, or nil: one alone, or an ending this Mac doesn't know, is ignored (a newer
+    /// dylib may say more); a date of the wrong type or out of range fails like any other field.
+    fileprivate static func decode<K: CodingKey>(from c: KeyedDecodingContainer<K>) throws -> PreviousRun? {
+        guard let endedKey = K(stringValue: "previousRunEnded"), let sinceKey = K(stringValue: "previousRunSince") else { return nil }
+        let ended = try c.decodeIfPresent(String.self, forKey: endedKey)
+        let since = try c.decodeIfPresent(Date.self, forKey: sinceKey)
+        guard let ended, let ending = Ending(rawValue: ended), let since else { return nil }
+        return PreviousRun(ended: ending, since: since)
+    }
+
+    fileprivate func encode<K: CodingKey>(into c: inout KeyedEncodingContainer<K>) throws {
+        guard let endedKey = K(stringValue: "previousRunEnded"), let sinceKey = K(stringValue: "previousRunSince") else { return }
+        try c.encode(ended.rawValue, forKey: endedKey)
+        try c.encode(since, forKey: sinceKey)
     }
 }
 

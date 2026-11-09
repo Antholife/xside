@@ -31,8 +31,8 @@ struct AppRow: View {
     let onRemoveFromList: () -> Void
     /// Opens Settings > Mes apps on this app and device.
     let onXSideSettings: () -> Void
-    /// XSide found the app stopped at launch (after its install, or later): a red box under its
-    /// name and a badge on its icon, until dismissed or the app is seen running again.
+    /// XSide found the app stopped (at launch, or while in use): a red box under the row, across
+    /// its whole width, and a badge on its icon, until dismissed or the notice ends by itself.
     var crash: CrashFlag?
     /// "Why does it crash?": the crash window on this app.
     var onWhyCrash: () -> Void = {}
@@ -108,7 +108,18 @@ struct AppRow: View {
         }
     }
 
+    /// The row, then the crash box under it at the row's full width (aligned with the icon), so
+    /// the row's own layout never changes with it.
     private func row(validity: Validity, now: Date) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            mainRow(validity: validity, now: now)
+            if step == nil, let crash {
+                CrashRowBox(flag: crash, appName: appName, onWhy: onWhyCrash, onDismiss: onDismissCrash)
+            }
+        }
+    }
+
+    private func mainRow(validity: Validity, now: Date) -> some View {
         HStack(spacing: 10) {
             AppIconView(icon: icon, isBusy: step != nil || isUninstalling, isPaused: looksPaused,
                         hasCrash: crash != nil && step == nil)
@@ -151,9 +162,6 @@ struct AppRow: View {
                         .font(.system(size: 11))
                         .foregroundStyle(Color(nsColor: .systemOrange))
                         .fixedSize(horizontal: false, vertical: true)
-                }
-                if step == nil, let crash {
-                    CrashRowBox(flag: crash, appName: appName, onWhy: onWhyCrash, onDismiss: onDismissCrash)
                 }
                 if step == nil, !looksPaused, let key = entry.installation.lastErrorKey {
                     Text(localizedRowError(key: key))
@@ -213,8 +221,9 @@ struct AppRow: View {
     }
 }
 
-/// Under the app's name, when it stopped at launch: what happened in a few words, "See why" (the
-/// crash window) and "Ignore". Red; orange once a reinstall since waits for the next check.
+/// Under the row, when the app stopped (at launch, or while in use): what happened in a few words,
+/// "See why" (the crash window) and "Ignore". Red; orange once a reinstall since waits for the
+/// next check.
 private struct CrashRowBox: View {
     let flag: CrashFlag
     let appName: String
@@ -227,7 +236,8 @@ private struct CrashRowBox: View {
         let cause = CrashWording(flag.diagnosis, app: appName).title
         VStack(alignment: .leading, spacing: 5) {
             Label {
-                Text(L(flag.supersededAt == nil ? "popover.app.crashLine" : "popover.app.crashLine.before", cause))
+                Text(L(flag.supersededAt != nil ? "popover.app.crashLine.before"
+                       : flag.duringUse == true ? "popover.app.crashLine.inUse" : "popover.app.crashLine", cause))
                     .font(.system(size: 11, weight: .semibold))
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
@@ -250,7 +260,6 @@ private struct CrashRowBox: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(tint.opacity(0.35), lineWidth: 0.5))
-        .padding(.top, 2)
     }
 }
 

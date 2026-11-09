@@ -10,12 +10,19 @@ public struct CrashFlag: Codable, Equatable, Sendable {
     /// An install or refresh succeeded after this crash: the next check that finds no newer crash
     /// clears the flag.
     public var supersededAt: Date?
+    /// The app stopped while in use (its module said so at the next launch, or its live connection
+    /// dropped without a goodbye): the app running again doesn't end this notice; the next run
+    /// that ends cleanly does (or Ignore, or a reinstall followed by a check finding nothing newer).
+    /// Optional: older crash-watch.json files have none (nil is false).
+    public var duringUse: Bool?
 
-    public init(fileName: String, diagnosis: CrashDiagnosis, raisedAt: Date, supersededAt: Date? = nil) {
+    public init(fileName: String, diagnosis: CrashDiagnosis, raisedAt: Date, supersededAt: Date? = nil,
+                duringUse: Bool? = nil) {
         self.fileName = fileName
         self.diagnosis = diagnosis
         self.raisedAt = raisedAt
         self.supersededAt = supersededAt
+        self.duringUse = duringUse
     }
 
     /// When the app crashed (the file's date when the log has none).
@@ -44,17 +51,17 @@ public enum CrashAction: String, Codable, Sendable, CaseIterable {
 }
 
 /// Which crashes XSide is telling the person about, by installation, and the bookkeeping of the
-/// quiet look at each device's crash logs: when it last ran (at most once an hour per device)
-/// and which crash files it already read (each one is read, and announced, once).
+/// quiet look at each device's crash logs: when it last ran (how often: `CrashScanSchedule`) and
+/// which crash files it already read (each one is read, and announced, once).
 ///
 /// A flag is set when the check after an install, or the quiet look, finds a crash of the
 /// installation newer than its install, newer than the last time the app was seen running, and
 /// not dismissed. It goes when the person dismisses it, when the app is seen running after the
 /// crash (a check-in from XSide's module, or still up after XSide opened it), or when an install
-/// or refresh succeeded and the next check found no newer crash.
+/// or refresh succeeded and the next check found no newer crash. A crash while the app was in use
+/// (`CrashFlag.duringUse`: reported by the module at the next launch, or the live connection
+/// dropped) stays through the next launch and goes when a later run ends cleanly.
 public struct CrashWatch: Codable, Equatable, Sendable {
-    /// The quiet look runs at most this often per device.
-    public static let scanInterval: TimeInterval = 3600
     /// Crash files copied per look at most: the device keeps the others for the next one.
     public static let maxFilesPerScan = 3
     /// A device never looked at: how far back the first look goes.
@@ -73,6 +80,9 @@ public struct CrashWatch: Codable, Equatable, Sendable {
     private var lastScan: [String: Date] = [:]
     /// When each installation's app was last seen running.
     private var lastLaunch: [String: Date] = [:]
+    /// The last run each installation's module reported as crashed (its `since`): looked at once.
+    /// Optional: older files have none.
+    private var reportedRuns: [String: Date]?
 
     public init() {}
 
@@ -84,14 +94,8 @@ public struct CrashWatch: Codable, Equatable, Sendable {
 
     // MARK: The quiet look
 
-    /// The device's crash logs are due for a look (never looked at, or over `scanInterval` ago).
-    public func shouldScan(deviceID: String, now: Date) -> Bool {
-        lastScan[deviceID].map { now.timeIntervalSince($0) >= Self.scanInterval || $0 > now } ?? true
-    }
-
     /// Starts a look at the device's crash logs: returns the date files must be newer than (the
-    /// last look, or `firstLookback` ago for the first one). Counted even if it fails, so a device
-    /// that can't answer isn't asked again before the interval.
+    /// last look, or `firstLookback` ago for the first one).
     public mutating func scanStarted(deviceID: String, now: Date) -> Date {
         let since = lastScan[deviceID].map { min($0, now) } ?? now.addingTimeInterval(-Self.firstLookback)
         lastScan[deviceID] = now
@@ -113,18 +117,60 @@ public struct CrashWatch: Codable, Equatable, Sendable {
     /// A crash of the installation was found: flags it unless it predates the install (`installedAt`)
     /// or the last time the app was seen running, was dismissed, or is already flagged (or older
     /// than the flag). True when the flag is new: worth a notification.
+    ///
+    /// `inUseSince`: the crash ended a run in use that began then (the module reported it at the
+    /// next launch, or the live connection opened then dropped): the crash must be of that run
+    /// (not before it, give or take `runSlack`) instead of after the last time the app was seen
+    /// running (which the next launch's check-in already moved past it), and the flag is
+    /// `duringUse`.
     @discardableResult
     public mutating func raise(recordID: UUID, deviceID: String, fileName: String, diagnosis: CrashDiagnosis,
-                               installedAt: Date, now: Date) -> Bool {
+                               installedAt: Date, now: Date, inUseSince: Date? = nil) -> Bool {
         markSeen(fileName: fileName, deviceID: deviceID, at: now)
         let key = Self.key(recordID: recordID, deviceID: deviceID)
         let date = diagnosis.date ?? now
         guard dismissed[key]?.contains(fileName) != true,
-              date >= installedAt.addingTimeInterval(-Self.installSlack),
-              lastLaunch[key].map({ date > $0 }) ?? true else { return false }
+              date >= installedAt.addingTimeInterval(-Self.installSlack) else { return false }
+        if let inUseSince {
+            guard date >= inUseSince.addingTimeInterval(-Self.runSlack) else { return false }
+        } else {
+            guard lastLaunch[key].map({ date > $0 }) ?? true else { return false }
+        }
         if let current = flags[key], current.fileName == fileName || current.crashDate > date { return false }
-        flags[key] = CrashFlag(fileName: fileName, diagnosis: diagnosis, raisedAt: now)
+        flags[key] = CrashFlag(fileName: fileName, diagnosis: diagnosis, raisedAt: now,
+                               duringUse: inUseSince == nil ? nil : true)
         return true
+    }
+
+    /// A crash a little before the run's start is still the run's (clocks, file dates).
+    public static let runSlack: TimeInterval = 60
+
+    /// What a check-in's `previousRun` asks of the Mac.
+    public enum RunReport: Equatable, Sendable {
+        /// Nothing to do (already looked at for that run, or nothing to clear).
+        case nothing
+        /// The previous run stopped while in use: look at the device's crash logs now, for a crash
+        /// since `since` (raise it with `inUseSince: since`).
+        case lookForCrash(since: Date)
+        /// A run that began after the crash ended cleanly: the in-use crash notice went.
+        case cleared
+    }
+
+    /// The module reported how the installation's previous run ended. "crashed": looked at once
+    /// per run (the phone sends it until acknowledged; a lost reply repeats it). "clean": a crash
+    /// notice `duringUse` older than that run's start goes.
+    public mutating func previousRunReported(recordID: UUID, deviceID: String, run: PreviousRun) -> RunReport {
+        let key = Self.key(recordID: recordID, deviceID: deviceID)
+        switch run.ended {
+        case .crashed:
+            if reportedRuns?[key] == run.since { return .nothing }
+            reportedRuns = (reportedRuns ?? [:]).merging([key: run.since]) { $1 }
+            return .lookForCrash(since: run.since)
+        case .clean:
+            guard let flag = flags[key], flag.duringUse == true, flag.crashDate < run.since else { return .nothing }
+            flags[key] = nil
+            return .cleared
+        }
     }
 
     /// "Ignore": the flag goes, and that crash file never flags the installation again.
@@ -135,12 +181,13 @@ public struct CrashWatch: Codable, Equatable, Sendable {
     }
 
     /// The app was seen running at `date` (a check-in, or still up after XSide opened it): a flag
-    /// for an earlier crash goes. True when a flag went.
+    /// for an earlier crash goes, unless it stopped while in use (`duringUse`: running again is
+    /// expected then). True when a flag went.
     @discardableResult
     public mutating func launchSeen(recordID: UUID, deviceID: String, at date: Date) -> Bool {
         let key = Self.key(recordID: recordID, deviceID: deviceID)
         lastLaunch[key] = max(lastLaunch[key] ?? date, date)
-        guard let flag = flags[key], flag.crashDate < date else { return false }
+        guard let flag = flags[key], flag.duringUse != true, flag.crashDate < date else { return false }
         flags[key] = nil
         return true
     }
@@ -169,6 +216,7 @@ public struct CrashWatch: Codable, Equatable, Sendable {
         flags[key] = nil
         dismissed[key] = nil
         lastLaunch[key] = nil
+        reportedRuns?[key] = nil
     }
 
     /// The device is gone from XSide.
@@ -177,6 +225,7 @@ public struct CrashWatch: Codable, Equatable, Sendable {
         for key in flags.keys where key.hasSuffix(suffix) { flags[key] = nil }
         for key in dismissed.keys where key.hasSuffix(suffix) { dismissed[key] = nil }
         for key in lastLaunch.keys where key.hasSuffix(suffix) { lastLaunch[key] = nil }
+        reportedRuns = reportedRuns?.filter { !$0.key.hasSuffix(suffix) }
         seen[deviceID] = nil
         lastScan[deviceID] = nil
     }
@@ -191,6 +240,7 @@ public struct CrashWatch: Codable, Equatable, Sendable {
         flags = flags.filter { keys.contains($0.key) }
         dismissed = dismissed.filter { keys.contains($0.key) }
         lastLaunch = lastLaunch.filter { keys.contains($0.key) }
+        if let runs = reportedRuns { reportedRuns = runs.filter { keys.contains($0.key) } }
     }
 }
 
