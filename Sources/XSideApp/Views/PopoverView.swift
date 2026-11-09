@@ -214,7 +214,17 @@ private struct PopoverContent: View {
                                        model.explainCrash(entry.id)
                                    },
                                    onDismissCrash: { model.dismissCrash(entry.id) },
-                                   globallyPaused: RefreshPause.until(pausedUntil) != nil)
+                                   globallyPaused: RefreshPause.until(pausedUntil) != nil,
+                                   onDropTweaks: { urls in
+                                       dismiss()
+                                       NSApp.activate()
+                                       openSettings()
+                                       model.openSettingsAddingTweaks(urls, entry: entry)
+                                   },
+                                   onDropIPA: { url in
+                                       dismiss()
+                                       openWindow.presentInstall(url, model: model)
+                                   })
                         }
                     }
                 }

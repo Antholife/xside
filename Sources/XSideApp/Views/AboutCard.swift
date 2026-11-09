@@ -9,6 +9,7 @@ extension Bundle {
 /// Settings > About: icon, version and build stamp, author, repository and licence.
 struct AboutCard: View {
     @Environment(\.openWindow) private var openWindow
+    @State private var showsLicences = false
     private static func info(_ key: String) -> String? {
         Bundle.main.object(forInfoDictionaryKey: key) as? String
     }
@@ -60,6 +61,12 @@ struct AboutCard: View {
                     Label(L("whatsNew.open"), systemImage: "sparkles")
                 }
                 .buttonStyle(.link)
+                Button {
+                    showsLicences = true
+                } label: {
+                    Label(L("about.licences"), systemImage: "doc.text")
+                }
+                .buttonStyle(.link)
             }
             .font(.callout)
             .lineLimit(1)
@@ -70,5 +77,6 @@ struct AboutCard: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.vertical, 4)
+        .sheet(isPresented: $showsLicences) { LicencesView { showsLicences = false } }
     }
 }

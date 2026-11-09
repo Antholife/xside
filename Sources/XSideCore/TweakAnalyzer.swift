@@ -34,6 +34,18 @@ public enum TweakAnalyzer {
         var maxInfoPlistBytes = 1024 * 1024
     }
 
+    /// A file or folder the analyzer takes (`.deb`/`.dylib` file, `.framework`/`.bundle` folder):
+    /// what a drop on an app row accepts. Cheap: one `lstat`.
+    public static func looksLikeTweak(_ url: URL) -> Bool {
+        guard url.isFileURL else { return false }
+        var st = stat()
+        guard lstat(url.path, &st) == 0 else { return false }
+        switch (url.pathExtension.lowercased(), st.st_mode & S_IFMT) {
+        case ("deb", S_IFREG), ("dylib", S_IFREG), ("framework", S_IFDIR), ("bundle", S_IFDIR): return true
+        default: return false
+        }
+    }
+
     public static func analyze(_ source: URL, into storage: URL, origin: TweakOrigin = .added,
                                runner: CommandRunning, now: Date) async throws -> TweakPackage {
         try await analyze(source, into: storage, origin: origin, runner: runner, now: now, limits: Limits())

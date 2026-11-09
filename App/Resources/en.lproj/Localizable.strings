@@ -330,6 +330,10 @@
 "about.by" = "By";
 "about.license" = "Open source · MIT License";
 "about.tagline" = "Made with Swift, SwiftUI and Xcode's official tools. Your Apple password never goes through XSide.";
+"about.licences" = "Third-party licences";
+"about.licences.none" = "No third-party licence in this build.";
+"about.licences.title" = "Third-party licences";
+"about.licences.close" = "Done";
 
 "error.timedOut.auto" = "%@ stopped responding, so the operation was interrupted. XSide will try again by itself.";
 "notification.expiry.title" = "%@ expires tomorrow";

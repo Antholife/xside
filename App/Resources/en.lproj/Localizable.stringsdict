@@ -34,6 +34,22 @@
 			<string>Expires in %ld days</string>
 		</dict>
 	</dict>
+	<key>popover.app.tweaks</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>ld</string>
+			<key>one</key>
+			<string>%ld tweak</string>
+			<key>other</key>
+			<string>%ld tweaks</string>
+		</dict>
+	</dict>
 	<key>popover.paused.expiresIn</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>

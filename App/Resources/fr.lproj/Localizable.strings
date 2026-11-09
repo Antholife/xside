@@ -330,6 +330,10 @@
 "about.by" = "Par";
 "about.license" = "Open source · licence MIT";
 "about.tagline" = "Fait avec Swift, SwiftUI et les outils officiels de Xcode. Ton mot de passe Apple ne passe jamais par XSide.";
+"about.licences" = "Licences tierces";
+"about.licences.none" = "Aucune licence tierce dans cette version.";
+"about.licences.title" = "Licences tierces";
+"about.licences.close" = "Terminé";
 
 "error.timedOut.auto" = "%@ ne répond plus : l'opération a été interrompue. XSide réessaiera tout seul.";
 "notification.expiry.title" = "%@ expire demain";

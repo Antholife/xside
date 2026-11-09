@@ -329,6 +329,15 @@ extension AppModel {
         await reloadRecords()
     }
 
+    /// A tweak dropped on an app row of the panel: Settings > Mes apps on that installation, with
+    /// the files added (pending, for that device only; the dependencies sheet opens if needed).
+    /// The caller brings Settings to the front.
+    func openSettingsAddingTweaks(_ urls: [URL], entry: AppEntry) {
+        settingsApp = entry.id
+        settingsPane = .apps
+        Task { await addTweaks(urls, for: entry) }
+    }
+
     /// The installation as the library has it now.
     func currentEntry(_ key: JobKey) -> AppEntry? {
         guard let record = records.first(where: { $0.id == key.recordID }),

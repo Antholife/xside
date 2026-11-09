@@ -41,6 +41,10 @@ struct AppRow: View {
     /// Every automatic refresh is paused (the panel's Pause): the row looks paused too, as for
     /// its own pause (device feedback round 2, M2), but keeps its own actions.
     var globallyPaused = false
+    /// Tweak files dropped on this row (the panel hands them to Settings > Mes apps on this app).
+    var onDropTweaks: ([URL]) -> Void = { _ in }
+    /// An .ipa dropped on the row: the panel's own drop, so the row never swallows it.
+    var onDropIPA: (URL) -> Void = { _ in }
 
     /// This app's own refreshes are stopped (its actions offer Resume).
     private var isPaused: Bool { entry.installation.refreshPaused }
@@ -48,6 +52,7 @@ struct AppRow: View {
     private var looksPaused: Bool { isPaused || globallyPaused }
 
     @State private var isHovering = false
+    @State private var isDropTargeted = false
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
@@ -58,6 +63,21 @@ struct AppRow: View {
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
             .fill(isHovering ? Theme.hoverFill : .clear))
         .background { if isHighlighted { HighlightGlow(part: .fill) } }
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(isDropTargeted ? Theme.violet.opacity(0.14) : .clear))
+        .overlay {
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Theme.violet, lineWidth: 1.5).allowsHitTesting(false)
+            }
+        }
+        .dropDestination(for: URL.self) { urls, _ in
+            let files = urls.filter(\.isFileURL)
+            // An .ipa still installs, as on the rest of the panel.
+            if let ipa = files.first(where: AppDelegate.isIPA) { onDropIPA(ipa); return true }
+            let tweaks = files.filter(TweakAnalyzer.looksLikeTweak)
+            guard !tweaks.isEmpty else { return false }
+            onDropTweaks(tweaks)
+            return true
+        } isTargeted: { isDropTargeted = $0 }
         .overlay { if isHighlighted { HighlightGlow(part: .border) } }
         .animation(.easeOut(duration: 0.4), value: isHighlighted)
         .contentShape(Rectangle())
@@ -141,13 +161,23 @@ struct AppRow: View {
                     }
                 }
                 let subtitle = subtitle(validity: validity, now: now)
-                Text(subtitle)
+                Text(subtitle + tweakCaption)
                     .font(.system(size: 11))
                     .foregroundStyle(validity.isExpired && step == nil && !looksPaused ? Color(nsColor: .systemRed) : .secondary)
                     .lineLimit(2)
                     .truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)
-                    .help(subtitle) // the whole text when it's cut
+                    .help(subtitle + tweakCaption) // the whole text when it's cut
+                if step == nil, entry.installation.hasConvertedTweak {
+                    Text(L("tweaks.badge.converted"))
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(Theme.violet)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(Theme.violet.opacity(0.14)))
+                        .lineLimit(1)
+                        .fixedSize()
+                }
                 // Nothing to plug in nor to fix while paused: no refresh will be attempted.
                 if step == nil, !looksPaused, needsUSB,
                    entry.installation.expiresAt.timeIntervalSince(now) <= RefreshPlanner.threshold {
@@ -192,6 +222,12 @@ struct AppRow: View {
             .help(L("popover.app.menu", appName))
             .accessibilityLabel(L("popover.app.menu", appName))
         }
+    }
+
+    /// " · 2 tweaks": this device's tweaks the last signing put in. Nothing without any.
+    private var tweakCaption: String {
+        let n = entry.installation.injectedTweakCount
+        return n > 0 && step == nil ? " · " + L("popover.app.tweaks", n) : ""
     }
 
     private func subtitle(validity: Validity, now: Date) -> String {

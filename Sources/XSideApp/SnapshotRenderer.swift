@@ -58,6 +58,8 @@ enum SnapshotRenderer {
                     render(SettingsView(model: model).background(Color(nsColor: .windowBackgroundColor)),
                            dark: dark, to: out.appendingPathComponent("myapps-\(name)-\(language)-\(scheme).png"))
                 }
+                render(LicencesView(onClose: {}).background(Color(nsColor: .windowBackgroundColor)),
+                       dark: dark, to: out.appendingPathComponent("licences-\(language)-\(scheme).png"))
                 model.settingsPane = .build
                 render(SettingsView(model: model).background(Color(nsColor: .windowBackgroundColor)),
                        dark: dark, to: out.appendingPathComponent("build-\(language)-\(scheme).png"))
@@ -312,8 +314,10 @@ enum SnapshotRenderer {
             photos.duo = DuoAppInfo(sdkVersion: "26.0", adoptsScenes: false, sceneDelegateClass: nil)
             photos.icloud = ICloudAppInfo(declaresICloud: true, containers: ["iCloud.com.example.app2"])
             photos.legacy32 = true
-            let lessons = record(3, "Duolingo: Language Lessons", [installation(iPhone, days: 6.1, version: "6.9.0",
+            var lessons = record(3, "Duolingo: Language Lessons", [installation(iPhone, days: 6.1, version: "6.9.0",
                                                                                checkIn: 2 * 86_400)])
+            // The long-named app has two tweaks in it, one converted: the panel row's caption and badge.
+            lessons.installations[0].tweakResults = ["a": .injected(converted: false), "b": .injected(converted: true)]
             records = [video, photos, lessons]
             live = [JobKey(recordID: video.id, deviceID: iPhone.id)]
             crashed = JobKey(recordID: lessons.id, deviceID: iPhone.id)
