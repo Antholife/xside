@@ -158,6 +158,8 @@ final class AppModel {
     /// (by package id, an orange line under its row) and the dependencies being added.
     var dependencySheet: DependencySheet?
     var dependencyErrors: [String: String] = [:]
+    /// A crash fix's refresh, by installation: running, done or failed (the crash box says it).
+    var crashFixes: [JobKey: CrashFixState] = [:]
     /// What the last add of a dependency did (by package id, a green line under its row).
     var dependencyNotices: [String: String] = [:]
     var dependenciesBeingAdded: Set<String> = []
@@ -2779,6 +2781,7 @@ final class AppModel {
         if crashLooks[key] == nil, Self.isNewer(finding, than: crashChecks[key]) {
             crashChecks[key] = .found(finding)
         }
+        if isNew { crashFixes[key] = nil } // a new crash after a fix: its own box
         if isNew, let flag = crashFlag(for: key) { onCrashFound?(key, flag) }
         return isNew
     }
@@ -2968,7 +2971,54 @@ final class AppModel {
                 return false
             }
         }
-        return refreshNow(RefreshJob(recordID: key.recordID, deviceID: key.deviceID))
+        guard let task = startRefresh(RefreshJob(recordID: key.recordID, deviceID: key.deviceID), automatic: false) else {
+            Self.logger.notice("crash fix \(action.rawValue) on \(key.deviceID): the refresh couldn't start")
+            return false
+        }
+        followCrashFix(task, action: action, key: key, subject: crashFixSubject(diagnosis, record: record))
+        return true
+    }
+
+    /// The tweak a crash names (`diagnosis.subject`, an image) by its name in the app's pool.
+    private func crashFixSubject(_ diagnosis: CrashDiagnosis?, record: AppRecord) -> String? {
+        guard let image = diagnosis?.subject else { return nil }
+        return record.tweaks?.first { $0.binaries.contains { $0.imageName == image } }?.name ?? image
+    }
+
+    /// Shows a crash fix's refresh where the crash is shown (`crashFixes`): running with its
+    /// step, then done (the app opened again when "open after install" is on, and checked like
+    /// after an install), or failed with the reason. Device test 2026-11-09: the refresh ran but
+    /// nothing on screen said so.
+    private func followCrashFix(_ task: Task<(any Error)?, Never>, action: CrashAction, key: JobKey, subject: String?) {
+        crashFixes[key] = .running(action, subject: subject)
+        Self.logger.notice("crash fix \(action.rawValue) on \(key.deviceID): refresh started")
+        let started = Date()
+        Task { [weak self] in
+            let error = await task.value
+            guard let self else { return }
+            if let error {
+                if error is CancellationError {
+                    crashFixes[key] = nil
+                } else {
+                    Self.logger.notice("crash fix \(action.rawValue) on \(key.deviceID) failed: \(String(describing: error))")
+                    crashFixes[key] = .failed(action, subject: subject, message: localizedMessage(error))
+                }
+                return
+            }
+            var opened = false
+            if Self.setting(Self.openAppAfterInstallKey),
+               let record = records.first(where: { $0.id == key.recordID }),
+               let installation = record.installations.first(where: { $0.deviceID == key.deviceID }) {
+                let signedID = installation.signedBundleID ?? record.signedBundleID
+                // Opening it is also how the device says it trusts the developer.
+                let trust = await withKnownXcode { [runner] in await Installer(runner: runner).trustState(bundleID: signedID, deviceID: key.deviceID) }
+                opened = trust == .trusted
+            }
+            Self.logger.notice("crash fix \(action.rawValue) on \(key.deviceID): done\(opened ? ", app opened" : "")")
+            crashFixes[key] = .done(action, subject: subject, opened: opened)
+            // Does it stay up now? A new crash replaces this line with its own box.
+            if opened { lookForCrashNow(key, inUseSince: started, reason: "after a crash fix") }
+        }
     }
 
     /// `finding` is worth showing over `current`: nothing found yet, or an older crash.

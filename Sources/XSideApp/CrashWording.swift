@@ -56,3 +56,30 @@ struct CrashWording {
         }
     }
 }
+
+/// Where a crash fix (« Désactiver ce tweak », « Réinstaller sans… ») stands.
+enum CrashFixState: Equatable {
+    /// `subject`: the tweak's name for « Désactiver ce tweak ».
+    case running(CrashAction, subject: String?)
+    /// `opened`: XSide opened the app again on the device.
+    case done(CrashAction, subject: String?, opened: Bool)
+    case failed(CrashAction, subject: String?, message: String)
+
+    var isRunning: Bool { if case .running = self { true } else { false } }
+    var isDone: Bool { if case .done = self { true } else { false } }
+
+    /// « Réinstallation sans XSide Test Crash… », « Réinstallée sans XSide Test Crash. Rouvre l'app. »
+    var text: String {
+        switch self {
+        case .running(let a, let subject): Self.say("crash.fix.running", a, subject)
+        case .done(let a, let subject, let opened):
+            Self.say("crash.fix.done", a, subject) + " " + L(opened ? "crash.fix.opened" : "crash.fix.reopen")
+        case .failed(_, _, let message): L("crash.fix.failed", message)
+        }
+    }
+
+    private static func say(_ prefix: String, _ action: CrashAction, _ subject: String?) -> String {
+        let key = prefix + "." + action.rawValue
+        return action == .disableTweak ? L(key, subject ?? "") : L(key)
+    }
+}

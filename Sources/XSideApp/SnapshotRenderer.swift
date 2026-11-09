@@ -53,6 +53,22 @@ enum SnapshotRenderer {
                         .frame(width: InstallWindow.width)
                         .background(Color(nsColor: .windowBackgroundColor)),
                        dark: dark, to: out.appendingPathComponent("install-crash-\(language)-\(scheme).png"))
+                // « Désactiver ce tweak »: running (with its step), done, failed.
+                let tweakCrash = CrashDiagnosis(cause: .tweak, subject: "XSTestTweakCrash.dylib", date: now,
+                                                exceptionType: "EXC_BREAKPOINT", signal: "SIGTRAP")
+                render(VStack(spacing: 10) {
+                    ForEach(Array([CrashFixState.running(.disableTweak, subject: "XSide Test Crash"),
+                                   .done(.disableTweak, subject: "XSide Test Crash", opened: false),
+                                   .done(.disableTweak, subject: "XSide Test Crash", opened: true),
+                                   .failed(.disableTweak, subject: "XSide Test Crash",
+                                           message: L("error.deviceUnavailable"))].enumerated()), id: \.offset) { i, fix in
+                        CrashBanner(app: "XSide Tweak Test", device: "iPhone", diagnosis: tweakCrash, action: .disableTweak,
+                                    isFixing: i == 0, fix: fix, stage: i == 0 ? .step(.signing) : nil,
+                                    onWhy: {}, onAction: { _ in })
+                    }
+                }
+                .padding(20).frame(width: InstallWindow.width).background(Color(nsColor: .windowBackgroundColor)),
+                       dark: dark, to: out.appendingPathComponent("crash-fix-\(language)-\(scheme).png"))
                 for (name, key) in sample.selections {
                     model.settingsApp = key
                     render(SettingsView(model: model).background(Color(nsColor: .windowBackgroundColor)),

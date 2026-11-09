@@ -129,20 +129,21 @@ private struct CrashView: View {
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            if let action = TweakCrashFix.action(for: d, crashed: entry.installation, record: entry.record) {
+            if let action = TweakCrashFix.action(for: d, crashed: entry.installation, record: entry.record),
+               !(model.crashFixes[entry.id]?.isDone ?? false) {
                 HStack(spacing: 8) {
                     Button(L("crash.action.\(action.rawValue)")) {
                         guard let all = model.crashActionScope(action, on: entry.id, diagnosis: d) else { return }
                         Task { actionStarted = await model.perform(action, on: entry.id, allDevices: all, diagnosis: d) }
                     }
-                    .disabled(model.jobs[entry.id] != nil || actionStarted == true)
-                    if model.jobs[entry.id] != nil || actionStarted == true {
-                        Text(L("crash.action.started")).font(.system(size: 11)).foregroundStyle(.secondary)
-                    } else if actionStarted == false {
+                    .disabled(model.jobs[entry.id] != nil || model.crashFixes[entry.id]?.isRunning == true)
+                    if model.crashFixes[entry.id] == nil, actionStarted == false {
                         Text(L("crash.action.failed")).font(.system(size: 11)).foregroundStyle(Color(nsColor: .systemOrange))
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
+            if let fix = model.crashFixes[entry.id] { CrashFixStatusView(state: fix, stage: model.jobs[entry.id]) }
             Text(when(d)).font(.system(size: 11)).foregroundStyle(.secondary)
             DisclosureGroup(L("crash.technical")) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -230,6 +231,8 @@ struct CrashNotes: View {
                                     action: key.flatMap { model.crashAction(for: finding.diagnosis, on: $0) },
                                     isFixing: key.map { model.jobs[$0] != nil } ?? false,
                                     actionStarted: actionStarted[run.deviceID],
+                                    fix: key.flatMap { model.crashFixes[$0] },
+                                    stage: key.flatMap { model.jobs[$0] },
                                     onWhy: key.map { key in { model.explainCrash(key) } },
                                     onAction: key.map { key in
                                         { action in
@@ -261,6 +264,9 @@ struct CrashBanner: View {
     var isFixing = false
     /// The fix was asked for: whether its refresh started (nil: not asked).
     var actionStarted: Bool?
+    /// Where the fix's refresh stands, and its step.
+    var fix: CrashFixState?
+    var stage: JobStage?
     let onWhy: (() -> Void)?
     let onAction: ((CrashAction) -> Void)?
 
@@ -289,15 +295,18 @@ struct CrashBanner: View {
                         Button(L("crash.seeWhy"), action: onWhy)
                             .buttonStyle(CrashFilledButtonStyle(tint: red, size: 13))
                     }
-                    if let action, let onAction {
+                    // Done: the fix is applied, nothing left to press.
+                    if let action, let onAction, !(fix?.isDone ?? false) {
                         Button(L("crash.action.\(action.rawValue)")) { onAction(action) }
                             .buttonStyle(.bordered)
-                            .disabled(isFixing || actionStarted == true)
+                            .disabled(isFixing || fix?.isRunning == true)
                     }
                 }
                 .controlSize(.regular)
                 .padding(.top, 2)
-                if isFixing || actionStarted == true {
+                if let fix {
+                    CrashFixStatusView(state: fix, stage: stage)
+                } else if isFixing || actionStarted == true {
                     Text(L("crash.action.started"))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
@@ -386,6 +395,40 @@ extension AppModel {
         case .alertFirstButtonReturn: return false
         case .alertSecondButtonReturn: return true
         default: return nil
+        }
+    }
+}
+
+/// A crash fix's refresh: a spinner with « Réinstallation sans X… » and its step, then a green
+/// « Réinstallée sans X. Rouvre l'app. », or the reason it failed in orange.
+struct CrashFixStatusView: View {
+    let state: CrashFixState
+    var stage: JobStage?
+
+    var body: some View {
+        switch state {
+        case .running:
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                ProgressView().controlSize(.mini)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(state.text).font(.system(size: 12, weight: .medium))
+                    if case .step(let step)? = stage {
+                        Text(ProgressStep(step).label(withoutXSideFeatures: false))
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        case .done:
+            Label(state.text, systemImage: "checkmark.circle.fill")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color(nsColor: .systemGreen))
+                .fixedSize(horizontal: false, vertical: true)
+        case .failed:
+            Label(state.text, systemImage: "exclamationmark.triangle.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(Color(nsColor: .systemOrange))
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
