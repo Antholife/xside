@@ -158,7 +158,7 @@ final class ChannelServer: @unchecked Sendable {
     }
 
     /// `Hold`, on the queue: the connection becomes the installation's watch if a slot is left
-    /// (`ChannelAdmission.watch`). Its 150 s lifetime becomes the watch's own, and it is read again,
+    /// (`ChannelAdmission.watch`). Its lifetime (`ChannelWatches.lifetime`, 300 s) becomes the watch's own, and it is read again,
     /// only to notice the phone closing it: the phone writes at most one line more (its `bye`,
     /// kept for `ended`), and the first line, anything over 4 KB, the end or an error closes it.
     private func hold(_ id: ObjectIdentifier, installationID: String,
