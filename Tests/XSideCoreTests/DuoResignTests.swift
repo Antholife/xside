@@ -93,6 +93,11 @@ private func manifestDelegate(_ info: [String: Any]) -> String? {
     return (configs?["UIWindowSceneSessionRoleApplication"] as? [[String: Any]])?.first?["UISceneDelegateClassName"] as? String
 }
 
+private actor CallOrder {
+    var items: [String] = []
+    func add(_ s: String) { items.append(s) }
+}
+
 struct DuoResignTests {
     @Test func raisesTheSDKAndNamesTheAppsSceneDelegate() async throws {
         let f = try await DuoFixture(executable: realExecutable("duo-objc-fat"))
@@ -112,6 +117,25 @@ struct DuoResignTests {
         // Nothing of the patch's own files is left in the bundle.
         let items = try FileManager.default.contentsOfDirectory(atPath: app.path)
         #expect(!items.contains { $0.hasPrefix("duo-") })
+    }
+
+    @Test func legacySlicesAreRemovedBeforeThePatchSoTheSDKCheckOnlySeesModernCode() async throws {
+        let thin = try realExecutable("duo-swift-arm64")
+        let fat = FakeIPA.fat([(12, 9, FakeIPA.machO(cpuType: 12, cryptid: 0)), (0x0100000C, 0, thin)])
+        let f = try await DuoFixture(executable: fat)
+        let order = CallOrder()
+        let app = try await f.resigner.resign(ipa: f.ipa, workDir: f.work, bundleID: "com.example.new",
+                                              options: InstallOptions(duoCompatibility: true), iconURL: nil,
+                                              profileURL: f.profileURL, profile: profile(), identitySHA1: "SHA", facts: nil,
+                                              onDuo: { if $0 == nil { await order.add("duo") } },
+                                              onThinning: { await order.add("thin") })
+        #expect(await order.items == ["thin", "duo"])
+        let exe = app.appendingPathComponent("Demo")
+        #expect(MachOBuildInfo.sdkVersion(of: exe) == "27.1")
+        #expect(try IPAInspector.sliceEntries(Data(contentsOf: exe)).count == 1) // thin now, no fat header
+        #expect(f.resigner.hasDuoCompatibility(app))
+        #expect(f.resigner.hasXSideLibrary(app))
+        #expect(manifestDelegate(try plist(app)) == "_TtC4main16AppSceneDelegate")
     }
 
     @Test func worksWithoutXSidesModule() async throws {

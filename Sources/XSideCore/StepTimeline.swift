@@ -13,7 +13,7 @@ public enum JobStage: Equatable, Sendable {
 public enum ProgressStep: Int, CaseIterable, Sendable {
     /// `duo`: adding iPhone Duo compatibility, listed only for a run that asked for it.
     /// `legacy32`: removing the old 32-bit code, listed only for an app that has some.
-    case preparing, profile, welcome, duo, legacy32, signing, installing, wifiCheck
+    case preparing, profile, welcome, legacy32, duo, signing, installing, wifiCheck
 
     public init(_ step: InstallStep) {
         switch step {

@@ -50,7 +50,7 @@ public enum InstallStep: Int, CaseIterable, Sendable {
     /// `welcome`: unpacking the app and adding the XSide welcome popup to it, before signing.
     /// `duo`: adding iPhone Duo compatibility, only when it was asked for.
     /// `legacy32`: removing the old 32-bit code, only when the app has some.
-    case profile, welcome, duo, legacy32, signing, installing
+    case profile, welcome, legacy32, duo, signing, installing
 }
 
 /// FIFO async mutex: `run` bodies execute one at a time, in arrival order. A task already

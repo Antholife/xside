@@ -130,6 +130,12 @@ public struct Resigner: Sendable {
             if exists(url) { try fm.removeItem(at: url) } // removes a link itself, never its target
         }
 
+        // 32-bit ARM slices run on no supported device (and may be encrypted): dropped before
+        // anything else touches the executable (the Duo patch's SDK check must not see them).
+        if MachOThinner.hasARM32Slices(under: app) { await onThinning() }
+        let thinned = MachOThinner.removeARM32Slices(under: app)
+        if !thinned.isEmpty { Self.logger.info("removed 32-bit ARM slices from \(thinned.count) file(s)") }
+
         let features = options.withoutXSideFeatures != true
         // Asked for this device: patched on a copy that replaces the executable only once it
         // declares the new SDK (XSide's load command included, when the features are on, so
@@ -182,11 +188,6 @@ public struct Resigner: Sendable {
         try Self.signingEntitlements(profile: profile, bundleID: bundleID, original: originalEntitlements,
                                      shareKeychain: options.shareKeychain, otherBundleIDs: otherBundleIDs)
             .write(to: entitlements)
-
-        // 32-bit ARM slices run on no supported device (and may be encrypted): dropped before signing.
-        if MachOThinner.hasARM32Slices(under: app) { await onThinning() }
-        let thinned = MachOThinner.removeARM32Slices(under: app)
-        if !thinned.isEmpty { Self.logger.info("removed 32-bit ARM slices from \(thinned.count) file(s)") }
 
         await onSigning()
         let targets = signTargets(in: app)

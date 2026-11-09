@@ -38,11 +38,21 @@ public enum MachOThinner {
                 guard let o = u32(b + 8), let s = u32(b + 12), let a = u32(b + 16) else { return nil }
                 off = UInt64(o); size = UInt64(s); align = a
             }
-            guard align <= 30, off <= UInt64(data.count), size <= UInt64(data.count) - off else { return nil }
+            guard align <= 14, off <= UInt64(data.count), size <= UInt64(data.count) - off else { return nil }
             archs.append(Arch(cpu: cpu, sub: sub, offset: off, size: size, align: align))
         }
         let kept = archs.filter { $0.cpu != IPAInspector.cpuTypeARM32 }
         guard !kept.isEmpty, kept.count < archs.count else { return nil }
+
+        // Hostile or corrupt headers: two slices of one architecture, or slices that overlap each
+        // other or the header, are never rewritten.
+        var seen = Set<UInt64>()
+        for a in kept where !seen.insert(UInt64(a.cpu) << 32 | UInt64(a.sub)).inserted { return nil }
+        var previousEnd = UInt64(8 + archs.count * entry)
+        for a in kept.sorted(by: { $0.offset < $1.offset }) {
+            guard a.offset >= previousEnd else { return nil }
+            previousEnd = a.offset + a.size // in bounds: checked against data.count above
+        }
 
         func slice(_ a: Arch) -> Data {
             let from = data.startIndex + Int(a.offset)
@@ -50,24 +60,36 @@ public enum MachOThinner {
         }
         if kept.count == 1 { return slice(kept[0]) }
 
-        var out = Data()
-        func be32(_ v: UInt32) { withUnsafeBytes(of: v.bigEndian) { out.append(contentsOf: $0) } }
-        func be64(_ v: UInt64) { withUnsafeBytes(of: v.bigEndian) { out.append(contentsOf: $0) } }
-        be32(magic); be32(UInt32(kept.count))
+        // The final layout first: nothing is built unless the output stays near the input's size.
+        let limit = min(UInt64(data.count) + 65_536, is64 ? UInt64(Int.max) : UInt64(UInt32.max))
         var cursor = UInt64(8 + kept.count * entry)
         var placed: [UInt64] = []
         for a in kept {
             let alignment = UInt64(1) << UInt64(a.align)
-            cursor = (cursor + alignment - 1) / alignment * alignment
-            placed.append(cursor)
-            cursor += a.size
+            let (padded, o1) = cursor.addingReportingOverflow(alignment - 1)
+            guard !o1 else { return nil }
+            let start = padded / alignment * alignment
+            let (end, o2) = start.addingReportingOverflow(a.size)
+            guard !o2, end <= limit else { return nil }
+            placed.append(start)
+            cursor = end
         }
+
+        var out = Data()
+        out.reserveCapacity(Int(cursor))
+        func be32(_ v: UInt32) { withUnsafeBytes(of: v.bigEndian) { out.append(contentsOf: $0) } }
+        func be64(_ v: UInt64) { withUnsafeBytes(of: v.bigEndian) { out.append(contentsOf: $0) } }
+        be32(magic); be32(UInt32(kept.count))
         for (a, off) in zip(kept, placed) {
             be32(a.cpu); be32(a.sub)
             if is64 { be64(off); be64(a.size); be32(a.align); be32(0) }
-            else { be32(UInt32(off)); be32(UInt32(a.size)); be32(a.align) }
+            else {
+                guard let o = UInt32(exactly: off), let s = UInt32(exactly: a.size) else { return nil }
+                be32(o); be32(s); be32(a.align)
+            }
         }
         for (a, off) in zip(kept, placed) {
+            guard off >= UInt64(out.count) else { return nil }
             out.append(Data(count: Int(off) - out.count))
             out.append(slice(a))
         }
