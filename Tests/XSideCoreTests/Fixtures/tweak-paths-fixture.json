@@ -1,5 +1,5 @@
 {
-  "comment": "Shared by TweakPathsTests (Swift) and scripts/test-tweak-support.sh (C core). 'exists' lists the files and folders present; expect null = no redirect.",
+  "comment": "Shared by TweakPathsTests (Swift) and scripts/test-tweak-support.sh (C core). 'exists' lists the files and folders present; expect null = no redirect. protectedNames must equal TweakClassifier.iOSUsrLibNames: /usr/lib/<name>[.…] (a file directly in /usr/lib, any case), /usr/lib/system/… and /usr/lib/swift/… are never redirected.",
   "tweaksRoot": "/App.app/Frameworks/XSideTweaks",
   "packages": [
     "0123456789abcdef",
@@ -35,7 +35,63 @@
     "/App.app/Frameworks/XSideTweaks/deps/com.x.abcde/usr/lib/libshort.dylib",
     "/App.app/Frameworks/XSideTweaks/0123456789abcdef/Library/Application Support/T/../T/a.png",
     "/App.app/Frameworks/XSideTweaks/0123456789abcdef/Library/Application Support/T/./a.png",
-    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/Library/Application Support//T/a.png"
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/Library/Application Support//T/a.png",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libaccessibility.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libapple_nghttp2.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libarchive.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libate.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libboringssl.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libbsm.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libbz2.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libc.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libc++.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libc++abi.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libcharset.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libcmph.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libcompression.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libcoretls.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libcoretls_cfhelpers.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libcupolicy.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libdl.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libenergytrace.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libexslt.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libextension.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libfosl_dynamic.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libgcc_s.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libiconv.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libicucore.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libinfo.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/liblangid.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/liblzma.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libm.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libmecab.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libmis.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libmobilegestalt.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libnetwork.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libobjc.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libobjc-trampolines.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libpam.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libpcap.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libprequelite.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libpthread.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libresolv.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libsandbox.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libsqlite3.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libstdc++.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libsystem.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libtailspin.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libutil.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libxml2.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libxslt.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libz.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libobjc.A.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libobjc.A.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/LIBZ.1.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/system/libsystem_c.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/swift/libswiftCore.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libsystemx.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libobjc/notes.txt",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/systemx/a.dylib"
   ],
   "cases": [
     {
@@ -207,6 +263,336 @@
       "path": "",
       "expect": null,
       "why": "empty"
+    },
+    {
+      "path": "/usr/lib/libaccessibility.dylib",
+      "expect": null,
+      "why": "iOS ships libaccessibility"
+    },
+    {
+      "path": "/usr/lib/libapple_nghttp2.dylib",
+      "expect": null,
+      "why": "iOS ships libapple_nghttp2"
+    },
+    {
+      "path": "/usr/lib/libarchive.dylib",
+      "expect": null,
+      "why": "iOS ships libarchive"
+    },
+    {
+      "path": "/usr/lib/libate.dylib",
+      "expect": null,
+      "why": "iOS ships libate"
+    },
+    {
+      "path": "/usr/lib/libboringssl.dylib",
+      "expect": null,
+      "why": "iOS ships libboringssl"
+    },
+    {
+      "path": "/usr/lib/libbsm.dylib",
+      "expect": null,
+      "why": "iOS ships libbsm"
+    },
+    {
+      "path": "/usr/lib/libbz2.dylib",
+      "expect": null,
+      "why": "iOS ships libbz2"
+    },
+    {
+      "path": "/usr/lib/libc.dylib",
+      "expect": null,
+      "why": "iOS ships libc"
+    },
+    {
+      "path": "/usr/lib/libc++.dylib",
+      "expect": null,
+      "why": "iOS ships libc++"
+    },
+    {
+      "path": "/usr/lib/libc++abi.dylib",
+      "expect": null,
+      "why": "iOS ships libc++abi"
+    },
+    {
+      "path": "/usr/lib/libcharset.dylib",
+      "expect": null,
+      "why": "iOS ships libcharset"
+    },
+    {
+      "path": "/usr/lib/libcmph.dylib",
+      "expect": null,
+      "why": "iOS ships libcmph"
+    },
+    {
+      "path": "/usr/lib/libcompression.dylib",
+      "expect": null,
+      "why": "iOS ships libcompression"
+    },
+    {
+      "path": "/usr/lib/libcoretls.dylib",
+      "expect": null,
+      "why": "iOS ships libcoretls"
+    },
+    {
+      "path": "/usr/lib/libcoretls_cfhelpers.dylib",
+      "expect": null,
+      "why": "iOS ships libcoretls_cfhelpers"
+    },
+    {
+      "path": "/usr/lib/libcupolicy.dylib",
+      "expect": null,
+      "why": "iOS ships libcupolicy"
+    },
+    {
+      "path": "/usr/lib/libdl.dylib",
+      "expect": null,
+      "why": "iOS ships libdl"
+    },
+    {
+      "path": "/usr/lib/libenergytrace.dylib",
+      "expect": null,
+      "why": "iOS ships libenergytrace"
+    },
+    {
+      "path": "/usr/lib/libexslt.dylib",
+      "expect": null,
+      "why": "iOS ships libexslt"
+    },
+    {
+      "path": "/usr/lib/libextension.dylib",
+      "expect": null,
+      "why": "iOS ships libextension"
+    },
+    {
+      "path": "/usr/lib/libfosl_dynamic.dylib",
+      "expect": null,
+      "why": "iOS ships libfosl_dynamic"
+    },
+    {
+      "path": "/usr/lib/libgcc_s.dylib",
+      "expect": null,
+      "why": "iOS ships libgcc_s"
+    },
+    {
+      "path": "/usr/lib/libiconv.dylib",
+      "expect": null,
+      "why": "iOS ships libiconv"
+    },
+    {
+      "path": "/usr/lib/libicucore.dylib",
+      "expect": null,
+      "why": "iOS ships libicucore"
+    },
+    {
+      "path": "/usr/lib/libinfo.dylib",
+      "expect": null,
+      "why": "iOS ships libinfo"
+    },
+    {
+      "path": "/usr/lib/liblangid.dylib",
+      "expect": null,
+      "why": "iOS ships liblangid"
+    },
+    {
+      "path": "/usr/lib/liblzma.dylib",
+      "expect": null,
+      "why": "iOS ships liblzma"
+    },
+    {
+      "path": "/usr/lib/libm.dylib",
+      "expect": null,
+      "why": "iOS ships libm"
+    },
+    {
+      "path": "/usr/lib/libmecab.dylib",
+      "expect": null,
+      "why": "iOS ships libmecab"
+    },
+    {
+      "path": "/usr/lib/libmis.dylib",
+      "expect": null,
+      "why": "iOS ships libmis"
+    },
+    {
+      "path": "/usr/lib/libmobilegestalt.dylib",
+      "expect": null,
+      "why": "iOS ships libmobilegestalt"
+    },
+    {
+      "path": "/usr/lib/libnetwork.dylib",
+      "expect": null,
+      "why": "iOS ships libnetwork"
+    },
+    {
+      "path": "/usr/lib/libobjc.dylib",
+      "expect": null,
+      "why": "iOS ships libobjc"
+    },
+    {
+      "path": "/usr/lib/libobjc-trampolines.dylib",
+      "expect": null,
+      "why": "iOS ships libobjc-trampolines"
+    },
+    {
+      "path": "/usr/lib/libpam.dylib",
+      "expect": null,
+      "why": "iOS ships libpam"
+    },
+    {
+      "path": "/usr/lib/libpcap.dylib",
+      "expect": null,
+      "why": "iOS ships libpcap"
+    },
+    {
+      "path": "/usr/lib/libprequelite.dylib",
+      "expect": null,
+      "why": "iOS ships libprequelite"
+    },
+    {
+      "path": "/usr/lib/libpthread.dylib",
+      "expect": null,
+      "why": "iOS ships libpthread"
+    },
+    {
+      "path": "/usr/lib/libresolv.dylib",
+      "expect": null,
+      "why": "iOS ships libresolv"
+    },
+    {
+      "path": "/usr/lib/libsandbox.dylib",
+      "expect": null,
+      "why": "iOS ships libsandbox"
+    },
+    {
+      "path": "/usr/lib/libsqlite3.dylib",
+      "expect": null,
+      "why": "iOS ships libsqlite3"
+    },
+    {
+      "path": "/usr/lib/libstdc++.dylib",
+      "expect": null,
+      "why": "iOS ships libstdc++"
+    },
+    {
+      "path": "/usr/lib/libsystem.dylib",
+      "expect": null,
+      "why": "iOS ships libsystem"
+    },
+    {
+      "path": "/usr/lib/libtailspin.dylib",
+      "expect": null,
+      "why": "iOS ships libtailspin"
+    },
+    {
+      "path": "/usr/lib/libutil.dylib",
+      "expect": null,
+      "why": "iOS ships libutil"
+    },
+    {
+      "path": "/usr/lib/libxml2.dylib",
+      "expect": null,
+      "why": "iOS ships libxml2"
+    },
+    {
+      "path": "/usr/lib/libxslt.dylib",
+      "expect": null,
+      "why": "iOS ships libxslt"
+    },
+    {
+      "path": "/usr/lib/libz.dylib",
+      "expect": null,
+      "why": "iOS ships libz"
+    },
+    {
+      "path": "/usr/lib/libobjc.A.dylib",
+      "expect": null,
+      "why": "a system library with a version"
+    },
+    {
+      "path": "/var/jb/usr/lib/libobjc.A.dylib",
+      "expect": null,
+      "why": "a system library name under /var/jb"
+    },
+    {
+      "path": "/usr/lib/LIBZ.1.dylib",
+      "expect": null,
+      "why": "system names in any case"
+    },
+    {
+      "path": "/usr/lib/system/libsystem_c.dylib",
+      "expect": null,
+      "why": "/usr/lib/system"
+    },
+    {
+      "path": "/usr/lib/swift/libswiftCore.dylib",
+      "expect": null,
+      "why": "/usr/lib/swift"
+    },
+    {
+      "path": "/usr/lib/libsystemx.dylib",
+      "expect": "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libsystemx.dylib",
+      "why": "a name that only starts like a system one"
+    },
+    {
+      "path": "/usr/lib/libobjc/notes.txt",
+      "expect": "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libobjc/notes.txt",
+      "why": "a folder named like a system library is the tweak's"
+    },
+    {
+      "path": "/usr/lib/systemx/a.dylib",
+      "expect": "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/systemx/a.dylib",
+      "why": "only /usr/lib/system/ itself is protected"
     }
+  ],
+  "protectedNames": [
+    "libaccessibility",
+    "libapple_nghttp2",
+    "libarchive",
+    "libate",
+    "libboringssl",
+    "libbsm",
+    "libbz2",
+    "libc",
+    "libc++",
+    "libc++abi",
+    "libcharset",
+    "libcmph",
+    "libcompression",
+    "libcoretls",
+    "libcoretls_cfhelpers",
+    "libcupolicy",
+    "libdl",
+    "libenergytrace",
+    "libexslt",
+    "libextension",
+    "libfosl_dynamic",
+    "libgcc_s",
+    "libiconv",
+    "libicucore",
+    "libinfo",
+    "liblangid",
+    "liblzma",
+    "libm",
+    "libmecab",
+    "libmis",
+    "libmobilegestalt",
+    "libnetwork",
+    "libobjc",
+    "libobjc-trampolines",
+    "libpam",
+    "libpcap",
+    "libprequelite",
+    "libpthread",
+    "libresolv",
+    "libsandbox",
+    "libsqlite3",
+    "libstdc++",
+    "libsystem",
+    "libtailspin",
+    "libutil",
+    "libxml2",
+    "libxslt",
+    "libz"
   ]
 }

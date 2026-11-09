@@ -13,6 +13,7 @@ import Darwin
 /// - each package (16 lowercase hex, or `deps/<packageID>`; anything else is skipped), in order:
 ///   `<tweaksRoot>/<package><rest>` when it exists, then, for `/Library/Application Support/<X>.bundle…`,
 ///   `<tweaksRoot>/<package>/<X>.bundle…` (a dropped `.bundle` sits at its package's root);
+/// - a library iOS ships (`isSystemLibrary`) is never redirected;
 /// - nothing else is ever asked about or returned, and no result reaches `PATH_MAX`.
 public enum TweakPaths {
     public static let rootlessPrefix = "/var/jb"
@@ -29,6 +30,7 @@ public enum TweakPaths {
         let body = rest.dropFirst()   // without its leading "/"
         guard let prefix = TweakAnalyzer.copiedPrefixes.map({ Array($0.utf8) })
                 .first(where: { body.starts(with: $0) && body.count > $0.count }) else { return nil }
+        guard !isSystemLibrary(body) else { return nil }
         let afterPrefix = body.dropFirst(prefix.count)
         var bundleTail: ArraySlice<UInt8>?
         if prefix == Array(bundlePrefix.utf8) {
@@ -46,6 +48,19 @@ public enum TweakPaths {
             }
         }
         return nil
+    }
+
+    /// A library iOS ships, which a tweak's copy never answers for: anything in `/usr/lib/system/` or
+    /// `/usr/lib/swift/`, or a file directly in `/usr/lib` whose name's first dot-separated part is in
+    /// `TweakClassifier.iOSUsrLibNames` (any case). `body` is the path after `/` (and `/var/jb`).
+    static func isSystemLibrary(_ body: ArraySlice<UInt8>) -> Bool {
+        if ["usr/lib/system/", "usr/lib/swift/"].contains(where: { body.starts(with: Array($0.utf8)) }) { return true }
+        let usrLib = Array("usr/lib/".utf8)
+        guard body.starts(with: usrLib) else { return false }
+        let file = body.dropFirst(usrLib.count)
+        guard !file.contains(UInt8(ascii: "/")),
+              let base = file.split(separator: UInt8(ascii: ".")).first else { return false }
+        return TweakClassifier.iOSUsrLibNames.contains(String(decoding: base, as: UTF8.self).lowercased())
     }
 
     /// A folder under `Frameworks/XSideTweaks/`: a tweak's 16-hex id, or `deps/<packageID>`.

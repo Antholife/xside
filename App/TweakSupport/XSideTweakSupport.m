@@ -11,14 +11,17 @@
 //   exists in a package's copy (first package wins; tweaks by id, then deps). A dropped .bundle
 //   (Frameworks/XSideTweaks/<id>/<X>.bundle) answers /Library/Application Support/<X>.bundle.
 // - libc: open, openat, fopen (read-only opens only: a write still goes to the original path),
-//   stat, lstat, access, opendir, dlopen, realpath and getattrlist are interposed (__DATA,__interpose).
+//   stat, lstat, fstatat, access, faccessat, opendir, dlopen, realpath and getattrlist are interposed
+//   (__DATA,__interpose). A library iOS ships is never answered by a tweak's copy.
 //   They take a stack buffer, no lock and no allocation; until the library is ready they only pass
 //   the call on. dlopen keeps its caller (dlopen_from, or a tail call) so @loader_path / @rpath
 //   lookups of the app are unchanged.
 // - Foundation / UIKit: -[NSFileManager fileExistsAtPath:], fileExistsAtPath:isDirectory:,
 //   contentsOfDirectoryAtPath:error:, +[NSBundle bundleWithPath:], -[NSBundle initWithPath:],
-//   +[NSData dataWithContentsOfFile:], +[NSDictionary dictionaryWithContentsOfFile:] and
-//   +[UIImage imageWithContentsOfFile:] (iOS, when UIKit is there) get the same mapping.
+//   +[NSData dataWithContentsOfFile:], -[NSData initWithContentsOfFile:] (and options:error:),
+//   +[NSDictionary dictionaryWithContentsOfFile:], -[NSDictionary initWithContentsOfFile:],
+//   +[NSString stringWithContentsOfFile:encoding:error:] and +[UIImage imageWithContentsOfFile:]
+//   (iOS, when UIKit is there) get the same mapping.
 //
 // It runs inside apps XSide doesn't know: nothing happens unless the Info.plist file on disk has
 // XSideTweakPaths = true (written by XSide only when it added this library); every hook checks
@@ -30,6 +33,7 @@
 #import <Foundation/Foundation.h>
 #import <TargetConditionals.h>
 #import <objc/runtime.h>
+#import <objc/message.h>
 #import <os/log.h>
 #import <dirent.h>
 #import <dlfcn.h>
@@ -121,6 +125,16 @@ static int xs_access(const char *path, int mode) {
     return access(xsMap(path, buf) ? buf : path, mode);
 }
 
+static int xs_fstatat(int fd, const char *path, struct stat *st, int flag) {
+    char buf[PATH_MAX];
+    return fstatat(fd, xsMap(path, buf) ? buf : path, st, flag);   // absolute paths only (fd unused)
+}
+
+static int xs_faccessat(int fd, const char *path, int mode, int flag) {
+    char buf[PATH_MAX];
+    return faccessat(fd, xsMap(path, buf) ? buf : path, mode, flag);
+}
+
 static DIR *xs_opendir(const char *path) {
     char buf[PATH_MAX];
     return opendir(xsMap(path, buf) ? buf : path);
@@ -169,6 +183,8 @@ XS_INTERPOSE(xs_fopen, fopen);
 XS_INTERPOSE(xs_stat, stat);
 XS_INTERPOSE(xs_lstat, lstat);
 XS_INTERPOSE(xs_access, access);
+XS_INTERPOSE(xs_fstatat, fstatat);
+XS_INTERPOSE(xs_faccessat, faccessat);
 XS_INTERPOSE(xs_opendir, opendir);
 XS_INTERPOSE(xs_realpath, realpath);   // realpath$DARWIN_EXTSN, through the header
 XS_INTERPOSE(xs_getattrlist, getattrlist);
@@ -184,7 +200,8 @@ static NSString *xsMapped(id path) {
     return [NSFileManager.defaultManager stringWithFileSystemRepresentation:out length:strlen(out)];
 }
 
-static IMP oFileExists, oFileExistsDir, oContents, oBundleWithPath, oBundleInit, oDataWithFile, oDictWithFile;
+static IMP oFileExists, oFileExistsDir, oContents, oBundleWithPath, oBundleInit, oDataWithFile, oDictWithFile,
+    oDataInit, oDataInitOptions, oDictInit, oStringWithFile;
 
 static BOOL h_fileExists(id self, SEL _cmd, NSString *path) {
     return ((BOOL (*)(id, SEL, id))oFileExists)(self, _cmd, xsMapped(path) ?: path);
@@ -207,6 +224,20 @@ static id h_dataWithFile(id self, SEL _cmd, NSString *path) {
 static id h_dictWithFile(id self, SEL _cmd, NSString *path) {
     return ((id (*)(id, SEL, id))oDictWithFile)(self, _cmd, xsMapped(path) ?: path);
 }
+static id h_dataInit(id self, SEL _cmd, NSString *path) {
+    return ((id (*)(id, SEL, id))oDataInit)(self, _cmd, xsMapped(path) ?: path);
+}
+static id h_dataInitOptions(id self, SEL _cmd, NSString *path, NSDataReadingOptions options, NSError **error) {
+    return ((id (*)(id, SEL, id, NSDataReadingOptions, NSError **))oDataInitOptions)(self, _cmd, xsMapped(path) ?: path,
+                                                                                   options, error);
+}
+static id h_dictInit(id self, SEL _cmd, NSString *path) {
+    return ((id (*)(id, SEL, id))oDictInit)(self, _cmd, xsMapped(path) ?: path);
+}
+static id h_stringWithFile(id self, SEL _cmd, NSString *path, NSStringEncoding encoding, NSError **error) {
+    return ((id (*)(id, SEL, id, NSStringEncoding, NSError **))oStringWithFile)(self, _cmd, xsMapped(path) ?: path,
+                                                                              encoding, error);
+}
 #if TARGET_OS_IPHONE
 static IMP oImageWithFile;
 static id h_imageWithFile(id self, SEL _cmd, NSString *path) {
@@ -227,6 +258,22 @@ static void xsHook(Class c, SEL sel, IMP repl, IMP *orig) {
     if (previous && previous != *orig) *orig = previous;
 }
 
+// The class whose `sel` runs for `[name alloc]`: the cluster's placeholder when that defines it.
+static Class xsInitClass(const char *name, SEL sel) {
+    Class c = objc_getClass(name);
+    if (!c) return Nil;
+    id placeholder = ((id (*)(id, SEL))objc_msgSend)(c, @selector(alloc));   // a shared placeholder, never freed
+    Class p = placeholder ? object_getClass(placeholder) : Nil;
+    if (!p || p == c) return c;
+    // Defined on the placeholder itself, or only inherited from `c`?
+    unsigned n = 0;
+    Method *methods = class_copyMethodList(p, &n);
+    BOOL own = NO;
+    for (unsigned i = 0; i < n && !own; i++) own = method_getName(methods[i]) == sel;
+    free(methods);
+    return own ? p : c;
+}
+
 static void xsInstallHooks(void) {
     Class fm = objc_getClass("NSFileManager"), bundle = objc_getClass("NSBundle");
     xsHook(fm, @selector(fileExistsAtPath:), (IMP)h_fileExists, &oFileExists);
@@ -237,6 +284,16 @@ static void xsInstallHooks(void) {
     xsHook(object_getClass(objc_getClass("NSData")), @selector(dataWithContentsOfFile:), (IMP)h_dataWithFile, &oDataWithFile);
     xsHook(object_getClass(objc_getClass("NSDictionary")), @selector(dictionaryWithContentsOfFile:),
            (IMP)h_dictWithFile, &oDictWithFile);
+    xsHook(object_getClass(objc_getClass("NSString")), @selector(stringWithContentsOfFile:encoding:error:),
+           (IMP)h_stringWithFile, &oStringWithFile);
+    // Class clusters: +alloc gives a placeholder that may have its own -init…; hook the class the
+    // init really runs on (the placeholder), or the class itself.
+    xsHook(xsInitClass("NSData", @selector(initWithContentsOfFile:)), @selector(initWithContentsOfFile:),
+           (IMP)h_dataInit, &oDataInit);
+    xsHook(xsInitClass("NSData", @selector(initWithContentsOfFile:options:error:)),
+           @selector(initWithContentsOfFile:options:error:), (IMP)h_dataInitOptions, &oDataInitOptions);
+    xsHook(xsInitClass("NSDictionary", @selector(initWithContentsOfFile:)), @selector(initWithContentsOfFile:),
+           (IMP)h_dictInit, &oDictInit);
 #if TARGET_OS_IPHONE
     Class image = objc_getClass("UIImage");   // UIKit only when the app has it
     if (image) xsHook(object_getClass(image), @selector(imageWithContentsOfFile:), (IMP)h_imageWithFile, &oImageWithFile);
@@ -289,7 +346,9 @@ __attribute__((constructor)) static void xsTweakSupportInit(void) {
             char deps[PATH_MAX];
             if (snprintf(deps, sizeof deps, "%s/deps", gRoot) < (int)sizeof deps) xsListPackages(deps, "deps/");
             if (gCount == 0) { XSLOG("no tweak folder in %{public}s: nothing installed", gRoot); return; }
+#ifndef XS_TEST_NO_DLOPEN_FROM   // scripts/test-tweak-support.sh: runs the tail-call fallback
             gDlopenFrom = (XSDlopenFrom)dlsym(RTLD_DEFAULT, "dlopen_from");
+#endif
             atomic_store_explicit(&gReady, 1, memory_order_release);
             xsInstallHooks();
             XSLOG("redirecting jailbreak paths to %zu tweak folders", gCount);

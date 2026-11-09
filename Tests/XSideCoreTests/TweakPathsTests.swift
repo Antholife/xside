@@ -11,6 +11,7 @@ import Foundation
         let packages: [String]
         let exists: [String]
         let cases: [Case]
+        let protectedNames: [String]
     }
 
     static var fixtureURL: URL {
@@ -25,6 +26,15 @@ import Foundation
             let got = TweakPaths.redirect(c.path, packages: fixture.packages, exists: { present.contains($0) },
                                           tweaksRoot: fixture.tweaksRoot)
             #expect(got == c.expect, "\(c.why): \(c.path.prefix(80))")
+        }
+    }
+
+    /// The C core keeps its own copy of the list; the fixture has a case for every name.
+    @Test func protectedNamesAreTheClassifiersSystemLibraries() throws {
+        let fixture = try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: Self.fixtureURL))
+        #expect(fixture.protectedNames == TweakClassifier.iOSUsrLibNames.sorted())
+        for name in fixture.protectedNames {
+            #expect(fixture.cases.contains { $0.path == "/usr/lib/\(name).dylib" && $0.expect == nil }, "\(name)")
         }
     }
 

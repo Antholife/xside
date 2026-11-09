@@ -14,7 +14,7 @@ OUT="$(mktemp -d)"
 trap 'rm -rf "$OUT"' EXIT
 CFLAGS=(-fobjc-arc -O2 -Wall -Wextra -Werror -Wno-unused-parameter -mmacosx-version-min=12.0)
 for P in "/Library/Application Support/XSTweakSupportTest" "/Library/Application Support/XSTweakSupportTestB.bundle" \
-         /Library/MobileSubstrate /var/jb /Library/Frameworks/XSTestDep.framework; do
+         /Library/MobileSubstrate /var/jb /Library/Frameworks/XSTestDep.framework /usr/lib/libXSTweakSupportTest.dylib; do
     [ ! -e "$P" ] || { echo "FAIL $P exists on this Mac: the test can't tell a redirect from the real file" >&2; exit 1; }
 done
 
@@ -49,16 +49,29 @@ plutil -create xml1 "$P2/XSTweakSupportTestB.bundle/Info.plist"
 plutil -insert CFBundleIdentifier -string com.example.xstestb "$P2/XSTweakSupportTestB.bundle/Info.plist"
 echo 'int xs_test_value(void) { return 42; }' > "$OUT/tweak.c"
 xcrun clang -dynamiclib -mmacosx-version-min=12.0 -o "$P1/Library/MobileSubstrate/DynamicLibraries/XSTweakSupportTest.dylib" "$OUT/tweak.c"
+mkdir -p "$P1/usr/lib"
+xcrun clang -dynamiclib -mmacosx-version-min=12.0 -o "$P1/usr/lib/libXSTweakSupportTest.dylib" "$OUT/tweak.c"
+# A tweak that ships a library named like one iOS has: it must never answer for it.
+echo 'int xs_fake_objc(void) { return 1; }' > "$OUT/fakeobjc.c"
+xcrun clang -dynamiclib -mmacosx-version-min=12.0 -o "$P1/usr/lib/libobjc.A.dylib" "$OUT/fakeobjc.c"
 echo 'int xs_plain(void) { return 1; }' > "$OUT/plain.c"
 xcrun clang -dynamiclib -mmacosx-version-min=12.0 -install_name @loader_path/plain/libplain.dylib \
     -o "$APP/plain/libplain.dylib" "$OUT/plain.c"
 # Folders it must not use, and the copies kept for the inert runs.
 cp -R "$APP" "$OUT/inert"
 cp -R "$APP" "$OUT/string"
+cp -R "$APP" "$OUT/tailcall"
 plutil -create xml1 "$APP/Info.plist"
 plutil -insert CFBundleIdentifier -string com.example.tweaktest.TEAM123456 "$APP/Info.plist"
 plutil -insert XSideTweakPaths -bool YES "$APP/Info.plist"
 "$APP/test-tweak-support" active
+# The same with dyld's dlopen_from treated as missing (a test-only build): dlopen's fallback, a
+# tail call that keeps the caller, must give the same answers.
+xcrun clang "${CFLAGS[@]}" -dynamiclib -DXS_TEST_NO_DLOPEN_FROM -I App/TweakSupport -framework Foundation \
+    -install_name @executable_path/Frameworks/XSideTweaks/XSideTweakSupport.dylib \
+    -o "$OUT/tailcall/Frameworks/XSideTweaks/XSideTweakSupport.dylib" App/TweakSupport/*.m App/TweakSupport/*.c
+cp "$APP/Info.plist" "$OUT/tailcall/Info.plist"
+XS_EXPECT_TAIL_CALL=1 "$OUT/tailcall/test-tweak-support" active
 # Signed before with a converted tweak, now without: the library is still there but stays inert.
 plutil -create xml1 "$OUT/inert/Info.plist"
 plutil -insert CFBundleIdentifier -string com.example.tweaktest.TEAM123456 "$OUT/inert/Info.plist"

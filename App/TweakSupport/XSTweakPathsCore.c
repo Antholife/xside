@@ -9,6 +9,20 @@ static const char *const kPrefixes[] = {
     "Library/Application Support/", "Library/Frameworks/", "usr/lib/",
 };
 static const char kBundlePrefix[] = "Library/Application Support/";
+// Libraries iOS ships: a tweak's copy never answers for them. TweakClassifier.iOSUsrLibNames (the
+// fixture's protectedNames, checked against it by TweakPathsTests), plus /usr/lib/system/ and
+// /usr/lib/swift/. /System/ is never a copied prefix.
+static const char *const kSystemNames[] = {
+    "libaccessibility", "libapple_nghttp2", "libarchive", "libate", "libboringssl", "libbsm", "libbz2", "libc",
+    "libc++", "libc++abi", "libcharset", "libcmph", "libcompression", "libcoretls", "libcoretls_cfhelpers",
+    "libcupolicy", "libdl", "libenergytrace", "libexslt", "libextension", "libfosl_dynamic", "libgcc_s",
+    "libiconv", "libicucore", "libinfo", "liblangid", "liblzma", "libm", "libmecab", "libmis",
+    "libmobilegestalt", "libnetwork", "libobjc", "libobjc-trampolines", "libpam", "libpcap", "libprequelite",
+    "libpthread", "libresolv", "libsandbox", "libsqlite3", "libstdc++", "libsystem", "libtailspin", "libutil",
+    "libxml2", "libxslt", "libz",
+};
+static const char kUsrLib[] = "usr/lib/";
+static const char *const kSystemFolders[] = { "usr/lib/system/", "usr/lib/swift/" };
 static const char kRootless[] = "/var/jb/";
 static const char kDeps[] = "deps/";
 static const char kBundleExt[] = ".bundle";
@@ -39,6 +53,35 @@ static int xs_clean(const char *p, size_t n) {
         i++;
     }
     return 1;
+}
+
+// `body` is the path after its "/" (and after /var/jb). A file directly in /usr/lib whose name's
+// first dot-separated part is an iOS library name, in any case, or anything in /usr/lib/system/
+// or /usr/lib/swift/.
+static int xs_system_library(const char *body) {
+    for (size_t k = 0; k < sizeof kSystemFolders / sizeof *kSystemFolders; k++)
+        if (xs_starts(body, kSystemFolders[k], NULL)) return 1;
+    size_t u;
+    if (!xs_starts(body, kUsrLib, &u)) return 0;
+    const char *file = body + u;
+    for (const char *s = file; *s; s++) if (*s == '/') return 0;
+    while (*file == '.') file++;
+    char base[64];
+    size_t n = 0;
+    for (; file[n] && file[n] != '.'; n++) {
+        if (n + 1 >= sizeof base) return 0;                    // longer than any iOS name
+        char c = file[n];
+        base[n] = (c >= 'A' && c <= 'Z') ? (char)(c - 'A' + 'a') : c;
+    }
+    if (n == 0) return 0;
+    base[n] = 0;
+    for (size_t k = 0; k < sizeof kSystemNames / sizeof *kSystemNames; k++) {
+        const char *a = kSystemNames[k];
+        size_t i = 0;
+        while (a[i] && a[i] == base[i]) i++;
+        if (!a[i] && !base[i]) return 1;
+    }
+    return 0;
 }
 
 static int xs_alnum(char c) { return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'); }
@@ -100,7 +143,7 @@ int xs_tweak_redirect(const char *path, const char *tweaksRoot, const char *cons
     for (size_t k = 0; k < sizeof kPrefixes / sizeof *kPrefixes; k++) {
         if (xs_starts(body, kPrefixes[k], &prefixLen) && body[prefixLen]) { matched = 1; break; }
     }
-    if (!matched) return 0;
+    if (!matched || xs_system_library(body)) return 0;
     const char *afterPrefix = body + prefixLen;
 
     // "/Library/Application Support/<X>.bundle…": a dropped bundle lives at its package's root.
@@ -116,14 +159,16 @@ int xs_tweak_redirect(const char *path, const char *tweaksRoot, const char *cons
         }
     }
 
-    char candidate[PATH_MAX];
+    // Built straight in `out` when it holds PATH_MAX bytes (the library's case: one buffer per call).
+    char local[PATH_MAX];
+    char *candidate = outSize >= PATH_MAX ? out : local;
     for (size_t i = 0; i < count; i++) {
         const char *package = packages[i];
         if (!xs_tweak_is_package_folder(package)) continue;
-        if (xs_join(candidate, tweaksRoot, package, "", rest) && exists(candidate))
-            return xs_emit(candidate, out, outSize);
-        if (bundle && xs_join(candidate, tweaksRoot, package, "/", afterPrefix) && exists(candidate))
-            return xs_emit(candidate, out, outSize);
+        if ((xs_join(candidate, tweaksRoot, package, "", rest) && exists(candidate)) ||
+            (bundle && xs_join(candidate, tweaksRoot, package, "/", afterPrefix) && exists(candidate)))
+            return candidate == out ? 1 : xs_emit(candidate, out, outSize);
     }
+    if (candidate == out) out[0] = 0;
     return 0;
 }

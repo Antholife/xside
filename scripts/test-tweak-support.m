@@ -6,6 +6,7 @@
 //   test-tweak-support inert                                the library loaded without the key: nothing is
 // The script lays out the app folder (Frameworks/XSideTweaks/<id>/…) next to this program.
 #import <Foundation/Foundation.h>
+#import <objc/runtime.h>
 #import <dirent.h>
 #import <dlfcn.h>
 #import <errno.h>
@@ -49,8 +50,7 @@ static int runFixture(const char *file) {
             CHECK(got == 1 && strcmp(out, [expect UTF8String]) == 0, "%s: %.80s -> %s (expected %s)",
                   [c[@"why"] UTF8String], path, got ? out : "no redirect", [expect UTF8String]);
         } else {
-            CHECK(got == 0 && strcmp(out, "untouched") == 0, "%s: %.80s -> %s (expected no redirect)",
-                  [c[@"why"] UTF8String], path, out);
+            CHECK(got == 0, "%s: %.80s -> %s (expected no redirect)", [c[@"why"] UTF8String], path, out);
         }
     }
     // A result that doesn't fit the caller's buffer is no redirect, and nothing is written.
@@ -90,7 +90,41 @@ static void *hammer(void *arg) {
     return NULL;
 }
 
+// Whether `receiver` (a class for class methods, an +alloc result for init methods) runs the
+// library's hook for `sel`. On the Mac Foundation's own libc calls are interposed too, so the
+// answers alone can't show a missing swizzle; on iOS they might not be (shared cache).
+static int viaSupport(id receiver, SEL sel) {
+    IMP imp = class_getMethodImplementation(object_getClass(receiver), sel);
+    Dl_info info;
+    return imp && dladdr((const void *)imp, &info) && info.dli_fname && strstr(info.dli_fname, "XSideTweakSupport.dylib");
+}
+
+static int hooksInstalled(int expected) {
+    struct { id receiver; SEL sel; const char *name; } hooks[] = {
+        { NSFileManager.defaultManager, @selector(fileExistsAtPath:), "-[NSFileManager fileExistsAtPath:]" },
+        { NSFileManager.defaultManager, @selector(fileExistsAtPath:isDirectory:), "-[NSFileManager fileExistsAtPath:isDirectory:]" },
+        { NSFileManager.defaultManager, @selector(contentsOfDirectoryAtPath:error:), "-[NSFileManager contentsOfDirectoryAtPath:error:]" },
+        { NSBundle.class, @selector(bundleWithPath:), "+[NSBundle bundleWithPath:]" },
+        { [NSBundle alloc], @selector(initWithPath:), "-[NSBundle initWithPath:]" },
+        { NSData.class, @selector(dataWithContentsOfFile:), "+[NSData dataWithContentsOfFile:]" },
+        { [NSData alloc], @selector(initWithContentsOfFile:), "-[NSData initWithContentsOfFile:]" },
+        { [NSData alloc], @selector(initWithContentsOfFile:options:error:), "-[NSData initWithContentsOfFile:options:error:]" },
+        { NSDictionary.class, @selector(dictionaryWithContentsOfFile:), "+[NSDictionary dictionaryWithContentsOfFile:]" },
+        { NSMutableDictionary.class, @selector(dictionaryWithContentsOfFile:), "+[NSMutableDictionary dictionaryWithContentsOfFile:]" },
+        { [NSDictionary alloc], @selector(initWithContentsOfFile:), "-[NSDictionary initWithContentsOfFile:]" },
+        { [NSMutableDictionary alloc], @selector(initWithContentsOfFile:), "-[NSMutableDictionary initWithContentsOfFile:]" },
+        { NSString.class, @selector(stringWithContentsOfFile:encoding:error:), "+[NSString stringWithContentsOfFile:encoding:error:]" },
+    };
+    int ok = 1;
+    for (size_t i = 0; i < sizeof hooks / sizeof *hooks; i++) {
+        int via = viaSupport(hooks[i].receiver, hooks[i].sel);
+        if (via != expected) { ok = 0; CHECK(0, "%s %s the library's hook", hooks[i].name, expected ? "doesn't run" : "runs"); }
+    }
+    return ok;
+}
+
 static int runActive(void) {
+    hooksInstalled(1);
     NSString *expected = @"hello from p1\n";
     CHECK([readAll(open(HELLO, O_RDONLY)) isEqual:expected], "open");
     CHECK([readAll(open("/var/jb" HELLO, O_RDONLY)) isEqual:expected], "open /var/jb");
@@ -111,6 +145,9 @@ static int runActive(void) {
     CHECK(lstat("/var/jb" HELLO, &st) == 0 && S_ISREG(st.st_mode), "lstat");
     CHECK(stat(DIR_C, &st) == 0 && S_ISDIR(st.st_mode), "stat of the tweak's folder");
     CHECK(access(HELLO, R_OK) == 0, "access");
+    CHECK(fstatat(AT_FDCWD, "/var/jb" HELLO, &st, 0) == 0 && S_ISREG(st.st_mode), "fstatat");
+    CHECK(fstatat(AT_FDCWD, HELLO, &st, AT_SYMLINK_NOFOLLOW) == 0, "fstatat AT_SYMLINK_NOFOLLOW");
+    CHECK(faccessat(AT_FDCWD, HELLO, R_OK, 0) == 0, "faccessat");
     CHECK(stat("/etc/hosts", &st) == 0, "other paths still work");
 
     FILE *f = fopen(HELLO, "r");
@@ -139,6 +176,12 @@ static int runActive(void) {
     CHECK(dlopen("@loader_path/plain/libplain.dylib", RTLD_NOW) != NULL,
           "dlopen keeps its caller for @loader_path (%s)", dlerror());
 
+    // A tweak's copy never stands in for a library iOS ships (TweakClassifier.iOSUsrLibNames).
+    void *objc = dlopen("/usr/lib/libobjc.A.dylib", RTLD_NOW);
+    CHECK(objc && !dlsym(objc, "xs_fake_objc"), "a tweak's usr/lib/libobjc.A.dylib answered dlopen of the system one");
+    void *own = dlopen("/usr/lib/libXSTweakSupportTest.dylib", RTLD_NOW);
+    CHECK(own && dlsym(own, "xs_test_value"), "a tweak's own /usr/lib library (%s)", own ? "no symbol" : dlerror());
+
     NSFileManager *fm = NSFileManager.defaultManager;
     BOOL isDir = NO;
     CHECK([fm fileExistsAtPath:[kDir stringByAppendingPathComponent:@"hello.txt"]], "fileExistsAtPath:");
@@ -153,6 +196,16 @@ static int runActive(void) {
     CHECK([[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] isEqual:expected], "dataWithContentsOfFile:");
     NSDictionary *prefs = [NSDictionary dictionaryWithContentsOfFile:[kDir stringByAppendingPathComponent:@"prefs.plist"]];
     CHECK([prefs[@"k"] isEqual:@"v"], "dictionaryWithContentsOfFile:");
+    NSString *prefsPath = [kDir stringByAppendingPathComponent:@"prefs.plist"], *helloPath = [kDir stringByAppendingPathComponent:@"hello.txt"];
+    CHECK([[[NSDictionary alloc] initWithContentsOfFile:prefsPath][@"k"] isEqual:@"v"], "-[NSDictionary initWithContentsOfFile:]");
+    CHECK([[[NSMutableDictionary alloc] initWithContentsOfFile:prefsPath][@"k"] isEqual:@"v"], "-[NSMutableDictionary initWithContentsOfFile:]");
+    CHECK([[NSMutableDictionary dictionaryWithContentsOfFile:prefsPath][@"k"] isEqual:@"v"], "+[NSMutableDictionary dictionaryWithContentsOfFile:]");
+    CHECK([[[NSData alloc] initWithContentsOfFile:helloPath] length] == 14, "-[NSData initWithContentsOfFile:]");
+    NSError *error = nil;
+    CHECK([[[NSData alloc] initWithContentsOfFile:helloPath options:0 error:&error] length] == 14,
+          "-[NSData initWithContentsOfFile:options:error:] (%s)", error.description.UTF8String);
+    CHECK([[NSString stringWithContentsOfFile:helloPath encoding:NSUTF8StringEncoding error:NULL] isEqual:expected],
+          "+[NSString stringWithContentsOfFile:encoding:error:]");
 
     // Many threads at once: no lock, no shared buffer.
     pthread_t threads[8];
@@ -163,15 +216,21 @@ static int runActive(void) {
     CHECK(total == 0, "%ld wrong answers from 8 threads", total);
 
     if (failures) return 1;
-    printf("ok: the library redirects (libc, dlopen, Foundation, 8 threads)\n");
+    printf("ok: the library redirects (libc, dlopen%s, Foundation, 8 threads)\n",
+           getenv("XS_EXPECT_TAIL_CALL") ? " through its tail-call fallback" : "");
     return 0;
 }
 
 static int runInert(void) {
     struct stat st;
+    hooksInstalled(0);
     CHECK(open(HELLO, O_RDONLY) == -1, "open redirected while inert");
     CHECK(stat("/var/jb" HELLO, &st) == -1, "stat redirected while inert");
     CHECK(access(HELLO, F_OK) == -1, "access redirected while inert");
+    CHECK(fstatat(AT_FDCWD, HELLO, &st, 0) == -1, "fstatat redirected while inert");
+    CHECK(faccessat(AT_FDCWD, HELLO, F_OK, 0) == -1, "faccessat redirected while inert");
+    CHECK([NSString stringWithContentsOfFile:[kDir stringByAppendingPathComponent:@"hello.txt"] encoding:NSUTF8StringEncoding
+                                       error:NULL] == nil, "NSString redirected while inert");
     CHECK(opendir(DIR_C) == NULL, "opendir redirected while inert");
     CHECK(dlopen("/Library/MobileSubstrate/DynamicLibraries/XSTweakSupportTest.dylib", RTLD_NOW) == NULL,
           "dlopen redirected while inert");
