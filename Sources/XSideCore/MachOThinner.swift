@@ -13,6 +13,16 @@ public enum MachOThinner {
     /// or when the file isn't a well-formed fat binary. One remaining slice gives the thin file.
     /// Never returns a file without any slice.
     public static func removingARM32(from data: Data) -> Data? {
+        removingSlices(from: data) { $0 == IPAInspector.cpuTypeARM32 }
+    }
+
+    /// The fat file with its arm64 slices only (arm64, arm64e): a tweak's i386, x86_64 (built for
+    /// the simulator or the Mac) and 32-bit ARM slices go. nil like `removingARM32`.
+    public static func keepingARM64(from data: Data) -> Data? {
+        removingSlices(from: data) { $0 != 0x0100_000C }
+    }
+
+    private static func removingSlices(from data: Data, where drop: (UInt32) -> Bool) -> Data? {
         func u32(_ o: Int) -> UInt32? {
             guard o >= 0, o <= data.count - 4 else { return nil }
             let s = data.startIndex + o
@@ -41,7 +51,7 @@ public enum MachOThinner {
             guard align <= 14, off <= UInt64(data.count), size <= UInt64(data.count) - off else { return nil }
             archs.append(Arch(cpu: cpu, sub: sub, offset: off, size: size, align: align))
         }
-        let kept = archs.filter { $0.cpu != IPAInspector.cpuTypeARM32 }
+        let kept = archs.filter { !drop($0.cpu) }
         guard !kept.isEmpty, kept.count < archs.count else { return nil }
 
         // Hostile or corrupt headers: two slices of one architecture, or slices that overlap each

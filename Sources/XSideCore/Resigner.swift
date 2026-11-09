@@ -248,11 +248,11 @@ public struct Resigner: Sendable {
             switch duoPlan(app: app, executable: executableURL) {
             case .plan(let plan):
                 let loading = (library ? [Self.welcomeLoadPath] : []) + (shim ? [ICloudSignedOut.loadPath] : [])
-                    + (tweakPlan?.loadPaths ?? [])
                 let module = plan.legacyModule ? copyDuoLegacyLibrary(to: app) : nil
                 if plan.legacyModule, module == nil {
                     outcome = .failed
                 } else if await applyDuo(to: executableURL, growth: plan.growth, loading: loading,
+                                         optional: tweakPlan?.loadPaths ?? [],
                                          required: plan.legacyModule ? DuoCompatibility.legacyLoadPath : nil, workDir: workDir) {
                     duoApplied = plan
                     outcome = plan.legacyModule ? .addedWithModule : .added
@@ -280,6 +280,13 @@ public struct Resigner: Sendable {
         var tweakPaths = false
         if let tweakPlan {
             await onTweaks(nil)
+            // An .ipa XSide signed before already loads its module: that command goes, and comes
+            // back after the tweaks' (the module stays last). The Duo copy has its own order.
+            if library, duoApplied == nil, !tweakPlan.planned.isEmpty,
+               MachOPatcher.loadsAnySlice(Self.welcomeLoadPath, in: executableURL) {
+                _ = try? MachOPatcher.removeDylibs(where: { $0 == Self.welcomeLoadPath }, from: executableURL,
+                                                   movable: Self.isXSideLoadPath)
+            }
             let reserve = library && !MachOPatcher.loadsDylib(Self.welcomeLoadPath, in: executableURL)
                 ? MachOPatcher.dylibCommand(Self.welcomeLoadPath).count : 0
             let applied = await applyTweaks(tweakPlan, app: app, executable: executableURL, reserve: reserve,
@@ -320,7 +327,8 @@ public struct Resigner: Sendable {
             .write(to: entitlements)
 
         await onSigning()
-        let targets = signTargets(in: app)
+        // A tweak's bundles too: their seals went with the sweep above.
+        let targets = signTargets(in: app, bundlesUnder: app.appendingPathComponent(TweakLayout.folder))
         for (index, target) in targets.enumerated() {
             try requireType(target.pathExtension == "dylib" ? .typeRegular : .typeDirectory, target)
             try await sign(target, identity: identitySHA1, entitlements: nil)
@@ -456,7 +464,12 @@ public struct Resigner: Sendable {
         var seen = Set<String>()
         let unique = items.filter { seen.insert($0.package.id).inserted }
         var results: [String: TweakResult] = [:]
-        for item in unique where !Self.isRealDirectory(URL(fileURLWithPath: item.directory)) {
+        // A person's package only, by its id's form (never a path, never `deps`).
+        for item in unique where !AppLibrary.isTweakID(item.package.id) || item.package.origin == .embedded {
+            Self.logger.notice("tweak \(item.package.name) skipped: not a package of the library (id or origin)")
+            results[item.package.id] = .skipped(.failed)
+        }
+        for item in unique where results[item.package.id] == nil && !Self.isRealDirectory(URL(fileURLWithPath: item.directory)) {
             Self.logger.notice("tweak \(item.package.name) (\(item.package.id)) skipped: its stored folder is missing")
             results[item.package.id] = .skipped(.failed)
         }
@@ -529,7 +542,8 @@ public struct Resigner: Sendable {
         func skip(_ t: PlannedTweak, _ why: TweakSkip, _ reason: String) {
             Self.logger.notice("tweak \(t.item.package.name) (\(t.id)) skipped: \(reason)")
             results[t.id] = .skipped(why)
-            try? fm.removeItem(at: root.appendingPathComponent(TweakLayout.directory(t.item.package)))
+            // Only ever a tweak's own folder, a direct child of `root`.
+            if AppLibrary.isTweakID(t.id) { try? fm.removeItem(at: root.appendingPathComponent(t.id)) }
         }
         // The other items a tweak's rewritten names lead to.
         func reliesOn(_ t: PlannedTweak) -> [String] {
@@ -608,7 +622,7 @@ public struct Resigner: Sendable {
             let elle = plan.needsElleKit(t) && !withElleKit, support = t.needsSupport && !withSupport
             let needed = t.loadPaths.reduce(0) { $0 + cost($1) }
                 + (elle ? cost(TweakLayout.elleKitLoadPath) : 0) + (support ? cost(TweakLayout.supportLoadPath) : 0)
-            guard needed <= free else {
+            guard needed == 0 || needed <= free else {
                 skip(t, .noRoom, "no room left in the app's header (\(max(free, 0)) bytes for \(needed))")
                 chosen.removeAll { $0.id == t.id }
                 continue
@@ -638,6 +652,22 @@ public struct Resigner: Sendable {
             chosen.removeAll { $0.id == t.id }
         }
         cascade()
+
+        // A library package (no entries) that no tweak still in relies on is not part of the app.
+        var used = Set(chosen.filter { !$0.item.package.entries.isEmpty || $0.item.package.kind != .deb }.map(\.id))
+        var grew = true
+        while grew {
+            grew = false
+            for t in chosen where used.contains(t.id) {
+                for id in reliesOn(t) where used.insert(id).inserted { grew = true }
+            }
+        }
+        for t in chosen where !used.contains(t.id) {
+            Self.logger.info("tweak \(t.item.package.name) (\(t.id)) left out: a library no tweak here uses")
+            if AppLibrary.isTweakID(t.id) { try? fm.removeItem(at: root.appendingPathComponent(t.id)) }
+            results[t.id] = nil
+        }
+        chosen.removeAll { !used.contains($0.id) }
 
         // 3. What the left-out tweaks brought goes: load commands (the Duo copy's too), files.
         let needElleKit = chosen.contains(where: plan.needsElleKit), needSupport = chosen.contains(where: \.needsSupport)
@@ -705,13 +735,13 @@ public struct Resigner: Sendable {
         }
     }
 
-    /// Drops the 32-bit ARM slices of each binary and gives its library names their new paths
+    /// Keeps only the arm64 slices of each binary (no 32-bit ARM, i386 or x86_64) and gives its library names their new paths
     /// (throws `MachOPatcher.Failure.noRoom` when one doesn't fit).
     private func prepareBinaries(of package: TweakPackage, at dest: URL, resolution: [String: String]) throws {
         for binary in package.binaries {
             let url = dest.appendingPathComponent(binary.path)
             let data = try Data(contentsOf: url)
-            if let thinned = MachOThinner.removingARM32(from: data) { try thinned.write(to: url, options: .atomic) }
+            if let thinned = MachOThinner.keepingARM64(from: data) { try thinned.write(to: url, options: .atomic) }
             _ = try MachOPatcher.rewriteDylibNames(resolution, in: url)
         }
     }
@@ -719,7 +749,7 @@ public struct Resigner: Sendable {
     /// Signs the package's binaries, then its `.framework` / `.dylib` items, as the signing step
     /// will: one that can't be signed leaves the tweak out instead of failing the install.
     private func signTweakFiles(of package: TweakPackage, at dest: URL, identity: String) async throws {
-        let targets = signTargets(in: dest)
+        let targets = signTargets(in: dest, bundlesUnder: dest)
         for target in targets {
             try requireType(target.pathExtension == "dylib" ? .typeRegular : .typeDirectory, target)
         }
@@ -901,8 +931,10 @@ public struct Resigner: Sendable {
     /// `loading`: XSide's libraries (its module, the signed-out iCloud one), whose load commands go
     /// in the copy first (they take room too). `required`: the Duo compatibility module, whose load
     /// command goes in before them and must fit (the patch is abandoned otherwise).
-    private func applyDuo(to executable: URL, growth: Int, loading dylibPaths: [String], required: String? = nil,
-                          workDir: URL) async -> Bool {
+    /// `optional`: the tweaks' load commands, lowest priority: each goes in only while the room
+    /// the version command needs stays free.
+    private func applyDuo(to executable: URL, growth: Int, loading dylibPaths: [String], optional: [String] = [],
+                          required: String? = nil, workDir: URL) async -> Bool {
         let fm = FileManager.default
         let tag = UUID().uuidString
         let input = workDir.appendingPathComponent("duo-\(tag)-in")
@@ -915,7 +947,7 @@ public struct Resigner: Sendable {
         }
         do {
             try fm.copyItem(at: executable, to: input)
-            let all = (required.map { [$0] } ?? []) + dylibPaths
+            let all = (required.map { [$0] } ?? []) + dylibPaths + optional
             let commands = all.filter { !MachOPatcher.loadsDylib($0, in: input) }
                 .reduce(0) { $0 + MachOPatcher.dylibCommand($1).count }
             makeRoom(in: input, needing: growth + commands)
@@ -930,6 +962,14 @@ public struct Resigner: Sendable {
                 do { _ = try MachOPatcher.addWeakDylib(dylibPath, to: input) } catch {
                     Self.logger.notice("duo compatibility: \(dylibPath) didn't fit: \(String(describing: error))")
                 }
+            }
+            for dylibPath in optional where !MachOPatcher.loadsDylib(dylibPath, in: input) {
+                let free = (try? MachOPatcher.freeSpace(in: input)) ?? 0
+                guard free - growth >= MachOPatcher.dylibCommand(dylibPath).count else {
+                    Self.logger.info("duo compatibility: \(dylibPath) left for later (Duo's room first)")
+                    continue
+                }
+                _ = try? MachOPatcher.addWeakDylib(dylibPath, to: input)
             }
             let slices = try MachOBuildInfo.slices(of: input)
             guard let calls = DuoCompatibility.vtoolCalls(input: input.path, output: output.path, slices: slices, temp: { i in
@@ -1310,11 +1350,15 @@ public struct Resigner: Sendable {
         (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true
     }
 
-    /// Every `.framework` / `.dylib` below the app (not the app itself), deepest first, deduplicated.
-    private func signTargets(in app: URL) -> [URL] {
+    /// Every `.framework` / `.dylib` below the app (not the app itself), and every `.bundle` below
+    /// `bundlesUnder` (a tweak's: signed as a bundle, after what it holds), deepest first, deduplicated.
+    private func signTargets(in app: URL, bundlesUnder: URL? = nil) -> [URL] {
         var seen = Set<String>()
+        let bundleRoot = bundlesUnder.map { $0.standardizedFileURL.path + "/" }
         let found = allFiles(under: app).filter {
-            ["framework", "dylib"].contains($0.pathExtension) && !isSymlink($0)
+            (["framework", "dylib"].contains($0.pathExtension)
+                || ($0.pathExtension == "bundle" && bundleRoot.map($0.standardizedFileURL.path.hasPrefix) == true))
+                && !isSymlink($0)
         }.filter { seen.insert($0.standardizedFileURL.path).inserted }
         return found.sorted { $0.pathComponents.count > $1.pathComponents.count }
     }

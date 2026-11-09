@@ -32,9 +32,11 @@ private func exists(_ url: URL) -> Bool { (try? FileManager.default.attributesOf
 
 /// Thin arm64 executable: a `__TEXT` segment whose section starts `padding` bytes after the load
 /// commands, and one `LC_LOAD_WEAK_DYLIB` per path in `loading` (an earlier signing's).
-private func executable(padding: Int = 4096, loading: [String] = []) -> Data {
+private func executable(padding: Int = 4096, loading: [String] = [], versionMin: Bool = false) -> Data {
     var commands = Data()
     func le(_ v: UInt32, _ d: inout Data) { withUnsafeBytes(of: v.littleEndian) { d.append(contentsOf: $0) } }
+    // LC_VERSION_MIN_IPHONEOS: iOS 15.0, SDK 17.0 (16 bytes; the Duo patch's LC_BUILD_VERSION takes 24).
+    if versionMin { for v in [UInt32(0x25), 16, packed(15, 0), packed(17, 0)] { le(v, &commands) } }
     for path in loading { commands.append(MachOPatcher.dylibCommand(path)) }
     let segmentSize = 72 + 80
     let sizeofcmds = segmentSize + commands.count
@@ -44,7 +46,7 @@ private func executable(padding: Int = 4096, loading: [String] = []) -> Data {
     func h64(_ v: UInt64) { withUnsafeBytes(of: v.littleEndian) { d.append(contentsOf: $0) } }
     func name16(_ s: String) { var b = Array(s.utf8); b += Array(repeating: 0, count: 16 - b.count); d.append(contentsOf: b) }
     h32(0xFEEDFACF); h32(0x0100000C); h32(0); h32(2)
-    h32(UInt32(1 + loading.count)); h32(UInt32(sizeofcmds)); h32(0); h32(0)
+    h32(UInt32(1 + loading.count + (versionMin ? 1 : 0))); h32(UInt32(sizeofcmds)); h32(0); h32(0)
     h32(0x19); h32(UInt32(segmentSize)); name16("__TEXT")
     h64(0x100000000); h64(UInt64(sectionOffset + 16)); h64(0); h64(UInt64(sectionOffset + 16))
     h32(5); h32(5); h32(1); h32(0)
@@ -103,6 +105,11 @@ private actor Reports {
     var last: TweakSigningReport? { all.last ?? nil }
 }
 
+private actor Outcomes {
+    var all: [DuoOutcome] = []
+    func add(_ o: DuoOutcome) { all.append(o) }
+}
+
 private actor Order {
     var items: [String] = []
     func add(_ s: String) { items.append(s) }
@@ -121,12 +128,25 @@ private struct FailingSigner: CommandRunning {
     }
 }
 
+/// `codesign` for real (ad hoc with identity "-"), `xcrun` to the fake.
+private struct RealSigner: CommandRunning {
+    let fake: FakeRunner
+    func run(_ executable: String, _ arguments: [String], cwd: URL?, timeout: Duration) async throws -> CommandResult {
+        if executable == "/usr/bin/codesign" {
+            _ = try await fake.run(executable, arguments, cwd: cwd, timeout: timeout)
+            return try await ProcessRunner().run(executable, arguments, cwd: cwd, timeout: timeout)
+        }
+        return try await RoutingRunner(fake: fake).run(executable, arguments, cwd: cwd, timeout: timeout)
+    }
+}
+
 /// An IPA, XSide's libraries, a folder of stored tweaks and the catalog of embedded dependencies.
 private struct TweakFixture {
     let ipa: URL, work: URL, profileURL: URL, store: URL, deps: URL
     let fake = FakeRunner()
     let welcome: URL?, iCloud: URL?, elleKit: URL?, license: URL?, support: URL?, legacy: URL?
     var failingSign: String?
+    var realSigning = false
 
     init(executable exe: Data = executable(), withModule: Bool = true, withICloud: Bool = false,
          withElleKit: Bool = true, withSupport: Bool = true, embedded: [Stored] = [cepheiPackage()],
@@ -153,7 +173,7 @@ private struct TweakFixture {
             guard let i = args.firstIndex(of: "-output"), i + 2 < args.count else { return }
             var data = try! Data(contentsOf: URL(fileURLWithPath: args[i + 2]))
             raiseSDK(&data)
-            try! data.write(to: URL(fileURLWithPath: args[i + 1]))
+            if !data.isEmpty { try! data.write(to: URL(fileURLWithPath: args[i + 1])) }
         }
         let libs = try tempDir("tweak-libs")
         func lib(_ name: String, _ on: Bool) throws -> URL? {
@@ -194,19 +214,22 @@ private struct TweakFixture {
     }
 
     var resigner: Resigner {
-        Resigner(runner: failingSign.map { FailingSigner(fake: fake, failing: $0) } ?? RoutingRunner(fake: fake),
+        Resigner(runner: realSigning ? RealSigner(fake: fake)
+                    : failingSign.map { FailingSigner(fake: fake, failing: $0) } ?? RoutingRunner(fake: fake),
                  welcomeDylib: welcome, iCloudLibrary: iCloud, duoLegacyLibrary: legacy,
                  elleKitLibrary: elleKit, elleKitLicense: license, tweakSupportLibrary: support, tweakDependencies: deps)
     }
 
     func run(_ items: [TweakSigningItem], options: InstallOptions = InstallOptions(), deviceOS: String? = "17.5",
-             reports: Reports? = nil, order: Order? = nil) async throws -> URL {
+             reports: Reports? = nil, order: Order? = nil, duo: Outcomes? = nil) async throws -> URL {
         var options = options
         options.tweaks = TweakJob(items: items, deviceOS: deviceOS)
         return try await resigner.resign(
             ipa: ipa, workDir: work, bundleID: "com.example.new", options: options, iconURL: nil,
-            profileURL: profileURL, profile: profile(), identitySHA1: "SHA", facts: nil,
-            onDuo: { if $0 == nil { await order?.add("duo") } },
+            profileURL: profileURL, profile: profile(), identitySHA1: realSigning ? "-" : "SHA", facts: nil,
+            onDuo: { outcome in
+                if let outcome { await duo?.add(outcome) } else { await order?.add("duo") }
+            },
             onICloud: { await order?.add("icloud") },
             onThinning: { await order?.add("thinning") },
             onSigning: { await order?.add("signing") },
@@ -222,6 +245,21 @@ private func raiseSDK(_ data: inout Data) {
     guard let starts = try? IPAInspector.sliceOffsets(data) else { return }
     for start in starts {
         guard let commands = try? MachOPatcher.loadCommands(data, at: start) else { continue }
+        // LC_VERSION_MIN_IPHONEOS → LC_BUILD_VERSION: 8 more bytes, taken from the free space
+        // (vtool fails without them: nothing is written).
+        if let c = commands.first(where: { $0.cmd == 0x25 }) {
+            let end = start + 32 + Int(MachOPatcher.u32(data, start + 20))
+            guard let first = MachOPatcher.firstSectionOffset(data, start: start, commands: commands),
+                  start + first - end >= 8 else { data = Data(); return }
+            var build = Data()
+            for v in [UInt32(0x32), 24, 2, MachOPatcher.u32(data, c.pos + 8), packed(27, 1), 0] {
+                withUnsafeBytes(of: v.littleEndian) { build.append(contentsOf: $0) }
+            }
+            let tail = data.subdata(in: c.pos + 16..<end)
+            data.replaceSubrange(c.pos..<end + 8, with: build + tail)
+            withUnsafeBytes(of: (MachOPatcher.u32(data, start + 20) + 8).littleEndian) { data.replaceSubrange(start + 20..<start + 24, with: $0) }
+            continue
+        }
         for c in commands where c.cmd == 0x32 {
             withUnsafeBytes(of: packed(27, 1).littleEndian) { data.replaceSubrange(c.pos + 16..<c.pos + 20, with: $0) }
         }
@@ -542,8 +580,9 @@ struct TweakResignTests {
         let app = try await f.run([try f.item(a)], reports: reports)
         let copied = try Data(contentsOf: tweakFile(app, a))
         #expect(!MachOThinner.headerHasARM32(copied.prefix(8 + 64 * 32)))
+        // The x86_64 slice (built for the simulator) goes too: only arm64 is left.
         let starts = try IPAInspector.sliceOffsets(copied)
-        #expect(Set(starts).count == 2)
+        #expect(starts == [0] && MachOPatcher.u32(copied, 4) == 0x0100_000C)
         for start in Set(starts) {
             let names = try MachOPatcher.loadCommands(copied, at: start).compactMap { MachOPatcher.dylibName(copied, $0) }
             #expect(names == [TweakLayout.elleKitLoadPath])
@@ -652,5 +691,150 @@ struct TweakResignTests {
     @Test func oldOptionsDecodeWithoutTweaks() throws {
         let options = try JSONDecoder().decode(InstallOptions.self, from: Data(#"{"fileSharing":true}"#.utf8))
         #expect(options.tweaks == nil)
+    }
+
+    // MARK: fix round 1
+
+    @Test func tweakBundlesAreSignedAsBundlesAfterTheSweep() async throws {
+        let binary = try realExecutable("duo-swift-arm64")
+        let fwInfo = try PropertyListSerialization.data(fromPropertyList: ["CFBundleExecutable": "X", "CFBundleIdentifier": "com.example.x"],
+                                                        format: .xml, options: 0)
+        // Real codesign: the app's own framework must be a real one too.
+        var f = try await TweakFixture(executable: binary,
+                                       appFiles: ["Frameworks/X.framework/X": binary, "Frameworks/X.framework/Info.plist": fwInfo])
+        f.realSigning = true
+        let plistData = try PropertyListSerialization.data(fromPropertyList: ["CFBundleExecutable": "Res", "CFBundleIdentifier": "com.example.res"],
+                                                       format: .xml, options: 0)
+        let bin = TweakBinary(path: "Res.bundle/Res", isEntry: false, filter: nil, slices: [arm64()], linked: [],
+                              mentionsJailbreakPaths: false, imageName: "Res")
+        let files: [String: Data] = ["Res.bundle/Res": binary, "Res.bundle/Info.plist": plistData, "Res.bundle/a.txt": Data("A".utf8)]
+        let bundle = Stored(package: TweakPackage(id: idA, kind: .bundle, origin: .added, packageID: "com.example.res", name: "Res",
+                                                  files: files.keys.sorted(), binaries: [bin], addedAt: Date()),
+                            files: files)
+        let t = tweak(idB, name: "Beta", binary: binary)
+        let reports = Reports()
+        let app = try await f.run([try f.item(bundle), try f.item(t)], reports: reports)
+        #expect(await reports.last?.results == [idA: .injected(converted: false), idB: .injected(converted: false)])
+        let folder = app.appendingPathComponent(TweakLayout.folder + "/" + idA + "/Res.bundle")
+        #expect(exists(folder.appendingPathComponent("_CodeSignature")))
+        let verify = try await ProcessRunner().run("/usr/bin/codesign", ["--verify", "--strict", folder.path], cwd: nil)
+        #expect(verify.status == 0, "\(verify.stderr)")
+        let whole = try await ProcessRunner().run("/usr/bin/codesign", ["--verify", "--deep", "--strict", app.path], cwd: nil)
+        #expect(whole.status == 0, "\(whole.stderr)")
+        // The bundle is signed after the binaries in it, before the app.
+        let calls = f.fake.calls.map { $0.last ?? "" }
+        let last = try #require(calls.lastIndex(of: folder.path))
+        #expect(calls.lastIndex(of: folder.appendingPathComponent("Res").path).map { $0 < last } ?? true)
+        #expect(calls.last == app.path)
+    }
+
+    @Test func hostileIDsAndEmbeddedItemsAreRefused() async throws {
+        let f = try await TweakFixture()
+        let fine = tweak(idC, name: "Gamma")
+        let fineItem = try f.item(fine)
+        func renamed(_ id: String, origin: TweakOrigin = .added) -> TweakSigningItem {
+            var p = fine.package
+            p = TweakPackage(id: id, kind: p.kind, origin: origin, packageID: p.packageID, name: "Hostile", version: p.version,
+                             files: p.files, binaries: p.binaries, addedAt: p.addedAt)
+            return TweakSigningItem(package: p, directory: fineItem.directory, force: false)
+        }
+        var embeddedOrigin = cepheiPackage()
+        embeddedOrigin.package = TweakPackage(id: "ws.hbang.common", kind: .deb, origin: .embedded, packageID: "ws.hbang.common",
+                                              name: "Cephei", files: fine.package.files, binaries: fine.package.binaries,
+                                              addedAt: Date())
+        let a = tweak(idA, linked: [cephei], depends: [[DebDependency(package: "ws.hbang.common")]])
+        let reports = Reports()
+        let app = try await f.run([renamed(".."), renamed("deps"), renamed(""), renamed("../../x"),
+                                   TweakSigningItem(package: embeddedOrigin.package, directory: fineItem.directory, force: false),
+                                   try f.item(a), fineItem], reports: reports)
+        let results = try #require(await reports.last?.results)
+        for id in ["..", "deps", "", "../../x", "ws.hbang.common"] { #expect(results[id] == .skipped(.failed), "\(id)") }
+        #expect(results[idA] == .injected(converted: true) && results[idC] == .injected(converted: false))
+        // The app's own frameworks and XSide's dependency are untouched.
+        #expect(exists(app.appendingPathComponent("Frameworks/X.framework/X")))
+        #expect(exists(app.appendingPathComponent(TweakLayout.folder + "/deps/ws.hbang.common/" + cepheiFile)))
+        #expect(await reports.last?.embedded == ["ws.hbang.common"])
+    }
+
+    @Test func underDuoTweaksNeverTakeTheRoomDuoNeeds() async throws {
+        let module = MachOPatcher.dylibCommand(Resigner.welcomeLoadPath).count
+        let legacy = MachOPatcher.dylibCommand(DuoCompatibility.legacyLoadPath).count
+        let one = MachOPatcher.dylibCommand(entryPath(tweak(idA))).count
+        // Room for Duo's compatibility module, XSide's and a tweak, but then not for Duo's own 8 bytes.
+        let f = try await TweakFixture(executable: executable(padding: legacy + module + one + 4, versionMin: true),
+                                       plistExtras: ["CFBundleName": "Demo", "DTPlatformVersion": "17.0"])
+        let a = tweak(idA)
+        let reports = Reports(), duo = Outcomes()
+        let app = try await f.run([try f.item(a)], options: InstallOptions(duoCompatibility: true), reports: reports, duo: duo)
+        #expect(await duo.all == [.addedWithModule])
+        #expect(MachOBuildInfo.sdkVersion(of: app.appendingPathComponent("Demo")) == "27.1")
+        #expect(await reports.last?.results == [idA: .skipped(.noRoom)])
+        #expect(try !loads(app).contains(entryPath(a)))
+    }
+
+    @Test func reSigningKeepsTheModuleLast() async throws {
+        let f = try await TweakFixture(executable: executable(loading: [Resigner.welcomeLoadPath]),
+                                       appFiles: ["Frameworks/XSideWelcome.dylib": Data("OLD".utf8)])
+        let a = tweak(idA)
+        let app = try await f.run([try f.item(a)])
+        #expect(try loads(app) == [entryPath(a), Resigner.welcomeLoadPath])
+    }
+
+    @Test func aLibraryNoTweakUsesIsNeitherCopiedNorReported() async throws {
+        let f = try await TweakFixture()
+        let lib = cepheiPackage(id: idB, origin: .added)
+        let reports = Reports()
+        let app = try await f.run([try f.item(tweak(idA)), try f.item(lib)], reports: reports)
+        #expect(await reports.last?.results == [idA: .injected(converted: false)])
+        #expect(!exists(app.appendingPathComponent(TweakLayout.folder + "/" + idB)))
+    }
+
+    @Test func aBundleWithoutLoadCommandsGoesInEvenWithoutRoom() async throws {
+        let module = MachOPatcher.dylibCommand(Resigner.welcomeLoadPath).count
+        // Not even room for the module: the bundle needs none.
+        let f = try await TweakFixture(executable: executable(padding: module - 8))
+        let bin = TweakBinary(path: "Res.bundle/Res", isEntry: false, filter: nil, slices: [arm64()], linked: [],
+                              mentionsJailbreakPaths: false, imageName: "Res")
+        let files: [String: Data] = ["Res.bundle/Res": FakeIPA.dylibMachO(linking: [], padding: 64)]
+        let bundle = Stored(package: TweakPackage(id: idA, kind: .bundle, origin: .added, packageID: "com.example.res", name: "Res",
+                                                  files: files.keys.sorted(), binaries: [bin], addedAt: Date()),
+                            files: files)
+        let reports = Reports()
+        _ = try await f.run([try f.item(bundle)], reports: reports)
+        #expect(await reports.last?.results == [idA: .injected(converted: false)])
+    }
+
+    @Test func elleKitComesBeforeTheSupportLibrary() async throws {
+        let f = try await TweakFixture()
+        let a = tweak(idA, linked: [substrate], mentions: true)
+        let app = try await f.run([try f.item(a)])
+        #expect(try loads(app) == [TweakLayout.elleKitLoadPath, TweakLayout.supportLoadPath, entryPath(a), Resigner.welcomeLoadPath])
+    }
+
+    @Test func aProviderThatCantBeSignedLeavesItsTweaksOut() async throws {
+        var f = try await TweakFixture()
+        f.failingSign = "Cephei"
+        let a = tweak(idA, linked: [cephei], depends: [[DebDependency(package: "ws.hbang.common")]])
+        let fine = tweak(idB, name: "Beta")
+        let reports = Reports()
+        let app = try await f.run([try f.item(a), try f.item(fine)], reports: reports)
+        let report = await reports.last
+        #expect(report?.results == [idA: .skipped(.failed), idB: .injected(converted: false)])
+        #expect(report?.embedded == [])
+        #expect(!exists(app.appendingPathComponent(TweakLayout.folder + "/deps")))
+        #expect(try loads(app) == [entryPath(fine), Resigner.welcomeLoadPath])
+    }
+
+    @Test func staleCleanupKeepsTheAppsOwnFrameworks() async throws {
+        let old = TweakLayout.loadPrefix + "0123456789abcdef/" + dylibFolder + "Old.dylib"
+        let f = try await TweakFixture(executable: executable(loading: ["@rpath/Own.framework/Own", old]),
+                                       appFiles: ["Frameworks/Own.framework/Own": Data("OWN".utf8),
+                                                  "Frameworks/libOwn.dylib": Data("LIB".utf8),
+                                                  "Frameworks/XSideTweaks/0123456789abcdef/\(dylibFolder)Old.dylib": Data("OLD".utf8)])
+        let app = try await f.run([])
+        for path in ["Frameworks/Own.framework/Own", "Frameworks/libOwn.dylib", "Frameworks/X.framework/X"] {
+            #expect(exists(app.appendingPathComponent(path)), "\(path)")
+        }
+        #expect(try loads(app) == ["@rpath/Own.framework/Own", Resigner.welcomeLoadPath])
     }
 }
