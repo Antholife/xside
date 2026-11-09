@@ -39,6 +39,10 @@ struct CrashWording {
             // Cephei's HBOutputForShellCommand and the like: no shell without a jailbreak.
             explanation = d.shellCommand == true ? text + " " + t("crash.shellCommand") : text
             advice = t(base + ".advice")
+        case .tweakCFunctionHook:
+            explanation = d.tweakName == nil && d.subject == nil ? f(base + ".textUnnamed", app)
+                : f(base + ".text", app, d.tweakName ?? subject)
+            advice = t(base + ".advice")
         case .bundledLibrary:
             explanation = f(base + ".text", app, subject)
             advice = t(base + ".advice")

@@ -687,4 +687,37 @@ struct TweakClassifierTests {
                 == "tweaks.problem.needsJailbreakLibrary")
         #expect(TweakProblem.notForIOS.stringKey(for: sb) == TweakProblem.notForIOS.stringKey)
     }
+
+    // MARK: C function hooks
+
+    /// A tweak hooking C functions stays 🔧 (its Objective-C hooks work) with a warning: stock iOS
+    /// kills the app when it patches code.
+    @Test func cFunctionHooksGetAWarningButKeepTheirVerdict() {
+        var hooking = entry(linked: ["/usr/lib/libobjc.A.dylib", Self.substrate])
+        hooking.cFunctionHooks = ["MSHookFunction"]
+        var lib = library("usr/lib/libhelper.dylib")
+        lib.cFunctionHooks = ["LHHookFunctions", "MSHookFunction"]
+        let p = package([hooking, lib])
+        #expect(p.cFunctionHooks == ["LHHookFunctions", "MSHookFunction"])
+        #expect(TweakClassifier.warnings(p) == [.cFunctionHooks(["LHHookFunctions", "MSHookFunction"])])
+        #expect(TweakWarning.cFunctionHooks(["MSHookFunction"]).stringKey == "tweaks.warning.cFunctionHooks")
+        guard case .converted(let list) = TweakClassifier.verdict(p, context()) else {
+            Issue.record("expected 🔧"); return
+        }
+        #expect(list.contains(.hookingLibrary))
+        // ObjC hooks only, or analysed before XSide looked (nil): no warning.
+        #expect(TweakClassifier.warnings(package([entry(linked: [Self.substrate])])).isEmpty)
+        var none = entry(); none.cFunctionHooks = []
+        #expect(TweakClassifier.warnings(package([none])).isEmpty)
+    }
+
+    @Test func cFunctionHooksSurviveCodingAndOlderFilesHaveNone() throws {
+        var b = entry(); b.cFunctionHooks = ["MSHookFunction"]
+        let back = try JSONDecoder().decode(TweakBinary.self, from: JSONEncoder().encode(b))
+        #expect(back == b)
+        var json = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(entry())) as? [String: Any])
+        json["cFunctionHooks"] = nil
+        let old = try JSONDecoder().decode(TweakBinary.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(old.cFunctionHooks == nil)
+    }
 }

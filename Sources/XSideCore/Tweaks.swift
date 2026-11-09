@@ -38,9 +38,13 @@ public struct TweakBinary: Codable, Equatable, Sendable {
     public var mentionsJailbreakPaths: Bool
     /// The file name, as crash logs name the image.
     public var imageName: String
+    /// The C function hooks it imports (`MSHookFunction`…: `MachOImports`). nil: analysed before
+    /// XSide looked.
+    public var cFunctionHooks: [String]?
 
     public init(path: String, isEntry: Bool, filter: TweakFilter?, slices: [TweakSlice], linked: [String],
-                mentionsJailbreakPaths: Bool, imageName: String) {
+                mentionsJailbreakPaths: Bool, imageName: String, cFunctionHooks: [String]? = nil) {
+        self.cFunctionHooks = cFunctionHooks
         self.path = path
         self.isEntry = isEntry
         self.filter = filter
@@ -104,6 +108,11 @@ public struct TweakPackage: Codable, Equatable, Sendable, Identifiable {
 }
 
 extension TweakPackage {
+    /// The C function hooks its binaries import, sorted (none known for an older analysis).
+    public var cFunctionHooks: [String] {
+        Array(Set(binaries.flatMap { $0.cFunctionHooks ?? [] })).sorted()
+    }
+
     /// One of its entries' filters names `target` (a bundle id, executable or class).
     public func filterNames(_ target: String) -> Bool {
         entries.contains { b in

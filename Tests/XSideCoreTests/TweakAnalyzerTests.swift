@@ -57,6 +57,20 @@ struct TweakAnalyzerTests {
         #expect(try Data(contentsOf: storage.appendingPathComponent(p.id).appendingPathComponent(e.path)) == dylib())
     }
 
+    /// The C function hooks a binary imports are recorded at analysis (none: an empty list).
+    @Test func cFunctionHooksAreRecorded() async throws {
+        let hooking = MachOImportsTests.symtabMachO([("_MSHookFunction", 0x01), ("_MSHookMessageEx", 0x01)])
+        let src = try await deb([.file("./Library/MobileSubstrate/DynamicLibraries/Example.dylib", hooking),
+                                 .file("./Library/MobileSubstrate/DynamicLibraries/Example.plist", try filterPlist(["com.example.app"])),
+                                 .file("./usr/lib/libplain.dylib", dylib(linking: []))])
+        let storage = scratch("store")
+        defer { cleanup(src, storage) }
+        let p = try await analyze(src, into: storage)
+        #expect(p.entries.first?.cFunctionHooks == ["MSHookFunction"])
+        #expect(p.binaries.first { $0.imageName == "libplain.dylib" }?.cFunctionHooks == [])
+        #expect(p.cFunctionHooks == ["MSHookFunction"])
+    }
+
     @Test func rootlessPathsLoseVarJb() async throws {
         let src = try await deb([.file("./var/jb/usr/lib/TweakInject/Example.dylib", dylib()),
                                  .file("./var/jb/usr/lib/TweakInject/Example.plist", try filterPlist(["com.example.app"])),

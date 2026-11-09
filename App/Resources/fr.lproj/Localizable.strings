@@ -899,6 +899,10 @@
 "crash.cause.tweak.title" = "Le plantage vient d'un tweak";
 "crash.cause.tweak.text" = "%1$@ a planté dans le tweak %2$@, ajouté à l'app.";
 "crash.cause.tweak.advice" = "Désactive ce tweak (il reste dans XSide, tu peux le réactiver), ou demande un correctif.";
+"crash.cause.tweakCFunctionHook.title" = "Un tweak a modifié le code de l'app";
+"crash.cause.tweakCFunctionHook.text" = "Le tweak %2$@ a essayé de modifier le code de %1$@ (hook de fonction C) : iOS l'interdit sans jailbreak et a fermé l'app.";
+"crash.cause.tweakCFunctionHook.textUnnamed" = "Un tweak a essayé de modifier le code de %@ (hook de fonction C) : iOS l'interdit sans jailbreak et a fermé l'app.";
+"crash.cause.tweakCFunctionHook.advice" = "Désactive ce tweak (il reste dans XSide, tu peux le réactiver) : ses hooks de fonctions C ne peuvent pas marcher sans jailbreak. Rafraîchir l'app ne change rien.";
 "crash.cause.tweakSupport.title" = "Le plantage vient des tweaks convertis";
 "crash.cause.tweakSupport.text" = "%1$@ a planté dans %2$@, que XSide a ajouté pour que les tweaks convertis fonctionnent sans jailbreak.";
 "crash.cause.tweakSupport.advice" = "Désactive les tweaks convertis, puis réessaie-les un par un.";
@@ -1003,6 +1007,7 @@
 "tweaks.drop" = "Dépose un tweak ici";
 "tweaks.adding" = "Vérification de %@…";
 "tweaks.status.compatible" = "Compatible tel quel";
+"tweaks.warning.cFunctionHooks" = "Ses hooks de fonctions C font planter l'app sans jailbreak (%@) : seuls ses hooks Objective-C marchent.";
 "tweaks.status.incompatible" = "Pas compatible";
 "tweaks.status.forced" = "Injecté quand même";
 "tweaks.signedAnyway" = "Sa dernière signature l'a ajouté sur cet appareil : XSide le garde activé et le vérifie à nouveau à la prochaine.";

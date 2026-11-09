@@ -61,7 +61,7 @@ public enum CrashAction: String, Codable, Sendable, CaseIterable {
         case .iCloudShim: return .turnOffICloudSignedOut
         case .iCloud: return d.iCloudSignedOutOn == true ? nil : .turnOnICloudSignedOut
         // `.tweak` is only a tweak XSide injected (`CrashContext.tweakNames`).
-        case .tweak: return .disableTweak
+        case .tweak, .tweakCFunctionHook: return .disableTweak
         case .tweakSupport: return .disableConvertedTweaks
         default: return nil
         }

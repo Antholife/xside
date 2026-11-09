@@ -403,6 +403,12 @@ enum TweakText {
         }
     }
 
+    static func warning(_ w: TweakWarning) -> String {
+        switch w {
+        case .cFunctionHooks(let names): L(w.stringKey, names.joined(separator: ", "))
+        }
+    }
+
     static func note(_ n: TweakNote) -> String {
         switch n {
         case .settingsNotConverted: L("tweaks.note.settingsNotConverted")

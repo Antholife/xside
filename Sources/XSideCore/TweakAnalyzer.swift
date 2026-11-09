@@ -312,7 +312,8 @@ public enum TweakAnalyzer {
                            slices: slices.map { TweakSlice(arch: archName($0), platform: $0.platform, minOS: $0.minOS) },
                            linked: linked,
                            mentionsJailbreakPaths: MachOPatcher.containsAny(jailbreakPathNeedles, in: url),
-                           imageName: url.lastPathComponent)
+                           imageName: url.lastPathComponent,
+                           cFunctionHooks: MachOImports.cFunctionHooks(in: url))
     }
 
     static func archName(_ s: MachOBuildInfo.Slice) -> String {

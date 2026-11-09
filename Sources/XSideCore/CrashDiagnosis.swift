@@ -284,6 +284,8 @@ public struct CrashContext: Equatable, Sendable {
     public var duoCompatibilityOn: Bool
     /// The installation has "Simulate signed-out iCloud": an iCloud crash is then one it doesn't cover.
     public var iCloudSignedOutOn: Bool
+    /// The injected tweaks' images (of `tweakNames`) whose binaries import C function hooks.
+    public var cFunctionHookImages: Set<String> = []
 
     public init(moduleName: String, tweakNames: Set<String> = [], tweakIDs: Set<String> = [], tweakSupportNames: Set<String> = [],
                 tweakLabels: [String: String] = [:], duoCompatibilityOn: Bool = false, iCloudSignedOutOn: Bool = false) {
@@ -301,6 +303,9 @@ public struct CrashContext: Equatable, Sendable {
 public enum CrashCause: String, Codable, Sendable, CaseIterable {
     case noSceneSupport, missingLibrary, missingSymbol, jailbreakLibrary, codeSignature, xsideModule, duoLegacyModule, iCloudShim
     case tweak, tweakSupport, bundledLibrary
+    /// iOS killed the app for writing into its code (CODESIGNING, invalid page), and an injected
+    /// tweak imports C function hooks: that tweak (`subject`, `tweakName`).
+    case tweakCFunctionHook
     case iCloud, outOfMemory, launchTimeout, hang, other
 }
 
@@ -385,8 +390,17 @@ public enum CrashClassifier {
             return d
         }
         let namespace = log.terminationNamespace?.uppercased()
+        let launchConstraint = texts.contains(where: { $0.localizedCaseInsensitiveContains("Launch Constraint Violation") })
         if namespace == "CODESIGNING" || log.terminationIndicator?.localizedCaseInsensitiveContains("Invalid Page") == true
-            || texts.contains(where: { $0.localizedCaseInsensitiveContains("Launch Constraint Violation") }) {
+            || launchConstraint {
+            // A C function hook patches the app's code: stock iOS kills it (seen on iOS 27.3).
+            let hooking = context.cFunctionHookImages.intersection(context.tweakNames).sorted()
+            if !launchConstraint, let image = hooking.first {
+                d.cause = .tweakCFunctionHook
+                d.subject = image
+                d.tweakName = context.tweakLabels[image]
+                return d
+            }
             d.cause = .codeSignature
             return d
         }

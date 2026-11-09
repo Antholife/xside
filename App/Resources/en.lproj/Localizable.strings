@@ -899,6 +899,10 @@
 "crash.cause.tweak.title" = "The crash comes from a tweak";
 "crash.cause.tweak.text" = "%1$@ crashed in the tweak %2$@, added to the app.";
 "crash.cause.tweak.advice" = "Disable this tweak (it stays in XSide, you can turn it back on), or ask for a fix.";
+"crash.cause.tweakCFunctionHook.title" = "A tweak changed the app's code";
+"crash.cause.tweakCFunctionHook.text" = "The tweak %2$@ tried to change %1$@'s code (a C function hook): iOS doesn't allow it without a jailbreak and closed the app.";
+"crash.cause.tweakCFunctionHook.textUnnamed" = "A tweak tried to change %@'s code (a C function hook): iOS doesn't allow it without a jailbreak and closed the app.";
+"crash.cause.tweakCFunctionHook.advice" = "Disable this tweak (it stays in XSide, you can turn it back on): its C function hooks can't work without a jailbreak. Refreshing the app won't help.";
 "crash.cause.tweakSupport.title" = "The crash comes from converted tweaks";
 "crash.cause.tweakSupport.text" = "%1$@ crashed in %2$@, which XSide added so that converted tweaks work without a jailbreak.";
 "crash.cause.tweakSupport.advice" = "Disable the converted tweaks, then try them one at a time.";
@@ -1003,6 +1007,7 @@
 "tweaks.drop" = "Drop a tweak here";
 "tweaks.adding" = "Checking %@…";
 "tweaks.status.compatible" = "Compatible as is";
+"tweaks.warning.cFunctionHooks" = "Its C function hooks crash the app without a jailbreak (%@): only its Objective-C hooks work.";
 "tweaks.status.incompatible" = "Not compatible";
 "tweaks.status.forced" = "Injected anyway";
 "tweaks.signedAnyway" = "Its last signing added it on this device: XSide keeps it on and checks it again at the next one.";

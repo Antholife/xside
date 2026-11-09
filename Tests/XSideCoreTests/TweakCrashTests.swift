@@ -58,6 +58,26 @@ struct TweakCrashTests {
         #expect(c.tweakSupportNames == ["Cephei"])
     }
 
+    /// The injected tweaks whose binaries import a C hook function (the pool's package, or the
+    /// file scanned when it was analysed before XSide looked).
+    @Test func contextKnowsWhichTweaksHookCFunctions() {
+        var hooking = alpha
+        hooking.binaries[0].cFunctionHooks = ["MSHookFunction"]
+        var plain = beta
+        plain.binaries[0].cFunctionHooks = []
+        var c = CrashContext(moduleName: "XSideWelcome.dylib")
+        c.addTweaks(of: installation("d1", uses: [], injected: [InjectedTweak(hooking, conversions: [.hookingLibrary]),
+                                                                InjectedTweak(plain, conversions: nil)]),
+                    pool: [hooking, plain])
+        #expect(c.cFunctionHookImages == ["Alpha.dylib"])
+        // Older analysis (nil): the scan says.
+        var scanned = CrashContext(moduleName: "XSideWelcome.dylib")
+        scanned.addTweaks(of: installation("d1", uses: [], injected: [InjectedTweak(alpha, conversions: nil),
+                                                                      InjectedTweak(plain, conversions: nil)]),
+                          pool: [alpha, plain], scan: { _, _ in ["MSHookFunction"] })
+        #expect(scanned.cFunctionHookImages == ["Alpha.dylib"])
+    }
+
     @Test func noTweaksNoTweakContext() {
         var c = CrashContext(moduleName: "XSideWelcome.dylib")
         c.addTweaks(of: installation("d1", uses: []), pool: [alpha])

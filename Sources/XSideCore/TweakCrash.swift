@@ -27,8 +27,11 @@ extension Installation {
 }
 
 extension CrashContext {
-    /// The installation's tweaks, for the classifier: their images, their names, what supports them.
-    public mutating func addTweaks(of installation: Installation, pool: [TweakPackage]) {
+    /// The installation's tweaks, for the classifier: their images, their names, what supports them,
+    /// which import C function hooks (from the pool's package; `scan` reads a binary analysed
+    /// before XSide looked).
+    public mutating func addTweaks(of installation: Installation, pool: [TweakPackage],
+                                   scan: ((TweakPackage, TweakBinary) -> [String])? = nil) {
         let history = installation.injectedTweakHistory(pool: pool)
         tweakSupportNames.formUnion(installation.tweakSupportImageNames)
         for t in history {
@@ -36,6 +39,12 @@ extension CrashContext {
             for image in t.imageNames {
                 tweakNames.insert(image)
                 tweakLabels[image] = TweakCrashFix.label(t)
+            }
+            // The version injected, else the pool's current one of the same package.
+            guard let package = pool.first(where: { $0.id == t.id })
+                ?? pool.first(where: { $0.origin != .embedded && $0.packageID == t.packageID }) else { continue }
+            for b in package.binaries where t.imageNames.contains(b.imageName) {
+                if !(b.cFunctionHooks ?? scan?(package, b) ?? []).isEmpty { cFunctionHookImages.insert(b.imageName) }
             }
         }
     }

@@ -156,8 +156,9 @@ struct TweakCard: View {
     private var needsJailbreak: Bool {
         !rows.isEmpty && rows.allSatisfy { if case .incompatible(.needsJailbreak)? = $0.verdict { true } else { false } }
     }
+    private var warnings: [TweakWarning] { TweakClassifier.warnings(package) }
     private var needsALook: Bool {
-        missingCount > 0 || appliedVerdicts.contains { if case .compatible = $0 { false } else { true } }
+        missingCount > 0 || !warnings.isEmpty || appliedVerdicts.contains { if case .compatible = $0 { false } else { true } }
     }
     private var isExpanded: Bool { expanded ?? (!isDependency && needsALook) }
 
@@ -278,6 +279,12 @@ struct TweakCard: View {
                 verdicts
             }
             overrides
+            ForEach(Array(warnings.enumerated()), id: \.offset) { _, warning in
+                Label(TweakText.warning(warning), systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color(nsColor: .systemOrange))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             ForEach(package.notes, id: \.self) { note in
                 Label(TweakText.note(note), systemImage: "info.circle")
                     .font(.system(size: 11))

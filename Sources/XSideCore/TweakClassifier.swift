@@ -113,6 +113,20 @@ public enum DependencyStatus: Equatable, Sendable {
     case notNeeded
 }
 
+/// Something to know about a tweak whatever its verdict, shown on its card.
+public enum TweakWarning: Equatable, Sendable {
+    /// It imports C function hooks (`MSHookFunction`…): stock iOS kills the app when they run
+    /// (code pages can't be written without a jailbreak). Its Objective-C hooks still work, so it
+    /// stays 🔧.
+    case cFunctionHooks([String])
+
+    public var stringKey: String {
+        switch self {
+        case .cFunctionHooks: "tweaks.warning.cFunctionHooks"
+        }
+    }
+}
+
 /// What the classifier knows about the app, the device and the libraries at hand. Unknown app
 /// facts (nil) match: they are checked again at signing.
 public struct TweakContext: Sendable {
@@ -170,6 +184,12 @@ public enum TweakClassifier {
     /// with its 🔧 list; every other problem still stands.
     public static func verdict(_ package: TweakPackage, _ context: TweakContext, overridingFilter: Bool = false) -> TweakVerdict {
         analyze(package, context).verdict(overridingFilter: overridingFilter)
+    }
+
+    /// What the card warns about, on every device.
+    public static func warnings(_ package: TweakPackage) -> [TweakWarning] {
+        let hooks = package.cFunctionHooks
+        return hooks.isEmpty ? [] : [.cFunctionHooks(hooks)]
     }
 
     /// Everything the signing needs about one tweak, computed once.

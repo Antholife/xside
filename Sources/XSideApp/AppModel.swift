@@ -2736,7 +2736,12 @@ final class AppModel {
                                    // Asked for but not added by the last signing: it's off in the app.
                                    iCloudSignedOutOn: installation.hasICloudSignedOut)
         // The tweaks the last signing injected (even a version replaced since) and what supports them.
-        context.addTweaks(of: installation, pool: record.tweaks ?? [])
+        // A tweak analysed before XSide looked for C function hooks: its stored file says.
+        let library = self.library, recordID = record.id
+        context.addTweaks(of: installation, pool: record.tweaks ?? []) { package, binary in
+            MachOImports.cFunctionHooks(in: library.tweakDirectory(recordID: recordID, id: package.id)
+                .appendingPathComponent(binary.path))
+        }
         let diagnosis = CrashClassifier.classify(found.log, context: context)
         let secrets = [installation.teamID, record.teamID, installation.deviceID].compactMap { $0 }
         let text = found.text

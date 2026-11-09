@@ -309,6 +309,35 @@ private func diagnose(_ data: Data, _ ctx: CrashContext = context) throws -> Cra
         #expect(d.cause == .codeSignature)
     }
 
+    /// iOS 27.3 with ElleKit: MSHookFunction writes into the app's code, iOS kills it (CODESIGNING,
+    /// invalid page). With an injected tweak importing a C hook function, that's the cause, named.
+    @Test func codeSigningKillWithACFunctionHookingTweak() throws {
+        let kill = IPS.crash(exception: ["type": "EXC_BAD_ACCESS", "signal": "SIGKILL", "subtype": "UNKNOWN_0x32 at 0x1"],
+                             termination: ["namespace": "CODESIGNING", "code": 2, "indicator": "Invalid Page"])
+        var ctx = CrashContext(moduleName: "XSideWelcome.dylib", tweakNames: ["Alpha.dylib", "Beta.dylib"],
+                               tweakIDs: ["aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"],
+                               tweakLabels: ["Alpha.dylib": "Alpha 1.2", "Beta.dylib": "Beta 2.0"])
+        // No tweak imports one: the signature, as before.
+        #expect(try diagnose(kill, ctx).cause == .codeSignature)
+        ctx.cFunctionHookImages = ["Beta.dylib"]
+        let d = try diagnose(kill, ctx)
+        #expect(d.cause == .tweakCFunctionHook)
+        #expect(d.subject == "Beta.dylib")
+        #expect(d.tweakName == "Beta 2.0")
+        #expect(CrashAction.suggested(for: d) == .disableTweak)
+        // Only the injected tweaks count.
+        ctx.cFunctionHookImages = ["Other.dylib"]
+        #expect(try diagnose(kill, ctx).cause == .codeSignature)
+        // A launch constraint violation stays a signature problem.
+        ctx.cFunctionHookImages = ["Beta.dylib"]
+        let constraint = IPS.crash(exception: ["type": "EXC_CRASH", "signal": "SIGKILL"],
+                                   termination: ["namespace": "CODESIGNING", "code": 4, "indicator": "Launch Constraint Violation"])
+        #expect(try diagnose(constraint, ctx).cause == .codeSignature)
+        // Two of them: the first by name, the next crash names the other.
+        ctx.cFunctionHookImages = ["Beta.dylib", "Alpha.dylib"]
+        #expect(try diagnose(kill, ctx).subject == "Alpha.dylib")
+    }
+
     @Test func xsideModuleUnderAnException() throws {
         let d = try diagnose(IPS.crash(frames: [IPS.frame(IPS.objc, "__abort_with_payload")],
                                        lastException: [IPS.frame(IPS.coreFoundation, "__exceptionPreprocess"),
