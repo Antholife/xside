@@ -634,6 +634,18 @@ public actor AppLibrary {
         items.remove(at: index)
         do { try save() } catch { items = previous; throw error }
         try? FileManager.default.removeItem(at: root.appendingPathComponent("apps/\(id.uuidString)"))
+        collectUnusedDownloads(after: "app \(id.uuidString) removed")
+    }
+
+    /// After an app, an installation or a device went: the kept downloads no app's pool uses any
+    /// more are deleted (device round 2, item 9). Never one still in a pool; not while a tweak is
+    /// being analysed (it may be reading one), the next removal or « Tout nettoyer » does it then.
+    private func collectUnusedDownloads(after event: String) {
+        guard tweaksInFlight == 0 else { return }
+        let freed = removeUnusedDownloads()
+        if freed.count > 0 {
+            Self.logger.notice("download cache: \(freed.count) no longer used deleted (\(freed.bytes) bytes) after \(event)")
+        }
     }
 
     /// Deletes a record (and its files) only if it has no installation left. Returns true when deleted.
@@ -656,7 +668,10 @@ public actor AppLibrary {
         do { try save() } catch { items = previous; throw error }
         // With none left the record goes with its files (`removeIfEmpty`), or a job is installing
         // it elsewhere with its own choice: its tweaks are left alone.
-        if !items[index].installations.isEmpty { collectUnusedTweaks(recordID: recordID, keeping: keepingTweaks) }
+        if !items[index].installations.isEmpty {
+            collectUnusedTweaks(recordID: recordID, keeping: keepingTweaks)
+            collectUnusedDownloads(after: "an installation of \(recordID.uuidString) removed")
+        }
         return true
     }
 
@@ -957,6 +972,7 @@ public actor AppLibrary {
         for id in touched where items.first(where: { $0.id == id })?.installations.isEmpty == false {
             collectUnusedTweaks(recordID: id, keeping: keepingTweaks)
         }
+        collectUnusedDownloads(after: "device removed")
         return removed
     }
 

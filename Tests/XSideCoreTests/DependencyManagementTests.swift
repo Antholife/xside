@@ -244,6 +244,53 @@ struct DependencyManagementTests {
         return sha
     }
 
+    /// Device round 2, item 9: an app removed from XSide, uninstalled or gone from its device
+    /// (its installation forgotten, its record removed, its device removed): its pool goes, and
+    /// the kept downloads no app's pool uses any more are deleted at once. One still used never is.
+    @Test func removingAnAppDeletesTheDownloadsNoAppUsesAnyMore() async throws {
+        try await withTemporaryDirectory("deps-autoclean") { dir in
+            let lib = AppLibrary(root: dir.appendingPathComponent("lib"))
+            let shared = try await store(lib, "cephei 1.17.1", packageID: "ws.hbang.common", version: "1.17.1", dir: dir)
+            let own = try await store(lib, "altlist", packageID: "com.opa334.altlist", version: "1.0", dir: dir)
+            func file(_ sha: String) -> String { lib.root.appendingPathComponent("downloads/\(sha).deb").path }
+            func app(_ id: String) async throws -> AppRecord {
+                let ipa = dir.appendingPathComponent("\(id).ipa")
+                try Data(id.utf8).write(to: ipa)
+                return try await lib.importIPA(ipa, info: AppInfo(bundleID: "com.example.\(id)", name: id, version: "1.0",
+                                                                  executable: id), teamID: "TEAM123456")
+            }
+            func add(_ rec: AppRecord, _ sha: String, package: String, devices: [String]) async throws {
+                let deb = dir.appendingPathComponent("\(sha).deb")
+                try await FakeDeb.deb(control: "Package: \(package)\nName: \(package)\nVersion: 1.0\n",
+                                      files: [.file("./usr/lib/lib\(package.count).dylib", FakeIPA.dylibMachO(linking: [], padding: 64))],
+                                      compression: "gz").write(to: deb)
+                _ = try await lib.addTweak(deb, origin: .downloaded(repo: "chariz", url: "u", sha256: sha), recordID: rec.id,
+                                           deviceIDs: devices, runner: ProcessRunner(), now: Date())
+            }
+            let a = try await app("A"), b = try await app("B")
+            let now = Date()
+            for d in ["d1", "d2"] { try await lib.upsert(Installation(deviceID: d, installedAt: now, expiresAt: now.addingTimeInterval(86_400)), for: a.id) }
+            try await lib.upsert(Installation(deviceID: "d1", installedAt: now, expiresAt: now.addingTimeInterval(86_400)), for: b.id)
+            try await add(a, shared, package: "ws.hbang.common", devices: ["d1", "d2"])
+            try await add(a, own, package: "com.opa334.altlist", devices: ["d1", "d2"])
+            try await add(b, shared, package: "ws.hbang.common", devices: ["d1"])
+
+            // A gone from d1 only: d2 still lists both.
+            _ = try await lib.removeInstallation(recordID: a.id, deviceID: "d1")
+            #expect(FileManager.default.fileExists(atPath: file(own)) && FileManager.default.fileExists(atPath: file(shared)))
+            // A gone from d2, its record removed: AltList went with it, Cephei stays (B uses it).
+            _ = try await lib.removeInstallation(recordID: a.id, deviceID: "d2")
+            try await lib.removeIfEmpty(a.id)
+            #expect(!FileManager.default.fileExists(atPath: file(own)))
+            #expect(FileManager.default.fileExists(atPath: file(shared)))
+            #expect(await lib.downloadUsage().map(\.sha256) == [shared])
+            // B's device removed from XSide: nothing uses Cephei any more.
+            try await lib.removeDevice("d1")
+            #expect(!FileManager.default.fileExists(atPath: file(shared)))
+            #expect(await lib.downloadUsage().isEmpty)
+        }
+    }
+
     @Test func keptDownloadsListTheirUseAndOnlyUnusedOnesAreDeleted() async throws {
         try await withTemporaryDirectory("deps-usage") { dir in
             let lib = AppLibrary(root: dir.appendingPathComponent("lib"))
