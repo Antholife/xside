@@ -23,6 +23,8 @@ struct TweakDependenciesView: View {
     let rows: [DependencyRow]
     var deviceNames: [String: String] = [:]
     var errors: [String: String] = [:]
+    /// What the last add did, by package id (green line).
+    var notices: [String: String] = [:]
     var beingAdded: Set<String> = []
     var isDisabled = false
     /// The rows' height past which they scroll (nil: the visible screen less room for the rest).
@@ -74,7 +76,7 @@ struct TweakDependenciesView: View {
             ForEach(rows) { row in
                 if row.id != rows.first?.id { Divider().padding(.leading, 48) }
                 let key = row.missingDependency?.package ?? row.dependency.package
-                DependencyRowView(row: row, deviceNames: deviceNames, error: errors[key],
+                DependencyRowView(row: row, deviceNames: deviceNames, error: errors[key], notice: notices[key],
                                   isAdding: beingAdded.contains(key), isDisabled: isDisabled,
                                   open: open, addDeb: { if let d = row.missingDependency { addDeb(d, $0) } },
                                   download: { if let d = row.missingDependency { download(d) } })
@@ -89,6 +91,7 @@ private struct DependencyRowView: View {
     let row: DependencyRow
     let deviceNames: [String: String]
     let error: String?
+    var notice: String?
     let isAdding: Bool
     let isDisabled: Bool
     let open: (URL) -> Void
@@ -133,6 +136,12 @@ private struct DependencyRowView: View {
                     DependencyStatusLine(status: s, deviceName: s.deviceID.map { deviceNames[$0] ?? $0 })
                 }
                 if missing != nil { actions }
+                if let notice {
+                    Label(notice, systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color(nsColor: .systemGreen))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let error {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
                         .font(.system(size: 11))
@@ -265,7 +274,7 @@ struct TweakDependenciesSheet: View {
         if let found = model.dependencyRows(target) {
             let package = found.package
             TweakDependenciesView(tweakName: package.name, rows: found.rows, deviceNames: found.deviceNames,
-                                  errors: model.dependencyErrors, beingAdded: model.dependenciesBeingAdded,
+                                  errors: model.dependencyErrors, notices: model.dependencyNotices, beingAdded: model.dependenciesBeingAdded,
                                   isDisabled: isDisabled,
                                   open: { NSWorkspace.shared.open($0) },
                                   addDeb: { dep, urls in Task { await model.addDependencyDeb(urls, for: dep, target: target) } },

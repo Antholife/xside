@@ -1055,5 +1055,8 @@
 "deps.error.notFound" = "%@ n'est pas dans ce dépôt dans une version qui convient.";
 "deps.tooNew" = "La version %1$@ est trop récente : il faut %2$@.";
 "deps.unsuitable" = "La version %1$@ ne convient pas : il faut %2$@.";
+"deps.added" = "%1$@ ajoutée au pool de l'app, activée sur %2$@.";
+"deps.added.nowhere" = "%@ ajoutée au pool de l'app, activée sur aucun appareil (active-la dans Tweaks).";
+"deps.added.tweakOn" = "%@ y est maintenant activé.";
 "deps.onDevice" = "%1$@ sur %2$@";
 "tweaks.missingHere" = "Manquante sur cet appareil : %@ (voir Dépendances…)";

@@ -470,12 +470,14 @@ extension AppModel {
     /// « Dépendances… », and by itself after adding a tweak with a « Manquante » one.
     func showDependencies(for target: DependencyTarget) {
         dependencyErrors = [:]
+        dependencyNotices = [:]
         dependencySheet = DependencySheet(target: target)
     }
 
     func closeDependencies() {
         dependencySheet = nil
         dependencyErrors = [:]
+        dependencyNotices = [:]
     }
 
     /// The first of `targets` that has a missing dependency, unless a sheet is already shown.
@@ -550,7 +552,7 @@ extension AppModel {
             } catch {
                 throw DependencyFailure(text: Self.downloadErrorText(error, dependency: dependency, repoName: repoName))
             }
-            guard self.confirmDownload(source, dependency: dependency) else { return nil }
+            guard self.confirmDownload(source, dependency: dependency) else { return .cancelled("download not confirmed") }
             let fetched: (file: URL, origin: TweakOrigin)
             do {
                 fetched = try await downloader.fetch(source)
@@ -563,16 +565,35 @@ extension AppModel {
 
     private struct DependencyFailure: Error { let text: String }
 
-    /// Runs one add for a dependency's row: its spinner, then its orange line on a failure.
-    private func addingDependency(_ dependency: DebDependency, _ work: @escaping () async throws -> String?) async {
+    /// How one add of a dependency ended: always logged, and shown under its row (green when
+    /// added, orange when not; nothing when the person cancelled).
+    enum DependencyOutcome {
+        case added(String)
+        case problem(String)
+        case cancelled(String)
+    }
+
+    /// Runs one add for a dependency's row: its spinner, then its green or orange line.
+    private func addingDependency(_ dependency: DebDependency, _ work: @escaping () async throws -> DependencyOutcome) async {
         let key = dependency.package
         guard !dependenciesBeingAdded.contains(key) else { return }
         dependencyErrors[key] = nil
+        dependencyNotices[key] = nil
         dependenciesBeingAdded.insert(key)
         defer { dependenciesBeingAdded.remove(key) }
         do {
-            if let problem = try await work() { dependencyErrors[key] = problem }
+            switch try await work() {
+            case .added(let notice):
+                Self.logger.notice("dependency \(key) added: \(notice)")
+                dependencyNotices[key] = notice
+            case .problem(let problem):
+                Self.logger.notice("dependency \(key) not added: \(problem)")
+                dependencyErrors[key] = problem
+            case .cancelled(let why):
+                Self.logger.notice("dependency \(key) not added: \(why)")
+            }
         } catch let failure as DependencyFailure {
+            Self.logger.notice("dependency \(key) not added: \(failure.text)")
             dependencyErrors[key] = failure.text
         } catch {
             Self.logger.notice("dependency \(key) not added: \(String(describing: error))")
@@ -613,34 +634,38 @@ extension AppModel {
         return alert.runModal() == .alertFirstButtonReturn
     }
 
-    /// Analyses `url`, checks it is `dependency` (else the orange line's text), and adds it on the
-    /// devices where the tweak that needs it is on.
+    /// Analyses `url`, checks it is `dependency` (else the orange line's text), and adds it where
+    /// `DependencyPlacement` says: where the tweak that needs it is on, and where it unblocks that
+    /// tweak (which is turned on there). Says what it did.
     private func addDependency(_ url: URL, origin: TweakOrigin, for dependency: DebDependency,
-                               target: DependencyTarget) async throws -> String? {
+                               target: DependencyTarget) async throws -> DependencyOutcome {
         switch target {
         case .draft(let tweakID):
-            guard let flow = install, !flow.isRunning else { return nil }
+            guard let flow = install, !flow.isRunning else { return .cancelled("the install window closed or started") }
             let staging = tweakStaging(flow)
             let package = try await TweakAnalyzer.analyze(url, into: staging, origin: origin, runner: runner, now: Date())
             let known = flow.tweaks.contains { $0.id == package.id }
             let directory = staging.appendingPathComponent(package.id)
             guard install === flow, !flow.isRunning else {
                 if !known { try? FileManager.default.removeItem(at: directory) }
-                return nil
+                return .cancelled("the install window closed or started")
             }
             if let problem = Self.mismatchText(DependencyDirectory.check(package, for: dependency)) {
                 if !known { try? FileManager.default.removeItem(at: directory) }
-                return problem
+                return .problem(problem)
             }
-            // Only where the tweak that needs it is on (nowhere when it's on nowhere).
-            let devices = flow.tweaks.first { $0.id == tweakID }?.enabledDevices.intersection(flow.deviceIDs) ?? []
+            guard let tweak = flow.tweaks.first(where: { $0.id == tweakID }) else { return .cancelled("the tweak was removed") }
+            let plan = DependencyPlacement.plan(tweak: tweak.package, adding: package, devices: flow.deviceIDs.map {
+                .init(id: $0, context: draftContext(flow, tweakID, on: $0), tweakOn: tweak.enabledDevices.contains($0))
+            })
+            let devices = plan.dependencyOn
             if let i = flow.tweaks.firstIndex(where: { $0.id == package.id }) {
                 flow.tweaks[i].enabledDevices.formUnion(devices)
             } else if let i = flow.tweaks.firstIndex(where: { $0.package.packageID == package.packageID }) {
                 let old = flow.tweaks[i]
                 guard confirmReplace(old: old.package, new: package) else {
                     try? FileManager.default.removeItem(at: directory)
-                    return nil
+                    return .cancelled("replacement not confirmed")
                 }
                 var draft = TweakDraft(package: package, directory: directory, enabledDevices: old.enabledDevices.union(devices),
                                        force: old.force, verdicts: [:])
@@ -654,25 +679,55 @@ extension AppModel {
                 draft.seenDevices = Set(flow.deviceIDs)
                 flow.tweaks.append(draft)
             }
+            if let i = flow.tweaks.firstIndex(where: { $0.id == tweakID }) { flow.tweaks[i].enabledDevices.formUnion(plan.tweakTurnedOn) }
             refreshTweakVerdicts(flow)
-            return nil
+            return .added(addedNotice(package, on: flow.deviceIDs.filter(devices.contains), tweak: tweak.package,
+                                      turnedOn: !plan.tweakTurnedOn.isEmpty))
         case .entry(let key, let tweakID):
             // Checked from a scratch copy first: a wrong one never enters the app's pool.
             let scratch = libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent(UUID().uuidString)
             defer { try? FileManager.default.removeItem(at: scratch) }
             let checked = try await TweakAnalyzer.analyze(url, into: scratch, origin: origin, runner: runner, now: Date())
-            if let problem = Self.mismatchText(DependencyDirectory.check(checked, for: dependency)) { return problem }
-            guard let record = records.first(where: { $0.id == key.recordID }) else { return nil }
-            // The same devices the statuses are for: where the tweak's list has it on.
+            if let problem = Self.mismatchText(DependencyDirectory.check(checked, for: dependency)) { return .problem(problem) }
+            guard let record = records.first(where: { $0.id == key.recordID }),
+                  let tweak = record.tweaks?.first(where: { $0.id == tweakID }) else { return .cancelled("the app or tweak is gone") }
+            // The devices whose list has the tweak (on, or off because it was ❌), the shown one first.
+            let lists = tweakLists(record)
+            var listing = lists.filter { $0.value.contains { $0.id == tweakID } }.map(\.key).sorted()
+            if let i = listing.firstIndex(of: key.deviceID) { listing.insert(listing.remove(at: i), at: 0) }
+            let plan = DependencyPlacement.plan(tweak: tweak, adding: checked, devices: listing.map { id in
+                .init(id: id, context: entryContext(record, tweakID, on: id),
+                      tweakOn: lists[id]?.contains { $0.id == tweakID && $0.enabled } == true)
+            })
             let (package, replacing) = try await library.addTweak(url, origin: origin, recordID: key.recordID,
-                                                                  deviceIDs: tweakDevices(record, tweakID: tweakID),
+                                                                  deviceIDs: listing.filter(plan.dependencyOn.contains),
                                                                   runner: runner, now: Date())
-            if let replacing, confirmReplace(old: replacing, new: package) {
+            if let replacing {
+                guard confirmReplace(old: replacing, new: package) else {
+                    await reloadRecords()
+                    return .cancelled("replacement not confirmed")
+                }
                 try await library.replaceTweak(replacing.id, with: package, recordID: key.recordID)
             }
             await reloadRecords()
-            return nil
+            // The tweak it unblocks goes on there (a converted one asks first, as in Mes apps).
+            var turnedOn = false
+            for id in listing where plan.tweakTurnedOn.contains(id) {
+                guard let current = currentEntry(JobKey(recordID: key.recordID, deviceID: id)) else { continue }
+                await setTweak(tweakID, enabled: true, for: current)
+                turnedOn = true
+            }
+            return .added(addedNotice(package, on: listing.filter(plan.dependencyOn.contains), tweak: tweak, turnedOn: turnedOn))
         }
+    }
+
+    /// « Cephei 1.17.1 ajoutée, activée sur iPhone. XSide Test Cephei y est maintenant activé. »
+    private func addedNotice(_ package: TweakPackage, on deviceIDs: [String], tweak: TweakPackage, turnedOn: Bool) -> String {
+        let name = package.name + (package.version.map { " " + $0 } ?? "")
+        let names = deviceIDs.map { id in devices.first { $0.id == id }?.name ?? L("popover.unknownDevice") }
+        var text = names.isEmpty ? L("deps.added.nowhere", name) : L("deps.added", name, names.joined(separator: ", "))
+        if turnedOn { text += " " + L("deps.added.tweakOn", tweak.name) }
+        return text
     }
 
     private static func mismatchText(_ match: DependencyMatch) -> String? {

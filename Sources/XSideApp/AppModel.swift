@@ -158,6 +158,8 @@ final class AppModel {
     /// (by package id, an orange line under its row) and the dependencies being added.
     var dependencySheet: DependencySheet?
     var dependencyErrors: [String: String] = [:]
+    /// What the last add of a dependency did (by package id, a green line under its row).
+    var dependencyNotices: [String: String] = [:]
     var dependenciesBeingAdded: Set<String> = []
     /// Trusted repos are reached only through this (tests and snapshots never use the network).
     var repoFetcher: any HTTPFetching = URLSessionFetcher()
