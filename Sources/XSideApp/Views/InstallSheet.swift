@@ -305,8 +305,12 @@ struct InstallSheet: View {
                 PreflightNotes(warnings: model.preflightWarnings(for: flow), model: model, flow: flow)
             case 1:
                 InstallOptionsSection(model: model, flow: flow)
-                DuoOptionsCard(model: model, flow: flow)
-                ICloudOptionsCard(model: model, flow: flow)
+                if !flow.deviceIDs.isEmpty {
+                    CompatibilityFixesSection {
+                        DuoOptionsCard(model: model, flow: flow)
+                        ICloudOptionsCard(model: model, flow: flow)
+                    }
+                }
                 // What this step's fields cause (minimum iOS, a new App ID, an older version).
                 PreflightNotes(warnings: model.preflightWarnings(for: flow).filter(\.followsInstallOptions),
                                model: model, flow: flow)

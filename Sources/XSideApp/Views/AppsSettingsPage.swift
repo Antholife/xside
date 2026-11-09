@@ -299,8 +299,10 @@ private struct AppSettingsContent: View {
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    duoOption
-                    iCloudOption
+                    CompatibilityFixesSection {
+                        duoOption
+                        iCloudOption
+                    }
                 }
                 .padding(16)
                 .reportsPaneHeight("detail", adding: 64) // the header above
@@ -312,31 +314,27 @@ private struct AppSettingsContent: View {
     /// "Simulate signed-out iCloud": an install option like the Duo one, from the next signing.
     private var iCloudOption: some View {
         let on = entry.installation.iCloudSignedOut == true
-        return VStack(alignment: .leading, spacing: 6) {
-            SectionTitle(L("icloud.section"))
-            VStack(alignment: .leading, spacing: 0) {
-                ICloudOptionRow(state: model.iCloudState(app: entry.record.icloud), appName: appName, deviceName: nil,
-                                isOn: Binding(get: { on }, set: { value in
-                                    Task { await model.setICloudSignedOut(value, for: entry) }
-                                }),
-                                missing: on && entry.installation.iCloudSignedOutMissing == true)
-                .disabled(!model.canManage(entry))
-                HStack(spacing: 8) {
-                    Text(L("duo.nextSigning"))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 0)
-                    Button(L("duo.refreshNow")) {
-                        _ = model.refreshNow(RefreshJob(recordID: entry.record.id, deviceID: entry.installation.deviceID))
-                    }
-                    .controlSize(.small)
-                    .disabled(!model.canManage(entry))
+        return CompatibilityFixCard {
+            ICloudOptionRow(state: model.iCloudState(app: entry.record.icloud), appName: appName, deviceName: nil,
+                            isOn: Binding(get: { on }, set: { value in
+                                Task { await model.setICloudSignedOut(value, for: entry) }
+                            }),
+                            missing: on && entry.installation.iCloudSignedOutMissing == true)
+            .disabled(!model.canManage(entry))
+            HStack(spacing: 8) {
+                Text(L("duo.nextSigning"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Button(L("duo.refreshNow")) {
+                    _ = model.refreshNow(RefreshJob(recordID: entry.record.id, deviceID: entry.installation.deviceID))
                 }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 10)
+                .controlSize(.small)
+                .disabled(!model.canManage(entry))
             }
-            .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .padding(.horizontal, 12)
+            .padding(.bottom, 10)
         }
     }
 
@@ -344,34 +342,31 @@ private struct AppSettingsContent: View {
     /// signing (a refresh, which can be started from here).
     private var duoOption: some View {
         let on = entry.installation.duoCompatibility == true
-        return VStack(alignment: .leading, spacing: 6) {
-            SectionTitle(L("duo.section"))
-            VStack(alignment: .leading, spacing: 0) {
-                DuoOptionRow(state: model.duoState(for: entry.installation.deviceID, app: entry.record.duo,
-                                                   installation: entry.installation),
-                             appName: appName, deviceName: nil,
-                             isOn: Binding(get: { on }, set: { value in
-                                 Task { await model.setDuoCompatibility(value, for: entry) }
-                             }),
-                             missing: on && entry.installation.duoCompatibilityMissing == true,
-                             storedChoice: true)
-                .disabled(!model.canManage(entry))
-                HStack(spacing: 8) {
-                    Text(L("duo.nextSigning"))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 0)
-                    Button(L("duo.refreshNow")) {
-                        _ = model.refreshNow(RefreshJob(recordID: entry.record.id, deviceID: entry.installation.deviceID))
-                    }
-                    .controlSize(.small)
-                    .disabled(!model.canManage(entry))
+        return CompatibilityFixCard {
+            DuoOptionRow(state: model.duoState(for: entry.installation.deviceID, app: entry.record.duo,
+                                               installation: entry.installation),
+                         appName: appName, deviceName: nil,
+                         isOn: Binding(get: { on }, set: { value in
+                             Task { await model.setDuoCompatibility(value, for: entry) }
+                         }),
+                         needsModule: entry.record.duo?.needsLegacyModule == true,
+                         missing: on && entry.installation.duoCompatibilityMissing == true,
+                         storedChoice: true)
+            .disabled(!model.canManage(entry))
+            HStack(spacing: 8) {
+                Text(L("duo.nextSigning"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Button(L("duo.refreshNow")) {
+                    _ = model.refreshNow(RefreshJob(recordID: entry.record.id, deviceID: entry.installation.deviceID))
                 }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 10)
+                .controlSize(.small)
+                .disabled(!model.canManage(entry))
             }
-            .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .padding(.horizontal, 12)
+            .padding(.bottom, 10)
         }
     }
 

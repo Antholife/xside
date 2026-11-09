@@ -3,8 +3,9 @@ import AppKit
 import SwiftUI
 import XSideCore
 
-/// Debug-only: `XSIDE_SNAPSHOTS=<folder>` renders the panel and Settings > Mes apps with made-up
-/// apps on two devices (long names) to PNGs in that folder, in English and French, light and
+/// Debug-only: `XSIDE_SNAPSHOTS=<folder>` renders the panel, Settings > Mes apps and Créer &
+/// contribuer, the compatibility fixes in every state (`fixes-*`), the install window's step ② and
+/// step ① summary with made-up apps on two devices (long names) to PNGs in that folder, in English and French, light and
 /// dark, then quits; nothing of the app starts. It runs only in a copy whose bundle id ends in
 /// ".snapshot", so its preferences are its own, and its library is a folder inside the output:
 /// the person's XSide, preferences and apps are never read or written. To look at a layout
@@ -55,10 +56,56 @@ enum SnapshotRenderer {
                     render(SettingsView(model: model).background(Color(nsColor: .windowBackgroundColor)),
                            dark: dark, to: out.appendingPathComponent("myapps-\(name)-\(language)-\(scheme).png"))
                 }
+                model.settingsPane = .build
+                render(SettingsView(model: model).background(Color(nsColor: .windowBackgroundColor)),
+                       dark: dark, to: out.appendingPathComponent("build-\(language)-\(scheme).png"))
+                // Every state of the compatibility fixes, as step ② shows them.
+                render(fixStates.padding(20).frame(width: InstallWindow.width).background(Color(nsColor: .windowBackgroundColor)),
+                       dark: dark, to: out.appendingPathComponent("fixes-\(language)-\(scheme).png"))
+                // The install window's step ② and step ① summary for an app without scenes, both devices.
+                let flow = sample.flow()
+                render(VStack(alignment: .leading, spacing: 14) {
+                    InstallOptionsSection(model: model, flow: flow)
+                    CompatibilityFixesSection {
+                        DuoOptionsCard(model: model, flow: flow)
+                        ICloudOptionsCard(model: model, flow: flow)
+                    }
+                }
+                .padding(20).frame(width: InstallWindow.width).background(Color(nsColor: .windowBackgroundColor)),
+                       dark: dark, to: out.appendingPathComponent("install-step2-\(language)-\(scheme).png"))
+                render(InstallSummaryView(model: model, flow: flow)
+                        .padding(20).frame(width: InstallWindow.width).background(Color(nsColor: .windowBackgroundColor)),
+                       dark: dark, to: out.appendingPathComponent("install-summary-\(language)-\(scheme).png"))
+                model.settingsPane = .apps
             }
         }
         print("snapshots written to \(out.path)")
         return 0
+    }
+
+    /// The Duo option: recommended (own scene delegate), not a Duo, already compatible, recommended
+    /// with the compatibility module; then iCloud: recommended, useful, not needed.
+    @MainActor private static var fixStates: some View {
+        let off = Binding.constant(false)
+        return CompatibilityFixesSection {
+            CompatibilityFixCard {
+                DuoOptionRow(state: .recommended, appName: "YouTube", deviceName: "recommended", isOn: off)
+                Divider().padding(.leading, 48)
+                DuoOptionRow(state: .notADuo, appName: "YouTube", deviceName: "notADuo", isOn: off)
+                Divider().padding(.leading, 48)
+                DuoOptionRow(state: .alreadySupported, appName: "YouTube", deviceName: "alreadySupported", isOn: off)
+                Divider().padding(.leading, 48)
+                DuoOptionRow(state: .recommended, appName: "Instagram", deviceName: "legacy module", isOn: .constant(true),
+                             needsModule: true)
+            }
+            CompatibilityFixCard {
+                ICloudOptionRow(state: .recommended, appName: "Notes+", deviceName: "recommended", isOn: off)
+                Divider().padding(.leading, 48)
+                ICloudOptionRow(state: .useful, appName: "YouTube", deviceName: "useful", isOn: off)
+                Divider().padding(.leading, 48)
+                ICloudOptionRow(state: .notNeeded, appName: "Duolingo", deviceName: "notNeeded", isOn: off)
+            }
+        }
     }
 
     /// Lays the view out in an off-screen window at its own size, lets SwiftUI settle (pages report
@@ -92,12 +139,26 @@ enum SnapshotRenderer {
         let selections: [(String, JobKey)]
         /// The installation shown as stopped at launch.
         let crashed: JobKey
+        /// The app without scene support, for the install window's renders.
+        let legacyApp: AppRecord
+        let deviceIDs: [String]
+
+        /// An install of `legacyApp` on both devices, Duo compatibility on for the iPhone.
+        @MainActor func flow() -> InstallFlow {
+            let flow = InstallFlow(ipa: URL(fileURLWithPath: "/tmp/Instagram.ipa"))
+            flow.info = AppInfo(bundleID: legacyApp.originalBundleID, name: legacyApp.displayName, version: "412.0",
+                                executable: "Instagram", sdkVersion: "26.0", duo: legacyApp.duo, icloud: legacyApp.icloud)
+            flow.deviceIDs = deviceIDs
+            flow.duoDevices = [deviceIDs[0]]
+            return flow
+        }
 
         init(now: Date, library: URL) {
             let iPad = Device(id: "snapshot-ipad", udid: nil, name: "Anthony's iPad Air 5", model: "iPad Air (5th generation)",
                               kind: .iPad, transport: .network, isPaired: true, isAvailable: true, developerModeEnabled: true)
-            let iPhone = Device(id: "snapshot-iphone", udid: nil, name: "iPhone Duo de Anthony", model: "iPhone 16 Pro",
-                                kind: .iPhone, transport: .usb, isPaired: true, isAvailable: true, developerModeEnabled: true)
+            let iPhone = Device(id: "snapshot-iphone", udid: nil, name: "iPhone Duo de Anthony", model: "iPhone",
+                                kind: .iPhone, transport: .usb, isPaired: true, isAvailable: true, developerModeEnabled: true,
+                                productType: "iPhone19,4")
             devices = [iPad, iPhone]
             func installation(_ device: Device, days: Double, version: String, paused: Bool = false,
                               checkIn: TimeInterval? = nil) -> Installation {
@@ -114,14 +175,21 @@ enum SnapshotRenderer {
                           originalBundleID: "com.example.app\(n)", signedBundleID: "com.example.app\(n)", ipaPath: "",
                           options: InstallOptions(), installations: installations, teamID: "")
             }
-            let video = record(1, "YouTube", [installation(iPad, days: 5.2, version: "20.45.3", checkIn: 3 * 3600),
+            var video = record(1, "YouTube", [installation(iPad, days: 5.2, version: "20.45.3", checkIn: 3 * 3600),
                                               installation(iPhone, days: 3.6, version: "20.45.3", checkIn: 4)])
-            let photos = record(2, "Instagram", [installation(iPhone, days: 1.3, version: "412.0", paused: true)])
+            video.duo = DuoAppInfo(sdkVersion: "26.4", adoptsScenes: false, sceneDelegateClass: "YTSceneDelegate")
+            video.icloud = ICloudAppInfo(declaresICloud: false, linksCloudKit: true)
+            // No scene support of its own: the Duo option brings the compatibility module.
+            var photos = record(2, "Instagram", [installation(iPhone, days: 1.3, version: "412.0", paused: true)])
+            photos.duo = DuoAppInfo(sdkVersion: "26.0", adoptsScenes: false, sceneDelegateClass: nil)
+            photos.icloud = ICloudAppInfo(declaresICloud: true, containers: ["iCloud.com.example.app2"])
             let lessons = record(3, "Duolingo: Language Lessons", [installation(iPhone, days: 6.1, version: "6.9.0",
                                                                                checkIn: 2 * 86_400)])
             records = [video, photos, lessons]
             live = [JobKey(recordID: video.id, deviceID: iPhone.id)]
             crashed = JobKey(recordID: lessons.id, deviceID: iPhone.id)
+            legacyApp = photos
+            deviceIDs = [iPhone.id, iPad.id]
             selections = [("iphone", JobKey(recordID: video.id, deviceID: iPhone.id)),
                           ("ipad", JobKey(recordID: video.id, deviceID: iPad.id)),
                           ("paused", JobKey(recordID: photos.id, deviceID: iPhone.id))]

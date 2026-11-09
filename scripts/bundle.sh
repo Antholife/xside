@@ -67,8 +67,15 @@ if xcrun -sdk iphoneos --show-sdk-path >/dev/null 2>&1; then
         -I App/ICloud -framework Foundation -weak_framework CloudKit \
         -install_name @executable_path/Frameworks/XSideICloud.dylib \
         -o "$APP/Contents/Resources/XSideICloud.dylib" App/ICloud/*.m
+    # The iPhone Duo option's compatibility module (App/DuoLegacy), added only to apps without scene
+    # support of their own when the option is on; independent of XSide's module too.
+    xcrun -sdk iphoneos clang -dynamiclib -arch arm64 -mios-version-min=15.0 -fobjc-arc -O2 \
+        -Wall -Wextra -Werror -Wno-unused-parameter \
+        -framework UIKit -framework Foundation -framework CoreGraphics \
+        -install_name @executable_path/Frameworks/XSideDuoLegacy.dylib \
+        -o "$APP/Contents/Resources/XSideDuoLegacy.dylib" App/DuoLegacy/*.m
 else
-    echo "warning: no iOS SDK, building without the welcome popup and signed-out iCloud libraries" >&2
+    echo "warning: no iOS SDK, building without the welcome popup, signed-out iCloud and iPhone Duo compatibility libraries" >&2
 fi
 # Sparkle (self-updates): the framework next to the executable, found through its rpath.
 mkdir -p "$APP/Contents/Frameworks"

@@ -75,7 +75,8 @@ private struct CrashView: View {
             content
             Divider()
             HStack {
-                Button(L("crash.report")) { Diagnostics.reportIssue(model: model) }
+                Button(L("fixes.request.button")) { model.requestFix(for: entry, finding: check?.finding) }
+                    .help(L("fixes.request.crashHelp"))
                 Spacer()
                 Button(L("crash.again")) { Task { await model.diagnoseCrash(entry.id) } }
                     .disabled(check == .checking)

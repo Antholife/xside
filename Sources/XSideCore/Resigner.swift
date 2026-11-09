@@ -68,6 +68,9 @@ public struct Resigner: Sendable {
     /// The signed-out iCloud library (`XSideICloud.dylib`, XSide.app's resource), nil when this
     /// build has none: the option then adds nothing (see `hasICloudSignedOut`).
     private let iCloudLibrary: URL?
+    /// The iPhone Duo compatibility module for apps without scene support (`XSideDuoLegacy.dylib`,
+    /// XSide.app's resource), nil when this build has none: such apps then get nothing (`notPossible`).
+    private let duoLegacyLibrary: URL?
     /// The section added to the app's iOS Settings page, built from the profile it's signed with
     /// and the installation's facts (nil when the caller has none).
     private let settingsSection: (@Sendable (ProvisioningProfile, InstallationFacts?) -> SettingsSection)?
@@ -87,9 +90,10 @@ public struct Resigner: Sendable {
                 settingsSection: (@Sendable (ProvisioningProfile, InstallationFacts?) -> SettingsSection)? = nil,
                 welcome: @escaping @Sendable (ProvisioningProfile) -> WelcomePayload? = { _ in nil },
                 textLanguage: @escaping @Sendable (InstallationFacts?) -> String = { _ in "en" },
-                iCloudLibrary: URL? = nil) {
+                iCloudLibrary: URL? = nil, duoLegacyLibrary: URL? = nil) {
         self.runner = runner
         self.iCloudLibrary = iCloudLibrary
+        self.duoLegacyLibrary = duoLegacyLibrary
         self.welcomeDylib = welcomeDylib
         self.settingsSection = settingsSection
         self.welcome = welcome
@@ -155,6 +159,9 @@ public struct Resigner: Sendable {
         // declares the new SDK (XSide's load command included, when the features are on, so
         // both get the room); the Info.plist keys follow. Any problem leaves the executable
         // exactly as it was, and the library is then added as without the option.
+        // An app without scene support gets the compatibility module too: its load command comes
+        // first in the copy, and its file is in Frameworks/ before the copy replaces the executable
+        // (an SDK 27.1 app without scenes is stopped at launch).
         var duoApplied: DuoPlan?
         if options.duoCompatibility == true {
             await onDuo(nil)
@@ -162,10 +169,15 @@ public struct Resigner: Sendable {
             switch duoPlan(app: app, executable: executableURL) {
             case .plan(let plan):
                 let loading = (library ? [Self.welcomeLoadPath] : []) + (shim ? [ICloudSignedOut.loadPath] : [])
-                if await applyDuo(to: executableURL, growth: plan.growth, loading: loading, workDir: workDir) {
+                let module = plan.legacyModule ? copyDuoLegacyLibrary(to: app) : nil
+                if plan.legacyModule, module == nil {
+                    outcome = .failed
+                } else if await applyDuo(to: executableURL, growth: plan.growth, loading: loading,
+                                         required: plan.legacyModule ? DuoCompatibility.legacyLoadPath : nil, workDir: workDir) {
                     duoApplied = plan
-                    outcome = .added
+                    outcome = plan.legacyModule ? .addedWithModule : .added
                 } else {
+                    if let module { try? FileManager.default.removeItem(at: module) }
                     outcome = .failed
                 }
             case .skip(let reason):
@@ -297,6 +309,8 @@ public struct Resigner: Sendable {
     struct DuoPlan {
         let growth: Int
         let sceneDelegate: String?
+        /// The app has no scene support: XSide's compatibility module goes in, its delegate named.
+        var legacyModule = false
     }
 
     enum DuoDecision {
@@ -312,20 +326,39 @@ public struct Resigner: Sendable {
             return .skip(.failed)
         }
         let info = DuoAppInfo.read(executable: executable, plist: plist)
-        switch DuoCompatibility.optionState(isDuo: true, app: info) {
-        case .alreadySupported:
+        guard let support = DuoCompatibility.sceneSupport(for: info) else {
             Self.logger.info("duo compatibility: built with SDK \(info.sdkVersion ?? "?"), nothing to do")
             return .skip(.alreadySupported)
-        case .noSceneSupport:
-            Self.logger.notice("duo compatibility skipped: no scene manifest nor scene delegate")
+        }
+        let legacy = support == .legacyModule
+        if legacy, duoLegacyLibrary.map({ FileManager.default.fileExists(atPath: $0.path) }) != true {
+            Self.logger.notice("duo compatibility skipped: no scene support and no compatibility module in this build")
             return .skip(.notPossible)
-        case .recommended, .notADuo, .unknown:
-            guard let growth = try? MachOBuildInfo.versionCommandGrowth(of: executable) else {
-                Self.logger.notice("duo compatibility skipped: unreadable executable")
-                return .skip(.failed)
-            }
-            Self.logger.info("duo compatibility: SDK \(info.sdkVersion ?? "?"), scene delegate \(info.adoptsScenes ? "(own manifest)" : info.sceneDelegateClass ?? "?")")
-            return .plan(DuoPlan(growth: growth, sceneDelegate: info.adoptsScenes ? nil : info.sceneDelegateClass))
+        }
+        guard let growth = try? MachOBuildInfo.versionCommandGrowth(of: executable) else {
+            Self.logger.notice("duo compatibility skipped: unreadable executable")
+            return .skip(.failed)
+        }
+        let delegate = DuoCompatibility.manifestDelegate(for: support)
+        Self.logger.info("duo compatibility: SDK \(info.sdkVersion ?? "?"), scene delegate \(delegate ?? "(own manifest)")\(legacy ? " (compatibility module)" : "")")
+        return .plan(DuoPlan(growth: growth, sceneDelegate: delegate, legacyModule: legacy))
+    }
+
+    /// Copies `XSideDuoLegacy.dylib` into the app's `Frameworks/`. Returns where, nil on failure
+    /// (nothing left behind).
+    private func copyDuoLegacyLibrary(to app: URL) -> URL? {
+        guard let duoLegacyLibrary else { return nil }
+        let fm = FileManager.default
+        let target = app.appendingPathComponent("Frameworks/\(DuoCompatibility.legacyDylibName)")
+        do {
+            try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if exists(target) { try fm.removeItem(at: target) }
+            try fm.copyItem(at: duoLegacyLibrary, to: target)
+            return target
+        } catch {
+            try? fm.removeItem(at: target)
+            Self.logger.notice("duo compatibility module not copied: \(String(describing: error))")
+            return nil
         }
     }
 
@@ -336,8 +369,10 @@ public struct Resigner: Sendable {
     /// any problem the executable stays exactly as it was (run paths included). Returns whether
     /// it now declares 27.1.
     /// `loading`: XSide's libraries (its module, the signed-out iCloud one), whose load commands go
-    /// in the copy first (they take room too).
-    private func applyDuo(to executable: URL, growth: Int, loading dylibPaths: [String], workDir: URL) async -> Bool {
+    /// in the copy first (they take room too). `required`: the Duo compatibility module, whose load
+    /// command goes in before them and must fit (the patch is abandoned otherwise).
+    private func applyDuo(to executable: URL, growth: Int, loading dylibPaths: [String], required: String? = nil,
+                          workDir: URL) async -> Bool {
         let fm = FileManager.default
         let tag = UUID().uuidString
         let input = workDir.appendingPathComponent("duo-\(tag)-in")
@@ -350,8 +385,16 @@ public struct Resigner: Sendable {
         }
         do {
             try fm.copyItem(at: executable, to: input)
-            let commands = dylibPaths.reduce(0) { $0 + MachOPatcher.dylibCommand($1).count }
+            let all = (required.map { [$0] } ?? []) + dylibPaths
+            let commands = all.filter { !MachOPatcher.loadsDylib($0, in: input) }
+                .reduce(0) { $0 + MachOPatcher.dylibCommand($1).count }
             makeRoom(in: input, needing: growth + commands)
+            if let required {
+                do { _ = try MachOPatcher.addWeakDylib(required, to: input) } catch {
+                    Self.logger.notice("duo compatibility skipped: no room for the compatibility module: \(String(describing: error))")
+                    return false
+                }
+            }
             for dylibPath in dylibPaths {
                 // Its own failure (no room) is the library's, found again when it's added for real.
                 do { _ = try MachOPatcher.addWeakDylib(dylibPath, to: input) } catch {
@@ -402,10 +445,29 @@ public struct Resigner: Sendable {
     }
 
     /// Whether the signed `app` fills an iPhone Duo's screens: its executable declares SDK 27.1 or
-    /// later (patched, or built so).
+    /// later (patched, or built so), and holds the compatibility module when its manifest names it.
     public func hasDuoCompatibility(_ app: URL) -> Bool {
-        guard let info = try? IPAInspector.info(of: app) else { return false }
-        return DuoCompatibility.supportsDuo(sdk: MachOBuildInfo.sdkVersion(of: app.appendingPathComponent(info.executable)))
+        guard let info = try? IPAInspector.info(of: app),
+              DuoCompatibility.supportsDuo(sdk: MachOBuildInfo.sdkVersion(of: app.appendingPathComponent(info.executable)))
+        else { return false }
+        return !namesDuoLegacyDelegate(app) || hasDuoLegacyModule(app)
+    }
+
+    /// Whether the signed `app` holds the Duo compatibility module (apps without scene support).
+    public func hasDuoLegacyModule(_ app: URL) -> Bool {
+        let url = app.appendingPathComponent("Frameworks/\(DuoCompatibility.legacyDylibName)")
+        return (try? FileManager.default.attributesOfItem(atPath: url.path)[.type] as? FileAttributeType) == .typeRegular
+            && MachOPatcher.loadsDylib(DuoCompatibility.legacyLoadPath,
+                                       in: app.appendingPathComponent((try? IPAInspector.info(of: app))?.executable ?? ""))
+    }
+
+    private func namesDuoLegacyDelegate(_ app: URL) -> Bool {
+        guard let data = try? IPAInspector.infoPlistData(of: app),
+              let plist = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any],
+              let manifest = plist["UIApplicationSceneManifest"] as? [String: Any],
+              let configs = manifest["UISceneConfigurations"] as? [String: Any],
+              let roles = configs["UIWindowSceneSessionRoleApplication"] as? [[String: Any]] else { return false }
+        return roles.first?["UISceneDelegateClassName"] as? String == DuoCompatibility.legacySceneDelegateClass
     }
 
     // MARK: - Entitlements

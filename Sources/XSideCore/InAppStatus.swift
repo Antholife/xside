@@ -213,7 +213,8 @@ public enum InstallSummary {
         case autoRefresh(Bool)
     }
 
-    /// `install`: the app and what happens after the install; `inApp`: the XSide module in the app (only
+    /// `install`: the app and what happens after the install; `fixes`: the compatibility fixes
+    /// (iPhone Duo, signed-out iCloud; edited in step ② too, listed apart); `inApp`: the XSide module in the app (only
     /// "without XSide features" when it has none). `offersKeychain`: the app asks for shared
     /// keychain groups (the option exists only then). The Trust page is listed only when the app
     /// is opened after the install (it can't open otherwise). `duoDevices`: the names of the
@@ -224,7 +225,7 @@ public enum InstallSummary {
                              openAppAfter: Bool, openTrustPage: Bool,
                              offersKeychain: Bool, duoDevices: [String] = [],
                              offersDuo: Bool = false, iCloudDevices: [String] = [],
-                             offersICloud: Bool = false) -> (install: [Line], inApp: [Line]) {
+                             offersICloud: Bool = false) -> (install: [Line], fixes: [Line], inApp: [Line]) {
         var install: [Line] = []
         if let v = o.displayName { install.append(.displayName(v)) }
         if let v = o.customBundleID { install.append(.bundleID(v)) }
@@ -236,16 +237,17 @@ public enum InstallSummary {
         if let v = o.minimumOSVersion { install.append(.minimumOS(v)) }
         if install.isEmpty { install.append(.appUnchanged) }
         if offersKeychain { install.append(.shareKeychain(o.shareKeychain)) }
-        if offersDuo || !duoDevices.isEmpty { install.append(.duoCompatibility(duoDevices)) }
-        if offersICloud || !iCloudDevices.isEmpty { install.append(.iCloudSignedOut(iCloudDevices)) }
+        var fixes: [Line] = []
+        if offersDuo || !duoDevices.isEmpty { fixes.append(.duoCompatibility(duoDevices)) }
+        if offersICloud || !iCloudDevices.isEmpty { fixes.append(.iCloudSignedOut(iCloudDevices)) }
         install.append(.openAppAfter(openAppAfter))
         if openAppAfter { install.append(.openTrustPage(openTrustPage)) }
 
-        guard !withoutXSideFeatures else { return (install, [.xsideFeatures(false)]) }
+        guard !withoutXSideFeatures else { return (install, fixes, [.xsideFeatures(false)]) }
         let inApp: [Line] = [.xsideFeatures(true), .messages(s.derivedLevel), .showValidity(s.showValidity.value),
                              .alertLate(s.alertLate.value), .refreshCard(s.refreshCard.value),
                              .reminder(s.reminder.value), .language(s.language.value),
                              .autoRefresh(s.autoRefresh.value)]
-        return (install, inApp)
+        return (install, fixes, inApp)
     }
 }

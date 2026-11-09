@@ -45,8 +45,8 @@ struct InstallPreflightTests {
                                        sdkVersion: nil).isEmpty)
     }
 
-    /// The note says the install option can help only when the option can be turned on for this
-    /// app (duo review minor 1): not for an app without scenes and without a scene delegate.
+    /// The note says the install option can help when the option can be turned on for this app
+    /// (duo review minor 1): an app without scene support too (XSide's module adapts it).
     @Test func theDuoNoteOffersTheOptionOnlyWhenItIsPossible() {
         let duo = InstallPreflight.Target(deviceID: "duo", osVersion: "27.3", otherApps: [], hasThisApp: false, isDuo: true)
         func check(_ app: DuoAppInfo?) -> [InstallPreflight.Warning] {
@@ -54,7 +54,7 @@ struct InstallPreflightTests {
                                    sdkVersion: "26.4", duo: app)
         }
         #expect(check(DuoAppInfo(sdkVersion: "26.4", adoptsScenes: false, sceneDelegateClass: nil))
-                == [.notMadeForDuo(deviceID: "duo", optionPossible: false)])
+                == [.notMadeForDuo(deviceID: "duo", optionPossible: true)])
         #expect(check(DuoAppInfo(sdkVersion: "26.4", adoptsScenes: false, sceneDelegateClass: "YTSceneDelegate"))
                 == [.notMadeForDuo(deviceID: "duo", optionPossible: true)])
         #expect(check(DuoAppInfo(sdkVersion: "26.4", adoptsScenes: true, sceneDelegateClass: nil))

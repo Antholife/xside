@@ -32,9 +32,15 @@ fi
 # The "Simulate signed-out iCloud" option adds this one: an app would go without it silently.
 ICLOUD="$APP/Contents/Resources/XSideICloud.dylib"
 [ -f "$ICLOUD" ] || { echo "No $ICLOUD (iOS SDK missing?): not releasing without it" >&2; exit 1; }
-# Both are injected into iOS apps: an arm64 iOS Mach-O each, nothing else (a wrong build would only
+# The iPhone Duo option adds this one to apps without scene support: without it they'd go without the option.
+DUOLEGACY="$APP/Contents/Resources/XSideDuoLegacy.dylib"
+[ -f "$DUOLEGACY" ] || { echo "No $DUOLEGACY (iOS SDK missing?): not releasing without it" >&2; exit 1; }
+# Its manifest names this class: it must be in the library.
+nm -gU "$DUOLEGACY" 2>/dev/null | grep -q '_OBJC_CLASS_$_XSDuoSceneDelegate' \
+    || { echo "$DUOLEGACY has no XSDuoSceneDelegate class" >&2; exit 1; }
+# All are injected into iOS apps: an arm64 iOS Mach-O each, nothing else (a wrong build would only
 # show on a device).
-for LIB in "$WELCOME" "$ICLOUD"; do
+for LIB in "$WELCOME" "$ICLOUD" "$DUOLEGACY"; do
     [ "$(lipo -archs "$LIB" 2>/dev/null)" = arm64 ] || { echo "$LIB is not an arm64-only library" >&2; exit 1; }
     vtool -show-build "$LIB" 2>/dev/null | grep -qE 'platform IOS$' || { echo "$LIB is not built for iOS" >&2; exit 1; }
 done

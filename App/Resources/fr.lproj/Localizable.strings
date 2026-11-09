@@ -770,14 +770,9 @@
 "whatsNew.110.cli.text" = "xside apps, devices, settings <app> (voir ou changer les réglages du module), pause et resume <app>, uninstall <app>, logs -f et report. Une app se nomme par son nom ou son identifiant.";
 
 /* iPhone Duo compatibility (install option, 1.2) */
-"duo.section" = "iPhone Duo";
 "duo.option" = "Ajouter la compatibilité iPhone Duo";
 "duo.recommended" = "Recommandé";
 "duo.caption" = "L'app utilisera tous les écrans de l'iPhone Duo (intérieur et extérieur) en mode Duo. Elle n'a pas été faite pour ça : on ne sait pas comment elle se comportera ni s'affichera, des défauts sont possibles (menu ou barre d'onglets étranges, éléments mal placés), mais le mode Duo lui-même fonctionnera. Parfois, il suffit de relancer l'app pour qu'elle s'adapte.";
-"duo.caption.recommended" = "%@ n'est pas faite pour l'écran de ton iPhone Duo.";
-"duo.caption.notADuo" = "Pas recommandé : cet appareil n'est pas un iPhone Duo.";
-"duo.caption.alreadySupported" = "%@ prend déjà en charge l'iPhone Duo.";
-"duo.caption.noScenes" = "Cette app ne gère pas les scènes iOS : la compatibilité iPhone Duo n'est pas possible.";
 "duo.confirm.title" = "Ajouter la compatibilité iPhone Duo à %@ ?";
 "duo.confirm.message" = "%@ utilisera tous les écrans de l'iPhone Duo, intérieur et extérieur, en mode Duo. On ne sait pas comment elle se comportera ni s'affichera : elle n'a pas été faite pour ça, des défauts sont possibles (menu ou barre d'onglets étranges, éléments mal placés). Le mode Duo lui-même fonctionnera. Parfois, il suffit de relancer l'app pour qu'elle s'adapte. Tu peux la retirer à tout moment dans Réglages > Mes apps.";
 "duo.confirm.turnOn" = "Ajouter";
@@ -786,19 +781,32 @@
 "duo.missing.row" = "Compatibilité iPhone Duo non ajoutée (installée sans)";
 "duo.nextSigning" = "Pris en compte au prochain rafraîchissement de l'app sur cet appareil.";
 "duo.refreshNow" = "Rafraîchir maintenant";
+"fixes.request.help" = "Ouvre un formulaire sur GitHub.";
+"fixes.request.crashHelp" = "Ouvre un formulaire sur GitHub avec le diagnostic, sans données personnelles (ni identifiant d'app, ni nom d'appareil).";
+"fixes.request.prompt" = "Décris ce qui se passe (ce que tu fais, ce que l'app fait ou ne fait pas) :";
+"fixes.request.button" = "Demander un correctif";
+"fixes.request.text" = "Pas de correctif pour ton cas ? Décris le symptôme : XSide peut injecter des correctifs ciblés (une app) ou globaux (un service iOS, comme iCloud).";
+"fixes.caption" = "XSide modifie l'app pour qu'elle marche mieux sur ton appareil ou avec un compte gratuit.";
+"fixes.section" = "Correctifs de compatibilité";
+"duo.confirm.messageModule" = "%@ utilisera tous les écrans de l'iPhone Duo, intérieur et extérieur, en mode Duo. Elle n'a jamais été prévue pour les scènes iOS : XSide ajoute un petit module pour l'adapter. L'affichage et certains comportements (liens, actions rapides) peuvent être imparfaits. Parfois, il suffit de relancer l'app. Tu peux retirer l'option à tout moment dans Réglages > Mes apps.";
+"duo.caption.moduleWarning" = "Un petit module de compatibilité est ajouté à l'app : il gère les scènes iOS à sa place (sa fenêtre, les liens, les actions rapides, le passage en arrière-plan). Retire l'option si l'app se comporte mal.";
+"duo.caption.module" = "L'app utilisera tous les écrans de l'iPhone Duo (intérieur et extérieur) en mode Duo. Cette app n'a jamais été prévue pour les scènes iOS : XSide ajoute un petit module pour l'adapter. L'affichage et certains comportements (liens, actions rapides) peuvent être imparfaits. Parfois, il suffit de relancer l'app.";
+"duo.status.alreadySupported" = "Déjà compatible : %@ prend déjà en charge l'iPhone Duo.";
+"duo.status.notADuo" = "Pas recommandé : cet appareil n'est pas un iPhone Duo.";
+"duo.status.recommended" = "%@ n'est pas faite pour l'écran de ton iPhone Duo.";
 "preflight.notMadeForDuo" = "%1$@ n'est pas faite pour l'écran de ton iPhone Duo (%2$@) : elle n'en utilisera pas toute la surface. L'option « Ajouter la compatibilité iPhone Duo » des options d'installation peut l'aider.";
 "preflight.notMadeForDuo.noOption" = "%1$@ n'est pas faite pour l'écran de ton iPhone Duo (%2$@) : elle n'en utilisera pas toute la surface. Elle ne gère pas les scènes iOS : la compatibilité iPhone Duo ne peut pas lui être ajoutée.";
 "install.step.legacy32" = "Retrait de l'ancienne version 32 bits";
 "install.step.duo" = "Ajout de la compatibilité iPhone Duo";
 "install.step.duo.added" = "Ajoutée : l'app utilisera tous les écrans de l'iPhone Duo.";
+"install.step.duo.addedWithModule" = "Ajoutée, avec un petit module de compatibilité (l'app ne gère pas les scènes iOS) : elle utilisera tous les écrans de l'iPhone Duo.";
 "install.step.duo.failed" = "N'a pas pu être ajoutée : l'app est installée sans. Les journaux disent pourquoi.";
 "install.step.duo.alreadySupported" = "Rien à ajouter : l'app prend déjà en charge l'iPhone Duo.";
-"install.step.duo.notPossible" = "Pas possible : l'app ne gère pas les scènes iOS. Elle est installée sans.";
+"install.step.duo.notPossible" = "Pas possible : l'app ne gère pas les scènes iOS et le module de compatibilité manque dans cette version d'XSide. Elle est installée sans.";
 "whatsNew.120.duo.title" = "Compatibilité iPhone Duo";
-"whatsNew.120.duo.text" = "Une option d'installation, par appareil : « Ajouter la compatibilité iPhone Duo » permet à une app conçue avant l'iPhone Duo d'en utiliser tous les écrans, intérieur et extérieur, en mode Duo. Recommandée sur un iPhone Duo quand l'app n'est pas faite pour lui ; l'app n'a pas été faite pour ça, des défauts d'affichage sont possibles. Avec ou sans le module XSide, à retirer quand tu veux dans Réglages > Mes apps.";
+"whatsNew.120.duo.text" = "Une option d'installation, par appareil : « Ajouter la compatibilité iPhone Duo » permet à une app conçue avant l'iPhone Duo d'en utiliser tous les écrans, intérieur et extérieur, en mode Duo. Recommandée sur un iPhone Duo quand l'app n'est pas faite pour lui ; l'app n'a pas été faite pour ça, des défauts d'affichage sont possibles. Une app qui n'a jamais été prévue pour les scènes iOS reçoit un petit module de compatibilité XSide pour l'adapter (l'affichage et certains comportements, comme les liens et les actions rapides, peuvent être imparfaits). Avec ou sans le module XSide, parmi les nouveaux correctifs de compatibilité, à retirer quand tu veux dans Réglages > Mes apps.";
 
 /* Simulate signed-out iCloud (install option) */
-"icloud.section" = "iCloud";
 "icloud.option" = "Simuler iCloud déconnecté";
 "icloud.recommended" = "Recommandé";
 "icloud.caption" = "L'app croit qu'aucun compte iCloud n'est connecté au lieu de planter. Ça règle : CloudKit, Core Data et SwiftData avec iCloud, CKSyncEngine, les réglages synchronisés par iCloud (gardés sur l'appareil) et iCloud Drive (vu comme indisponible). Les données restent sur l'appareil, rien n'est synchronisé. Une app qui exige iCloud pour fonctionner démarre en général, mais peut rester sur son écran de connexion.";
@@ -842,7 +850,6 @@
 "crash.notLooked" = "XSide n'a pas encore lu les rapports de plantage de cette app : clique sur Chercher à nouveau.";
 "crash.copy" = "Copier";
 "crash.again" = "Chercher à nouveau";
-"crash.report" = "Signaler un problème…";
 "crash.close" = "Fermer";
 "crash.aLibrary" = "une bibliothèque";
 "crash.unknownError" = "erreur inconnue";
@@ -868,6 +875,9 @@
 "crash.cause.xsideModule.title" = "Le plantage vient du module XSide";
 "crash.cause.xsideModule.text" = "%@ a planté dans le module XSide (XSideWelcome.dylib), qu'XSide ajoute à l'app.";
 "crash.cause.xsideModule.advice" = "Installe l'app sans les fonctionnalités XSide (Réglages > Mes apps), et signale le problème : ça ne devrait jamais arriver.";
+"crash.cause.duoLegacyModule.advice" = "Réinstalle l'app sans la compatibilité iPhone Duo, et signale le problème.";
+"crash.cause.duoLegacyModule.text" = "%@ a planté dans le module de compatibilité iPhone Duo (XSideDuoLegacy.dylib), qu'XSide ajoute avec la compatibilité iPhone Duo aux apps qui ne gèrent pas les scènes iOS.";
+"crash.cause.duoLegacyModule.title" = "Le plantage vient du module de compatibilité iPhone Duo";
 "crash.cause.tweak.title" = "Le plantage vient d'un tweak";
 "crash.cause.tweak.text" = "%1$@ a planté dans le tweak %2$@, ajouté à l'app.";
 "crash.cause.tweak.advice" = "Retire ce tweak de l'app, puis réinstalle-la.";

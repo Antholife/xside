@@ -247,10 +247,11 @@ struct ICloudDetectionTests {
         let s = InAppSettings.defaults(reminder: true, at: Date())
         let none = InstallSummary.lines(options: InstallOptions(), inApp: s, withoutXSideFeatures: false, openAppAfter: false,
                                         openTrustPage: false, offersKeychain: false)
-        #expect(!none.install.contains { if case .iCloudSignedOut = $0 { true } else { false } })
+        #expect(!(none.install + none.fixes).contains { if case .iCloudSignedOut = $0 { true } else { false } })
         let offered = InstallSummary.lines(options: InstallOptions(), inApp: s, withoutXSideFeatures: false, openAppAfter: false,
                                            openTrustPage: false, offersKeychain: false, iCloudDevices: ["iPhone"], offersICloud: true)
-        #expect(offered.install.contains(.iCloudSignedOut(["iPhone"])))
+        #expect(offered.fixes.contains(.iCloudSignedOut(["iPhone"])))
+        #expect(!offered.install.contains(.iCloudSignedOut(["iPhone"])))
     }
 
     @Test func oldStateDecodes() throws {

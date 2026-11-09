@@ -24,14 +24,17 @@ private func realExecutable(_ name: String) throws -> Data {
 }
 
 /// An IPA with `executable`, a fake runner (codesign, and `xcrun vtool` writing `vtoolOutput`
-/// with SDK 27.1 unless `vtoolFails`) and optionally XSide's library.
+/// with SDK 27.1 unless `vtoolFails`) and optionally XSide's library, the signed-out iCloud one
+/// and the Duo compatibility module (in the build unless `withLegacy` is false).
 private struct DuoFixture {
     let ipa: URL, work: URL, profileURL: URL
     let fake: FakeRunner
     let welcome: URL?
+    let iCloud: URL?
+    let legacy: URL?
 
     init(executable: Data, plistExtras: [String: Any] = ["CFBundleName": "Demo", "DTPlatformVersion": "26.4"],
-         withLibrary: Bool = true, vtoolFails: Bool = false) async throws {
+         withLibrary: Bool = true, withICloud: Bool = false, withLegacy: Bool = true, vtoolFails: Bool = false) async throws {
         let src = try tempDir("duo-src")
         try FakeIPA.makeApp(at: src, extensions: [], executableData: executable, plistExtras: plistExtras)
         let out = try tempDir("duo-ipa")
@@ -59,9 +62,16 @@ private struct DuoFixture {
         } else {
             welcome = nil
         }
+        let libs = try tempDir("duo-libs")
+        iCloud = withICloud ? libs.appendingPathComponent("XSideICloud.dylib") : nil
+        if let iCloud { try Data("ICLOUD".utf8).write(to: iCloud) }
+        legacy = withLegacy ? libs.appendingPathComponent("XSideDuoLegacy.dylib") : nil
+        if let legacy { try Data("DUOLEGACY".utf8).write(to: legacy) }
     }
 
-    var resigner: Resigner { Resigner(runner: RoutingRunner(fake: fake), welcomeDylib: welcome) }
+    var resigner: Resigner {
+        Resigner(runner: RoutingRunner(fake: fake), welcomeDylib: welcome, iCloudLibrary: iCloud, duoLegacyLibrary: legacy)
+    }
 
     func run(_ options: InstallOptions) async throws -> URL {
         try await resigner.resign(ipa: ipa, workDir: work, bundleID: "com.example.new", options: options, iconURL: nil,
@@ -158,9 +168,10 @@ struct DuoResignTests {
         #expect(!f.resigner.hasDuoCompatibility(app))
     }
 
-    @Test func anAppWithoutScenesIsLeftAsItCame() async throws {
+    /// A build without the compatibility module: an app without scene support is left as it came.
+    @Test func anAppWithoutScenesIsLeftAsItCameWithoutTheModule() async throws {
         let original = versionedMachO(buildVersion: (2, packed(15, 0), packed(26, 4)))
-        let f = try await DuoFixture(executable: original, withLibrary: false)
+        let f = try await DuoFixture(executable: original, withLibrary: false, withLegacy: false)
         let app = try await f.run(InstallOptions(duoCompatibility: true))
         #expect(f.vtoolCalls.isEmpty)
         #expect(try Data(contentsOf: app.appendingPathComponent("Demo")) == original)
@@ -258,11 +269,111 @@ struct DuoResignTests {
         #expect(try await outcomes(DuoFixture(executable: realExecutable("duo-objc-fat")), on) == [nil, .added])
         #expect(try await outcomes(DuoFixture(executable: realExecutable("duo-objc-fat"), vtoolFails: true), on) == [nil, .failed])
         #expect(try await outcomes(DuoFixture(executable: versionedMachO(buildVersion: (2, packed(15, 0), packed(26, 4))),
-                                              withLibrary: false), on) == [nil, .notPossible])
+                                              withLibrary: false, withLegacy: false), on) == [nil, .notPossible])
+        #expect(try await outcomes(DuoFixture(executable: versionedMachO(buildVersion: (2, packed(15, 0), packed(26, 4))),
+                                              withLibrary: false), on) == [nil, .addedWithModule])
         #expect(try await outcomes(DuoFixture(executable: versionedMachO(buildVersion: (2, packed(15, 0), packed(27, 2))),
                                               plistExtras: ["DTPlatformVersion": "27.2"], withLibrary: false), on)
                 == [nil, .alreadySupported])
         #expect(try await outcomes(DuoFixture(executable: realExecutable("duo-objc-fat")), InstallOptions()).isEmpty)
+    }
+
+    // MARK: Apps without scene support: the compatibility module
+
+    /// No manifest, no scene delegate: the module goes in Frameworks/, the executable loads it
+    /// (weakly), the manifest names its delegate, the SDK is raised; signed with the rest.
+    @Test func anAppWithoutScenesGetsTheModule() async throws {
+        let f = try await DuoFixture(executable: versionedMachO(buildVersion: (2, packed(15, 0), packed(26, 4))))
+        let app = try await f.run(InstallOptions(duoCompatibility: true))
+        let exe = app.appendingPathComponent("Demo")
+        let module = app.appendingPathComponent("Frameworks/XSideDuoLegacy.dylib")
+        #expect(try Data(contentsOf: module) == Data("DUOLEGACY".utf8))
+        #expect(MachOPatcher.loadsDylib(DuoCompatibility.legacyLoadPath, in: exe))
+        #expect(MachOBuildInfo.sdkVersion(of: exe) == "27.1")
+        #expect(manifestDelegate(try plist(app)) == "XSDuoSceneDelegate")
+        #expect(f.resigner.hasDuoCompatibility(app))
+        #expect(f.resigner.hasDuoLegacyModule(app))
+        #expect(f.resigner.hasXSideLibrary(app))
+        let targets = f.fake.calls.filter { $0.first == "/usr/bin/codesign" }.map { $0.last! }
+        #expect(targets.firstIndex(of: module.path)! < targets.firstIndex(of: app.path)!)
+    }
+
+    @Test func theModuleWorksWithoutXSidesModule() async throws {
+        let f = try await DuoFixture(executable: versionedMachO(buildVersion: (2, packed(15, 0), packed(26, 4))))
+        let app = try await f.run(InstallOptions(withoutXSideFeatures: true, duoCompatibility: true))
+        #expect(!f.resigner.hasXSideLibrary(app))
+        #expect(f.resigner.hasDuoLegacyModule(app))
+        #expect(manifestDelegate(try plist(app)) == "XSDuoSceneDelegate")
+    }
+
+    /// An app with its own scene delegate never gets the module (today's behaviour).
+    @Test func anAppWithItsOwnDelegateGetsNoModule() async throws {
+        let f = try await DuoFixture(executable: realExecutable("duo-objc-fat"))
+        let app = try await f.run(InstallOptions(duoCompatibility: true))
+        #expect(manifestDelegate(try plist(app)) == "FXBaseSceneDelegate")
+        #expect(!FileManager.default.fileExists(atPath: app.appendingPathComponent("Frameworks/XSideDuoLegacy.dylib").path))
+        #expect(!MachOPatcher.loadsDylib(DuoCompatibility.legacyLoadPath, in: app.appendingPathComponent("Demo")))
+        #expect(!f.resigner.hasDuoLegacyModule(app))
+    }
+
+    /// Off: no module, even for an app without scenes.
+    @Test func offAddsNoModule() async throws {
+        let original = versionedMachO(buildVersion: (2, packed(15, 0), packed(26, 4)))
+        let f = try await DuoFixture(executable: original, withLibrary: false)
+        let app = try await f.run(InstallOptions())
+        #expect(try Data(contentsOf: app.appendingPathComponent("Demo")) == original)
+        #expect(!FileManager.default.fileExists(atPath: app.appendingPathComponent("Frameworks/XSideDuoLegacy.dylib").path))
+    }
+
+    /// A failed patch leaves neither the module nor a manifest: an SDK 27.1 app without scenes
+    /// would be stopped at launch, a manifest naming a missing class would show black.
+    @Test func aFailedPatchLeavesNoModule() async throws {
+        let original = versionedMachO(buildVersion: (2, packed(15, 0), packed(26, 4)))
+        let f = try await DuoFixture(executable: original, withLibrary: false, vtoolFails: true)
+        let app = try await f.run(InstallOptions(duoCompatibility: true))
+        #expect(try Data(contentsOf: app.appendingPathComponent("Demo")) == original)
+        #expect(!FileManager.default.fileExists(atPath: app.appendingPathComponent("Frameworks/XSideDuoLegacy.dylib").path))
+        #expect(try plist(app)["UIApplicationSceneManifest"] == nil)
+        #expect(!f.resigner.hasDuoCompatibility(app))
+    }
+
+    /// No room for the module's load command even without the toolchain run paths: no patch at all.
+    @Test func noRoomForTheModuleMeansNoPatch() async throws {
+        let original = versionedMachO(buildVersion: (2, packed(15, 0), packed(26, 4)), padding: 40)
+        let f = try await DuoFixture(executable: original, withLibrary: false)
+        let app = try await f.run(InstallOptions(duoCompatibility: true))
+        #expect(f.vtoolCalls.isEmpty)
+        #expect(try Data(contentsOf: app.appendingPathComponent("Demo")) == original)
+        #expect(!FileManager.default.fileExists(atPath: app.appendingPathComponent("Frameworks/XSideDuoLegacy.dylib").path))
+        #expect(try plist(app)["UIApplicationSceneManifest"] == nil)
+    }
+
+    /// The header room counts all three libraries (the module, signed-out iCloud, XSide's module):
+    /// 224 bytes of load commands. 160 bytes free: the toolchain run path (96 bytes) goes, and all
+    /// three fit.
+    @Test func headerRoomCountsAllThreeLibraries() async throws {
+        let toolchain = "/private/var/select/developer_dir/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.5/iphoneos"
+        let needed = [DuoCompatibility.legacyLoadPath, ICloudSignedOut.loadPath, "@executable_path/Frameworks/XSideWelcome.dylib"]
+            .reduce(0) { $0 + MachOPatcher.dylibCommand($1).count }
+        #expect(needed == 224)
+        let exe = versionedMachO(buildVersion: (2, packed(15, 0), packed(26, 4)),
+                                 rpaths: [toolchain, "@executable_path/Frameworks"], padding: 160)
+        let f = try await DuoFixture(executable: exe, withICloud: true)
+        let order = CallOrder()
+        let app = try await f.resigner.resign(ipa: f.ipa, workDir: f.work, bundleID: "com.example.new",
+                                              options: InstallOptions(duoCompatibility: true, iCloudSignedOut: true),
+                                              iconURL: nil, profileURL: f.profileURL, profile: profile(),
+                                              identitySHA1: "SHA", facts: nil,
+                                              onDuo: { await order.add($0 == nil ? "duo" : "duo:\($0!.rawValue)") },
+                                              onICloud: { await order.add("icloud") },
+                                              onSigning: { await order.add("sign") })
+        #expect(await order.items == ["duo", "duo:addedWithModule", "icloud", "sign"])
+        let out = app.appendingPathComponent("Demo")
+        #expect(try MachOPatcher.rpaths(in: out) == ["@executable_path/Frameworks"])
+        #expect(f.resigner.hasDuoLegacyModule(app))
+        #expect(f.resigner.hasICloudSignedOut(app))
+        #expect(f.resigner.hasXSideLibrary(app))
+        #expect(MachOBuildInfo.sdkVersion(of: out) == "27.1")
     }
 
     @Test func optionDecodesFromOldOptions() throws {

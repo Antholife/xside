@@ -24,6 +24,8 @@ enum CrashCheck: Equatable {
     case none
     /// The device's crash logs couldn't be read (the localized reason).
     case failed(String)
+
+    var finding: CrashFinding? { if case .found(let f) = self { f } else { nil } }
 }
 
 /// A crash, explained, with its log made fit to share.
@@ -268,7 +270,9 @@ final class AppModel {
                                welcome: { _ in AppModel.welcomePayload() },
                                textLanguage: { AppModel.textLanguage($0) },
                                // Its own library, not XSide's module: kept with XSIDE_NO_FEATURES.
-                               iCloudLibrary: Bundle.main.url(forResource: "XSideICloud", withExtension: "dylib")),
+                               iCloudLibrary: Bundle.main.url(forResource: "XSideICloud", withExtension: "dylib"),
+                               // The iPhone Duo option's module for apps without scenes: not XSide's module either.
+                               duoLegacyLibrary: Bundle.main.url(forResource: "XSideDuoLegacy", withExtension: "dylib")),
             installer: Installer(runner: runner),
             workRoot: paths.jobsWork, now: { Date() }, macIsBeta: XcodeLauncher.macIsBeta,
             inAppDefaults: { AppModel.inAppDefaults(at: $0) },

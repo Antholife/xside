@@ -770,14 +770,9 @@
 "whatsNew.110.cli.text" = "xside apps, devices, settings <app> (see or change the module's settings), pause and resume <app>, uninstall <app>, logs -f and report. An app is named by its name or bundle id.";
 
 /* iPhone Duo compatibility (install option, 1.2) */
-"duo.section" = "iPhone Duo";
 "duo.option" = "Add iPhone Duo compatibility";
 "duo.recommended" = "Recommended";
 "duo.caption" = "The app will use all of the iPhone Duo's screens (inner and outer) in Duo mode. It wasn't made for it: nobody knows how it will behave or look, glitches are possible (an odd menu or tab bar, misplaced elements), but Duo mode itself will work. Sometimes just relaunching the app is enough for it to adapt.";
-"duo.caption.recommended" = "%@ isn't made for your iPhone Duo's screen.";
-"duo.caption.notADuo" = "Not recommended: this device isn't an iPhone Duo.";
-"duo.caption.alreadySupported" = "%@ already supports the iPhone Duo.";
-"duo.caption.noScenes" = "This app doesn't handle iOS scenes: iPhone Duo compatibility isn't possible.";
 "duo.confirm.title" = "Add iPhone Duo compatibility to %@?";
 "duo.confirm.message" = "%@ will use all of the iPhone Duo's screens, inner and outer, in Duo mode. Nobody knows how it will behave or look: it wasn't made for it, glitches are possible (an odd menu or tab bar, misplaced elements). Duo mode itself will work. Sometimes just relaunching the app is enough for it to adapt. You can remove it at any time in Settings > My apps.";
 "duo.confirm.turnOn" = "Add";
@@ -786,19 +781,32 @@
 "duo.missing.row" = "iPhone Duo compatibility not added (installed without it)";
 "duo.nextSigning" = "Applied at the app's next refresh on this device.";
 "duo.refreshNow" = "Refresh now";
+"fixes.request.help" = "Opens a form on GitHub.";
+"fixes.request.crashHelp" = "Opens a form on GitHub with the diagnosis, without personal data (no app identifier, no device name).";
+"fixes.request.prompt" = "Describe what happens (what you do, what the app does or doesn't do):";
+"fixes.request.button" = "Request a fix";
+"fixes.request.text" = "No fix for your case? Describe the symptom: XSide can inject targeted fixes (one app) or global ones (an iOS service, like iCloud).";
+"fixes.caption" = "XSide changes the app so it works better on your device or with a free account.";
+"fixes.section" = "Compatibility fixes";
+"duo.confirm.messageModule" = "%@ will use all of the iPhone Duo's screens, inner and outer, in Duo mode. It was never made for iOS scenes: XSide adds a small module to adapt it. The display and some behaviors (links, quick actions) may be imperfect. Sometimes just relaunching the app is enough. You can remove the option at any time in Settings > My apps.";
+"duo.caption.moduleWarning" = "A small compatibility module is added to the app: it handles iOS scenes for it (its window, links, quick actions, going to the background). Remove the option if the app misbehaves.";
+"duo.caption.module" = "The app will use all of the iPhone Duo's screens (inner and outer) in Duo mode. This app was never made for iOS scenes: XSide adds a small module to adapt it. The display and some behaviors (links, quick actions) may be imperfect. Sometimes just relaunching the app is enough.";
+"duo.status.alreadySupported" = "Already compatible: %@ already supports the iPhone Duo.";
+"duo.status.notADuo" = "Not recommended: this device isn't an iPhone Duo.";
+"duo.status.recommended" = "%@ isn't made for your iPhone Duo's screen.";
 "preflight.notMadeForDuo" = "%1$@ isn't made for your iPhone Duo's screen (%2$@): it won't use all of it. The install option \"Add iPhone Duo compatibility\" can help.";
 "preflight.notMadeForDuo.noOption" = "%1$@ isn't made for your iPhone Duo's screen (%2$@): it won't use all of it. It doesn't handle iOS scenes, so iPhone Duo compatibility can't be added to it.";
 "install.step.legacy32" = "Removing the old 32-bit code";
 "install.step.duo" = "Adding iPhone Duo compatibility";
 "install.step.duo.added" = "Added: the app will use all of the iPhone Duo's screens.";
+"install.step.duo.addedWithModule" = "Added, with a small compatibility module (the app doesn't handle iOS scenes): it will use all of the iPhone Duo's screens.";
 "install.step.duo.failed" = "Couldn't be added: the app is installed without it. The logs say why.";
 "install.step.duo.alreadySupported" = "Nothing to add: the app already supports the iPhone Duo.";
-"install.step.duo.notPossible" = "Not possible: the app doesn't handle iOS scenes. It is installed without it.";
+"install.step.duo.notPossible" = "Not possible: the app doesn't handle iOS scenes and this version of XSide lacks the compatibility module. It is installed without it.";
 "whatsNew.120.duo.title" = "iPhone Duo compatibility";
-"whatsNew.120.duo.text" = "An install option, per device: \"Add iPhone Duo compatibility\" lets an app made before the iPhone Duo use all of its screens, inner and outer, in Duo mode. Recommended on an iPhone Duo when the app isn't made for it; the app wasn't made for this, so display glitches are possible. With or without the XSide module, and removable at any time in Settings > My apps.";
+"whatsNew.120.duo.text" = "An install option, per device: \"Add iPhone Duo compatibility\" lets an app made before the iPhone Duo use all of its screens, inner and outer, in Duo mode. Recommended on an iPhone Duo when the app isn't made for it; the app wasn't made for this, so display glitches are possible. An app that never used iOS scenes gets a small XSide compatibility module to adapt it (its display and some behaviors, like links and quick actions, may be imperfect). With or without the XSide module, among the new compatibility fixes, and removable at any time in Settings > My apps.";
 
 /* Simulate signed-out iCloud (install option) */
-"icloud.section" = "iCloud";
 "icloud.option" = "Simulate signed-out iCloud";
 "icloud.recommended" = "Recommended";
 "icloud.caption" = "The app believes no iCloud account is signed in instead of crashing. It covers: CloudKit, Core Data and SwiftData with iCloud, CKSyncEngine, settings synced through iCloud (kept on the device) and iCloud Drive (seen as unavailable). Data stays on the device, nothing syncs. An app that requires iCloud to work usually launches, but may stay on its sign-in screen.";
@@ -842,7 +850,6 @@
 "crash.notLooked" = "XSide hasn't read this app's crash reports yet: click Look again.";
 "crash.copy" = "Copy";
 "crash.again" = "Look again";
-"crash.report" = "Report a Problem…";
 "crash.close" = "Close";
 "crash.aLibrary" = "a library";
 "crash.unknownError" = "unknown error";
@@ -868,6 +875,9 @@
 "crash.cause.xsideModule.title" = "The crash comes from the XSide module";
 "crash.cause.xsideModule.text" = "%@ crashed in the XSide module (XSideWelcome.dylib), which XSide adds to the app.";
 "crash.cause.xsideModule.advice" = "Install the app without XSide features (Settings > My apps), and report the problem: it should never happen.";
+"crash.cause.duoLegacyModule.advice" = "Reinstall the app without iPhone Duo compatibility, and report the problem.";
+"crash.cause.duoLegacyModule.text" = "%@ crashed in the iPhone Duo compatibility module (XSideDuoLegacy.dylib), which XSide adds with iPhone Duo compatibility to apps that don't handle iOS scenes.";
+"crash.cause.duoLegacyModule.title" = "The crash comes from the iPhone Duo compatibility module";
 "crash.cause.tweak.title" = "The crash comes from a tweak";
 "crash.cause.tweak.text" = "%1$@ crashed in the tweak %2$@, added to the app.";
 "crash.cause.tweak.advice" = "Remove this tweak from the app, then install it again.";

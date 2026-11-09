@@ -267,18 +267,32 @@ struct InstallSummaryTests {
         #expect(s.install == [.appUnchanged, .shareKeychain(false), .openAppAfter(true), .openTrustPage(false)])
     }
 
-    /// iPhone Duo compatibility: the devices getting it, or "No" when a Duo is among the targets.
+    /// iPhone Duo compatibility: the devices getting it, or "No" when a Duo is among the targets;
+    /// in the compatibility fixes, never among the install options.
     @Test func duoCompatibilityIsListedPerDevice() {
         let inApp = InAppSettings.defaults(reminder: true, at: t0)
-        func lines(_ devices: [String], offered: Bool) -> [InstallSummary.Line] {
-            InstallSummary.lines(options: InstallOptions(), inApp: inApp, withoutXSideFeatures: false, openAppAfter: false,
-                                 openTrustPage: false, offersKeychain: false, duoDevices: devices, offersDuo: offered).install
+        func lines(_ devices: [String], offered: Bool) -> (install: [InstallSummary.Line], fixes: [InstallSummary.Line]) {
+            let s = InstallSummary.lines(options: InstallOptions(), inApp: inApp, withoutXSideFeatures: false, openAppAfter: false,
+                                         openTrustPage: false, offersKeychain: false, duoDevices: devices, offersDuo: offered)
+            return (s.install, s.fixes)
         }
-        #expect(lines(["iPhone Duo"], offered: true) == [.appUnchanged, .duoCompatibility(["iPhone Duo"]), .openAppAfter(false)])
-        #expect(lines([], offered: true) == [.appUnchanged, .duoCompatibility([]), .openAppAfter(false)])
-        #expect(lines([], offered: false) == [.appUnchanged, .openAppAfter(false)])
+        #expect(lines(["iPhone Duo"], offered: true).fixes == [.duoCompatibility(["iPhone Duo"])])
+        #expect(lines(["iPhone Duo"], offered: true).install == [.appUnchanged, .openAppAfter(false)])
+        #expect(lines([], offered: true).fixes == [.duoCompatibility([])])
+        #expect(lines([], offered: false).fixes.isEmpty)
         // Turned on for a device that isn't a Duo: still listed.
-        #expect(lines(["iPad"], offered: false) == [.appUnchanged, .duoCompatibility(["iPad"]), .openAppAfter(false)])
+        #expect(lines(["iPad"], offered: false).fixes == [.duoCompatibility(["iPad"])])
+    }
+
+    /// Both fixes, in a fixed order (future ones follow), apart from the install options.
+    @Test func compatibilityFixesAreTheirOwnGroup() {
+        let s = InstallSummary.lines(options: InstallOptions(), inApp: InAppSettings.defaults(reminder: true, at: t0),
+                                     withoutXSideFeatures: true, openAppAfter: false, openTrustPage: false,
+                                     offersKeychain: false, duoDevices: ["Duo"], offersDuo: true,
+                                     iCloudDevices: [], offersICloud: true)
+        #expect(s.fixes == [.duoCompatibility(["Duo"]), .iCloudSignedOut([])])
+        #expect(s.install == [.appUnchanged, .openAppAfter(false)])
+        #expect(s.inApp == [.xsideFeatures(false)])
     }
 
     @Test func withoutFeaturesListsOnlyThat() {

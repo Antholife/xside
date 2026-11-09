@@ -318,6 +318,21 @@ private func diagnose(_ data: Data, _ ctx: CrashContext = context) throws -> Cra
         #expect(d.subject == "XSideWelcome.dylib")
     }
 
+    /// A crash in the iPhone Duo option's module (apps without scenes): named, and the fix is
+    /// reinstalling without the option.
+    @Test func duoCompatibilityModule() throws {
+        let images = IPS.images + [IPS.image("XSideDuoLegacy.dylib", path: "\(IPS.appPath)/Frameworks/XSideDuoLegacy.dylib")]
+        let legacy = IPS.images.count
+        let d = try diagnose(IPS.crash(exception: ["type": "EXC_BAD_ACCESS", "signal": "SIGSEGV", "codes": "0x1, 0x0"],
+                                       termination: ["namespace": "SIGNAL", "code": 11, "indicator": "Segmentation fault: 11"],
+                                       frames: [IPS.frame(legacy, "XSAttach"), IPS.frame(IPS.uikit), IPS.frame(0, "main")],
+                                       images: images),
+                             CrashContext(moduleName: "XSideWelcome.dylib", duoCompatibilityOn: true))
+        #expect(d.cause == .duoLegacyModule)
+        #expect(d.subject == "XSideDuoLegacy.dylib")
+        #expect(CrashAction.suggested(for: d) == .turnOffDuo)
+    }
+
     @Test func aKnownTweak() throws {
         let frames = [IPS.frame(IPS.uikit), IPS.frame(2), IPS.frame(0)]
         let known = try diagnose(IPS.crash(frames: frames), CrashContext(moduleName: "XSideWelcome.dylib", tweakNames: ["uTweak.dylib"]))

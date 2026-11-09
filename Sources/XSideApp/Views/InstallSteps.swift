@@ -109,6 +109,8 @@ struct InstallSummaryView: View {
         VStack(alignment: .leading, spacing: 10) {
             SectionTitle(L("install.summary.title"))
             group(L("install.optionsTitle"), lines.install, step: 1)
+            // The compatibility fixes, apart (step ② edits them too).
+            if !lines.fixes.isEmpty { group(L("fixes.section"), lines.fixes, step: 1) }
             group(L("install.steps.inApp"), lines.inApp, step: 2)
             Text(L("install.summary.note", info?.name ?? ""))
                 .font(.system(size: 11))

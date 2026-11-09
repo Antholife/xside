@@ -156,8 +156,11 @@ struct DuoCompatibilityTests {
         #expect(DuoCompatibility.optionState(isDuo: true, app: recent) == .alreadySupported)
         #expect(DuoCompatibility.optionState(isDuo: false, app: recent) == .alreadySupported)
         let noScenes = DuoAppInfo(sdkVersion: "26.4", adoptsScenes: false, sceneDelegateClass: nil)
-        #expect(DuoCompatibility.optionState(isDuo: true, app: noScenes) == .noSceneSupport)
-        #expect(DuoCompatibility.optionState(isDuo: false, app: noScenes) == .noSceneSupport)
+        // No scene support of its own: offered like any other (XSide's module adapts it).
+        #expect(DuoCompatibility.optionState(isDuo: true, app: noScenes) == .recommended)
+        #expect(DuoCompatibility.optionState(isDuo: false, app: noScenes) == .notADuo)
+        #expect(noScenes.needsLegacyModule)
+        #expect(!plain.needsLegacyModule)
         // An app that already declares its scenes only needs the SDK raised.
         let manifest = DuoAppInfo(sdkVersion: "26.4", adoptsScenes: true, sceneDelegateClass: nil)
         #expect(DuoCompatibility.optionState(isDuo: true, app: manifest) == .recommended)
@@ -168,7 +171,30 @@ struct DuoCompatibilityTests {
         #expect(DuoCompatibility.OptionState.notADuo.canTurnOn)
         #expect(DuoCompatibility.OptionState.unknown.canTurnOn)
         #expect(!DuoCompatibility.OptionState.alreadySupported.canTurnOn)
-        #expect(!DuoCompatibility.OptionState.noSceneSupport.canTurnOn)
+    }
+
+    /// Which way the option brings scenes: the app's manifest, its own delegate, or XSide's module.
+    @Test func sceneSupportDecidesTheModule() {
+        #expect(DuoCompatibility.sceneSupport(for: plain) == .ownSceneDelegate("YTSceneDelegate"))
+        #expect(DuoCompatibility.sceneSupport(for: DuoAppInfo(sdkVersion: "26.4", adoptsScenes: true, sceneDelegateClass: nil))
+                == .ownManifest)
+        // A manifest wins over a found class: it already runs with scenes.
+        #expect(DuoCompatibility.sceneSupport(for: DuoAppInfo(sdkVersion: "26.4", adoptsScenes: true, sceneDelegateClass: "X"))
+                == .ownManifest)
+        #expect(DuoCompatibility.sceneSupport(for: DuoAppInfo(sdkVersion: "26.4", adoptsScenes: false, sceneDelegateClass: nil))
+                == .legacyModule)
+        #expect(DuoCompatibility.sceneSupport(for: DuoAppInfo(sdkVersion: "27.1", adoptsScenes: false, sceneDelegateClass: nil)) == nil)
+        #expect(DuoCompatibility.sceneSupport(for: DuoAppInfo(sdkVersion: nil, adoptsScenes: false, sceneDelegateClass: nil))
+                == .legacyModule)
+    }
+
+    @Test func manifestNamesTheRightDelegate() {
+        #expect(DuoCompatibility.manifestDelegate(for: .ownManifest) == nil)
+        #expect(DuoCompatibility.manifestDelegate(for: .ownSceneDelegate("YTSceneDelegate")) == "YTSceneDelegate")
+        #expect(DuoCompatibility.manifestDelegate(for: .legacyModule) == "XSDuoSceneDelegate")
+        #expect(DuoCompatibility.legacyLoadPath == "@executable_path/Frameworks/XSideDuoLegacy.dylib")
+        #expect(DuoOutcome.addedWithModule.isAdded && DuoOutcome.added.isAdded)
+        #expect(!DuoOutcome.notPossible.isAdded && !DuoOutcome.failed.isAdded && !DuoOutcome.alreadySupported.isAdded)
     }
 
     // MARK: Info.plist

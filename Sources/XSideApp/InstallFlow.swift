@@ -106,7 +106,7 @@ final class InstallFlow {
 
     /// `skippedRunSteps`, and the Duo step on a device where it added nothing.
     func skippedSteps(for deviceID: String? = nil) -> Set<ProgressStep> {
-        guard let outcome = duoOutcome(for: deviceID), outcome != .added else { return skippedRunSteps }
+        guard let outcome = duoOutcome(for: deviceID), !outcome.isAdded else { return skippedRunSteps }
         return skippedRunSteps.union([.duo])
     }
 

@@ -30,6 +30,10 @@ struct BuildSettingsPage: View {
                     }
                     .font(.callout)
                 }
+                // "Request a fix" without an app (the crash window sends one with its diagnosis).
+                BuildCard(symbol: "lightbulb.fill", title: L("fixes.section"), text: L("fixes.request.text")) {
+                    FixRequestButton(appName: nil).controlSize(.regular)
+                }
                 footer
             }
             .padding(24)

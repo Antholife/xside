@@ -2,10 +2,10 @@ import SwiftUI
 import XSideCore
 
 /// "Simulate signed-out iCloud" for one device: an install option of its own, with or without
-/// XSide's module (see `ICloudSignedOut`). Always shown and usable, with any account; how depends
-/// on the app (`ICloudSignedOut.OptionState`): highlighted for an app whose entitlements declare
-/// iCloud, "useful if it crashes because of iCloud" for one that only links CloudKit, "not needed"
-/// for one that doesn't use it.
+/// XSide's module (see `ICloudSignedOut`). Always shown and usable, with any account, always with
+/// its full explanation; how it stands for the app (`ICloudSignedOut.OptionState`) is one line
+/// above it: recommended for an app whose entitlements declare iCloud, "useful if it crashes
+/// because of iCloud" for one that only links CloudKit, "not needed" for one that doesn't use it.
 struct ICloudOptionRow: View {
     let state: ICloudSignedOut.OptionState
     let appName: String
@@ -23,7 +23,7 @@ struct ICloudOptionRow: View {
                 .foregroundStyle(.white)
                 .frame(width: 26, height: 26)
                 .background(Theme.brand, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(L("icloud.option")).font(.system(size: 13))
                     if state == .recommended {
@@ -39,7 +39,8 @@ struct ICloudOptionRow: View {
                 if let deviceName {
                     Text(deviceName).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
                 }
-                Text(caption)
+                if let status { FixStatusLine(text: status.text, kind: status.kind) }
+                Text(L("icloud.caption"))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -59,7 +60,7 @@ struct ICloudOptionRow: View {
                 .labelsHidden()
                 .toggleStyle(.xside)
                 .controlSize(.small)
-                .help(caption)
+                .help((status.map { $0.text + " " } ?? "") + L("icloud.caption"))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
@@ -68,12 +69,13 @@ struct ICloudOptionRow: View {
         .accessibilityElement(children: .contain)
     }
 
-    private var caption: String {
+    /// How it stands for this app; nil when not known (an app imported by an older XSide).
+    private var status: (text: String, kind: FixStatusLine.Kind)? {
         switch state {
-        case .recommended: L("icloud.caption.recommended", appName) + " " + L("icloud.caption")
-        case .useful: L("icloud.caption.useful")
-        case .unknown: L("icloud.caption")
-        case .notNeeded: L("icloud.caption.notNeeded")
+        case .recommended: (L("icloud.caption.recommended", appName), .recommended)
+        case .useful: (L("icloud.caption.useful"), .caution)
+        case .notNeeded: (L("icloud.caption.notNeeded"), .caution)
+        case .unknown: nil
         }
     }
 }
@@ -94,7 +96,8 @@ private struct ICloudDetails: View {
     }
 }
 
-/// Step ②: the option for each checked device (signing is per device).
+/// Step ②: the option for each checked device (signing is per device). One card of the
+/// compatibility fixes.
 struct ICloudOptionsCard: View {
     let model: AppModel
     @Bindable var flow: InstallFlow
@@ -107,21 +110,17 @@ struct ICloudOptionsCard: View {
         let ids = flow.deviceIDs
         if !ids.isEmpty {
             let state = model.iCloudState(app: flow.info?.icloud)
-            VStack(alignment: .leading, spacing: 6) {
-                SectionTitle(L("icloud.section"))
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(ids.enumerated()), id: \.element) { index, id in
-                        if index > 0 { Divider().padding(.leading, 48) }
-                        ICloudOptionRow(state: state, appName: appName,
-                                        deviceName: ids.count > 1 ? name(id) : nil,
-                                        isOn: Binding(get: { flow.iCloudDevices.contains(id) }, set: { on in
-                                            if on { flow.iCloudDevices.insert(id) } else { flow.iCloudDevices.remove(id) }
-                                        }))
-                    }
+            CompatibilityFixCard {
+                ForEach(Array(ids.enumerated()), id: \.element) { index, id in
+                    if index > 0 { Divider().padding(.leading, 48) }
+                    ICloudOptionRow(state: state, appName: appName,
+                                    deviceName: ids.count > 1 ? name(id) : nil,
+                                    isOn: Binding(get: { flow.iCloudDevices.contains(id) }, set: { on in
+                                        if on { flow.iCloudDevices.insert(id) } else { flow.iCloudDevices.remove(id) }
+                                    }))
                 }
-                .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .disabled(flow.isRunning)
             }
+            .disabled(flow.isRunning)
         }
     }
 

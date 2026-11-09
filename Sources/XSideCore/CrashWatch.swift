@@ -33,7 +33,8 @@ public struct CrashFlag: Codable, Equatable, Sendable {
 public enum CrashAction: String, Codable, Sendable, CaseIterable {
     /// The crash is in XSide's module: install the app again without XSide's features.
     case reinstallWithoutXSide
-    /// The iPhone Duo option's SDK raise makes iOS ask for scenes the app doesn't have.
+    /// The iPhone Duo option's SDK raise makes iOS ask for scenes the app doesn't have, or the
+    /// crash is in the option's compatibility module: install again without the option.
     case turnOffDuo
     /// A signature problem: signing it again is the fix.
     case refresh
@@ -46,6 +47,8 @@ public enum CrashAction: String, Codable, Sendable, CaseIterable {
         switch d.cause {
         case .xsideModule: return .reinstallWithoutXSide
         case .noSceneSupport: return d.duoCompatibilityOn ? .turnOffDuo : nil
+        // Only the Duo option adds that module: going without it is the fix.
+        case .duoLegacyModule: return .turnOffDuo
         case .codeSignature: return .refresh
         case .iCloud: return d.iCloudSignedOutOn == true ? nil : .turnOnICloudSignedOut
         default: return nil

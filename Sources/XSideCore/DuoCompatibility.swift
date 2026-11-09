@@ -29,6 +29,10 @@ public struct DuoAppInfo: Codable, Equatable, Sendable {
         self.sceneDelegateClass = sceneDelegateClass
     }
 
+    /// No scene manifest and no scene delegate of its own: the option then brings XSide's small
+    /// compatibility module (`DuoCompatibility.legacyDylibName`), whose delegate the manifest names.
+    public var needsLegacyModule: Bool { !adoptsScenes && sceneDelegateClass == nil }
+
     /// Reads the facts from the unpacked app's main executable and Info.plist. The class scan is
     /// skipped when the app needs no manifest.
     public static func read(executable: URL, plist: [String: Any]) -> DuoAppInfo {
@@ -45,12 +49,18 @@ public struct DuoAppInfo: Codable, Equatable, Sendable {
 public enum DuoOutcome: String, Codable, Equatable, Sendable {
     /// The app now declares SDK 27.1 (and names its scene delegate when it had no manifest).
     case added
+    /// The app now declares SDK 27.1 and runs with XSide's compatibility module as its scene
+    /// delegate: it had no scene support of its own.
+    case addedWithModule
     /// Built with SDK 27.1 or later: nothing to add.
     case alreadySupported
-    /// No scene manifest and no scene delegate of its own: nothing can be added.
+    /// No scene support of its own and this build lacks the compatibility module: nothing added.
     case notPossible
     /// The patch didn't work (unreadable executable, vtool failed…): installed without it.
     case failed
+
+    /// The app got the compatibility (with or without the module).
+    public var isAdded: Bool { self == .added || self == .addedWithModule }
 }
 
 /// The iPhone Duo compatibility install option. On a Duo, iOS lays an app out by the SDK it was
@@ -58,11 +68,48 @@ public enum DuoOutcome: String, Codable, Equatable, Sendable {
 /// full inner and outer screens. Declaring SDK 27.1 makes an older app fill them; since apps built
 /// with SDK 27 must use the scene lifecycle (UIKit stops them at launch otherwise), the app also
 /// gets a scene manifest naming its own scene delegate (one it ships unused, like YouTube's
-/// `YTSceneDelegate`). Done at signing on the Mac, with or without XSide's module; per device.
+/// `YTSceneDelegate`). An app with no scene support at all (no manifest, no scene delegate) gets a
+/// small library of XSide's instead (`XSideDuoLegacy.dylib`, built from `App/DuoLegacy`): its
+/// `XSDuoSceneDelegate` adopts the app's legacy window and forwards links, quick actions and the
+/// lifecycle to the app delegate. Done at signing on the Mac, with or without XSide's module
+/// (independent of it); per device.
 public enum DuoCompatibility {
     /// The SDK the Duo needs for full-screen layout.
     public static let sdk = "27.1"
     public static let sdkName = "iphoneos27.1"
+
+    /// The compatibility module for apps without scene support: its file name in the app's
+    /// `Frameworks/`, the load command naming it, and the scene delegate class it provides.
+    public static let legacyDylibName = "XSideDuoLegacy.dylib"
+    public static let legacyLoadPath = "@executable_path/Frameworks/\(legacyDylibName)"
+    public static let legacySceneDelegateClass = "XSDuoSceneDelegate"
+
+    /// How the option makes an app (built before SDK 27.1) use scenes.
+    public enum SceneSupport: Equatable, Sendable {
+        /// It has a manifest: it already runs with scenes; only the SDK is raised.
+        case ownManifest
+        /// It ships a scene delegate it doesn't use: the new manifest names it.
+        case ownSceneDelegate(String)
+        /// Neither: XSide's module is added and the manifest names its delegate.
+        case legacyModule
+    }
+
+    /// Nil when the app needs nothing (already built for the Duo).
+    public static func sceneSupport(for app: DuoAppInfo) -> SceneSupport? {
+        if supportsDuo(sdk: app.sdkVersion) { return nil }
+        if app.adoptsScenes { return .ownManifest }
+        if let own = app.sceneDelegateClass { return .ownSceneDelegate(own) }
+        return .legacyModule
+    }
+
+    /// The delegate a new manifest names (nil: the app keeps its own manifest).
+    public static func manifestDelegate(for support: SceneSupport) -> String? {
+        switch support {
+        case .ownManifest: nil
+        case .ownSceneDelegate(let name): name
+        case .legacyModule: legacySceneDelegateClass
+        }
+    }
 
     public static func supportsDuo(sdk: String?) -> Bool {
         guard let sdk else { return false }
@@ -79,21 +126,15 @@ public enum DuoCompatibility {
         case unknown
         /// Built with SDK 27.1 or later: nothing to do (greyed).
         case alreadySupported
-        /// No scene manifest and no scene delegate of its own: not possible (greyed).
-        case noSceneSupport
 
-        public var canTurnOn: Bool {
-            switch self {
-            case .notADuo, .recommended, .unknown: true
-            case .alreadySupported, .noSceneSupport: false
-            }
-        }
+        public var canTurnOn: Bool { self != .alreadySupported }
     }
 
+    /// An app without scene support of its own is no exception: it gets XSide's module
+    /// (`DuoAppInfo.needsLegacyModule` says so, for the wording).
     public static func optionState(isDuo: Bool, app: DuoAppInfo?) -> OptionState {
         guard let app else { return isDuo ? .unknown : .notADuo }
         if supportsDuo(sdk: app.sdkVersion) { return .alreadySupported }
-        if !app.adoptsScenes, app.sceneDelegateClass == nil { return .noSceneSupport }
         return isDuo ? .recommended : .notADuo
     }
 
