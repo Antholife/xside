@@ -100,6 +100,8 @@ public enum DependencyStatus: Equatable, Sendable {
     case addedByYou(String)
     case missing(DebDependency)
     case jailbreakOnly(String)
+    /// Already inside the tweak, its work done by XSide (« fourni par XSide (intégré au tweak) »): libroot.
+    case builtIntoTweak(String)
     /// Hooking (ElleKit), settings or nothing to install.
     case notNeeded
 }
@@ -447,7 +449,7 @@ public enum TweakClassifier {
 
     private static func knownName(_ packageID: String) -> String? {
         switch KnownDependency.role(of: packageID) {
-        case .library(let n), .jailbreakOnly(let n): n
+        case .library(let n), .jailbreakOnly(let n), .builtIntoTweak(let n): n
         default: nil
         }
     }
@@ -479,7 +481,7 @@ public enum TweakClassifier {
 
     private static func isNotNeeded(_ role: KnownDependency?) -> Bool {
         switch role {
-        case .hooking, .settings, .ignored: true
+        case .hooking, .settings, .ignored, .builtIntoTweak: true
         default: false
         }
     }
@@ -495,6 +497,7 @@ public enum TweakClassifier {
     private static func status(_ dep: DebDependency, _ others: [TweakPackage], _ embedded: [TweakPackage],
                                _ context: TweakContext) -> DependencyStatus {
         let r = role(dep, context)
+        if case .builtIntoTweak(let n) = r { return .builtIntoTweak(n) }
         if isNotNeeded(r) { return .notNeeded }
         // Nobody's copy of a jailbreak-only library makes it work without a jailbreak.
         if case .jailbreakOnly(let n) = r { return .jailbreakOnly(n) }
@@ -515,7 +518,8 @@ public enum TweakClassifier {
                 if let p = firmwareProblem(dep, context) { outcomes.append(.problem(p)); continue }
                 outcomes.append(.satisfied(nil)); break
             }
-            // Hooking frameworks are always ElleKit; a lone `firmware` was checked with the slices.
+            // Hooking frameworks are always ElleKit; a lone `firmware` was checked with the slices;
+            // libroot is inside the tweak (a copy the person added is never needed).
             if isNotNeeded(r) { outcomes.append(.satisfied(nil)); break }
             if case .jailbreakOnly(let n) = r { outcomes.append(.problem(.needsJailbreak(n))); continue }
             let matching = (others + embedded).filter { idMatches($0, dep) }

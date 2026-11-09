@@ -327,6 +327,34 @@ struct TweakClassifierTests {
                                   .jailbreakOnly("RocketBootstrap")])
     }
 
+    @Test func libroot_isBuiltIntoTheTweak() {
+        // libroot_dyn.a is linked into each tweak, and XSide's path redirect does the rootless
+        // mapping: `Depends: libroot` (or its alias) is never a missing dependency.
+        for id in ["libroot", "com.opa334.libroot"] {
+            for d in [dep(id), dep(id, ">=", "1.0")] {
+                let p = package([entry()], depends: [d])
+                #expect(verdict(p) == .compatible, "\(id)")
+                #expect(TweakClassifier.dependencies(p, context()).map(\.1) == [.builtIntoTweak("libroot")], "\(id)")
+            }
+        }
+        // In an alternative group, and before a copy the person added (never copied in).
+        let added = package([library("usr/lib/libroot.dylib")], id: "eeeeeeeeeeeeeeee", packageID: "libroot", name: "libroot")
+        let p = package([entry()], depends: [[DebDependency(package: "libroot"), DebDependency(package: "com.foo.bar")]])
+        let c = context(others: [added])
+        #expect(verdict(p, c) == .compatible)
+        #expect(TweakClassifier.providers(p, c).isEmpty)
+        #expect(TweakClassifier.dependencies(p, c).map(\.1) == [.builtIntoTweak("libroot")])
+    }
+
+    @Test func altListStaysARealDependency() {
+        let p = package([entry()], depends: [dep("com.opa334.altlist")])
+        #expect(verdict(p) == .incompatible(.missingDependency("AltList")))
+        #expect(TweakClassifier.dependencies(p, context()).map(\.1) == [.missing(DebDependency(package: "com.opa334.altlist"))])
+        let added = package([library("Library/Frameworks/AltList.framework/AltList")], id: "ffffffffffffffff",
+                            packageID: "com.opa334.altlist", name: "AltList")
+        #expect(verdict(p, context(others: [added])) == .converted([.dependency("AltList")]))
+    }
+
     @Test func aSubstrateDebAddedByThePersonIsNotUsed() {
         // Hooking frameworks are always XSide's ElleKit, even when someone added a Substrate .deb.
         let sub = package([library("Library/Frameworks/CydiaSubstrate.framework/CydiaSubstrate")], id: "dddddddddddddddd",

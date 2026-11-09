@@ -96,7 +96,7 @@ acknowledge() {   # <name> <tag> <commit> <repo> <licence file> [NOTICE]
 # switch for a copy inside an app): HBPreferences on the app's own preferences, no IPC to SpringBoard
 # (which a sideloaded app can't reach), so no LightMessaging, RocketBootstrap or sandbox API. Theos's
 # makefiles are replaced by the clang/swiftc lines below; Theos's private headers by the few
-# declarations in shims/ (types and methods used only through NSClassFromString, nothing linked).
+# declarations in shims/ (nothing private is linked), and HBRespringController by a no-op.
 CEPHEI_SRC="$(scripts/fetch-pinned.sh cephei "$CEPHEI_REPO" "$CEPHEI_COMMIT")" || exit $?
 grep -q "Apache License" "$CEPHEI_SRC/LICENSE.md" && grep -q "Version 2.0, January 2004" "$CEPHEI_SRC/LICENSE.md" \
     || { echo "error: Cephei's LICENSE.md is not Apache-2.0 at $CEPHEI_COMMIT" >&2; exit 1; }
@@ -104,8 +104,7 @@ grep -q "Apache License" "$CEPHEI_SRC/LICENSE.md" && grep -q "Version 2.0, Janua
     || { echo "error: Cephei's control is not ws.hbang.common $CEPHEI_TAG" >&2; exit 1; }
 WORK="$OUT/cephei"
 rm -rf "$WORK"
-mkdir -p "$WORK/shims/UIKit" "$WORK/shims/LightMessaging" "$WORK/shims/Preferences" "$WORK/shims/FrontBoardServices" \
-    "$WORK/shims/SpringBoardServices" "$WORK/gen"
+mkdir -p "$WORK/shims/UIKit" "$WORK/shims/LightMessaging" "$WORK/gen"
 # Theos's <version.h> (IS_IOS_OR_NEWER...): nothing in main/ uses it.
 : > "$WORK/shims/version.h"
 cat > "$WORK/shims/UIKit/UIApplication+Private.h" <<'H'
@@ -119,31 +118,26 @@ cat > "$WORK/shims/LightMessaging/LightMessaging.h" <<'H'
 #import <mach/mach.h>
 typedef struct { mach_port_t serverPort; const char *serverName; } LMConnection;
 H
-cat > "$WORK/shims/Preferences/PreferencesAppController.h" <<'H'
-#import <UIKit/UIApplication.h>
-@interface PreferencesAppController : UIApplication
-- (void)generateURL;
+# HBRespringController restarts SpringBoard: a sideloaded app can't, and its private API values
+# (SBSRelaunchActionOptions) come from Theos's headers, not from Cephei. Its file in main/ is replaced
+# by this one (XSide's own code): the same class and methods, doing nothing.
+cat > "$WORK/gen/HBRespringController.m" <<'M'
+#import "HBRespringController.h"
+
+@implementation HBRespringController
+
++ (nullable NSURL *)_preferencesReturnURL {
+	return nil;
+}
+
++ (void)respring {
+}
+
++ (void)respringAndReturnTo:(nullable NSURL *)returnURL {
+}
+
 @end
-H
-cat > "$WORK/shims/FrontBoardServices/FBSSystemService.h" <<'H'
-#import <Foundation/Foundation.h>
-@interface FBSSystemService : NSObject
-+ (instancetype)sharedService;
-- (void)sendActions:(NSSet *)actions withResult:(id)result;
-@end
-H
-cat > "$WORK/shims/SpringBoardServices/SBSRestartRenderServerAction.h" <<'H'
-#import <Foundation/Foundation.h>
-typedef NS_OPTIONS(NSUInteger, SBSRelaunchActionOptions) {
-	SBSRelaunchActionOptionsNone = 0,
-	SBSRelaunchActionOptionsRestartRenderServer = 1 << 0,
-	SBSRelaunchActionOptionsSnapshotTransition = 1 << 1,
-	SBSRelaunchActionOptionsFadeToBlackTransition = 1 << 2
-};
-@interface SBSRelaunchAction : NSObject
-+ (instancetype)actionWithReason:(NSString *)reason options:(SBSRelaunchActionOptions)options targetURL:(NSURL *)targetURL;
-@end
-H
+M
 FW_REL=Library/Frameworks/Cephei.framework
 CEPHEI_ID="$PREFIX/ws.hbang.common/$FW_REL/Cephei"
 SLICES=()
@@ -162,8 +156,12 @@ for ARCH in "${ARCHS[@]}"; do
     # -Wno-sometimes-uninitialized: HBPreferences.m's container branch, empty when embedded (never taken).
     # HBPreferencesServer.x is Logos, but all of it is under #if !CEPHEI_EMBEDDED: plain Objective-C
     # here (an empty object, compiled to show nothing is left out by mistake).
+    SOURCES=()
     for SRC_FILE in "$CEPHEI_SRC"/main/*.m "$CEPHEI_SRC"/main/*.x; do
-        OBJ="$O/$(basename "$SRC_FILE").o"
+        [ "$(basename "$SRC_FILE")" = HBRespringController.m ] || SOURCES+=("$SRC_FILE")
+    done
+    for SRC_FILE in "${SOURCES[@]}" "$WORK/gen/HBRespringController.m"; do
+        OBJ="$O/$(basename "$SRC_FILE").o"   # names are unique: the replaced file isn't built
         xcrun -sdk iphoneos clang -target "$TARGET" -isysroot "$SDK" -x objective-c -fobjc-arc -fmodules -O2 \
             -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-sometimes-uninitialized \
             -fapplication-extension "${PTRAUTH[@]+"${PTRAUTH[@]}"}" \

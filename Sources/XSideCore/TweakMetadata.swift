@@ -343,6 +343,9 @@ public enum KnownDependency: Equatable, Sendable {
     case jailbreakOnly(String)
     /// A library the user can supply (or XSide embeds); the string is its display name.
     case library(String)
+    /// A static library already linked into the tweak itself, whose job XSide does at runtime
+    /// (libroot: XSideTweakSupport maps the rootless paths). Nothing to add.
+    case builtIntoTweak(String)
 
     public static func role(of package: String) -> KnownDependency? {
         let p = package.lowercased()
@@ -359,7 +362,7 @@ public enum KnownDependency: Equatable, Sendable {
         case "com.opa334.libsandy": return .jailbreakOnly("libSandy")
         case "ws.hbang.common": return .library("Cephei")
         case "com.opa334.altlist": return .library("AltList")
-        case "libroot", "com.opa334.libroot": return .library("libroot")
+        case "libroot", "com.opa334.libroot": return .builtIntoTweak("libroot")
         case "com.mrgcgamer.libgcuniversal": return .library("libGCUniversal")
         default: return nil
         }
