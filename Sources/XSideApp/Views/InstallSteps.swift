@@ -105,7 +105,9 @@ struct InstallSummaryView: View {
                                          duoDevices: duoOn.map(deviceName),
                                          offersDuo: flow.deviceIDs.contains { model.isDuo($0) },
                                          iCloudDevices: iCloudOn.map(deviceName),
-                                         offersICloud: info?.icloud?.declaresICloud == true)
+                                         // Step ② shows the iCloud card for every target (morning review M5).
+                                         offersICloud: !flow.deviceIDs.isEmpty,
+                                         legacy32: info?.hasLegacy32)
         VStack(alignment: .leading, spacing: 10) {
             SectionTitle(L("install.summary.title"))
             group(L("install.optionsTitle"), lines.install, step: 1)
@@ -176,6 +178,9 @@ struct InstallSummaryView: View {
             (L("duo.option"), devices.isEmpty ? yesNo(false) : devices.joined(separator: ", "))
         case .iCloudSignedOut(let devices):
             (L("icloud.option"), devices.isEmpty ? yesNo(false) : devices.joined(separator: ", "))
+        case .legacy32(let applied):
+            (L("fixes.legacy32.title"), L(applied == true ? "fixes.legacy32.short.applied"
+                                          : applied == false ? "fixes.legacy32.short.notApplied" : "fixes.legacy32.badge"))
         case .openAppAfter(let on): (L("settings.openAppAfterInstall"), yesNo(on))
         case .openTrustPage(let on): (L("settings.openTrustSettings"), yesNo(on))
         case .xsideFeatures(let on): (L("inApp.features"), yesNo(on))

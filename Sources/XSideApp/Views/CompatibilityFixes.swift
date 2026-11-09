@@ -34,14 +34,66 @@ struct CompatibilityFixCard<Content: View>: View {
     }
 }
 
+/// « Retrait du code 32 bits (armv7) »: an automatic fix, always listed, no switch. Says whether
+/// it applies to this .ipa (`applied`, from the import scan; nil: an app imported before XSide
+/// looked), then what it does. The install's progress list has its own step for it.
+struct Legacy32InfoRow: View {
+    let appName: String
+    let applied: Bool?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "cpu")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 26, height: 26)
+                .background(Theme.brand, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .opacity(applied == true ? 1 : 0.45)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(L("fixes.legacy32.title")).font(.system(size: 13))
+                    Text(L("fixes.legacy32.badge"))
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .overlay(Capsule().strokeBorder(Color.secondary.opacity(0.5), lineWidth: 1))
+                        .fixedSize()
+                }
+                if let applied {
+                    FixStatusLine(text: L(applied ? "fixes.legacy32.applied" : "fixes.legacy32.notApplied", appName),
+                                  kind: applied ? .recommended : .neutral)
+                }
+                Text(L("fixes.legacy32.caption"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            // No switch: the text keeps the width of the rows that have one.
+            Spacer(minLength: 8)
+            Color.clear.frame(width: 40, height: 1)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 /// The line that says how a fix stands for this app and device, above its full explanation (which
 /// never goes away): recommended (brand tint), or why it isn't recommended or available (orange tint).
 struct FixStatusLine: View {
-    enum Kind { case recommended, caution }
+    /// `neutral`: a plain fact, nothing to do (grey).
+    enum Kind { case recommended, caution, neutral }
     let text: String
     let kind: Kind
 
-    private var tint: Color { kind == .recommended ? Theme.violet : Color(nsColor: .systemOrange) }
+    private var tint: Color {
+        switch kind {
+        case .recommended: Theme.violet
+        case .caution: Color(nsColor: .systemOrange)
+        case .neutral: Color.secondary
+        }
+    }
 
     var body: some View {
         Label {
@@ -54,7 +106,7 @@ struct FixStatusLine: View {
         .padding(.horizontal, 7)
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tint.opacity(kind == .recommended ? 0.12 : 0.16),
+        .background(tint.opacity(kind == .caution ? 0.16 : 0.12),
                     in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 }

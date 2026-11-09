@@ -276,12 +276,12 @@ struct InstallSummaryTests {
                                          openTrustPage: false, offersKeychain: false, duoDevices: devices, offersDuo: offered)
             return (s.install, s.fixes)
         }
-        #expect(lines(["iPhone Duo"], offered: true).fixes == [.duoCompatibility(["iPhone Duo"])])
+        #expect(lines(["iPhone Duo"], offered: true).fixes == [.duoCompatibility(["iPhone Duo"]), .legacy32(nil)])
         #expect(lines(["iPhone Duo"], offered: true).install == [.appUnchanged, .openAppAfter(false)])
-        #expect(lines([], offered: true).fixes == [.duoCompatibility([])])
-        #expect(lines([], offered: false).fixes.isEmpty)
+        #expect(lines([], offered: true).fixes == [.duoCompatibility([]), .legacy32(nil)])
+        #expect(lines([], offered: false).fixes == [.legacy32(nil)])
         // Turned on for a device that isn't a Duo: still listed.
-        #expect(lines(["iPad"], offered: false).fixes == [.duoCompatibility(["iPad"])])
+        #expect(lines(["iPad"], offered: false).fixes == [.duoCompatibility(["iPad"]), .legacy32(nil)])
     }
 
     /// Both fixes, in a fixed order (future ones follow), apart from the install options.
@@ -289,10 +289,22 @@ struct InstallSummaryTests {
         let s = InstallSummary.lines(options: InstallOptions(), inApp: InAppSettings.defaults(reminder: true, at: t0),
                                      withoutXSideFeatures: true, openAppAfter: false, openTrustPage: false,
                                      offersKeychain: false, duoDevices: ["Duo"], offersDuo: true,
-                                     iCloudDevices: [], offersICloud: true)
-        #expect(s.fixes == [.duoCompatibility(["Duo"]), .iCloudSignedOut([])])
+                                     iCloudDevices: [], offersICloud: true, legacy32: true)
+        #expect(s.fixes == [.duoCompatibility(["Duo"]), .iCloudSignedOut([]), .legacy32(true)])
         #expect(s.install == [.appUnchanged, .openAppAfter(false)])
         #expect(s.inApp == [.xsideFeatures(false)])
+    }
+
+    /// The 32-bit code removal: an automatic fix, always listed, with what the import scan found.
+    @Test func legacy32IsAlwaysListed() {
+        func fixes(_ legacy32: Bool?) -> [InstallSummary.Line] {
+            InstallSummary.lines(options: InstallOptions(), inApp: InAppSettings.defaults(reminder: true, at: t0),
+                                 withoutXSideFeatures: false, openAppAfter: false, openTrustPage: false,
+                                 offersKeychain: false, legacy32: legacy32).fixes
+        }
+        #expect(fixes(true) == [.legacy32(true)])
+        #expect(fixes(false) == [.legacy32(false)])
+        #expect(fixes(nil) == [.legacy32(nil)])
     }
 
     @Test func withoutFeaturesListsOnlyThat() {

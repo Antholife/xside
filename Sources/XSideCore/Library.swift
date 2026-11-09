@@ -162,6 +162,9 @@ public struct AppRecord: Codable, Identifiable, Equatable, Sendable {
     public var duo: DuoAppInfo?
     /// What the current .ipa uses of iCloud, for the signed-out iCloud option. nil in older state.
     public var icloud: ICloudAppInfo?
+    /// The current .ipa still carries 32-bit ARM code (armv7/armv7s), removed at each signing.
+    /// nil in older state (not scanned).
+    public var legacy32: Bool?
     /// The app's `CFBundleExecutable`: its process name in the device's crash logs. nil in older
     /// state, until its next import or signing.
     public var executable: String?
@@ -200,6 +203,7 @@ public struct AppRecord: Codable, Identifiable, Equatable, Sendable {
         version = try? c.decodeIfPresent(String.self, forKey: .version)
         duo = try? c.decodeIfPresent(DuoAppInfo.self, forKey: .duo)
         icloud = try? c.decodeIfPresent(ICloudAppInfo.self, forKey: .icloud)
+        legacy32 = try? c.decodeIfPresent(Bool.self, forKey: .legacy32)
         executable = try? c.decodeIfPresent(String.self, forKey: .executable)
     }
 }
@@ -330,6 +334,7 @@ public actor AppLibrary {
             items[index].version = info.version
             items[index].duo = info.duo
             items[index].icloud = info.icloud
+            items[index].legacy32 = info.hasLegacy32
             items[index].executable = info.executable
             record = items[index]
         } else {
@@ -339,6 +344,7 @@ public actor AppLibrary {
             record.version = info.version
             record.duo = info.duo
             record.icloud = info.icloud
+            record.legacy32 = info.hasLegacy32
             record.executable = info.executable
             items.append(record)
         }

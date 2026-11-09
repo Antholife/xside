@@ -38,6 +38,10 @@ final class InstallFlow {
     /// device only: with several, the checks come after every install and aren't a step of each.
     var wifiStepPlanned = false
     var draft = OptionsDraft()
+    /// The app's name as the install shows it: the one typed in step ②, else the .ipa's.
+    var appDisplayName: String {
+        draft.name.isEmpty ? info?.name ?? ipa.deletingPathExtension().lastPathComponent : draft.name
+    }
     /// The XSide module in the app (step ③): the values every checked device gets. Prefilled from the app's
     /// last-used values, else the Mac defaults; only the values count (see `InAppSettings.adopting`).
     var inApp = AppModel.inAppDefaults(at: Date())

@@ -787,6 +787,13 @@
 "fixes.request.button" = "Demander un correctif";
 "fixes.request.text" = "Pas de correctif pour ton cas ? Décris le symptôme : XSide peut injecter des correctifs ciblés (une app) ou globaux (un service iOS, comme iCloud).";
 "fixes.caption" = "XSide modifie l'app pour qu'elle marche mieux sur ton appareil ou avec un compte gratuit.";
+"fixes.legacy32.title" = "Retrait du code 32 bits (armv7)";
+"fixes.legacy32.badge" = "Automatique";
+"fixes.legacy32.applied" = "Appliqué : %@ contient des slices armv7/armv7s, retirées à la signature.";
+"fixes.legacy32.notApplied" = "Non appliqué : %@ ne contient que du code 64 bits (arm64).";
+"fixes.legacy32.caption" = "iOS ne charge plus de code 32 bits depuis iOS 11. XSide supprime ces slices des exécutables et frameworks avant de signer : l'app reste identique, le binaire est plus léger et la signature plus fiable.";
+"fixes.legacy32.short.applied" = "Appliqué";
+"fixes.legacy32.short.notApplied" = "Non appliqué";
 "fixes.section" = "Correctifs de compatibilité";
 "duo.confirm.messageModule" = "%@ utilisera tous les écrans de l'iPhone Duo, intérieur et extérieur, en mode Duo. Elle n'a jamais été prévue pour les scènes iOS : XSide ajoute un petit module pour l'adapter. L'affichage et certains comportements (liens, actions rapides) peuvent être imparfaits. Parfois, il suffit de relancer l'app. Tu peux retirer l'option à tout moment dans Réglages > Mes apps.";
 "duo.caption.moduleWarning" = "Un petit module de compatibilité est ajouté à l'app : il gère les scènes iOS à sa place (sa fenêtre, les liens, les actions rapides, le passage en arrière-plan). Retire l'option si l'app se comporte mal.";

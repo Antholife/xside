@@ -33,6 +33,20 @@ struct LibraryTests {
         #expect(expected.first?.installations == [inst("dev1")])
     }
 
+    /// The import scan's 32-bit finding is kept (the Compatibility fixes row says Applied / Not
+    /// applied), updated by a new import, and unknown in older state.
+    @Test func keepsTheLegacy32Finding() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let root = tmp.appendingPathComponent("lib")
+        let lib = AppLibrary(root: root)
+        let fat = AppInfo(bundleID: "com.example.demo", name: "Demo", version: "1.0", executable: "Demo", hasLegacy32: true)
+        #expect(try await lib.importIPA(try makeIPA(in: tmp), info: fat, teamID: "TEAM123456").legacy32 == true)
+        #expect(await AppLibrary(root: root).records().first?.legacy32 == true)
+        #expect(try await lib.importIPA(try makeIPA(in: tmp), info: info, teamID: "TEAM123456").legacy32 == false)
+        let old = Data(#"[{"id":"\#(UUID().uuidString)","originalBundleID":"com.x","ipaPath":"apps/x/original.ipa"}]"#.utf8)
+        #expect(try JSONDecoder().decode([AppRecord].self, from: old).first?.legacy32 == nil)
+    }
+
     /// The process name crash logs go by: kept at import, persisted, filled in later for older
     /// records (at a signing), and absent from older state without harm.
     @Test func keepsTheExecutable() async throws {

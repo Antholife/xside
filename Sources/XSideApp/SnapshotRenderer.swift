@@ -69,6 +69,7 @@ enum SnapshotRenderer {
                     CompatibilityFixesSection {
                         DuoOptionsCard(model: model, flow: flow)
                         ICloudOptionsCard(model: model, flow: flow)
+                        CompatibilityFixCard { Legacy32InfoRow(appName: flow.appDisplayName, applied: flow.info?.hasLegacy32) }
                     }
                 }
                 .padding(20).frame(width: InstallWindow.width).background(Color(nsColor: .windowBackgroundColor)),
@@ -84,7 +85,8 @@ enum SnapshotRenderer {
     }
 
     /// The Duo option: recommended (own scene delegate), not a Duo, already compatible, recommended
-    /// with the compatibility module, not available (a build without that module); then iCloud: recommended, useful, not needed.
+    /// with the compatibility module, not available (a build without that module); then iCloud:
+    /// recommended, useful, not needed; then the 32-bit removal: applied, not applied, not known.
     @MainActor private static var fixStates: some View {
         let off = Binding.constant(false)
         return CompatibilityFixesSection {
@@ -107,6 +109,13 @@ enum SnapshotRenderer {
                 ICloudOptionRow(state: .useful, appName: "YouTube", deviceName: "useful", isOn: off)
                 Divider().padding(.leading, 48)
                 ICloudOptionRow(state: .notNeeded, appName: "Duolingo", deviceName: "notNeeded", isOn: off)
+            }
+            CompatibilityFixCard {
+                Legacy32InfoRow(appName: "Instagram", applied: true)
+                Divider().padding(.leading, 48)
+                Legacy32InfoRow(appName: "YouTube", applied: false)
+                Divider().padding(.leading, 48)
+                Legacy32InfoRow(appName: "Duolingo", applied: nil)
             }
         }
     }
@@ -150,7 +159,8 @@ enum SnapshotRenderer {
         @MainActor func flow() -> InstallFlow {
             let flow = InstallFlow(ipa: URL(fileURLWithPath: "/tmp/Instagram.ipa"))
             flow.info = AppInfo(bundleID: legacyApp.originalBundleID, name: legacyApp.displayName, version: "412.0",
-                                executable: "Instagram", sdkVersion: "26.0", duo: legacyApp.duo, icloud: legacyApp.icloud)
+                                executable: "Instagram", sdkVersion: "26.0", duo: legacyApp.duo, icloud: legacyApp.icloud,
+                                hasLegacy32: true)
             flow.deviceIDs = deviceIDs
             flow.duoDevices = [deviceIDs[0]]
             return flow
@@ -182,10 +192,12 @@ enum SnapshotRenderer {
                                               installation(iPhone, days: 3.6, version: "20.45.3", checkIn: 4)])
             video.duo = DuoAppInfo(sdkVersion: "26.4", adoptsScenes: false, sceneDelegateClass: "YTSceneDelegate")
             video.icloud = ICloudAppInfo(declaresICloud: false, linksCloudKit: true)
+            video.legacy32 = false
             // No scene support of its own: the Duo option brings the compatibility module.
             var photos = record(2, "Instagram", [installation(iPhone, days: 1.3, version: "412.0", paused: true)])
             photos.duo = DuoAppInfo(sdkVersion: "26.0", adoptsScenes: false, sceneDelegateClass: nil)
             photos.icloud = ICloudAppInfo(declaresICloud: true, containers: ["iCloud.com.example.app2"])
+            photos.legacy32 = true
             let lessons = record(3, "Duolingo: Language Lessons", [installation(iPhone, days: 6.1, version: "6.9.0",
                                                                                checkIn: 2 * 86_400)])
             records = [video, photos, lessons]

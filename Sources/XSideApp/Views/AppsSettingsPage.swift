@@ -302,6 +302,7 @@ private struct AppSettingsContent: View {
                     CompatibilityFixesSection {
                         duoOption
                         iCloudOption
+                        CompatibilityFixCard { Legacy32InfoRow(appName: appName, applied: entry.record.legacy32) }
                     }
                 }
                 .padding(16)

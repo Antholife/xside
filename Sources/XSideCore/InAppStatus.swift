@@ -205,6 +205,8 @@ public enum InstallSummary {
         case duoCompatibility([String])
         /// "Simulate signed-out iCloud": the devices getting it (empty: none).
         case iCloudSignedOut([String])
+        /// The automatic removal of 32-bit ARM code: whether this .ipa has some (nil: not known).
+        case legacy32(Bool?)
         case openAppAfter(Bool), openTrustPage(Bool)
         case xsideFeatures(Bool)
         case messages(MessageLevel)
@@ -220,12 +222,14 @@ public enum InstallSummary {
     /// is opened after the install (it can't open otherwise). `duoDevices`: the names of the
     /// devices getting iPhone Duo compatibility; `offersDuo`: a Duo is among the targets (the line
     /// then shows even when none gets it). `iCloudDevices` / `offersICloud`: the same for
-    /// "Simulate signed-out iCloud" (offered: the app uses iCloud).
+    /// "Simulate signed-out iCloud" (offered whenever step ② shows it: any target). `legacy32`:
+    /// whether the .ipa has 32-bit ARM code; its line is always listed (an automatic fix, no switch).
     public static func lines(options o: InstallOptions, inApp s: InAppSettings, withoutXSideFeatures: Bool,
                              openAppAfter: Bool, openTrustPage: Bool,
                              offersKeychain: Bool, duoDevices: [String] = [],
                              offersDuo: Bool = false, iCloudDevices: [String] = [],
-                             offersICloud: Bool = false) -> (install: [Line], fixes: [Line], inApp: [Line]) {
+                             offersICloud: Bool = false,
+                             legacy32: Bool? = nil) -> (install: [Line], fixes: [Line], inApp: [Line]) {
         var install: [Line] = []
         if let v = o.displayName { install.append(.displayName(v)) }
         if let v = o.customBundleID { install.append(.bundleID(v)) }
@@ -240,6 +244,7 @@ public enum InstallSummary {
         var fixes: [Line] = []
         if offersDuo || !duoDevices.isEmpty { fixes.append(.duoCompatibility(duoDevices)) }
         if offersICloud || !iCloudDevices.isEmpty { fixes.append(.iCloudSignedOut(iCloudDevices)) }
+        fixes.append(.legacy32(legacy32))
         install.append(.openAppAfter(openAppAfter))
         if openAppAfter { install.append(.openTrustPage(openTrustPage)) }
 

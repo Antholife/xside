@@ -787,6 +787,13 @@
 "fixes.request.button" = "Request a fix";
 "fixes.request.text" = "No fix for your case? Describe the symptom: XSide can inject targeted fixes (one app) or global ones (an iOS service, like iCloud).";
 "fixes.caption" = "XSide changes the app so it works better on your device or with a free account.";
+"fixes.legacy32.title" = "32-bit code removal (armv7)";
+"fixes.legacy32.badge" = "Automatic";
+"fixes.legacy32.applied" = "Applied: %@ contains armv7/armv7s slices, removed at signing.";
+"fixes.legacy32.notApplied" = "Not applied: %@ contains only 64-bit code (arm64).";
+"fixes.legacy32.caption" = "iOS hasn't loaded 32-bit code since iOS 11. XSide removes these slices from the executables and frameworks before signing: the app stays the same, the binary is lighter and the signature more reliable.";
+"fixes.legacy32.short.applied" = "Applied";
+"fixes.legacy32.short.notApplied" = "Not applied";
 "fixes.section" = "Compatibility fixes";
 "duo.confirm.messageModule" = "%@ will use all of the iPhone Duo's screens, inner and outer, in Duo mode. It was never made for iOS scenes: XSide adds a small module to adapt it. The display and some behaviors (links, quick actions) may be imperfect. Sometimes just relaunching the app is enough. You can remove the option at any time in Settings > My apps.";
 "duo.caption.moduleWarning" = "A small compatibility module is added to the app: it handles iOS scenes for it (its window, links, quick actions, going to the background). Remove the option if the app misbehaves.";

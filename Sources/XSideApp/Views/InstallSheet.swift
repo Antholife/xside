@@ -309,6 +309,7 @@ struct InstallSheet: View {
                     CompatibilityFixesSection {
                         DuoOptionsCard(model: model, flow: flow)
                         ICloudOptionsCard(model: model, flow: flow)
+                        CompatibilityFixCard { Legacy32InfoRow(appName: flow.appDisplayName, applied: flow.info?.hasLegacy32) }
                     }
                 }
                 // What this step's fields cause (minimum iOS, a new App ID, an older version).
