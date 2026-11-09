@@ -138,12 +138,104 @@ struct TweakMetadataTests {
         return Data(out)
     }
 
-    @Test func deepBinaryPlistNestingDoesNotTrap() {
-        for depth in [10, 500, 5000, 20_000] {
-            let d = nestedBinaryPlist(depth: depth)
-            #expect(d.count <= DebLimits.maxPlistBytes || depth > 5000)
-            _ = TweakFilter.parse(d)
+    @Test func deepBinaryPlistNestingIsRefusedNotTrapped() throws {
+        // Shallow, written by Foundation: parses, non-strings skipped.
+        var v: Any = "x"
+        for _ in 0..<20 { v = [v] }
+        let shallow = try PropertyListSerialization.data(fromPropertyList: ["Filter": ["Bundles": ["a", v]]], format: .binary, options: 0)
+        #expect(TweakFilter.parse(shallow)?.bundles == ["a"])
+        // Hand-built nested arrays past what Foundation accepts: nil, no crash.
+        for depth in [10, 500, 5000, 20_000] { #expect(TweakFilter.parse(nestedBinaryPlist(depth: depth)) == nil) }
+        #expect(TweakFilter.parse(Data("bplist00".utf8) + Data(repeating: 0xA1, count: 3000)) == nil)
+    }
+
+    @Test func loneCarriageReturnFailsSafe() throws {
+        // A bare \r is not a line break; it is stripped, which merges the lines. The merged Package
+        // is not a valid id, so the control is refused instead of mis-read.
+        #expect(throws: DebError.self) { try DebControl.parse("Package: a\rName: b\n") }
+        let c = try DebControl.parse("Package: a\nName: b\rc\n")
+        #expect(c.name == "bc")
+    }
+
+    @Test func firmwareRangeReadsBothBounds() throws {
+        let c = try DebControl.parse("Package: a\nDepends: firmware (>= 14.0), firmware (>= 15.0), firmware (<< 17.0), firmware (<< 16.5), x\n")
+        let r = DebControl.firmwareRange(c.depends)
+        #expect(r.min == "15.0")
+        #expect(r.belowMax == "16.5")
+        let none = DebControl.firmwareRange([])
+        #expect(none.min == nil && none.belowMax == nil)
+    }
+
+    @Test func readsPackagesStanzas() throws {
+        let packages = """
+        Package: ws.hbang.common
+        Version: 1.17.1
+        Architecture: iphoneos-arm
+        Depends: firmware (>= 11.0)
+        Filename: ./debs/ws.hbang.common_1.17.1_iphoneos-arm.deb
+        SHA256: aa
+
+        Package: ws.hbang.common
+        Version: 1.18.0
+        Architecture: iphoneos-arm64
+        Filename: ./debs/ws.hbang.common_1.18.0_iphoneos-arm64.deb
+
+        """
+        let s = try DebControl.stanzas(packages)
+        #expect(s.count == 2)
+        #expect(s[1]["version"] == "1.18.0")
+        #expect(s[0]["filename"]?.hasSuffix(".deb") == true)
+        #expect(try DebControl.make(s[0]).depends.count == 1)
+        #expect(throws: DebError.tooLarge) { try DebControl.stanzas(packages, maxStanzas: 1) }
+    }
+
+    @Test func parsesOpenStepFilterPlist() throws {
+        let text = #"{ Filter = { Bundles = ("com.apple.UIKit", "com.foo.app"); Executables = (SpringBoard); Classes = (UIView); Mode = Any; }; }"#
+        let f = try #require(TweakFilter.parse(Data(text.utf8)))
+        #expect(f.bundles == ["com.apple.UIKit", "com.foo.app"])
+        #expect(f.executables == ["SpringBoard"])
+        #expect(f.classes == ["UIView"])
+        #expect(f.anyMode)
+    }
+
+    @Test func parsesXMLFilterPlistDefaultsToAll() throws {
+        let xml = try PropertyListSerialization.data(fromPropertyList: ["Filter": ["Bundles": ["a"]]], format: .xml, options: 0)
+        let f = try #require(TweakFilter.parse(xml))
+        #expect(f == TweakFilter(bundles: ["a"]))
+    }
+
+    @Test func filterIgnoresNonStringsAndCapsLists() throws {
+        var items: [Any] = [1, true, ["x"], "keep"]
+        items += (0..<2000).map { "b\($0)" }
+        let data = try PropertyListSerialization.data(fromPropertyList: ["Filter": ["Bundles": items]], format: .binary, options: 0)
+        let f = try #require(TweakFilter.parse(data))
+        #expect(f.bundles.count == 512)
+        #expect(f.bundles.first == "keep")
+        #expect(TweakFilter.parse(Data("not a plist".utf8)) == nil)
+    }
+
+    @Test func filterOver64KiBIsNil() {
+        let big = "{ Filter = { Bundles = (" + String(repeating: "a, ", count: 30_000) + "b); }; }"
+        #expect(TweakFilter.parse(Data(big.utf8)) == nil)
+    }
+
+    @Test func knownDependencyTable() {
+        for p in ["mobilesubstrate", "com.saurik.substrate", "org.coolstar.libhooker", "com.ex.substitute", "com.ex.libsubstitute", "ellekit"] {
+            #expect(KnownDependency.role(of: p) == .hooking)
         }
-        _ = TweakFilter.parse(Data("bplist00".utf8) + Data(repeating: 0xA1, count: 3000))
+        for p in ["firmware", "cy+cpu.arm64", "cy+model.iphone", "gsc.armv7"] { #expect(KnownDependency.role(of: p) == .ignored) }
+        #expect(KnownDependency.role(of: "preferenceloader") == .settings)
+        #expect(KnownDependency.role(of: "com.rpetrich.rocketbootstrap") == .jailbreakOnly("RocketBootstrap"))
+        #expect(KnownDependency.role(of: "libactivator") == .jailbreakOnly("Activator"))
+        #expect(KnownDependency.role(of: "com.muirey03.libmryipc") == .jailbreakOnly("libMRYIPC"))
+        #expect(KnownDependency.role(of: "applist") == .jailbreakOnly("AppList"))
+        #expect(KnownDependency.role(of: "com.opa334.libsandy") == .jailbreakOnly("libSandy"))
+        #expect(KnownDependency.role(of: "ws.hbang.common") == .library("Cephei"))
+        #expect(KnownDependency.role(of: "com.opa334.altlist") == .library("AltList"))
+        #expect(KnownDependency.role(of: "libroot") == .library("libroot"))
+        #expect(KnownDependency.role(of: "com.opa334.libroot") == .library("libroot"))
+        #expect(KnownDependency.role(of: "com.mrgcgamer.libgcuniversal") == .library("libGCUniversal"))
+        #expect(KnownDependency.role(of: "MobileSubstrate") == .hooking)
+        #expect(KnownDependency.role(of: "com.unknown.thing") == nil)
     }
 }
