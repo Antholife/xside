@@ -1,0 +1,212 @@
+{
+  "comment": "Shared by TweakPathsTests (Swift) and scripts/test-tweak-support.sh (C core). 'exists' lists the files and folders present; expect null = no redirect.",
+  "tweaksRoot": "/App.app/Frameworks/XSideTweaks",
+  "packages": [
+    "0123456789abcdef",
+    "fedcba9876543210",
+    "../../../etc",
+    "deps/../../x",
+    "0123456789ABCDEF",
+    "deps/Bad_ID",
+    "deps/ws.hbang.common",
+    "deps/com.x.abcde"
+  ],
+  "exists": [
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/Library/Application Support/T/a.png",
+    "/App.app/Frameworks/XSideTweaks/fedcba9876543210/Library/Application Support/T/a.png",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/Library/Application Support/T",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/Library/Application Support/T/.hidden",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/Library/MobileSubstrate/DynamicLibraries/T.plist",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/TweakInject/T.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libT.dylib",
+    "/App.app/Frameworks/XSideTweaks/fedcba9876543210/Library/Application Support/T/only2.png",
+    "/App.app/Frameworks/XSideTweaks/deps/ws.hbang.common/Library/Frameworks/Cephei.framework/Cephei",
+    "/App.app/Frameworks/XSideTweaks/fedcba9876543210/TB.bundle",
+    "/App.app/Frameworks/XSideTweaks/fedcba9876543210/TB.bundle/icon.png",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/Library/Application Support/T.bundle/x.png",
+    "/App.app/Frameworks/XSideTweaks/fedcba9876543210/T.bundle/x.png",
+    "/App.app/Frameworks/XSideTweaks/../../../etc/Library/Application Support/E/e.txt",
+    "/App.app/Frameworks/XSideTweaks/deps/../../x/Library/Application Support/E/e.txt",
+    "/App.app/Frameworks/XSideTweaks/0123456789ABCDEF/Library/Application Support/E/e.txt",
+    "/App.app/Frameworks/XSideTweaks/deps/Bad_ID/Library/Application Support/E/e.txt",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/Library/Application Support/T/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/Library/Application Support/T/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/Library/MobileSubstrate/DynamicLibraries/TB.bundle/icon.png",
+    "/App.app/Frameworks/XSideTweaks/deps/com.x.abcde/usr/lib/libshort.dylib",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/Library/Application Support/T/../T/a.png",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/Library/Application Support/T/./a.png",
+    "/App.app/Frameworks/XSideTweaks/0123456789abcdef/Library/Application Support//T/a.png"
+  ],
+  "cases": [
+    {
+      "path": "/Library/Application Support/T/a.png",
+      "expect": "/App.app/Frameworks/XSideTweaks/0123456789abcdef/Library/Application Support/T/a.png",
+      "why": "in two packages: the first one wins"
+    },
+    {
+      "path": "/var/jb/Library/MobileSubstrate/DynamicLibraries/T.plist",
+      "expect": "/App.app/Frameworks/XSideTweaks/0123456789abcdef/Library/MobileSubstrate/DynamicLibraries/T.plist",
+      "why": "rootless prefix dropped"
+    },
+    {
+      "path": "/Library/Application Support/T/only2.png",
+      "expect": "/App.app/Frameworks/XSideTweaks/fedcba9876543210/Library/Application Support/T/only2.png",
+      "why": "only in the second package"
+    },
+    {
+      "path": "/var/jb/Library/Frameworks/Cephei.framework/Cephei",
+      "expect": "/App.app/Frameworks/XSideTweaks/deps/ws.hbang.common/Library/Frameworks/Cephei.framework/Cephei",
+      "why": "only in an embedded dependency"
+    },
+    {
+      "path": "/usr/lib/TweakInject/T.dylib",
+      "expect": "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/TweakInject/T.dylib",
+      "why": "TweakInject prefix"
+    },
+    {
+      "path": "/usr/lib/libT.dylib",
+      "expect": "/App.app/Frameworks/XSideTweaks/0123456789abcdef/usr/lib/libT.dylib",
+      "why": "usr/lib prefix"
+    },
+    {
+      "path": "/Library/Application Support/T",
+      "expect": "/App.app/Frameworks/XSideTweaks/0123456789abcdef/Library/Application Support/T",
+      "why": "a folder of the copy"
+    },
+    {
+      "path": "/Library/Application Support/T/.hidden",
+      "expect": "/App.app/Frameworks/XSideTweaks/0123456789abcdef/Library/Application Support/T/.hidden",
+      "why": "a dot file is not a dot component"
+    },
+    {
+      "path": "/Library/Application Support/TB.bundle/icon.png",
+      "expect": "/App.app/Frameworks/XSideTweaks/fedcba9876543210/TB.bundle/icon.png",
+      "why": "a dropped bundle sits at the package root"
+    },
+    {
+      "path": "/var/jb/Library/Application Support/TB.bundle",
+      "expect": "/App.app/Frameworks/XSideTweaks/fedcba9876543210/TB.bundle",
+      "why": "the dropped bundle itself, rootless"
+    },
+    {
+      "path": "/Library/Application Support/T.bundle/x.png",
+      "expect": "/App.app/Frameworks/XSideTweaks/0123456789abcdef/Library/Application Support/T.bundle/x.png",
+      "why": "a .deb's own bundle comes first"
+    },
+    {
+      "path": "/var/jb/usr/lib/libshort.dylib",
+      "expect": "/App.app/Frameworks/XSideTweaks/deps/com.x.abcde/usr/lib/libshort.dylib",
+      "why": "a 16-byte deps/ name is not a hex id"
+    },
+    {
+      "path": "/Library/Application Support/T/missing.png",
+      "expect": null,
+      "why": "missing everywhere"
+    },
+    {
+      "path": "/Library/../etc/passwd",
+      "expect": null,
+      "why": "dot-dot"
+    },
+    {
+      "path": "/Library/Application Support/T/../T/a.png",
+      "expect": null,
+      "why": "dot-dot even when the file exists"
+    },
+    {
+      "path": "/Library/Application Support/T/./a.png",
+      "expect": null,
+      "why": "dot component"
+    },
+    {
+      "path": "/Library/Application Support//T/a.png",
+      "expect": null,
+      "why": "empty component"
+    },
+    {
+      "path": "/private/var/mobile/x",
+      "expect": null,
+      "why": "not a jailbreak path"
+    },
+    {
+      "path": "relative/path",
+      "expect": null,
+      "why": "relative"
+    },
+    {
+      "path": "Library/Application Support/T/a.png",
+      "expect": null,
+      "why": "relative under a prefix"
+    },
+    {
+      "path": "/var/jb",
+      "expect": null,
+      "why": "the rootless prefix alone"
+    },
+    {
+      "path": "/var/jb/",
+      "expect": null,
+      "why": "the rootless prefix and a slash"
+    },
+    {
+      "path": "/var/jbx/Library/Application Support/T/a.png",
+      "expect": null,
+      "why": "not the rootless prefix"
+    },
+    {
+      "path": "/var/jb/var/jb/Library/Application Support/T/a.png",
+      "expect": null,
+      "why": "the rootless prefix only once"
+    },
+    {
+      "path": "/Library/Application Support/",
+      "expect": null,
+      "why": "a prefix alone"
+    },
+    {
+      "path": "/Library/MobileSubstrate/DynamicLibraries",
+      "expect": null,
+      "why": "a prefix without its slash"
+    },
+    {
+      "path": "/usr/libexec/T/a.png",
+      "expect": null,
+      "why": "usr/lib needs its slash"
+    },
+    {
+      "path": "/System/Library/Application Support/T/a.png",
+      "expect": null,
+      "why": "prefix not at the root"
+    },
+    {
+      "path": "/Library/MobileSubstrate/DynamicLibraries/TB.bundle/icon.png",
+      "expect": "/App.app/Frameworks/XSideTweaks/0123456789abcdef/Library/MobileSubstrate/DynamicLibraries/TB.bundle/icon.png",
+      "why": "a bundle in DynamicLibraries maps as is"
+    },
+    {
+      "path": "/Library/MobileSubstrate/DynamicLibraries/TB.bundle",
+      "expect": null,
+      "why": "the bundle-at-root form is for Application Support only"
+    },
+    {
+      "path": "/Library/Application Support/E/e.txt",
+      "expect": null,
+      "why": "only in unusable package names"
+    },
+    {
+      "path": "/Library/Application Support/T/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expect": null,
+      "why": "the mapped path is over PATH_MAX"
+    },
+    {
+      "path": "/Library/Application Support/T/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "expect": null,
+      "why": "the path is over PATH_MAX"
+    },
+    {
+      "path": "",
+      "expect": null,
+      "why": "empty"
+    }
+  ]
+}

@@ -96,8 +96,16 @@ if xcrun -sdk iphoneos --show-sdk-path >/dev/null 2>&1; then
         -framework UIKit -framework Foundation -framework CoreGraphics \
         -install_name @executable_path/Frameworks/XSideDuoLegacy.dylib \
         -o "$APP/Contents/Resources/XSideDuoLegacy.dylib" App/DuoLegacy/*.m
+    # The converted tweaks' path redirect (App/TweakSupport), added with them under
+    # Frameworks/XSideTweaks/; inert unless the Info.plist says XSideTweakPaths. UIKit is looked up
+    # at runtime, not linked. Same warnings as scripts/test-tweak-support.sh.
+    xcrun -sdk iphoneos clang -dynamiclib -arch arm64 -mios-version-min=15.0 -fobjc-arc -O2 \
+        -Wall -Wextra -Werror -Wno-unused-parameter \
+        -I App/TweakSupport -framework Foundation \
+        -install_name @executable_path/Frameworks/XSideTweaks/XSideTweakSupport.dylib \
+        -o "$APP/Contents/Resources/XSideTweakSupport.dylib" App/TweakSupport/*.m App/TweakSupport/*.c
 else
-    echo "warning: no iOS SDK, building without the welcome popup, signed-out iCloud and iPhone Duo compatibility libraries" >&2
+    echo "warning: no iOS SDK, building without the welcome popup, signed-out iCloud, iPhone Duo compatibility and tweak support libraries" >&2
 fi
 # Sparkle (self-updates): the framework next to the executable, found through its rpath.
 mkdir -p "$APP/Contents/Frameworks"
