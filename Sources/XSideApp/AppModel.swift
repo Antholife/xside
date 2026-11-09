@@ -2415,6 +2415,24 @@ final class AppModel {
         await reloadRecords()
     }
 
+    /// XSide's features off (or back to the app's choice) for one installation only.
+    func setWithoutXSideFeaturesHere(_ without: Bool, for key: JobKey) async {
+        do { try await library.setWithoutXSideFeaturesHere(without, recordID: key.recordID, deviceID: key.deviceID) } catch {
+            Self.logger.error("features choice (one device) failed: \(String(describing: error))")
+        }
+        await reloadRecords()
+    }
+
+    /// Settings > Mes apps, « Fonctionnalités XSide dans cette app » for `entry`: off is the app's
+    /// choice on every device (as before); on gives this installation the app's choice again (a
+    /// crash's fix may have turned it off here only) and turns the app's choice on.
+    func setXSideFeatures(_ on: Bool, for entry: AppEntry) async {
+        if on, entry.installation.withoutXSideFeaturesHere == true { await setWithoutXSideFeaturesHere(false, for: entry.id) }
+        let current = records.first { $0.id == entry.record.id }?.options
+            .resolvedWithoutXSideFeatures(default: Self.withoutXSideFeaturesByDefault)
+        if current != !on { await setWithoutXSideFeatures(!on, recordID: entry.record.id) }
+    }
+
     func setWithoutXSideFeatures(_ without: Bool?, recordID: UUID) async {
         guard var options = records.first(where: { $0.id == recordID })?.options else { return }
         options.withoutXSideFeatures = without
@@ -2874,12 +2892,19 @@ final class AppModel {
 
     /// The fix a crash suggests (its window, the install window): changes the option and signs
     /// the app again on that device. False when the refresh couldn't start (device away, busy).
+    /// `allDevices`: "Reinstall without XSide features" for the app on every device (the others
+    /// at their next signing); otherwise for this device only (morning review M7).
     @discardableResult
-    func perform(_ action: CrashAction, on key: JobKey) async -> Bool {
+    func perform(_ action: CrashAction, on key: JobKey, allDevices: Bool = false) async -> Bool {
         guard let record = records.first(where: { $0.id == key.recordID }),
               let installation = record.installations.first(where: { $0.deviceID == key.deviceID }) else { return false }
         switch action {
-        case .reinstallWithoutXSide: await setWithoutXSideFeatures(true, recordID: key.recordID)
+        case .reinstallWithoutXSide:
+            if allDevices {
+                await setWithoutXSideFeatures(true, recordID: key.recordID)
+            } else {
+                await setWithoutXSideFeaturesHere(true, for: key)
+            }
         case .turnOffDuo: await setDuoCompatibility(false, for: AppEntry(record: record, installation: installation))
         case .turnOnICloudSignedOut: await setICloudSignedOut(true, for: AppEntry(record: record, installation: installation))
         case .turnOffICloudSignedOut: await setICloudSignedOut(false, for: AppEntry(record: record, installation: installation))

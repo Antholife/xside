@@ -261,7 +261,8 @@ private struct AppSettingsContent: View {
         entry.installation.seededInApp(reminder: AppModel.setting(AppModel.deviceReminderKey), at: entry.installation.installedAt)
     }
     private var hasFeatures: Bool {
-        !entry.record.options.resolvedWithoutXSideFeatures(default: AppModel.withoutXSideFeaturesByDefault)
+        entry.installation.withoutXSideFeaturesHere != true
+            && !entry.record.options.resolvedWithoutXSideFeatures(default: AppModel.withoutXSideFeaturesByDefault)
     }
 
     var body: some View {
@@ -278,7 +279,7 @@ private struct AppSettingsContent: View {
                     InAppSettingsSection(
                         settings: settings, appName: appName,
                         hasFeatures: Binding(get: { hasFeatures }, set: { on in
-                            Task { await model.setWithoutXSideFeatures(!on, recordID: entry.record.id) }
+                            Task { await model.setXSideFeatures(on, for: entry) }
                         }),
                         edit: { change in Task { await model.editInApp(entry.id, change) } },
                         setAutoRefresh: { on in

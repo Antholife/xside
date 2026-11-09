@@ -132,7 +132,8 @@ private struct CrashView: View {
             if let action = CrashAction.suggested(for: d) {
                 HStack(spacing: 8) {
                     Button(L("crash.action.\(action.rawValue)")) {
-                        Task { actionStarted = await model.perform(action, on: entry.id) }
+                        guard let all = model.crashActionScope(action, on: entry.id) else { return }
+                        Task { actionStarted = await model.perform(action, on: entry.id, allDevices: all) }
                     }
                     .disabled(model.jobs[entry.id] != nil || actionStarted == true)
                     if model.jobs[entry.id] != nil || actionStarted == true {
@@ -231,7 +232,8 @@ struct CrashNotes: View {
                                     onWhy: key.map { key in { model.explainCrash(key) } },
                                     onAction: key.map { key in
                                         { action in
-                                            Task { actionStarted[run.deviceID] = await model.perform(action, on: key) }
+                                            guard let all = model.crashActionScope(action, on: key) else { return }
+                                            Task { actionStarted[run.deviceID] = await model.perform(action, on: key, allDevices: all) }
                                         }
                                     })
                     }
@@ -327,5 +329,27 @@ struct CrashFilledButtonStyle: ButtonStyle {
             .background(tint.opacity(configuration.isPressed ? 0.75 : 1), in: Capsule())
             .opacity(isEnabled ? 1 : 0.5)
             .contentShape(Capsule())
+    }
+}
+
+extension AppModel {
+    /// Before a crash's fix: where "Reinstall without XSide features" applies when the app is on
+    /// several devices (this device, the default, or all of them). False: this device only; true:
+    /// all; nil: cancelled. Other fixes are per device already: false without asking.
+    func crashActionScope(_ action: CrashAction, on key: JobKey) -> Bool? {
+        guard action == .reinstallWithoutXSide,
+              let record = records.first(where: { $0.id == key.recordID }), record.installations.count > 1 else { return false }
+        let device = devices.first { $0.id == key.deviceID }?.name ?? cachedNames[key.deviceID] ?? L("popover.unknownDevice")
+        let alert = NSAlert()
+        alert.messageText = L("crash.scope.title", record.displayName)
+        alert.informativeText = L("crash.scope.message", device, record.installations.count)
+        alert.addButton(withTitle: L("crash.scope.thisDevice", device))
+        alert.addButton(withTitle: L("crash.scope.allDevices"))
+        alert.addButton(withTitle: L("install.cancel"))
+        switch alert.runModal() {
+        case .alertFirstButtonReturn: return false
+        case .alertSecondButtonReturn: return true
+        default: return nil
+        }
     }
 }

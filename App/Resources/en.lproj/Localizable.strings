@@ -927,6 +927,10 @@
 "crash.action.refresh" = "Sign and reinstall";
 "crash.action.started" = "Reinstalling: follow it in the panel, then open the app again.";
 "crash.action.failed" = "XSide couldn't start it now (device out of reach or busy). Try again in a moment.";
+"crash.scope.title" = "Reinstall %@ without XSide features?";
+"crash.scope.message" = "The app will lose XSide's messages, the reminder, its XSide page in Settings and the link to XSide. Only on %1$@ (the device where it crashed), or on all %2$ld devices that have it (the others at their next refresh)? You can turn the features back on in Settings > My apps.";
+"crash.scope.thisDevice" = "Only on %@";
+"crash.scope.allDevices" = "On all devices";
 "notification.crash.title" = "%@ stopped at launch";
 "notification.crash.inUse.title" = "%@ stopped while in use";
 "notification.crash.body" = "On %1$@: %2$@. Click to see why.";

@@ -1264,6 +1264,30 @@ struct PipelineChainCancellationTests {
         #expect(await f.log.options.last?.withoutXSideFeatures == false)
     }
 
+    /// Morning review M7: a crash's "Reinstall without XSide features" for one device turns them
+    /// off there only; the choice is kept across signings; the other device keeps the app's.
+    @Test func featuresOffForOneDeviceOnly() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        _ = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
+        _ = try await f.pipeline().install(recordID: f.record.id, device: device("dev-2", udid: "U2"), env: env)
+        #expect(try await f.library.setWithoutXSideFeaturesHere(true, recordID: f.record.id, deviceID: device().id))
+        #expect(try await f.library.setWithoutXSideFeaturesHere(true, recordID: f.record.id, deviceID: device().id) == false)
+        let here = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
+        #expect(await f.log.options.last?.withoutXSideFeatures == true)
+        #expect(here.withoutXSideFeaturesHere == true && here.withoutXSideFeatures == true)
+        // Kept at the next signing (a refresh).
+        let again = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
+        #expect(await f.log.options.last?.withoutXSideFeatures == true)
+        #expect(again.withoutXSideFeaturesHere == true)
+        let other = try await f.pipeline().install(recordID: f.record.id, device: device("dev-2", udid: "U2"), env: env)
+        #expect(await f.log.options.last?.withoutXSideFeatures == false)
+        #expect(other.withoutXSideFeaturesHere == nil)
+        // Back to the app's choice.
+        #expect(try await f.library.setWithoutXSideFeaturesHere(false, recordID: f.record.id, deviceID: device().id))
+        _ = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
+        #expect(await f.log.options.last?.withoutXSideFeatures == false)
+    }
+
     /// Final review minor 4: features asked for but the library couldn't be added (patch error):
     /// the installation records what the app really got, so the Mac offers nothing it can't reach.
     @Test func libraryNotAddedIsRecordedAsWithoutFeatures() async throws {

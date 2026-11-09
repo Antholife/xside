@@ -421,7 +421,9 @@ public actor SideloadPipeline {
             let facts = signingFacts(recordID: recordID, deviceID: device.id, previous: previous, draft: draft,
                                      appVersion: record.options.version ?? record.version, at: now())
             var options = record.options
-            options.withoutXSideFeatures = options.resolvedWithoutXSideFeatures(default: withoutXSideFeaturesByDefault())
+            // Off for this device only (a crash's fix) wins over the app's choice.
+            options.withoutXSideFeatures = previous?.withoutXSideFeaturesHere == true
+                || options.resolvedWithoutXSideFeatures(default: withoutXSideFeaturesByDefault())
             // Per device: this job's choice, else the installation's.
             let duoAsked = duo ?? (previous?.duoCompatibility == true)
             options.duoCompatibility = duoAsked
@@ -493,7 +495,8 @@ public actor SideloadPipeline {
                                       iCloudSignedOutMissing: iCloudAsked && !resigner.hasICloudSignedOut(app) ? true : nil,
                                       iCloudSignedOutSkippedForModule: iCloudAsked && !resigner.hasICloudSignedOut(app)
                                           && skippedICloud == .noRoomBesideModule ? true : nil,
-                                      duoLegacyModule: duoAsked && resigner.hasDuoLegacyModule(app) ? true : nil)
+                                      duoLegacyModule: duoAsked && resigner.hasDuoLegacyModule(app) ? true : nil,
+                                      withoutXSideFeaturesHere: previous?.withoutXSideFeaturesHere)
             let installation = try await library.recordSigning(signed, for: recordID, requireExisting: previous != nil)
             Self.logger.notice("\(what): done, expires \(installation.expiresAt.formatted(.iso8601))")
             return installation

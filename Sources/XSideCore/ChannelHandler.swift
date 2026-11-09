@@ -202,6 +202,8 @@ extension Installation {
             result.lastDeviceRefreshRequest = asked
         }
         if let edit = current.lastMacEdit, edit > (lastMacEdit ?? .distantPast) { result.lastMacEdit = edit }
+        // A choice, not an outcome: the stored one stands (it may have changed during the job).
+        result.withoutXSideFeaturesHere = current.withoutXSideFeaturesHere
         if let auto = result.inApp?.autoRefresh {
             result.refreshPaused = !auto.value
             result.pausedBy = auto.value ? nil : auto.changedBy

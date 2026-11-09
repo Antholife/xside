@@ -44,6 +44,9 @@ public struct Installation: Codable, Equatable, Sendable {
     /// Signed without XSide's features at its last signing (nothing in the app to talk to XSide).
     /// nil in older state, or when signed with them.
     public var withoutXSideFeatures: Bool?
+    /// The person turned XSide's features off for this device only (a crash's fix): its signings
+    /// go without them whatever the app's choice. nil: the app's choice (`InstallOptions`).
+    public var withoutXSideFeaturesHere: Bool?
     /// The user turned iPhone Duo compatibility on for this installation: each signing applies it
     /// (see `DuoCompatibility`). nil: off.
     public var duoCompatibility: Bool?
@@ -79,7 +82,9 @@ public struct Installation: Codable, Equatable, Sendable {
                 lastMacEdit: Date? = nil, withoutXSideFeatures: Bool? = nil,
                 duoCompatibility: Bool? = nil, duoCompatibilityMissing: Bool? = nil, onDuo: Bool? = nil,
                 iCloudSignedOut: Bool? = nil, iCloudSignedOutMissing: Bool? = nil,
-                iCloudSignedOutSkippedForModule: Bool? = nil, duoLegacyModule: Bool? = nil) {
+                iCloudSignedOutSkippedForModule: Bool? = nil, duoLegacyModule: Bool? = nil,
+                withoutXSideFeaturesHere: Bool? = nil) {
+        self.withoutXSideFeaturesHere = withoutXSideFeaturesHere
         self.duoLegacyModule = duoLegacyModule
         self.iCloudSignedOutSkippedForModule = iCloudSignedOutSkippedForModule
         self.onDuo = onDuo
@@ -137,6 +142,7 @@ public struct Installation: Codable, Equatable, Sendable {
         iCloudSignedOutMissing = try? c.decodeIfPresent(Bool.self, forKey: .iCloudSignedOutMissing)
         iCloudSignedOutSkippedForModule = try? c.decodeIfPresent(Bool.self, forKey: .iCloudSignedOutSkippedForModule)
         duoLegacyModule = try? c.decodeIfPresent(Bool.self, forKey: .duoLegacyModule)
+        withoutXSideFeaturesHere = try? c.decodeIfPresent(Bool.self, forKey: .withoutXSideFeaturesHere)
     }
 }
 
@@ -487,6 +493,20 @@ public actor AppLibrary {
         let previous = items
         items[index].installations[i].duoCompatibility = on ? true : nil
         if !on { items[index].installations[i].duoCompatibilityMissing = nil } // nothing asked, nothing missing
+        do { try save() } catch { items = previous; throw error }
+        return true
+    }
+
+    /// XSide's features off for one installation only (`Installation.withoutXSideFeaturesHere`),
+    /// from its next signing on; `false` gives it the app's choice again. Returns false when
+    /// there's no such installation or nothing changed.
+    @discardableResult
+    public func setWithoutXSideFeaturesHere(_ without: Bool, recordID: UUID, deviceID: String) throws -> Bool {
+        let index = try indexOf(recordID)
+        guard let i = items[index].installations.firstIndex(where: { $0.deviceID == deviceID }),
+              (items[index].installations[i].withoutXSideFeaturesHere == true) != without else { return false }
+        let previous = items
+        items[index].installations[i].withoutXSideFeaturesHere = without ? true : nil
         do { try save() } catch { items = previous; throw error }
         return true
     }

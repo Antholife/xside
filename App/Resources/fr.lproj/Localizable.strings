@@ -927,6 +927,10 @@
 "crash.action.refresh" = "Signer et réinstaller";
 "crash.action.started" = "Réinstallation lancée : suis-la dans le panneau, puis rouvre l'app.";
 "crash.action.failed" = "XSide n'a pas pu la lancer maintenant (appareil hors de portée ou déjà occupé). Réessaie dans un moment.";
+"crash.scope.title" = "Réinstaller %@ sans les fonctions XSide ?";
+"crash.scope.message" = "L'app perdra les messages XSide, le rappel, sa page XSide dans Réglages et le lien avec XSide. Seulement sur %1$@ (l'appareil où elle a planté), ou sur les %2$ld appareils qui l'ont (les autres à leur prochain rafraîchissement) ? Tu peux réactiver les fonctions dans Réglages > Mes apps.";
+"crash.scope.thisDevice" = "Seulement sur %@";
+"crash.scope.allDevices" = "Sur tous les appareils";
 "notification.crash.title" = "%@ s'est arrêtée au lancement";
 "notification.crash.inUse.title" = "%@ s'est arrêtée pendant l'utilisation";
 "notification.crash.body" = "Sur %1$@ : %2$@. Clique pour voir pourquoi.";
