@@ -1,0 +1,9 @@
+Package: @PACKAGE@
+Name: @NAME@
+Version: 1.0
+Architecture: @ARCH@
+Description: XSide test tweak (scripts/make-tweak-test-kit.sh), for the test app io.github.xside.tweaktest only.
+Maintainer: XSide
+Author: XSide
+Section: Tweaks
+Depends: @DEPENDS@
