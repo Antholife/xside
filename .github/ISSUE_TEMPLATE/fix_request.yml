@@ -65,6 +65,7 @@ body:
         - label: XSide module
         - label: iPhone Duo compatibility
         - label: Simulate signed-out iCloud
+        - label: Tweaks added in XSide (listed in the diagnosis)
         - label: None
   - type: textarea
     id: expected

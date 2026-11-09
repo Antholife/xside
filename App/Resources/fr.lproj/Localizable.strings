@@ -548,8 +548,8 @@
 "whatsNew.110.network.text" = "La première fois, iOS demande d'autoriser le réseau local, et macOS peut demander d'autoriser les connexions entrantes pour XSide (expliqué dans l'app). L'iPhone attend et réessaie jusqu'à 20 secondes au lieu d'abandonner.";
 "whatsNew.110.onLaunch.title" = "Rafraîchir à la prochaine ouverture";
 "whatsNew.110.onLaunch.text" = "Dans les Réglages iOS d'une app, « Rafraîchir à la prochaine ouverture » demande un rafraîchissement à XSide dès que tu rouvres l'app.";
-"whatsNew.110.steps.title" = "Une fenêtre d'installation en trois étapes";
-"whatsNew.110.steps.text" = "Appareils, Installation, Module XSide dans l'app : Suivant et Retour, étapes cliquables, et Installer seulement à la dernière.";
+"whatsNew.110.steps.title" = "Une fenêtre d'installation en étapes";
+"whatsNew.110.steps.text" = "Appareils, Installation, Tweaks, Module XSide dans l'app : Suivant et Retour, étapes cliquables, et Installer seulement à la dernière.";
 "whatsNew.110.review.title" = "Revoir les options, ou pas";
 "whatsNew.110.review.text" = "« Revoir les options à chaque installation » est activé par défaut. Désactivé, une app déjà installée affiche la liste complète de ce qui s'appliquera, avec Modifier, puis Installer.";
 "whatsNew.110.previews.title" = "Chaque option expliquée, avec un aperçu";
@@ -1116,3 +1116,33 @@
 "downloads.used.help" = "Une app l'utilise encore : retire d'abord ses tweaks.";
 "downloads.delete" = "Supprimer";
 "downloads.cleanAll" = "Tout nettoyer (%@)";
+
+/* 1.2: what's new, tweaks and compatibility */
+"whatsNew.120.tweaks.title" = "Des tweaks dans tes apps";
+"whatsNew.120.tweaks.text" = "Ajoute des tweaks (.deb, .dylib, .framework ou .bundle) à une app et XSide les injecte quand il la signe, sans jailbreak. Ils ont leur propre étape dans la fenêtre d'installation, Tweaks (la troisième), et tu peux aussi en déposer un sur la ligne d'une app dans le panneau. Tout est par appareil : chaque tweak a un interrupteur pour chaque appareil, et le récapitulatif les liste par appareil. XSide les garde à chaque rafraîchissement et les revérifie à chaque fois ; retires-en un et il part à la prochaine signature de l'app. Réglages > Mes apps les gère ensuite.";
+"whatsNew.120.tweakClasses.title" = "Chaque tweak est vérifié, avec la raison";
+"whatsNew.120.tweakClasses.text" = "XSide classe chaque tweak : compatible tel quel, converti (ce qui change est listé) ou pas compatible, avec la raison : il demande un jailbreak, il est fait pour une autre app, il n'est pas prévu pour le processeur de l'app, il demande un iOS plus récent, une dépendance manque, rien dedans ne peut aller dans une app… Un tweak pas compatible n'est pas ajouté, sauf si tu choisis Injecter quand même. Les tweaks qui agissent dans le système lui-même (SpringBoard et autres) demandent un jailbreak et ne peuvent pas fonctionner.";
+"whatsNew.120.tweakConvert.title" = "Conversion automatique";
+"whatsNew.120.tweakConvert.text" = "Un tweak fait pour un jailbreak est converti pour tourner dans une app : sa bibliothèque d'accroche (Substrate, Substitute ou libhooker) est remplacée par ElleKit, que XSide ajoute à l'app ; les dossiers du jailbreak qu'il lit sont redirigés vers sa propre copie dans l'app ; Cephei, une dépendance courante, est intégré à l'app, et libroot au tweak. Un tweak converti est signalé, et demande d'abord une confirmation : l'app peut planter ou le tweak ne pas se comporter correctement. Sa page de réglages n'est pas convertie : le tweak utilise ses valeurs par défaut.";
+"whatsNew.120.tweakLimits.title" = "Ce qui marche, et ce qui ne marche pas";
+"whatsNew.120.tweakLimits.text" = "Testé sur un iPhone Duo sous iOS 27.3 : les hooks sur des méthodes Objective-C fonctionnent. Les hooks sur des fonctions C non : iOS tue l'app quand un tweak modifie son code sans jailbreak. XSide le signale sur la carte du tweak quand il en trouve (seuls ses hooks Objective-C marchent), et si l'app est tuée ainsi, il dit quel tweak en est la cause. Les commandes shell lancées par un tweak ne marchent pas non plus. Les autres versions d'iOS et les autres appareils n'ont pas été testés.";
+"whatsNew.120.tweakDeps.title" = "Les dépendances, listées";
+"whatsNew.120.tweakDeps.text" = "Quand un tweak a besoin d'autres paquets, XSide liste chacun avec son état : fournie par XSide, ajoutée par toi, ou manquante. Pour une manquante : où la trouver (sa page, quand XSide la connaît) ou une recherche, et Ajouter son .deb…, qui vérifie le paquet et sa version. Tant qu'une dépendance manque, le tweak ne peut pas être activé ; une fois ajoutée, elle a sa propre carte sous le tweak. Un .deb que tu ajoutes l'emporte toujours sur la copie de XSide. AltList et libGCUniversal ne sont pas intégrées à XSide.";
+"whatsNew.120.tweakDownload.title" = "Télécharger une dépendance, prudemment";
+"whatsNew.120.tweakDownload.text" = "Seulement pour une dépendance dont XSide connaît une source de confiance, et seulement après que tu as confirmé ce qui est téléchargé et d'où. En HTTPS uniquement, depuis des dépôts intégrés à XSide (jamais un réglage), vérifié avec les empreintes publiées par le dépôt ; ou depuis les versions GitHub de l'auteur, qui n'en publient pas, et la confirmation le dit. Rien n'est exécuté, les tailles sont plafonnées, tout est journalisé, et un rafraîchissement ne télécharge jamais. Aujourd'hui, cela veut dire Chariz, pour Cephei, que XSide fournit déjà : AltList n'a pas de téléchargement, seulement où la trouver et Ajouter son .deb….";
+"whatsNew.120.tweakDownloads.title" = "Dépendances téléchargées";
+"whatsNew.120.tweakDownloads.text" = "Réglages > Mes apps > Dépendances téléchargées… liste ce que XSide a gardé : paquet, version, dépôt, taille et quelle app l'utilise. XSide n'en supprime jamais une qu'une app utilise encore.";
+"whatsNew.120.tweakCrash.title" = "Un plantage dans un tweak, nommé";
+"whatsNew.120.tweakCrash.text" = "Quand une app plante dans un tweak, la fenêtre du plantage et le panneau le nomment et proposent Désactiver ce tweak ; quand elle plante dans ce que XSide a ajouté pour les tweaks convertis, Désactiver les tweaks convertis. Pour cet appareil ou pour tous ceux qui ont le tweak ; les tweaks restent dans XSide pour les réactiver, et la réinstallation s'affiche pendant qu'elle se fait. Un tweak tué par iOS pour avoir modifié du code (un hook de fonction C) est nommé comme tel, pas comme un problème de signature. Demander un correctif et Signaler un problème listent les tweaks.";
+"whatsNew.120.tweakLicences.title" = "Licences tierces";
+"whatsNew.120.tweakLicences.text" = "ElleKit (BSD-3-Clause), Cephei (Apache-2.0, modifié par XSide, avec les changements indiqués) et zstd (BSD, pour lire les .deb) sont compilés depuis leurs sources, et leurs licences sont dans Réglages > À propos > Licences tierces.";
+"whatsNew.120.compat.title" = "Correctifs de compatibilité";
+"whatsNew.120.compat.text" = "Les options iPhone Duo et iCloud déconnecté ont maintenant leur propre section dans la fenêtre d'installation, son récapitulatif et Réglages > Mes apps : XSide modifie l'app pour qu'elle marche mieux sur ton appareil ou avec un compte gratuit. Chacune a une bulle En savoir plus : ce qu'elle fait, ce qui peut mal tourner, comment l'annuler.";
+"whatsNew.120.armv7.title" = "Retrait du code 32 bits, affiché";
+"whatsNew.120.armv7.text" = "L'étape 2, le récapitulatif et Réglages > Mes apps listent toujours le retrait du code 32 bits (armv7), automatique, et disent s'il concerne l'app : elle a du code armv7, retiré à la signature, ou seulement du code 64 bits.";
+"whatsNew.120.request.title" = "Demander un correctif";
+"whatsNew.120.request.text" = "Le bouton Demander un correctif de la fenêtre du plantage ouvre une demande GitHub déjà remplie avec le diagnostic (cause, bibliothèque, versions d'iOS et de XSide, correctifs et tweaks activés), sans rien de personnel. Réglages > Créer & contribuer a une carte pour une demande de ton cru.";
+"whatsNew.120.pending.title" = "Les changements qui attendent, annoncés";
+"whatsNew.120.pending.text" = "Dans Réglages > Mes apps, une option qui ne s'applique qu'à la prochaine signature de l'app (module XSide, compatibilité iPhone Duo, iCloud déconnecté) affiche Changement en attente dessous, avec un bouton Rafraîchir maintenant, jusqu'à ce qu'un rafraîchissement l'applique.";
+"whatsNew.120.rowMenu.title" = "Rafraîchir maintenant a changé de place";
+"whatsNew.120.rowMenu.text" = "La ligne d'une app dans le panneau n'affiche plus de bouton de rafraîchissement au survol : Rafraîchir maintenant est dans son menu … et son menu clic droit.";

@@ -5,6 +5,16 @@ import Testing
 /// « Télécharger » for a dependency only its author publishes, on GitHub: a pinned owner/repo per
 /// package id, the releases API, the right .deb asset, its size as the cap, then the .deb's own
 /// control checked. Everything goes through `FakeFetcher`, never the network.
+/// Runs each test with the test-only mapping AltList -> opa334/AltList: XSide itself pins nothing
+/// (that repo has no releases), but the mechanism is tested with this.
+struct TestAuthorPinning: SuiteTrait, TestScoping {
+    func provideScope(for test: Test, testCase: Test.Case?, performing function: @Sendable () async throws -> Void) async throws {
+        try await AuthorReleases.$testPinned.withValue(
+            ["com.opa334.altlist": GitHubSource(owner: "opa334", repo: "AltList")]) { try await function() }
+    }
+}
+
+@Suite(TestAuthorPinning())
 struct AuthorReleasesTests {
     static let altlist = "com.opa334.altlist"
     static let api = "https://api.github.com/repos/opa334/AltList/releases?per_page=30"
@@ -63,6 +73,11 @@ struct AuthorReleasesTests {
         #expect(AuthorReleases.source(for: "com.evil.tweak") == nil)
         #expect(AuthorReleases.source(id: "github:opa334/AltList") == s)
         #expect(AuthorReleases.source(id: "github:evil/AltList") == nil)
+    }
+
+    @Test func xsideItselfPinsNoPackage() {
+        #expect(AuthorReleases.pinned.isEmpty)
+        #expect(AuthorReleases.pinned["com.opa334.altlist"] == nil)
     }
 
     @Test func anUnpinnedPackageIsNeverLookedUp() async throws {

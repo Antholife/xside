@@ -26,10 +26,18 @@ public struct GitHubSource: Equatable, Hashable, Sendable {
 /// (package id and version), checked after download; no hash is published, and the confirmation
 /// says so. Never used for a package that isn't pinned here.
 public enum AuthorReleases {
-    public static let pinned: [String: GitHubSource] = [
-        // AltList: opa334's repo publishes no hashes (see TrustedRepos).
-        "com.opa334.altlist": GitHubSource(owner: "opa334", repo: "AltList"),
-    ]
+    /// Empty for now: no dependency XSide knows has a GitHub repo that publishes releases (AltList's
+    /// repo, opa334/AltList, has none, so it is « Où la trouver » + « Ajouter son .deb »). Add an
+    /// entry here, with a review, when one does; the mechanism and its tests stay.
+    public static let pinned: [String: GitHubSource] = [:]
+
+    #if DEBUG
+    /// Tests only: a mapping that exists for the duration of one task (`$testPinned.withValue`).
+    @TaskLocal static var testPinned: [String: GitHubSource] = [:]
+    static func pinnedSource(_ id: String) -> GitHubSource? { pinned[id] ?? testPinned[id] }
+    #else
+    static func pinnedSource(_ id: String) -> GitHubSource? { pinned[id] }
+    #endif
 
     static let apiOrigin = URL(string: "https://api.github.com/")!
     /// The asset's URL on github.com redirects to one of the CDN hosts.
@@ -39,10 +47,18 @@ public enum AuthorReleases {
     static let maxReleases = 100
     static let maxAssets = 100
 
-    public static func source(for packageID: String) -> GitHubSource? { pinned[packageID.lowercased()] }
+    public static func source(for packageID: String) -> GitHubSource? { pinnedSource(packageID.lowercased()) }
 
     /// The pinned source a kept copy's repo id names, if it is still pinned.
-    public static func source(id: String) -> GitHubSource? { pinned.values.first { $0.id == id } }
+    public static func source(id: String) -> GitHubSource? {
+        (Array(pinned.values) + testPinnedValues).first { $0.id == id }
+    }
+
+    #if DEBUG
+    private static var testPinnedValues: [GitHubSource] { Array(testPinned.values) }
+    #else
+    private static var testPinnedValues: [GitHubSource] { [] }
+    #endif
 }
 
 /// One release asset XSide would download: shown before anything is downloaded.
