@@ -215,10 +215,11 @@ struct RepoClientTests {
         }
     }
 
-    @Test func allowlistIsTheTwoOfficialRepos() {
-        #expect(TrustedRepos.all.map(\.id) == ["chariz", "opa334"])
+    /// opa334.github.io is not on it: its Release publishes no hashes (checked 2026-11-09).
+    @Test func allowlistIsChariz() {
+        #expect(TrustedRepos.all.map(\.id) == ["chariz"])
         #expect(TrustedRepos.offering("ws.hbang.common").map(\.base.absoluteString) == ["https://repo.chariz.com/"])
-        #expect(TrustedRepos.offering("com.opa334.altlist").map(\.base.absoluteString) == ["https://opa334.github.io/"])
+        #expect(TrustedRepos.offering("com.opa334.altlist").isEmpty)
         #expect(TrustedRepos.offering("com.evil").isEmpty)
         for r in TrustedRepos.all {
             #expect(r.base.scheme == "https" && r.base.absoluteString.hasSuffix("/") && r.indexPath.isEmpty)

@@ -20,9 +20,8 @@ public enum TrustedRepos {
         // Cephei's official repo (checked 2026-11-09: Release has SHA512 and MD5, no SHA256).
         TrustedRepo(id: "chariz", name: "Chariz", base: URL(string: "https://repo.chariz.com/")!, indexPath: "",
                     packages: ["ws.hbang.common"]),
-        // AltList's author's repo (checked 2026-11-09).
-        TrustedRepo(id: "opa334", name: "opa334", base: URL(string: "https://opa334.github.io/")!, indexPath: "",
-                    packages: ["com.opa334.altlist"]),
+        // Not opa334.github.io (AltList's author's repo): checked 2026-11-09, its Release lists no
+        // hash at all, so nothing it serves can be checked.
     ]
 
     public static func offering(_ packageID: String) -> [TrustedRepo] {

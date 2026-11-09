@@ -91,32 +91,27 @@ struct DependencyDirectoryTests {
 
     // MARK: Download: the cache first, then the trusted repo
 
-    static let altlist = "com.opa334.altlist"
-    static let opa = "https://opa334.github.io/"
+    static let cephei = "ws.hbang.common"
+    static let chariz = "https://repo.chariz.com/"
 
-    static func serveAltList(_ fetcher: FakeFetcher, version: String, deb: Data) {
-        var p = RepoClientTests.Pkg(version, deb: deb)
-        p.package = altlist
-        let idx = Data(p.stanza.utf8)
-        fetcher.serve(opa + "Release", RepoClientTests.release([("Packages", idx)]))
-        fetcher.serve(opa + "Packages", idx)
-        fetcher.serve(opa + p.file, deb)
+    static func serveCephei(_ fetcher: FakeFetcher, version: String, deb: Data) {
+        RepoClientTests.serveRepo(fetcher, [RepoClientTests.Pkg(version, deb: deb)])
     }
 
     @Test func aDownloadIsStoredThenReusedWithoutNetwork() async throws {
         try await withTemporaryDirectory("deps") { dir in
             let fetcher = FakeFetcher()
-            let deb = Data("altlist deb".utf8)
-            Self.serveAltList(fetcher, version: "1.0.5", deb: deb)
+            let deb = Data("cephei deb".utf8)
+            Self.serveCephei(fetcher, version: "1.0.5", deb: deb)
             let lib = AppLibrary(root: dir.appendingPathComponent("lib"))
             let work = dir.appendingPathComponent("work")
             let downloader = DependencyDownloader(library: lib, client: RepoClient(fetcher: fetcher, runner: FakeRunner(), workDir: work))
-            let dep = DebDependency(package: Self.altlist, relation: ">=", version: "1.0")
+            let dep = DebDependency(package: Self.cephei, relation: ">=", version: "1.0")
 
             let source = try await downloader.prepare(dep, preferredArchitecture: "iphoneos-arm64")
             guard case .repo(let offer) = source else { Issue.record("expected an offer"); return }
             #expect(offer.version == "1.0.5")
-            #expect(offer.repo.id == "opa334")
+            #expect(offer.repo.id == "chariz")
             #expect(source.version == "1.0.5")
             #expect(source.size == deb.count)
             #expect(!source.isCached)
@@ -126,7 +121,7 @@ struct DependencyDirectoryTests {
             let got = try await downloader.fetch(source)
             #expect(try Data(contentsOf: got.file) == deb)
             #expect(got.file.deletingLastPathComponent() == lib.root.appendingPathComponent("downloads"))
-            #expect(got.origin == .downloaded(repo: "opa334", url: offer.url.absoluteString, sha256: RepoClientTests.sha256(deb)))
+            #expect(got.origin == .downloaded(repo: "chariz", url: offer.url.absoluteString, sha256: RepoClientTests.sha256(deb)))
             #expect(fetcher.fetched.count == before + 1)
             #expect(RepoClientTests.isEmpty(work)) // the work copy is gone
 
@@ -135,16 +130,16 @@ struct DependencyDirectoryTests {
             guard case .cached(let cached) = again else { Issue.record("expected the cache"); return }
             #expect(again.isCached)
             #expect(cached.version == "1.0.5")
-            #expect(cached.repo == "opa334")
-            #expect(again.repoName == "opa334")
+            #expect(cached.repo == "chariz")
+            #expect(again.repoName == "Chariz")
             let reused = try await downloader.fetch(again)
             #expect(reused.file == got.file)
             #expect(reused.origin == got.origin)
             #expect(fetcher.fetched.count == before + 1)
 
             // A cached version that doesn't satisfy the constraint isn't used.
-            let newer = DebDependency(package: Self.altlist, relation: ">=", version: "2.0")
-            await #expect(throws: RepoError.noVersionSatisfying(Self.altlist)) {
+            let newer = DebDependency(package: Self.cephei, relation: ">=", version: "2.0")
+            await #expect(throws: RepoError.noVersionSatisfying(Self.cephei)) {
                 try await downloader.prepare(newer, preferredArchitecture: nil)
             }
         }
@@ -153,16 +148,16 @@ struct DependencyDirectoryTests {
     @Test func aWrongHashIsNotStored() async throws {
         try await withTemporaryDirectory("deps") { dir in
             let fetcher = FakeFetcher()
-            Self.serveAltList(fetcher, version: "1.0.5", deb: Data("altlist deb".utf8))
+            Self.serveCephei(fetcher, version: "1.0.5", deb: Data("cephei deb".utf8))
             let lib = AppLibrary(root: dir.appendingPathComponent("lib"))
             let downloader = DependencyDownloader(library: lib, client: RepoClient(fetcher: fetcher, runner: FakeRunner(),
                                                                                  workDir: dir.appendingPathComponent("work")))
-            let dep = DebDependency(package: Self.altlist)
+            let dep = DebDependency(package: Self.cephei)
             let source = try await downloader.prepare(dep, preferredArchitecture: nil)
             guard case .repo(let offer) = source else { Issue.record("expected an offer"); return }
-            fetcher.serve(offer.url.absoluteString, Data("altlist DEB".utf8)) // same size, other bytes
+            fetcher.serve(offer.url.absoluteString, Data("cephei DEB".utf8)) // same size, other bytes
             await #expect(throws: RepoError.hashMismatch) { try await downloader.fetch(source) }
-            #expect(await lib.cachedDownload(packageID: Self.altlist, satisfying: dep) == nil)
+            #expect(await lib.cachedDownload(packageID: Self.cephei, satisfying: dep) == nil)
             #expect(DependencyDownloader.failure(RepoError.hashMismatch) == .hash)
         }
     }
@@ -184,25 +179,25 @@ struct DependencyDirectoryTests {
     @Test func aCachedCopyFromARepoNotTrustedForThePackageIsDropped() async throws {
         try await withTemporaryDirectory("deps") { dir in
             let fetcher = FakeFetcher()
-            let deb = Data("altlist deb".utf8)
-            Self.serveAltList(fetcher, version: "1.0.5", deb: deb)
+            let deb = Data("cephei deb".utf8)
+            Self.serveCephei(fetcher, version: "1.0.5", deb: deb)
             let lib = AppLibrary(root: dir.appendingPathComponent("lib"))
             let planted = dir.appendingPathComponent("planted.deb")
-            let bytes = Data("not from opa334".utf8)
+            let bytes = Data("not from chariz".utf8)
             try bytes.write(to: planted)
-            // Newer than the repo's, and kept as coming from Chariz (not trusted for AltList).
-            let kept = try await lib.storeDownload(planted, sha256: RepoClientTests.sha256(bytes), packageID: Self.altlist,
-                                                   version: "9.0", repo: "chariz", url: "https://repo.chariz.com/x.deb")
+            // Newer than the repo's, and kept as coming from opa334 (no longer on the allowlist).
+            let kept = try await lib.storeDownload(planted, sha256: RepoClientTests.sha256(bytes), packageID: Self.cephei,
+                                                   version: "9.0", repo: "opa334", url: "https://opa334.github.io/x.deb")
             let downloader = DependencyDownloader(library: lib, client: RepoClient(fetcher: fetcher, runner: FakeRunner(),
                                                                                  workDir: dir.appendingPathComponent("work")))
-            let dep = DebDependency(package: Self.altlist)
+            let dep = DebDependency(package: Self.cephei)
             let source = try await downloader.prepare(dep, preferredArchitecture: nil)
             guard case .repo(let offer) = source else { Issue.record("an untrusted kept copy was reused"); return }
             #expect(offer.version == "1.0.5")
             #expect(!FileManager.default.fileExists(atPath: kept.path))
-            #expect(await lib.cachedDownloadEntry(packageID: Self.altlist, satisfying: dep) == nil)
+            #expect(await lib.cachedDownloadEntry(packageID: Self.cephei, satisfying: dep) == nil)
             // An unknown repo id too.
-            let other = try await lib.storeDownload(planted, sha256: RepoClientTests.sha256(bytes), packageID: Self.altlist,
+            let other = try await lib.storeDownload(planted, sha256: RepoClientTests.sha256(bytes), packageID: Self.cephei,
                                                     version: "9.0", repo: "evil", url: "https://evil.example/x.deb")
             guard case .repo = try await downloader.prepare(dep, preferredArchitecture: nil) else {
                 Issue.record("an unknown repo's kept copy was reused"); return
