@@ -86,6 +86,36 @@ grep -q "^ElleKit $ELLEKIT_TAG (${ELLEKIT_COMMIT:0:7}) " "$APP/Contents/Resource
     || { echo "Acknowledgements.txt has no ElleKit section: not releasing without it" >&2; exit 1; }
 plutil -extract XSideElleKitLibhooker raw "$APP/Contents/Info.plist" >/dev/null 2>&1 \
     || { echo "Info.plist has no XSideElleKitLibhooker" >&2; exit 1; }
+# Embedded tweak dependencies (scripts/tweak-deps.env), built from pinned source: exactly the
+# expected packages, each with its package.json and its Acknowledgements section; every Mach-O in
+# them arm64 + arm64e for iOS, named under its deps/ folder, linking only the system; no links.
+DEPS="$APP/Contents/Resources/TweakDependencies"
+. scripts/tweak-deps.env
+[ "$(ls "$DEPS" 2>/dev/null | tr '\n' ' ')" = "ws.hbang.common " ] \
+    || { echo "$DEPS doesn't hold exactly ws.hbang.common (source or iOS SDK missing?): not releasing without it" >&2; exit 1; }
+[ -z "$(find "$DEPS" -type l)" ] || { echo "$DEPS has symbolic links" >&2; exit 1; }
+for PKG in "$DEPS"/*; do
+    [ -f "$PKG/package.json" ] || { echo "No $PKG/package.json" >&2; exit 1; }
+    MACHOS=0
+    while IFS= read -r -d '' FILE; do
+        case "$(head -c 4 "$FILE" | xxd -p)" in cafebabe|cffaedfe|feedfacf) ;; *) continue ;; esac
+        MACHOS=$((MACHOS + 1))
+        [ "$(lipo -archs "$FILE" 2>/dev/null)" = "arm64 arm64e" ] || { echo "$FILE is not exactly arm64 + arm64e" >&2; exit 1; }
+        [ "$(vtool -show-build "$FILE" 2>/dev/null | grep -cE 'platform IOS$')" = 2 ] \
+            || { echo "$FILE is not built for iOS in both architectures" >&2; exit 1; }
+        DEP_ID="$(otool -D "$FILE" 2>/dev/null | sed -n 2p)"
+        [ "$DEP_ID" = "@executable_path/Frameworks/XSideTweaks/deps/${FILE#"$DEPS"/}" ] \
+            || { echo "$FILE has the id '$DEP_ID'" >&2; exit 1; }
+        OUTSIDE="$(otool -L "$FILE" 2>/dev/null | awk 'NF > 1 && /^\t/ { print $1 }' | grep -vE '^(/usr/lib/|/System/)' | grep -vxF "$DEP_ID" || true)"
+        [ -z "$OUTSIDE" ] || { echo "$FILE links outside the system: $OUTSIDE" >&2; exit 1; }
+    done < <(find "$PKG" -type f -print0)
+    [ "$MACHOS" -gt 0 ] || { echo "$PKG has no library" >&2; exit 1; }
+done
+nm -gU "$DEPS/ws.hbang.common/Library/Frameworks/Cephei.framework/Cephei" 2>/dev/null | grep ' _OBJC_CLASS_$_HBPreferences$' >/dev/null \
+    || { echo "Cephei has no HBPreferences class" >&2; exit 1; }
+grep -q "^Cephei $CEPHEI_TAG (${CEPHEI_COMMIT:0:7}) " "$APP/Contents/Resources/Acknowledgements.txt" 2>/dev/null \
+    && grep -q "Apache License" "$APP/Contents/Resources/Acknowledgements.txt" \
+    || { echo "Acknowledgements.txt has no Cephei section: not releasing without it" >&2; exit 1; }
 ZIP="build/release/XSide-$TAG.zip"
 mkdir -p build/release
 rm -f "$ZIP"

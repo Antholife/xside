@@ -130,3 +130,61 @@ public enum TweakLayout {
         loadPrefix + directory(package) + "/" + binary.path
     }
 }
+
+/// XSide's own tweak dependencies, built from source by `scripts/build-tweak-deps.sh` into
+/// `XSide.app/Contents/Resources/TweakDependencies/<packageID>/`: a `package.json` (a `TweakPackage`,
+/// `origin: .embedded`) next to its files, laid out as on a jailbreak.
+public enum TweakDependencyCatalog {
+    public static let fileName = "package.json"
+    static let maxPackageJSONBytes = 1024 * 1024
+    static let maxPackages = 64
+
+    /// Every usable package, by folder name. A folder whose `package.json` is unreadable, isn't
+    /// XSide's own package for that folder, names a file outside it, or misses a file is left out.
+    public static func load(from folder: URL?) -> [TweakPackage] {
+        guard let folder, let names = try? FileManager.default.contentsOfDirectory(atPath: folder.path) else { return [] }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        var out: [TweakPackage] = []
+        for name in names.sorted().prefix(maxPackages) where !name.hasPrefix(".") && DebControl.isValidPackageID(name) {
+            let dir = folder.appendingPathComponent(name, isDirectory: true)
+            guard let data = readRegular(dir.appendingPathComponent(fileName), max: maxPackageJSONBytes),
+                  let p = try? decoder.decode(TweakPackage.self, from: data),
+                  p.origin == .embedded, p.packageID == name, p.id == name, !p.binaries.isEmpty,
+                  p.files.allSatisfy({ isSafe($0) && isRegular($0, in: dir) }),
+                  p.binaries.allSatisfy({ p.files.contains($0.path) }) else { continue }
+            out.append(p)
+        }
+        return out
+    }
+
+    private static func isSafe(_ path: String) -> Bool {
+        !path.isEmpty && !path.hasPrefix("/") && !path.utf8.contains(0)
+            && !path.split(separator: "/", omittingEmptySubsequences: false).contains { $0.isEmpty || $0 == "." || $0 == ".." }
+    }
+
+    /// `path` under `dir` is a regular file and every folder on the way a real folder (no link anywhere).
+    private static func isRegular(_ path: String, in dir: URL) -> Bool {
+        let parts = path.split(separator: "/").map(String.init)
+        var url = dir
+        for (i, part) in parts.enumerated() {
+            url.appendPathComponent(part)
+            var st = stat()
+            guard lstat(url.path, &st) == 0 else { return false }
+            guard st.st_mode & S_IFMT == (i == parts.count - 1 ? S_IFREG : S_IFDIR) else { return false }
+        }
+        return true
+    }
+
+    private static func isRegular(_ url: URL) -> Bool {
+        var st = stat()
+        return lstat(url.path, &st) == 0 && st.st_mode & S_IFMT == S_IFREG
+    }
+
+    private static func readRegular(_ url: URL, max: Int) -> Data? {
+        guard isRegular(url), let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: max + 1), data.count <= max else { return nil }
+        return data
+    }
+}

@@ -146,6 +146,19 @@ if xcrun -sdk iphoneos --show-sdk-path >/dev/null 2>&1; then
     else
         exit "$ELLEKIT_STATUS"
     fi
+    # The common tweak dependencies XSide adds by itself (scripts/tweak-deps.env, Cephei for now):
+    # Resources/TweakDependencies/<packageID>/ (package.json + files laid out as on a jailbreak, read
+    # by TweakDependencyCatalog), each with its section in Acknowledgements.txt.
+    DEPS_STATUS=0
+    DEPS_DIR="$(scripts/build-tweak-deps.sh)" || DEPS_STATUS=$?
+    if [ "$DEPS_STATUS" = 0 ]; then
+        cp -R "$DEPS_DIR" "$APP/Contents/Resources/TweakDependencies"
+        cat build/tweak-deps/Acknowledgements.txt >> "$ACK"
+    elif [ "$DEPS_STATUS" = 3 ]; then
+        echo "warning: building without the embedded tweak dependencies (no source); release.sh will refuse this build" >&2
+    else
+        exit "$DEPS_STATUS"
+    fi
 else
     echo "warning: no iOS SDK, building without the welcome popup, signed-out iCloud, iPhone Duo compatibility and tweak support libraries" >&2
 fi
