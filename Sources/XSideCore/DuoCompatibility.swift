@@ -143,12 +143,38 @@ public enum DuoCompatibility {
         return isDuo ? .recommended : .notADuo
     }
 
+    /// The text of a usage description XSide adds (iOS shows it when the app asks for access).
+    public static let usageDescription = "The app asks for this access. (Text added by XSide: the app was made before iOS required one.)"
+
+    /// The usage descriptions iOS requires, by the framework that leads to them (an app built
+    /// with an old SDK may have none, and the SDK raise makes iOS kill it without them).
+    static let usageDescriptionsByFramework: [String: [String]] = [
+        "MediaPlayer": ["NSAppleMusicUsageDescription"],
+        "Photos": ["NSPhotoLibraryUsageDescription", "NSPhotoLibraryAddUsageDescription"],
+        "AssetsLibrary": ["NSPhotoLibraryUsageDescription", "NSPhotoLibraryAddUsageDescription"],
+        "AVFoundation": ["NSCameraUsageDescription", "NSMicrophoneUsageDescription"],
+        "CoreLocation": ["NSLocationWhenInUseUsageDescription", "NSLocationAlwaysAndWhenInUseUsageDescription"],
+        "Contacts": ["NSContactsUsageDescription"],
+        "AddressBook": ["NSContactsUsageDescription"],
+        "EventKit": ["NSCalendarsUsageDescription", "NSRemindersUsageDescription"],
+        "CoreBluetooth": ["NSBluetoothAlwaysUsageDescription"],
+        "CoreMotion": ["NSMotionUsageDescription"],
+    ]
+
     /// Declares SDK 27.1 and, when the app has no scene manifest, adds one with a single
     /// application scene whose delegate is `sceneDelegateClass` (nothing when it's nil). An
-    /// existing manifest is kept as it is: the app already uses scenes.
-    public static func applyInfoPlist(_ plist: inout [String: Any], sceneDelegateClass: String?) {
+    /// existing manifest is kept as it is: the app already uses scenes. Adds the usage
+    /// descriptions the app lacks for the frameworks in `linkedLibraries` (its load commands).
+    public static func applyInfoPlist(_ plist: inout [String: Any], sceneDelegateClass: String?,
+                                      linkedLibraries: [String] = []) {
         plist["DTPlatformVersion"] = sdk
         plist["DTSDKName"] = sdkName
+        for library in linkedLibraries {
+            let parts = library.split(separator: "/")
+            guard let framework = parts.first(where: { $0.hasSuffix(".framework") })?.dropLast(".framework".count),
+                  let keys = usageDescriptionsByFramework[String(framework)] else { continue }
+            for key in keys where plist[key] == nil { plist[key] = usageDescription }
+        }
         guard plist["UIApplicationSceneManifest"] == nil, let sceneDelegateClass else { return }
         plist["UIApplicationSceneManifest"] = [
             "UIApplicationSupportsMultipleScenes": false,

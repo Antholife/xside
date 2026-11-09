@@ -234,6 +234,25 @@ struct DuoCompatibilityTests {
         #expect(plist["UIApplicationSceneManifest"] == nil)
     }
 
+    /// The SDK raise makes iOS require a usage description before an app touches music, photos,
+    /// the camera… (Boost 2, SDK 8.3, was killed opening its music picker): the option adds the
+    /// missing ones for the frameworks the app links, and keeps the app's own.
+    @Test func missingUsageDescriptionsAreAddedForLinkedFrameworks() {
+        var plist: [String: Any] = ["NSCameraUsageDescription": "Own text"]
+        DuoCompatibility.applyInfoPlist(&plist, sceneDelegateClass: nil, linkedLibraries: [
+            "/System/Library/Frameworks/MediaPlayer.framework/MediaPlayer",
+            "/System/Library/Frameworks/AVFoundation.framework/AVFoundation",
+            "/System/Library/Frameworks/CoreLocation.framework/CoreLocation",
+            "/usr/lib/libz.1.dylib",
+        ])
+        #expect(plist["NSAppleMusicUsageDescription"] as? String == DuoCompatibility.usageDescription)
+        #expect(plist["NSMicrophoneUsageDescription"] as? String == DuoCompatibility.usageDescription)
+        #expect(plist["NSCameraUsageDescription"] as? String == "Own text")
+        #expect(plist["NSLocationWhenInUseUsageDescription"] as? String == DuoCompatibility.usageDescription)
+        #expect(plist["NSPhotoLibraryUsageDescription"] == nil)
+        #expect(plist["NSContactsUsageDescription"] == nil)
+    }
+
     // MARK: vtool
 
     @Test func vtoolKeepsTheMinimumOSOfASingleSlice() {

@@ -1258,7 +1258,14 @@ public struct Resigner: Sendable {
         if options.iPadFullScreen { plist["UIRequiresFullScreen"] = true }
         if options.proMotion { plist["CADisableMinimumFrameDurationOnPhone"] = true }
         if let min = options.minimumOSVersion { plist["MinimumOSVersion"] = min }
-        if let duo { DuoCompatibility.applyInfoPlist(&plist, sceneDelegateClass: duo.sceneDelegate) }
+        if let duo {
+            // A plain file name only: the .ipa's own Info.plist says it.
+            let executable = (plist["CFBundleExecutable"] as? String)
+                .flatMap { !$0.isEmpty && !$0.contains("/") && $0 != "." && $0 != ".." ? $0 : nil }
+                .map { app.appendingPathComponent($0) }
+            let linked = executable.flatMap { try? MachOPatcher.linkedDylibs(in: $0) } ?? []
+            DuoCompatibility.applyInfoPlist(&plist, sceneDelegateClass: duo.sceneDelegate, linkedLibraries: linked)
+        }
         // Cleared first too (the .ipa may carry them); read by the signed-out iCloud library.
         ICloudSignedOut.clearInfoPlist(&plist)
         if let iCloud {
