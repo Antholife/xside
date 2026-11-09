@@ -11,6 +11,11 @@
 //    first under scenes) and any scene-less window: sets windowScene, sizes it to the scene, makes the
 //    main one key and visible; windows shown later without a scene are attached too
 //    (makeKeyAndVisible / setHidden:NO / setRootViewController:).
+//  - runs the app delegate's didFinishLaunching when the scene connects instead of before: legacy
+//    apps size their window and views there from UIScreen.mainScreen / their window (games: Plague
+//    Inc., Geometry Dash), and before the scene connects iOS reports another size than the scene's,
+//    so their layout covered part of the screen. When no scene comes within XSLaunchDeferLimit
+//    seconds (a background launch), it runs then.
 //  - until the scene connects, lists the windows the app made in UIApplication.windows (and the one
 //    it made key in keyWindow): iOS lists none before then, and old apps read windows[0] in
 //    didFinishLaunching (Plague Inc. crashed on it).
@@ -206,6 +211,76 @@ static void XSForward(XSEvent e) {
     });
 }
 
+#pragma mark - didFinishLaunching, deferred to the scene connection
+
+static const NSTimeInterval XSLaunchDeferLimit = 3;
+static BOOL gLaunchDeferred, gLaunchRan;
+static NSDictionary *gLaunchOptions;
+static IMP oDidFinishWithOptions, oDidFinish;
+
+static void XSLogGeometry(const char *when) {
+    UIWindowScene *s = gScene;
+    XSLOG("%{public}s: screen %{public}@, scene %{public}@", when, NSStringFromCGRect(UIScreen.mainScreen.bounds),
+          s ? NSStringFromCGRect(s.coordinateSpace.bounds) : @"none");
+}
+
+// Runs the app's launch method it skipped, once.
+static void XSRunDeferredLaunch(const char *why) {
+    if (!gLaunchDeferred || gLaunchRan) return;
+    gLaunchRan = YES;
+    XSLogGeometry(why);
+    id d = XSAppDelegate();
+    UIApplication *app = UIApplication.sharedApplication;
+    if (oDidFinishWithOptions) ((BOOL (*)(id, SEL, id, id))oDidFinishWithOptions)(d, @selector(application:didFinishLaunchingWithOptions:), app, gLaunchOptions);
+    else if (oDidFinish) ((void (*)(id, SEL, id))oDidFinish)(d, @selector(applicationDidFinishLaunching:), app);
+    gLaunchOptions = nil;
+}
+
+// No scene yet: wait for it. The app state can't tell a background launch apart here (without a
+// connected scene it reads as background either way), so a launch with no scene coming runs after
+// XSLaunchDeferLimit seconds instead.
+static BOOL XSShouldDefer(UIApplication *app) {
+    return gActive && !gScene && !gLaunchRan;
+}
+static BOOL h_didFinishWithOptions(id self, SEL _cmd, UIApplication *app, NSDictionary *options) {
+    if (!XSShouldDefer(app)) { gLaunchRan = YES; return ((BOOL (*)(id, SEL, id, id))oDidFinishWithOptions)(self, _cmd, app, options); }
+    gLaunchDeferred = YES;
+    gLaunchOptions = options;
+    XSLogGeometry("didFinishLaunching deferred");
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(XSLaunchDeferLimit * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        XSRunDeferredLaunch("no scene in time: didFinishLaunching now");
+    });
+    return YES;
+}
+static void h_didFinish(id self, SEL _cmd, UIApplication *app) {
+    if (!XSShouldDefer(app)) { gLaunchRan = YES; ((void (*)(id, SEL, id))oDidFinish)(self, _cmd, app); return; }
+    gLaunchDeferred = YES;
+    XSLogGeometry("applicationDidFinishLaunching deferred");
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(XSLaunchDeferLimit * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        XSRunDeferredLaunch("no scene in time: applicationDidFinishLaunching now");
+    });
+}
+
+// The app delegate is set in UIApplicationMain, before UIKit calls its launch methods: wrap them then.
+static IMP oSetDelegate;
+static void h_setDelegate(UIApplication *self, SEL _cmd, id delegate) {
+    static BOOL wrapped;
+    if (gActive && delegate && !wrapped) {
+        wrapped = YES;
+        @try {
+            Class c = object_getClass(delegate);
+            SEL withOptions = @selector(application:didFinishLaunchingWithOptions:);
+            if (class_getInstanceMethod(c, withOptions)) XSHook(c, withOptions, (IMP)h_didFinishWithOptions, &oDidFinishWithOptions);
+            else if (class_getInstanceMethod(c, @selector(applicationDidFinishLaunching:)))
+                XSHook(c, @selector(applicationDidFinishLaunching:), (IMP)h_didFinish, &oDidFinish);
+            XSLOG("launch deferred to the scene for %{public}s", class_getName(c));
+        } @catch (NSException *e) {
+            XSLOG("launch wrap failed: %{public}@", e.reason);
+        }
+    }
+    ((void (*)(id, SEL, id))oSetDelegate)(self, _cmd, delegate);
+}
+
 #pragma mark - Scene delegate
 
 @interface XSDuoSceneDelegate : UIResponder <UIWindowSceneDelegate>
@@ -223,6 +298,8 @@ static void XSForward(XSEvent e) {
     if (![scene isKindOfClass:UIWindowScene.class]) return;
     UIWindowScene *ws = (UIWindowScene *)scene;
     gScene = ws;
+    // Outside XSide's @try: an exception from the app's own launch stays the app's, as without XSide.
+    XSRunDeferredLaunch("scene connected: didFinishLaunching now");
     @try {
         XSWrapAppDelegate();
         UIWindow *main = XSMainWindow();
@@ -346,6 +423,7 @@ __attribute__((constructor)) static void XSDuoLegacyInit(void) {
             Class A = UIApplication.class;
             XSHook(A, @selector(windows), (IMP)h_appWindows, &oAppWindows);
             XSHook(A, @selector(keyWindow), (IMP)h_appKeyWindow, &oAppKeyWindow);
+            XSHook(A, @selector(setDelegate:), (IMP)h_setDelegate, &oSetDelegate);
             gActive = YES;
             XSLOG("loaded");
         } @catch (NSException *e) {
