@@ -1,20 +1,24 @@
 import SwiftUI
 import XSideCore
 
-/// Settings > Mes apps > « Dépendances téléchargées »: every `.deb` XSide kept from a trusted
-/// repo, its size and who uses it (« 3 tweaks dans 2 apps », unfolded per app, tweak and device),
-/// « Supprimer » for one no app uses and « Tout nettoyer » for all of those. One an app's pool
-/// still uses is never deleted.
-struct DownloadedDependenciesView: View {
+/// Settings > Tweaks (device round 2, item 8: its own page, for every app, no longer reached
+/// from one app): every `.deb` XSide kept from a trusted repo, its size and who uses it (« 3 tweaks
+/// dans 2 apps », unfolded per app, tweak and device), « Supprimer » for one no app uses and
+/// « Tout nettoyer » for all of those. One an app's pool still uses is never deleted; those no app
+/// uses any more go by themselves when an app is removed.
+struct TweaksSettingsPage: View {
     let model: AppModel
-    let done: () -> Void
 
     var body: some View {
-        DownloadedDependenciesTable(usage: model.downloadUsage, deviceName: { DeviceShortName.short(model.deviceName($0)) },
-                                    remove: { sha in Task { await model.removeKeptDownload(sha) } },
-                                    removeUnused: { Task { await model.removeUnusedDownloads() } },
-                                    done: done)
-            .task { await model.loadDownloadUsage() }
+        ScrollView(.vertical) {
+            DownloadedDependenciesTable(usage: model.downloadUsage, deviceName: { DeviceShortName.short(model.deviceName($0)) },
+                                        remove: { sha in Task { await model.removeKeptDownload(sha) } },
+                                        removeUnused: { Task { await model.removeUnusedDownloads() } },
+                                        done: nil)
+                .reportsPaneHeight()
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .task { await model.loadDownloadUsage() }
     }
 }
 
@@ -23,7 +27,8 @@ struct DownloadedDependenciesTable: View {
     let deviceName: (String) -> String
     let remove: (String) -> Void
     let removeUnused: () -> Void
-    let done: () -> Void
+    /// A sheet's « OK »; nil on the Settings page.
+    let done: (() -> Void)?
 
     private static func size(_ bytes: Int64) -> String { fileSize(bytes) }
     @State private var unfolded: Set<String> = []
@@ -52,12 +57,15 @@ struct DownloadedDependenciesTable: View {
                 Spacer()
                 Button(L("downloads.cleanAll", Self.size(unusedBytes)), action: removeUnused)
                     .disabled(unusedBytes == 0)
-                Button(L("install.done"), action: done)
-                    .keyboardShortcut(.defaultAction)
+                if let done {
+                    Button(L("install.done"), action: done)
+                        .keyboardShortcut(.defaultAction)
+                }
             }
         }
         .padding(20)
-        .frame(width: 620)
+        .frame(maxWidth: done == nil ? .infinity : 620, alignment: .leading)
+        .frame(width: done == nil ? nil : 620)
     }
 
     /// Column widths: package, version, repo, size; « Utilisée par » takes the rest, then the button.

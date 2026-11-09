@@ -647,7 +647,6 @@ struct InstalledTweaksSection<Notice: View>: View {
     let entry: AppEntry
     let deviceName: String
     @ViewBuilder let pendingNotice: Notice
-    @State private var showsDownloads = false
 
     private var listed: [(TweakPackage, TweakUse)] {
         let pool = entry.record.tweaks ?? []
@@ -662,7 +661,8 @@ struct InstalledTweaksSection<Notice: View>: View {
         TweaksSection(isEmpty: listed.isEmpty, beingAdded: model.tweaksBeingAdded[entry.id] ?? [],
                       errors: model.tweakErrors[entry.id] ?? [], isDisabled: disabled,
                       add: { urls in Task { await model.addTweaks(urls, for: entry) } }) {
-            Button(L("downloads.open")) { showsDownloads = true }
+            // Every app's kept downloads: Settings > Tweaks (device round 2, item 8).
+            Button(L("downloads.open")) { model.settingsPane = .tweaks }
                 .buttonStyle(.link)
                 .font(.system(size: 11))
         } cards: {
@@ -673,9 +673,6 @@ struct InstalledTweaksSection<Notice: View>: View {
                 }
             }
             pendingNotice
-        }
-        .sheet(isPresented: $showsDownloads) {
-            DownloadedDependenciesView(model: model) { showsDownloads = false }
         }
     }
 

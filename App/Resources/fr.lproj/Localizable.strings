@@ -739,6 +739,7 @@
 "inApp.delivery.confirmed" = "%@ a bien reçu tes réglages (le %@)";
 "inApp.where.title" = "Modifiable ensuite sur l'iPhone, de deux façons :";
 "settings.pane.apps" = "Mes apps";
+"settings.pane.tweaks" = "Tweaks";
 "settings.apps.empty" = "Aucune app installée par XSide pour l'instant.";
 "inApp.features.tip" = "Installer sans les fonctionnalités XSide : utile si l'app refuse de se lancer (elle détecte une modification). XSide continue de la rafraîchir.";
 "settings.pane.build" = "Créer & contribuer";

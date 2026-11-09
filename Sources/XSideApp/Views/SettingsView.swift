@@ -16,7 +16,7 @@ enum AppLinks {
 
 /// The pages of the Settings window.
 enum SettingsPane: String, CaseIterable, Identifiable {
-    case general, refresh, install, inApp, apps, notifications, signing, updates, logs, build, about
+    case general, refresh, install, inApp, apps, tweaks, notifications, signing, updates, logs, build, about
     var id: String { rawValue }
 
     var title: String {
@@ -26,6 +26,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .install: L("settings.pane.install")
         case .inApp: L("settings.pane.inApp")
         case .apps: L("settings.pane.apps")
+        case .tweaks: L("settings.pane.tweaks")
         case .signing: L("settings.signing")
         case .notifications: L("settings.notifications")
         case .updates: L("updates.title")
@@ -42,6 +43,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .install: "square.and.arrow.down.fill"
         case .inApp: "apps.iphone"
         case .apps: "square.grid.2x2.fill"
+        case .tweaks: "puzzlepiece.extension.fill"
         case .signing: "hammer.fill"
         case .notifications: "bell.badge.fill"
         case .updates: "arrow.triangle.2.circlepath"
@@ -108,8 +110,8 @@ struct SettingsView: View {
     /// The pages' reported heights (see `PaneHeightReporter`), by page and part.
     @State private var paneHeights: [SettingsPane: [String: CGFloat]] = [:]
 
-    /// Shortest window: the sidebar's eleven rows and the version.
-    private static let minHeight: CGFloat = 470
+    /// Shortest window: the sidebar's twelve rows and the version.
+    private static let minHeight: CGFloat = 500
     /// Before the page reports: the former fixed height.
     private static let defaultHeight: CGFloat = 560
 
@@ -157,6 +159,7 @@ struct SettingsView: View {
                 // Its own list and scrolling, not a Form.
                 if model.settingsPane == .apps { AppsSettingsPage(model: model) }
                 else if model.settingsPane == .build { BuildSettingsPage() }
+                else if model.settingsPane == .tweaks { TweaksSettingsPage(model: model) }
                 else { SettingsPage(model: model, pane: model.settingsPane) }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -255,7 +258,7 @@ private struct SettingsPage: View {
             case .refresh: refreshPage
             case .install: installPage
             case .inApp: InAppDefaultsPage()
-            case .apps, .build: EmptyView() // shown by SettingsView (AppsSettingsPage, BuildSettingsPage)
+            case .apps, .build, .tweaks: EmptyView() // shown by SettingsView (AppsSettingsPage, BuildSettingsPage, TweaksSettingsPage)
             case .signing:
                 Section { SigningHero(model: model) }
                 SigningSettingsSection(model: model)
