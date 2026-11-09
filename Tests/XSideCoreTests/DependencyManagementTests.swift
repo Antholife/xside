@@ -218,3 +218,87 @@ struct DependencyManagementTests {
         }
     }
 }
+
+/// The compact Tweaks cards: device chips, card order, who uses a kept download.
+struct TweakCardLogicTests {
+    typealias D = DependencyDirectoryTests
+
+    @Test func deviceChipsUseAShortName() {
+        #expect(DeviceShortName.short("iPhone Duo de Anthony") == "iPhone Duo")
+        #expect(DeviceShortName.short("Anthony's iPad Air 5") == "iPad Air 5")
+        #expect(DeviceShortName.short("Anthony’s iPhone") == "iPhone")
+        #expect(DeviceShortName.short("iPad d'Émilie") == "iPad")
+        #expect(DeviceShortName.short("iPhone") == "iPhone")
+        // Nothing left once trimmed, or no rule: the name as is, capped.
+        #expect(DeviceShortName.short("de Anthony") == "de Anthony")
+        #expect(DeviceShortName.short("  ") == "")
+        #expect(DeviceShortName.short(String(repeating: "x", count: 40)) == String(repeating: "x", count: 19) + "…")
+    }
+
+    private static func pkg(_ id: String, _ packageID: String, depends: [String] = []) -> TweakPackage {
+        TweakPackage(id: id, kind: .deb, origin: .added, packageID: packageID, name: packageID,
+                     depends: depends.map { [DebDependency(package: $0)] }, addedAt: Date(timeIntervalSince1970: 0))
+    }
+
+    @Test func dependencyCardsFollowTheFirstTweakThatNeedsThem() {
+        let altlist = Self.pkg("a", "com.opa334.altlist")
+        let cephei = Self.pkg("c", "ws.hbang.common")
+        let u = Self.pkg("u", "uyouplus", depends: ["com.opa334.altlist", "ws.hbang.common"])
+        let y = Self.pkg("y", "youpip", depends: ["ws.hbang.common"])
+        let plain = Self.pkg("p", "plain")
+        let orphan = Self.pkg("o", "com.example.lib")
+        let order = DependencyRows.cardOrder([altlist, plain, u, orphan, cephei, y])
+        #expect(order.map(\.package.id) == ["p", "u", "a", "c", "o", "y"]) // tweaks in load order
+        #expect(order.map(\.dependencyOf) == [[], [], ["uyouplus"], ["uyouplus", "youpip"], [], []])
+        // A dependency that itself needs another one: still after its own dependent.
+        let lib = Self.pkg("l", "lib", depends: ["ws.hbang.common"])
+        let t = Self.pkg("t", "t", depends: ["lib"])
+        #expect(DependencyRows.cardOrder([cephei, lib, t]).map(\.package.id) == ["t", "l", "c"])
+        #expect(DependencyRows.cardOrder([]).isEmpty)
+    }
+
+    @Test func aKeptDownloadSaysWhichTweaksUseItWhere() async throws {
+        try await withTemporaryDirectory("deps-users") { dir in
+            let lib = AppLibrary(root: dir.appendingPathComponent("lib"))
+            let bytes = Data("cephei".utf8)
+            let file = dir.appendingPathComponent("f")
+            try bytes.write(to: file)
+            let sha = RepoClientTests.sha256(bytes)
+            _ = try await lib.storeDownload(file, sha256: sha, packageID: "ws.hbang.common", version: "1.17.1", repo: "chariz", url: "u")
+            let ipa = dir.appendingPathComponent("a.ipa")
+            try Data("ipa".utf8).write(to: ipa)
+            let rec = try await lib.importIPA(ipa, info: AppInfo(bundleID: "com.example.yt", name: "YouTube", version: "1",
+                                                                 executable: "YT"), teamID: "TEAM123456")
+            func deb(_ control: String, _ path: String) async throws -> URL {
+                let u = dir.appendingPathComponent(UUID().uuidString + ".deb")
+                try await FakeDeb.deb(control: control, files: [.file(path, FakeIPA.dylibMachO(linking: [], padding: 64, strings: [path]))],
+                                      compression: "gz").write(to: u)
+                return u
+            }
+            let cephei = try await lib.addTweak(try await deb("Package: ws.hbang.common\nName: Cephei\nVersion: 1.17.1\n", "./usr/lib/libc.dylib"),
+                                                origin: .downloaded(repo: "chariz", url: "u", sha256: sha), recordID: rec.id,
+                                                deviceIDs: ["phone", "pad"], runner: ProcessRunner(), now: Date()).package
+            let u = try await lib.addTweak(try await deb("Package: uyou\nName: uYouPlus\nDepends: ws.hbang.common\n", "./usr/lib/u.dylib"),
+                                           recordID: rec.id, deviceIDs: ["phone", "pad"], runner: ProcessRunner(), now: Date()).package
+            _ = try await lib.addTweak(try await deb("Package: pip\nName: YouPiP\nDepends: ws.hbang.common (>= 1.0)\n", "./usr/lib/p.dylib"),
+                                       recordID: rec.id, deviceIDs: ["phone"], runner: ProcessRunner(), now: Date())
+            // uYouPlus off on the iPad: listed there, but not using it.
+            let pending = try #require(await lib.records().first?.pendingTweakUses)
+            for d in ["phone", "pad"] {
+                var i = Installation(deviceID: d, installedAt: Date(), expiresAt: Date().addingTimeInterval(86400),
+                                     lastAttempt: nil, lastErrorKey: nil)
+                let uses = try #require(pending[d])
+                i.tweaks = d == "pad" ? uses.map { $0.id == u.id ? TweakUse(id: $0.id, enabled: false) : $0 } : uses
+                try await lib.upsert(i, for: rec.id)
+            }
+            let usage = try #require(await lib.downloadUsage().first)
+            #expect(usage.apps == ["YouTube"])
+            #expect(usage.users == [DownloadUser(app: "YouTube", tweaks: [
+                DownloadUser.Tweak(name: "uYouPlus", deviceIDs: ["phone"]),
+                DownloadUser.Tweak(name: "YouPiP", deviceIDs: ["phone"]),
+            ])])
+            #expect(usage.tweakCount == 2)
+            _ = cephei
+        }
+    }
+}

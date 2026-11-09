@@ -97,7 +97,87 @@ public struct DownloadUsage: Equatable, Sendable, Identifiable {
     public let downloadedAt: Date
     /// Display names of the apps whose tweak pool has a package from this file, sorted.
     public let apps: [String]
+    /// Per app (same order), the tweaks that need it and where each is on.
+    public var users: [DownloadUser] = []
 
     public var id: String { sha256 }
     public var isUsed: Bool { !apps.isEmpty }
+}
+
+/// A device's name short enough for a chip: « iPhone Duo de Anthony » → « iPhone Duo »,
+/// « Anthony's iPad Air 5 » → « iPad Air 5 ». The full name stays in the switch's description.
+public enum DeviceShortName {
+    static let maxLength = 20
+
+    public static func short(_ name: String) -> String {
+        var s = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        // « Anthony's iPad », « Anthony’s iPhone »
+        for mark in ["'s ", "’s "] {
+            if let r = s.range(of: mark), !s[r.upperBound...].trimmingCharacters(in: .whitespaces).isEmpty {
+                s = String(s[r.upperBound...])
+                break
+            }
+        }
+        // « iPhone de Anthony », « iPad d'Émilie »
+        for mark in [" de ", " d'", " d’"] {
+            if let r = s.range(of: mark, options: .backwards), r.lowerBound > s.startIndex {
+                s = String(s[..<r.lowerBound])
+                break
+            }
+        }
+        s = s.trimmingCharacters(in: .whitespaces)
+        guard s.count > maxLength else { return s }
+        return String(s.prefix(maxLength - 1)) + "…"
+    }
+}
+
+extension DependencyRows {
+    /// The cards' order: the tweaks in load order, each followed by the dependencies it is the
+    /// first to need (and theirs), each with who needs it (« Dépendance de … »). A package no
+    /// other one needs is a tweak of its own.
+    public static func cardOrder(_ packages: [TweakPackage]) -> [(package: TweakPackage, dependencyOf: [String])] {
+        let dependentsOf = Dictionary(uniqueKeysWithValues: packages.map { p in
+            (p.id, dependents(of: p, among: packages))
+        })
+        var placed = Set<String>()
+        var out: [(package: TweakPackage, dependencyOf: [String])] = []
+        func place(_ p: TweakPackage) {
+            guard placed.insert(p.id).inserted else { return }
+            out.append((p, (dependentsOf[p.id] ?? []).map(\.name)))
+            // Its own dependencies right after it.
+            for d in packages where !placed.contains(d.id) && (dependentsOf[d.id] ?? []).contains(where: { $0.id == p.id }) {
+                place(d)
+            }
+        }
+        for p in packages where (dependentsOf[p.id] ?? []).isEmpty { place(p) }
+        for p in packages { place(p) } // a cycle: in load order
+        return out
+    }
+}
+
+/// An app whose pool uses a kept download, and its tweaks that need it, with the devices where
+/// each is on (« uYouPlus (iPhone Duo, iPad Air 5) »).
+public struct DownloadUser: Equatable, Sendable {
+    public struct Tweak: Equatable, Sendable {
+        public let name: String
+        public let deviceIDs: [String]
+
+        public init(name: String, deviceIDs: [String]) {
+            self.name = name
+            self.deviceIDs = deviceIDs
+        }
+    }
+
+    public let app: String
+    public let tweaks: [Tweak]
+
+    public init(app: String, tweaks: [Tweak]) {
+        self.app = app
+        self.tweaks = tweaks
+    }
+}
+
+extension DownloadUsage {
+    /// « 3 tweaks » of « … dans 2 apps ».
+    public var tweakCount: Int { users.reduce(0) { $0 + $1.tweaks.count } }
 }

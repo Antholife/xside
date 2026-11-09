@@ -1420,9 +1420,22 @@ extension AppLibrary {
     /// (a package stored with its `.downloaded` origin); by package id, newest first.
     public func downloadUsage() -> [DownloadUsage] {
         var users: [String: Set<String>] = [:]
+        var detail: [String: [DownloadUser]] = [:]
         for record in items {
-            for p in record.tweaks ?? [] {
-                if case .downloaded(_, _, let sha) = p.origin { users[sha.lowercased(), default: []].insert(record.displayName) }
+            let pool = record.tweaks ?? []
+            var lists = record.pendingTweakUses ?? [:]
+            for i in record.installations { if let t = i.tweaks { lists[i.deviceID] = t } }
+            for p in pool {
+                guard case .downloaded(_, _, let raw) = p.origin else { continue }
+                let sha = raw.lowercased()
+                users[sha, default: []].insert(record.displayName)
+                let tweaks = DependencyRows.dependents(of: p, among: pool).map { t in
+                    DownloadUser.Tweak(name: t.name, deviceIDs: lists.filter { $0.value.contains { $0.id == t.id && $0.enabled } }
+                                        .map(\.key).sorted())
+                }
+                if !(detail[sha] ?? []).contains(where: { $0.app == record.displayName && $0.tweaks == tweaks }) {
+                    detail[sha, default: []].append(DownloadUser(app: record.displayName, tweaks: tweaks))
+                }
             }
         }
         return readDownloadIndex().compactMap { e -> DownloadUsage? in
@@ -1430,7 +1443,8 @@ extension AppLibrary {
             guard Self.isSHA256(sha), let stamp = Self.stamp(downloadURL(sha)) else { return nil }
             return DownloadUsage(sha256: sha, packageID: e.packageID, version: e.version, repo: e.repo,
                                  repoName: TrustedRepos.all.first { $0.id == e.repo }?.name ?? e.repo,
-                                 size: stamp.size, downloadedAt: e.downloadedAt, apps: (users[sha] ?? []).sorted())
+                                 size: stamp.size, downloadedAt: e.downloadedAt, apps: (users[sha] ?? []).sorted(),
+                                 users: (detail[sha] ?? []).sorted { $0.app < $1.app })
         }
         .sorted {
             $0.packageID != $1.packageID ? $0.packageID < $1.packageID
