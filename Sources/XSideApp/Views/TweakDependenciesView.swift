@@ -43,10 +43,12 @@ struct TweakDependencyState {
 struct TweakDependencyBlock: View {
     let state: TweakDependencyState
     var isDisabled = false
+    /// « Dépendances » above the rows (the « À régler » card has its own red line instead).
+    var showsTitle = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(L("deps.section")).font(.system(size: 12, weight: .semibold))
+            if showsTitle { Text(L("deps.section")).font(.system(size: 12, weight: .semibold)) }
             ForEach(state.rows) { row in
                 DependencyRowLines(row: row, state: state, isDisabled: isDisabled)
             }
@@ -122,6 +124,10 @@ private struct DependencyRowLines: View {
     }
 
     @ViewBuilder private var actions: some View {
+        actionButtons
+    }
+
+    @ViewBuilder private var actionButtons: some View {
         let page = DependencyDirectory.page(for: packageID)
         let searches = DependencyDirectory.searchURLs(for: packageID)
         HStack(spacing: 8) {
@@ -143,6 +149,21 @@ private struct DependencyRowLines: View {
         }
         .controlSize(.small)
         .disabled(isDisabled)
+        // XSide can't fetch it (device round 2, item 7): where else to look, and a web search.
+        if !DependencySources.canDownload(packageID),
+           let web = DependencyDirectory.webSearchURL(packageID: packageID, name: DependencyNames.display(packageID)) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(L("deps.web.hint"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 4)
+                Button(L("deps.web.search")) { state.open(web) }
+                    .controlSize(.small)
+                    .help(web.absoluteString)
+                    .fixedSize()
+            }
+        }
     }
 
     @MainActor static func chooseDeb() -> [URL]? {

@@ -90,6 +90,37 @@ extension AppModel {
         }
     }
 
+    /// Its group in step ③ (device round 2, items 3 and 6): « À régler » blocks « Suivant ».
+    func draftGroup(_ draft: TweakDraft, in flow: InstallFlow) -> TweakGroups.Group {
+        TweakGroups.group(flow.deviceIDs.map { id in
+            TweakGroups.DeviceState(verdict: draft.verdicts[id], isOn: draft.enabledDevices.contains(id),
+                                    isForced: draft.force.contains(id), signedAnyway: draft.injectedOn.contains(id),
+                                    missingDependencies: draft.missingDependencies[id] ?? [])
+        })
+    }
+
+    /// The window's tweaks « À régler » (dependencies nested under a tweak don't count on their own).
+    func tweaksToSettle(_ flow: InstallFlow) -> [TweakDraft] {
+        let nested = TweakNesting.parents(flow.tweaks.map(\.package))
+        return flow.tweaks.filter { nested[$0.id] == nil && draftGroup($0, in: flow) == .toSettle }
+    }
+
+    /// « Retirer les tweaks à régler »: every one of them leaves the window, with the dependencies
+    /// only they needed.
+    func removeTweaksToSettle(_ flow: InstallFlow) {
+        let removed = tweaksToSettle(flow)
+        guard !removed.isEmpty else { return }
+        let nested = TweakNesting.parents(flow.tweaks.map(\.package))
+        let gone = Set(removed.map(\.id))
+        for draft in removed { removeTweak(draft.id, from: flow) }
+        for (dep, parent) in nested where gone.contains(parent) {
+            guard let package = flow.tweaks.first(where: { $0.id == dep })?.package,
+                  DependencyRows.dependents(of: package, among: flow.tweaks.map(\.package)).isEmpty else { continue }
+            removeTweak(dep, from: flow)
+        }
+        Self.logger.notice("install window: \(removed.count) tweak(s) to settle removed")
+    }
+
     /// What the classifier knows for `tweakID` on one device: the other tweaks enabled there and its iOS.
     func draftContext(_ flow: InstallFlow, _ tweakID: String, on deviceID: String, drafts: [TweakDraft]? = nil) -> TweakContext {
         let others = (drafts ?? flow.tweaks).filter { $0.id != tweakID && $0.enabledDevices.contains(deviceID) }.map(\.package)

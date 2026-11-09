@@ -18,7 +18,12 @@ struct TweaksSettingsPage: View {
                 .reportsPaneHeight()
         }
         .scrollBounceBehavior(.basedOnSize)
-        .task { await model.loadDownloadUsage() }
+        .task {
+            #if DEBUG
+            if SnapshotRenderer.folder != nil { return } // the harness's sample stays
+            #endif
+            await model.loadDownloadUsage()
+        }
     }
 }
 

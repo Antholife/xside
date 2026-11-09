@@ -454,6 +454,17 @@ struct InstallSheet: View {
                     Button(L("install.back")) { withAnimation(.smooth(duration: 0.2)) { flow.go(to: flow.step - 1) } }
                         .controlSize(.large)
                 }
+                // Step ③ with tweaks « À régler »: they are settled or removed first (device round 2, items 3 and 6).
+                if flow.reviewsSteps && flow.step == 2 && !model.tweaksToSettle(flow).isEmpty {
+                    Text(L("install.tweaks.blocked"))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color(nsColor: .systemRed))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button(L("install.tweaks.removeBlocked")) { model.removeTweaksToSettle(flow) }
+                        .controlSize(.large)
+                        .fixedSize()
+                }
                 // Install only at the last step (or on the summary).
                 if flow.reviewsSteps && flow.step < InstallFlow.stepCount - 1 {
                     Button(L("install.next")) { withAnimation(.smooth(duration: 0.2)) { flow.go(to: flow.step + 1) } }
@@ -461,6 +472,7 @@ struct InstallSheet: View {
                         .controlSize(.large)
                         .frame(maxWidth: .infinity)
                         .keyboardShortcut(.defaultAction)
+                        .disabled(flow.step == 2 && !model.tweaksToSettle(flow).isEmpty)
                 } else {
                     Button(installLabel, action: model.startInstall)
                         .buttonStyle(GradientButtonStyle())
@@ -479,6 +491,8 @@ struct InstallSheet: View {
 
     private var canInstall: Bool {
         guard !flow.isRunning, case .success? = model.environment else { return false }
+        // A tweak « À régler » would be left out silently: settled or removed at step ③ first.
+        guard model.tweaksToSettle(flow).isEmpty else { return false }
         // Xcode refuses a device with Developer Mode off: every chosen one needs it (or unknown).
         let chosen = model.devices.filter { flow.deviceIDs.contains($0.id) }
         guard !chosen.contains(where: { $0.developerModeEnabled == false }) else { return false }

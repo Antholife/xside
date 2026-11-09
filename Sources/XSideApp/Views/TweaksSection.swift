@@ -125,71 +125,185 @@ struct TweakRow: Identifiable {
     var isForcedIn: Bool { isForced && verdict?.canOverride == true }
 }
 
-/// A tweak, folded to one line: icon, name (« converti » when it is), version · author · target
-/// (or « Dépendance de … » with its origin), and per device a chip with ✓/🔧/✕ and its switch.
-/// A missing dependency shows instead as « ⚠ manque 1 dépendance », a tweak only a jailbreak can
-/// run as « ✕ a besoin d'un jailbreak » (no switch). Unfolded: the verdicts explained, « Injecter
-/// quand même sur … », its dependencies (settled right there), « Mettre à jour », « Retirer ».
-/// Unfolded at first when something needs a look (🔧, ✕, a missing dependency).
-struct TweakCard: View {
+/// One card of the grouped list (device round 2, mockup tweaks-step-v2): the tweak, its group,
+/// its rows per device, its dependencies (missing ones settled in « À régler », the others
+/// nested under it, ↳) and what its buttons do.
+struct TweakCardItem: Identifiable {
     let package: TweakPackage
     let rows: [TweakRow]
-    /// The tweaks it is a dependency of (empty: a tweak of its own).
-    var dependencyOf: [String] = []
+    let group: TweakGroups.Group
     var dependencies: TweakDependencyState?
-    /// The lines of the card's own last action (« Mettre à jour »).
-    var ownState: TweakDependencyState?
-    var isDisabled = false
-    let removeHelp: String
+    var nested: [NestedDependency] = []
     let setOn: (String, Bool) -> Void
     let setForce: (String, Bool) -> Void
     let remove: () -> Void
-    /// « Mettre à jour » (a dependency a trusted repo offers); network only on the click.
-    var update: (() -> Void)?
-    @State private var expanded: Bool?
+    var id: String { package.id }
+}
 
-    private var isDependency: Bool { !dependencyOf.isEmpty }
-    private var missingCount: Int { dependencies?.missingCount ?? 0 }
+/// A dependency the person added or downloaded, under the tweak that needs it: its status per
+/// device, « Retirer » (trash, or the context menu) and « Mettre à jour ».
+struct NestedDependency: Identifiable {
+    let package: TweakPackage
+    let rows: [TweakRow]
+    let remove: () -> Void
+    var update: (() -> Void)?
+    var id: String { package.id }
+}
+
+/// The tweaks in three groups: « À régler » (red, first; blocks « Suivant » in the install
+/// window), « Prêts » (what will be injected, a switch per device) and « Pas compatibles » (grey,
+/// foldable, never injected). A trash on every row (and « Retirer » in its context menu).
+struct GroupedTweakCards: View {
+    let items: [TweakCardItem]
+    /// The install window: « À régler » blocks « Suivant ». Settings > Mes apps: it isn't injected.
+    let blocksNext: Bool
+    var isDisabled = false
+    let removeHelp: String
+    /// The lines of each dependency's last action (« Mettre à jour », by package id).
+    var lines: TweakDependencyState
+    @State private var showsIncompatible = true
+
+    private func items(_ group: TweakGroups.Group) -> [TweakCardItem] { items.filter { $0.group == group } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            let toSettle = items(.toSettle), ready = items(.ready), incompatible = items(.incompatible)
+            if !toSettle.isEmpty {
+                section(.toSettle, count: toSettle.count) {
+                    ForEach(toSettle) { card($0) }
+                }
+            }
+            if !ready.isEmpty {
+                section(.ready, count: ready.count) {
+                    ForEach(ready) { card($0) }
+                }
+            }
+            if !incompatible.isEmpty {
+                section(.incompatible, count: incompatible.count) {
+                    if showsIncompatible {
+                        ForEach(incompatible) { card($0).opacity(0.75) }
+                    }
+                }
+            }
+        }
+    }
+
+    private func card(_ item: TweakCardItem) -> some View {
+        TweakCard(item: item, isDisabled: isDisabled, removeHelp: removeHelp, lines: lines)
+            .id(item.id)
+    }
+
+    @ViewBuilder private func section<Content: View>(_ group: TweakGroups.Group, count: Int,
+                                                     @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            header(group, count: count)
+            content()
+        }
+    }
+
+    private func header(_ group: TweakGroups.Group, count: Int) -> some View {
+        let (symbol, title, caption, tint): (String, String, String, Color) = switch group {
+        case .toSettle: ("exclamationmark.triangle.fill", L("tweaks.group.toSettle"),
+                         L(blocksNext ? "tweaks.group.toSettle.next" : "tweaks.group.toSettle.later", count),
+                         Color(nsColor: .systemRed))
+        case .ready: ("checkmark", L("tweaks.group.ready"), L("tweaks.group.ready.count", count), Color(nsColor: .systemGreen))
+        case .incompatible: ("xmark", L("tweaks.group.incompatible"), L("tweaks.group.incompatible.count", count), Color.secondary)
+        }
+        return HStack(spacing: 6) {
+            Image(systemName: symbol).font(.system(size: 10, weight: .heavy))
+            Text(title.uppercased()).font(.system(size: 11, weight: .bold)).kerning(0.4)
+            Text("· " + caption).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+            if group == .incompatible {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(showsIncompatible ? 0 : -90))
+            }
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, 2)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard group == .incompatible else { return }
+            withAnimation(.smooth(duration: 0.18)) { showsIncompatible.toggle() }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(group == .incompatible ? .isButton : .isHeader)
+    }
+}
+
+/// One tweak: its row (icon, name, « converti », version · author · what it is; the device
+/// chips and switches when it will be injected; the trash), then by group: what to settle and how
+/// (« À régler »), the changes on request and its dependencies nested (↳) (« Prêts »).
+struct TweakCard: View {
+    let item: TweakCardItem
+    var isDisabled = false
+    let removeHelp: String
+    var lines: TweakDependencyState
+    @State private var showsChanges = false
+
+    private var package: TweakPackage { item.package }
+    private var rows: [TweakRow] { item.rows }
     private var appliedVerdicts: [TweakVerdict] { rows.compactMap(\.applied) }
-    private var isConverted: Bool { appliedVerdicts.contains { if case .converted = $0 { true } else { false } } }
-    /// Every device: ❌ because only a jailbreak can run it.
-    private var needsJailbreak: Bool {
-        !rows.isEmpty && rows.allSatisfy { if case .incompatible(.needsJailbreak)? = $0.verdict { true } else { false } }
+    private var conversions: [TweakConversion] {
+        var out: [TweakConversion] = []
+        for v in appliedVerdicts { if case .converted(let list) = v { for c in list where !out.contains(c) { out.append(c) } } }
+        return out
     }
+    private var isConverted: Bool { !conversions.isEmpty }
     private var warnings: [TweakWarning] { TweakClassifier.warnings(package) }
-    private var needsALook: Bool {
-        missingCount > 0 || !warnings.isEmpty || appliedVerdicts.contains { if case .compatible = $0 { false } else { true } }
-    }
-    private var isExpanded: Bool { expanded ?? (!isDependency && needsALook) }
+    private var missingCount: Int { item.dependencies?.missingCount ?? 0 }
+    /// A device where it works: its switch is worth showing even while something is to settle.
+    private var worksSomewhere: Bool { rows.contains { !$0.isBlocked && !$0.missingHere && $0.verdict != nil } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             folded
-            if isExpanded {
-                Divider()
-                details
-                    .padding(.leading, 54)
-                    .padding(.trailing, 12)
-                    .padding(.vertical, 10)
+            switch item.group {
+            case .toSettle: toSettle.padding(.leading, 54).padding(.trailing, 12).padding(.bottom, 10)
+            case .ready: readyDetails
+            case .incompatible: EmptyView()
             }
         }
         .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .padding(.leading, isDependency ? 28 : 0)
+        .overlay {
+            if item.group == .toSettle {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Color(nsColor: .systemRed).opacity(0.45), lineWidth: 1)
+            }
+        }
+        .contextMenu {
+            Button(L("tweaks.remove"), role: .destructive, action: item.remove).disabled(isDisabled)
+        }
     }
 
-    // MARK: Folded
+    // MARK: Row
 
     private var meta: String {
         var parts: [String] = []
-        if isDependency { parts.append(L("tweaks.dependencyOf", dependencyOf.joined(separator: ", "))) }
         if let v = package.version, !v.isEmpty { parts.append(v) }
-        if isDependency {
-            parts.append(TweakText.origin(package.origin))
-        } else {
-            if let a = package.author, !a.isEmpty { parts.append(a) }
-            if let t = package.targetBundleID { parts.append(t) }
-        }
+        if let a = package.author, !a.isEmpty { parts.append(a) }
+        if let what = summary { parts.append(what) }
         return parts.joined(separator: " · ")
+    }
+
+    /// What it is, in a few words: « compatible tel quel », or why it can't go in.
+    private var summary: String? {
+        switch item.group {
+        case .ready:
+            if appliedVerdicts.allSatisfy({ $0 == .compatible }), !appliedVerdicts.isEmpty, !rows.contains(where: \.isForcedIn) {
+                return L("tweaks.meta.asIs")
+            }
+            return nil
+        case .toSettle:
+            return nil // its red line says it
+        case .incompatible:
+            guard missingCount == 0, let row = rows.first(where: { if case .incompatible = $0.applied { true } else { false } }),
+                  case .incompatible(let problem)? = row.applied else { return nil }
+            let text = TweakText.problem(problem, package: package, deviceName: row.deviceName)
+            return (text.first.map { $0.lowercased() } ?? "") + text.dropFirst()
+        }
     }
 
     private var folded: some View {
@@ -198,195 +312,349 @@ struct TweakCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(package.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                    if isConverted {
+                    if isConverted, item.group == .ready {
                         Text(L("tweaks.tag.converted"))
                             .font(.system(size: 10, weight: .semibold))
                             .padding(.horizontal, 6).padding(.vertical, 1)
-                            .foregroundStyle(Theme.violet)
-                            .background(Theme.violet.opacity(0.12), in: Capsule())
+                            .foregroundStyle(Color(nsColor: .systemOrange))
+                            .background(Color(nsColor: .systemOrange).opacity(0.13), in: Capsule())
                     }
                 }
-                Text(meta).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)
+                HStack(spacing: 4) {
+                    if !meta.isEmpty {
+                        Text(meta).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)
+                    }
+                    if isConverted, item.group == .ready {
+                        Text(meta.isEmpty ? "" : "·").font(.system(size: 11)).foregroundStyle(.secondary)
+                        Button(L(showsChanges ? "tweaks.hideChanges" : "tweaks.seeChanges")) {
+                            withAnimation(.smooth(duration: 0.18)) { showsChanges.toggle() }
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.violet)
+                        .fixedSize()
+                    }
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .onTapGesture { toggle() }
-            chips.fixedSize()
-            Button(action: toggle) {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    .frame(width: 16, height: 24)
-                    .contentShape(Rectangle())
+            if item.group == .ready || (item.group == .toSettle && worksSomewhere && rows.count > 1) {
+                chips.fixedSize()
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(L(isExpanded ? "tweaks.fold" : "tweaks.unfold", package.name))
+            TrashButton(help: removeHelp, a11y: L("tweaks.remove.a11y", package.name), action: item.remove)
+                .disabled(isDisabled)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
     }
 
-    private func toggle() {
-        withAnimation(.smooth(duration: 0.18)) { expanded = !isExpanded }
-    }
-
     private var icon: some View {
-        Image(systemName: isDependency ? "link" : "puzzlepiece.extension.fill")
+        Image(systemName: "puzzlepiece.extension.fill")
             .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(Theme.violet)
+            .foregroundStyle(item.group == .incompatible ? Color.secondary : Theme.violet)
             .frame(width: 30, height: 30)
-            .background(isDependency ? Color.clear : Theme.violet.opacity(0.12),
+            .background((item.group == .incompatible ? Color.secondary : Theme.violet).opacity(0.12),
                         in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay {
-                if isDependency {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Theme.violet, style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
-                }
-            }
     }
 
-    @ViewBuilder private var chips: some View {
-        if missingCount > 0 {
-            TweakChip(kind: .incompatible, symbol: "exclamationmark.triangle.fill",
-                      text: missingCount == 1 ? L("tweaks.chip.missingOne") : L("tweaks.chip.missing", missingCount))
-        } else if needsJailbreak {
-            TweakChip(kind: .incompatible, symbol: "xmark", text: L("tweaks.chip.jailbreak"))
-        } else {
-            deviceChips
-        }
-    }
-
-    private var deviceChips: some View {
+    private var chips: some View {
         HStack(spacing: 6) {
             ForEach(rows) { row in
-                DeviceChip(packageName: package.name, row: row, isDisabled: isDisabled) { setOn(row.deviceID, $0) }
+                DeviceChip(packageName: package.name, row: row, isDisabled: isDisabled) { item.setOn(row.deviceID, $0) }
             }
         }
     }
 
-    // MARK: Unfolded
+    // MARK: À régler
 
-    @ViewBuilder private var details: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // A missing dependency: only it, until it is settled (the verdicts and switches come back then).
-            if missingCount == 0 {
-                if isDependency {
-                    TweakStatusLine(text: L("tweaks.dependencyFor", dependencyOf.joined(separator: ", ")),
-                                    kind: .compatible)
-                    if rows.contains(where: { if case .compatible? = $0.applied { false } else { $0.applied != nil } }) { verdicts }
-                } else {
-                    verdicts
+    /// The problem in red, then how to settle it: the dependency (download, find, add its .deb,
+    /// search the web), « Injecter quand même sur … », or two versions asked at once.
+    @ViewBuilder private var toSettle: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if missingCount > 0 {
+                Text(missingCount == 1 ? L("tweaks.problem.missingOne") : L("tweaks.problem.missingMany", missingCount))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color(nsColor: .systemRed))
+            } else {
+                ForEach(problemLines, id: \.self) { line in
+                    Text(line)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color(nsColor: .systemRed))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 overrides
             }
-            ForEach(Array(warnings.enumerated()), id: \.offset) { _, warning in
-                Label(TweakText.warning(warning), systemImage: "exclamationmark.triangle.fill")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color(nsColor: .systemOrange))
-                    .fixedSize(horizontal: false, vertical: true)
+            if let deps = item.dependencies, deps.isWorthShowing {
+                TweakDependencyBlock(state: deps, isDisabled: isDisabled, showsTitle: false)
             }
-            ForEach(missingCount == 0 ? package.notes : [], id: \.self) { note in
-                Label(TweakText.note(note), systemImage: "info.circle")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if let dependencies, dependencies.isWorthShowing {
-                TweakDependencyBlock(state: dependencies, isDisabled: isDisabled)
-            }
-            if let ownState {
-                // « Mettre à jour »: its progress and how it went.
-                let key = package.packageID
-                if ownState.beingAdded.contains(key) {
-                    HStack(spacing: 6) {
-                        ProgressView().controlSize(.mini)
-                        Text(ownState.progress[key] ?? L("deps.checking")).font(.system(size: 11)).foregroundStyle(.secondary)
-                    }
-                }
-                if let notice = ownState.notices[key] {
-                    Label(notice, systemImage: "checkmark.circle.fill").font(.system(size: 11))
-                        .foregroundStyle(Color(nsColor: .systemGreen)).fixedSize(horizontal: false, vertical: true)
-                }
-                if let error = ownState.errors[key] {
-                    Label(error, systemImage: "exclamationmark.triangle.fill").font(.system(size: 11))
-                        .foregroundStyle(Color(nsColor: .systemOrange)).fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            HStack(spacing: 8) {
-                if let update {
-                    Button(L("tweaks.update"), action: update)
-                        .help(L("tweaks.update.help"))
-                        .disabled(ownState?.beingAdded.contains(package.packageID) == true)
-                }
-                Button(L("tweaks.remove"), action: remove).help(removeHelp)
-            }
-            .controlSize(.small)
-            .disabled(isDisabled)
+            warningLines
         }
     }
 
-    /// One block when every device says the same, else one per device with its name.
-    @ViewBuilder private var verdicts: some View {
-        let known = rows.filter { $0.verdict != nil }
-        if let first = known.first, known.allSatisfy({ same($0, first) }) {
-            TweakVerdictLines(package: package, row: first)
-        } else {
-            ForEach(known) { row in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(row.deviceName).font(.system(size: 11, weight: .semibold))
-                    TweakVerdictLines(package: package, row: row)
-                }
-            }
+    /// One line per distinct problem (with its device when they differ).
+    private var problemLines: [String] {
+        var out: [String] = []
+        let blocked = rows.filter { if case .incompatible = $0.applied { !$0.signedAnyway } else { false } }
+        for row in blocked {
+            guard case .incompatible(let problem)? = row.applied else { continue }
+            var text = TweakText.problem(problem, package: package, deviceName: row.deviceName)
+            if problem.isOverridable { text += " " + L("tweaks.problem.canForce") }
+            let line = blocked.count > 1 && rows.count > 1 ? row.shortName + " : " + text : text
+            if !out.contains(line) { out.append(line) }
         }
-        ForEach(rows.filter { $0.result != nil }) { row in
-            Text(rows.count > 1 ? row.shortName + " : " + (row.result ?? "") : row.result ?? "")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+        // Same problem everywhere: said once.
+        if out.count > 1, blocked.allSatisfy({ $0.applied == blocked[0].applied }), case .incompatible(let p)? = blocked.first?.applied,
+           !(p.isIOSVersion) {
+            var text = TweakText.problem(p, package: package, deviceName: blocked[0].deviceName)
+            if p.isOverridable { text += " " + L("tweaks.problem.canForce") }
+            return [text]
         }
-    }
-
-    private func same(_ a: TweakRow, _ b: TweakRow) -> Bool {
-        a.applied == b.applied && a.isForcedIn == b.isForcedIn && a.signedAnyway == b.signedAnyway
-            && !Self.mentionsDevice(a.applied)
-    }
-
-    /// An iOS version problem names its device: never merged.
-    private static func mentionsDevice(_ v: TweakVerdict?) -> Bool {
-        if case .incompatible(.iOSVersion)? = v { true } else { false }
+        return out
     }
 
     /// « Injecter quand même sur <appareil> », only where the problem allows it.
     @ViewBuilder private var overrides: some View {
         ForEach(rows.filter { $0.verdict?.canOverride == true }) { row in
-            Toggle(L("tweaks.forceOn", row.shortName), isOn: Binding(get: { row.isForced }, set: { setForce(row.deviceID, $0) }))
+            Toggle(L("tweaks.forceOn", row.shortName), isOn: Binding(get: { row.isForced }, set: { item.setForce(row.deviceID, $0) }))
                 .toggleStyle(.checkbox)
                 .font(.system(size: 11))
                 .accessibilityLabel(L("tweaks.forceOn", row.deviceName))
+                .disabled(isDisabled)
         }
+    }
+
+    @ViewBuilder private var warningLines: some View {
+        ForEach(Array(warnings.enumerated()), id: \.offset) { _, warning in
+            Label(TweakText.warning(warning), systemImage: "exclamationmark.triangle.fill")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color(nsColor: .systemOrange))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    // MARK: Prêts
+
+    @ViewBuilder private var readyDetails: some View {
+        let depRows = (item.dependencies?.rows ?? []).filter { row in
+            row.statuses.contains { if case .notNeeded = $0.status { false } else { true } }
+        }
+        let results = rows.filter { $0.result != nil }
+        let forced = rows.filter(\.isForcedIn)
+        let keptAnyway = rows.contains { $0.signedAnyway && { if case .incompatible? = $0.applied { true } else { false } }($0) }
+        if showsChanges || !depRows.isEmpty || !item.nested.isEmpty || !results.isEmpty || !warnings.isEmpty || !forced.isEmpty
+            || keptAnyway {
+            VStack(alignment: .leading, spacing: 4) {
+                if showsChanges {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L("tweaks.status.convertedLong")).font(.system(size: 11)).foregroundStyle(.secondary)
+                        ForEach(Array(conversions.enumerated()), id: \.offset) { _, c in
+                            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                                Text("•")
+                                Text(TweakText.conversion(c)).fixedSize(horizontal: false, vertical: true)
+                            }
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                        }
+                        ForEach(package.notes, id: \.self) { note in
+                            Label(TweakText.note(note), systemImage: "info.circle")
+                                .font(.system(size: 11)).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding(.bottom, 2)
+                }
+                ForEach(forced) { row in
+                    if case .incompatible(let problem)? = row.verdict {
+                        let reason = TweakText.problem(problem, package: package, deviceName: row.deviceName)
+                        TweakStatusLine(text: (rows.count > 1 ? row.shortName + " : " : "") + L("tweaks.status.forced") + " — "
+                                            + (reason.first.map { $0.lowercased() } ?? "") + reason.dropFirst(),
+                                        kind: .forced)
+                    }
+                }
+                if !forced.isEmpty {
+                    overrides
+                }
+                ForEach(rows.filter { $0.signedAnyway && { if case .incompatible? = $0.applied { true } else { false } }($0) }) { row in
+                    Label((rows.count > 1 ? row.shortName + " : " : "") + L("tweaks.signedAnyway"), systemImage: "info.circle")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                warningLines
+                ForEach(results) { row in
+                    Text(rows.count > 1 ? row.shortName + " : " + (row.result ?? "") : row.result ?? "")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                ForEach(depRows) { row in
+                    let nested = nestedPackage(for: row)
+                    NestedDependencyLine(row: row, nested: nested, deviceNames: item.dependencies?.deviceNames ?? [:],
+                                         lines: lines, isDisabled: isDisabled)
+                }
+                // Added dependencies no row names (another version, a Provides): listed too.
+                ForEach(item.nested.filter { n in !depRows.contains { nestedPackage(for: $0)?.id == n.id } }) { n in
+                    NestedDependencyLine(row: nil, nested: n, deviceNames: item.dependencies?.deviceNames ?? [:],
+                                         lines: lines, isDisabled: isDisabled)
+                }
+            }
+            .padding(.leading, 54)
+            .padding(.trailing, 12)
+            .padding(.bottom, 10)
+        }
+    }
+
+    /// The added package a row's « ajoutée par toi » is.
+    private func nestedPackage(for row: DependencyRow) -> NestedDependency? {
+        for s in row.statuses {
+            if case .addedByYou(let name) = s.status,
+               let n = item.nested.first(where: { $0.package.name == name
+                   && ($0.package.packageID == s.dependency.package || $0.package.provides.contains(s.dependency.package)) }) {
+                return n
+            }
+        }
+        return nil
     }
 }
 
-/// ✓ / 🔧 / ✕ chip, with or without a switch.
-private struct TweakChip: View {
-    let kind: TweakStatusLine.Kind
-    let symbol: String
-    let text: String
+/// « ↳ Cephei · fournie par XSide ✓ », « ↳ AltList 1.0.4 · ajoutée par toi ✓ 🗑 » (with « Mettre à
+/// jour » and « Retirer » in its context menu), one status per device when they disagree.
+private struct NestedDependencyLine: View {
+    let row: DependencyRow?
+    let nested: NestedDependency?
+    let deviceNames: [String: String]
+    let lines: TweakDependencyState
+    let isDisabled: Bool
+
+    private var key: String { nested?.package.packageID ?? row?.dependency.package ?? "" }
 
     var body: some View {
-        Label {
-            Text(text).lineLimit(1)
-        } icon: {
-            Image(systemName: symbol).font(.system(size: 10, weight: .heavy))
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 8) {
+                Text("↳").font(.system(size: 12)).foregroundStyle(.secondary)
+                Text(title).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                Text("· " + origin).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                Spacer(minLength: 6)
+                ForEach(Array(pills.enumerated()), id: \.offset) { _, pill in
+                    StatusPill(text: pill.text, ok: pill.ok)
+                }
+                if let nested {
+                    TrashButton(help: L("tweaks.dep.remove.help"), a11y: L("tweaks.dep.remove.a11y", nested.package.name),
+                                action: nested.remove)
+                        .disabled(isDisabled)
+                }
+            }
+            if lines.beingAdded.contains(key) {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.mini)
+                    Text(lines.progress[key] ?? L("deps.checking")).font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+            }
+            if let notice = lines.notices[key] {
+                Label(notice, systemImage: "checkmark.circle.fill").font(.system(size: 11))
+                    .foregroundStyle(Color(nsColor: .systemGreen)).fixedSize(horizontal: false, vertical: true)
+            }
+            if let error = lines.errors[key] {
+                Label(error, systemImage: "exclamationmark.triangle.fill").font(.system(size: 11))
+                    .foregroundStyle(Color(nsColor: .systemOrange)).fixedSize(horizontal: false, vertical: true)
+            }
         }
-        .font(.system(size: 11, weight: .semibold))
-        .foregroundStyle(kind.tint)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(kind.tint.opacity(0.13), in: Capsule())
+        .padding(.vertical, 3)
+        .contentShape(Rectangle())
+        .contextMenu {
+            if let nested {
+                if let update = nested.update { Button(L("tweaks.update"), action: update).disabled(isDisabled) }
+                Button(L("tweaks.remove"), role: .destructive, action: nested.remove).disabled(isDisabled)
+            }
+        }
+    }
+
+    private var title: String {
+        if let nested { return nested.package.name + (nested.package.version.map { " " + $0 } ?? "") }
+        guard let s = row?.statuses.first else { return "" }
+        switch s.status {
+        case .providedByXSide(let n), .builtIntoTweak(let n), .jailbreakOnly(let n): return n
+        case .addedByYou(let n): return n + (s.addedVersion.map { " " + $0 } ?? "")
+        case .missing(let d): return DependencyNames.display(d.package)
+        case .notNeeded: return DependencyNames.display(s.dependency.package)
+        }
+    }
+
+    private var origin: String {
+        if let nested { return TweakText.origin(nested.package.origin) }
+        switch row?.statuses.first?.status {
+        case .providedByXSide?: return L("deps.status.xside").lowercasedFirst
+        case .builtIntoTweak?: return L("deps.status.builtIn").lowercasedFirst
+        case .addedByYou?: return L("deps.status.yours").lowercasedFirst
+        default: return ""
+        }
+    }
+
+    /// ✓ once when every device agrees, else « ✓ iPhone », « ✕ iPad ».
+    private var pills: [(text: String, ok: Bool)] {
+        let statuses = row?.statuses ?? []
+        func ok(_ s: DependencyStatus) -> Bool {
+            switch s {
+            case .providedByXSide, .addedByYou, .builtIntoTweak, .notNeeded: true
+            case .missing, .jailbreakOnly: false
+            }
+        }
+        if statuses.count <= 1 { return [(statuses.first.map { ok($0.status) } ?? true ? "✓" : "✕", statuses.first.map { ok($0.status) } ?? true)] }
+        return statuses.map { s in
+            let name = s.deviceID.map { DeviceShortName.short(deviceNames[$0] ?? $0) } ?? ""
+            return ((ok(s.status) ? "✓ " : "✕ ") + name, ok(s.status))
+        }
     }
 }
+
+private struct StatusPill: View {
+    let text: String
+    let ok: Bool
+
+    var body: some View {
+        let tint = ok ? Color(nsColor: .systemGreen) : Color(nsColor: .systemRed)
+        Text(text)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(tint)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 2)
+            .background(tint.opacity(0.13), in: Capsule())
+            .fixedSize()
+    }
+}
+
+/// The row's trash: red on hover; its tooltip says what « Retirer » does.
+struct TrashButton: View {
+    let help: String
+    let a11y: String
+    let action: () -> Void
+    @State private var isHovering = false
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "trash")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(isHovering && isEnabled ? Color(nsColor: .systemRed) : Color.secondary)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .help(help)
+        .accessibilityLabel(a11y)
+    }
+}
+
+extension String {
+    fileprivate var lowercasedFirst: String { (first.map { $0.lowercased() } ?? "") + dropFirst() }
+}
+
+extension TweakProblem {
+    /// « Injecter quand même » can settle it.
+    var isOverridable: Bool { TweakVerdict.incompatible(self).canOverride }
+    var isIOSVersion: Bool { if case .iOSVersion = self { true } else { false } }
+}
+
 
 /// A device's chip: the verdict there, the device's short name and the switch. Only the chip
 /// names the device; the switch's description says it all (« Activer X sur iPhone Duo de … »).
@@ -436,72 +704,6 @@ private struct DeviceChip: View {
         .padding(.trailing, 4)
         .padding(.vertical, 3)
         .background(kind.tint.opacity(0.13), in: Capsule())
-    }
-}
-
-/// A device's verdict, explained: the tinted status line (the reason for ✕), every change for 🔧,
-/// « Injecté quand même — … » when forced, and the note for a tweak kept despite a ✕.
-private struct TweakVerdictLines: View {
-    let package: TweakPackage
-    let row: TweakRow
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if let verdict = row.verdict {
-                if row.isForcedIn, case .incompatible(let problem) = verdict {
-                    forcedExplanation(problem)
-                } else {
-                    explanation(verdict)
-                }
-                if row.signedAnyway, case .incompatible? = row.applied {
-                    Label(L("tweaks.signedAnyway"), systemImage: "info.circle")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-    }
-
-    /// One line, « Injecté quand même — fait pour une autre app (…) », then what XSide changes
-    /// when the forced tweak is converted. Another problem still stands.
-    @ViewBuilder private func forcedExplanation(_ problem: TweakProblem) -> some View {
-        if case .incompatible? = row.forcedVerdict, let forced = row.forcedVerdict {
-            explanation(forced)
-        } else {
-            let reason = TweakText.problem(problem, package: package, deviceName: row.deviceName)
-            TweakStatusLine(text: L("tweaks.status.forced") + " — " + (reason.first.map { $0.lowercased() } ?? "") + reason.dropFirst(),
-                            kind: .forced)
-            if case .converted(let list)? = row.forcedVerdict { conversions(list) }
-        }
-    }
-
-    @ViewBuilder private func explanation(_ verdict: TweakVerdict) -> some View {
-        switch verdict {
-        case .compatible:
-            TweakStatusLine(text: L("tweaks.status.compatible"), kind: .compatible)
-        case .converted(let list):
-            TweakStatusLine(text: L("tweaks.status.convertedLong"), kind: .converted)
-            conversions(list)
-        case .incompatible(let problem):
-            TweakStatusLine(text: L("tweaks.status.incompatible") + " — "
-                                + TweakText.problem(problem, package: package, deviceName: row.deviceName),
-                            kind: .incompatible)
-        }
-    }
-
-    private func conversions(_ list: [TweakConversion]) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(Array(list.enumerated()), id: \.offset) { _, c in
-                HStack(alignment: .firstTextBaseline, spacing: 5) {
-                    Text("•")
-                    Text(TweakText.conversion(c)).fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-        .font(.system(size: 11))
-        .foregroundStyle(.secondary)
-        .padding(.leading, 4)
     }
 }
 
@@ -585,7 +787,7 @@ extension AppModel {
     }
 }
 
-/// Step ③: the window's tweaks, one chip per checked device.
+/// Step ③: the window's tweaks in their three groups, one chip per checked device.
 struct InstallTweaksSection: View {
     let model: AppModel
     @Bindable var flow: InstallFlow
@@ -598,34 +800,38 @@ struct InstallTweaksSection: View {
                       add: { urls in Task { await model.addTweaks(urls, to: flow) } }) {
             EmptyView()
         } cards: {
-            ForEach(order, id: \.package.id) { item in
-                if let draft = flow.tweaks.first(where: { $0.id == item.package.id }) {
-                    card(draft, dependencyOf: item.dependencyOf, elsewhere: elsewhere[draft.id] ?? [:])
-                }
-            }
+            GroupedTweakCards(items: items(order, elsewhere: elsewhere), blocksNext: true, isDisabled: flow.isRunning,
+                              removeHelp: L("tweaks.remove.help"), lines: model.ownDependencyState)
         }
         .disabled(flow.isRunning)
         .onChange(of: flow.deviceIDs, initial: true) { model.syncTweakDevices(flow) }
     }
 
-    private func card(_ draft: TweakDraft, dependencyOf: [String], elsewhere: [String: String]) -> some View {
-        let target = DependencyTarget.draft(tweakID: draft.id)
-        let found = model.dependencyRows(target)
-        let isDependency = !dependencyOf.isEmpty
-        return TweakCard(package: draft.package, rows: rows(draft), dependencyOf: dependencyOf,
-                         dependencies: found.map { model.dependencyState(target, rows: $0.rows, names: $0.deviceNames,
-                                                                         elsewhere: elsewhere) },
-                         ownState: isDependency ? model.ownDependencyState : nil,
-                         isDisabled: flow.isRunning, removeHelp: L("tweaks.remove.help"),
-                         setOn: { id, on in model.setTweak(draft.id, enabled: on, for: id, in: flow) },
-                         setForce: { id, on in model.setTweakForce(draft.id, on, for: id, in: flow) },
-                         remove: {
-                             guard !isDependency || model.confirmRemovingDependency(draft.package, target: target) else { return }
-                             model.removeTweak(draft.id, from: flow)
-                         },
-                         update: isDependency && DependencySources.canDownload(draft.package.packageID)
-                             ? { Task { await model.updateDependency(draft.package, target: target) } } : nil)
-            .id(draft.id)
+    private func items(_ order: [(package: TweakPackage, dependencyOf: [String])],
+                       elsewhere: [String: [String: String]]) -> [TweakCardItem] {
+        let nestedUnder = TweakNesting.parents(order.map(\.package))
+        return order.compactMap { entry -> TweakCardItem? in
+            guard nestedUnder[entry.package.id] == nil,
+                  let draft = flow.tweaks.first(where: { $0.id == entry.package.id }) else { return nil }
+            let target = DependencyTarget.draft(tweakID: draft.id)
+            let found = model.dependencyRows(target)
+            let nested = order.filter { nestedUnder[$0.package.id] == draft.id }.compactMap { dep -> NestedDependency? in
+                guard let d = flow.tweaks.first(where: { $0.id == dep.package.id }) else { return nil }
+                let depTarget = DependencyTarget.draft(tweakID: d.id)
+                return NestedDependency(package: d.package, rows: rows(d), remove: {
+                    guard model.confirmRemovingDependency(d.package, target: depTarget) else { return }
+                    model.removeTweak(d.id, from: flow)
+                }, update: DependencySources.canDownload(d.package.packageID)
+                    ? { Task { await model.updateDependency(d.package, target: depTarget) } } : nil)
+            }
+            return TweakCardItem(package: draft.package, rows: rows(draft), group: model.draftGroup(draft, in: flow),
+                                 dependencies: found.map { model.dependencyState(target, rows: $0.rows, names: $0.deviceNames,
+                                                                                 elsewhere: elsewhere[draft.id] ?? [:]) },
+                                 nested: nested,
+                                 setOn: { id, on in model.setTweak(draft.id, enabled: on, for: id, in: flow) },
+                                 setForce: { id, on in model.setTweakForce(draft.id, on, for: id, in: flow) },
+                                 remove: { model.removeTweak(draft.id, from: flow) })
+        }
     }
 
     private func rows(_ draft: TweakDraft) -> [TweakRow] {
@@ -639,9 +845,9 @@ struct InstallTweaksSection: View {
     }
 }
 
-/// Settings > Mes apps: the installation's tweaks (one chip: this device), what its last signing
-/// did with each, the pending line while its choice isn't in the app yet, and « Dépendances
-/// téléchargées » for every app.
+/// Settings > Mes apps: the installation's tweaks in the same three groups (one chip: this
+/// device), what its last signing did with each, the pending line while its choice isn't in the
+/// app yet, and the link to every app's downloaded dependencies (Settings > Tweaks).
 struct InstalledTweaksSection<Notice: View>: View {
     let model: AppModel
     let entry: AppEntry
@@ -666,44 +872,53 @@ struct InstalledTweaksSection<Notice: View>: View {
                 .buttonStyle(.link)
                 .font(.system(size: 11))
         } cards: {
-            ForEach(order, id: \.package.id) { item in
-                if let pair = listed.first(where: { $0.0.id == item.package.id }) {
-                    card(pair.0, use: pair.1, dependencyOf: item.dependencyOf, disabled: disabled,
-                         elsewhere: elsewhere[pair.0.id] ?? [:])
-                }
-            }
+            GroupedTweakCards(items: items(order, listed: listed, elsewhere: elsewhere, disabled: disabled), blocksNext: false,
+                              isDisabled: disabled, removeHelp: L("tweaks.remove.helpOne"), lines: model.ownDependencyState)
             pendingNotice
         }
     }
 
-    private func card(_ package: TweakPackage, use: TweakUse, dependencyOf: [String], disabled: Bool,
-                      elsewhere: [String: String]) -> some View {
-        let target = DependencyTarget.entry(entry.id, tweakID: package.id)
-        let found = model.dependencyRows(target)
-        let isDependency = !dependencyOf.isEmpty
+    private func items(_ order: [(package: TweakPackage, dependencyOf: [String])], listed: [(TweakPackage, TweakUse)],
+                       elsewhere: [String: [String: String]], disabled: Bool) -> [TweakCardItem] {
+        let nestedUnder = TweakNesting.parents(order.map(\.package))
+        return order.compactMap { item -> TweakCardItem? in
+            guard nestedUnder[item.package.id] == nil,
+                  let (package, use) = listed.first(where: { $0.0.id == item.package.id }) else { return nil }
+            let target = DependencyTarget.entry(entry.id, tweakID: package.id)
+            let found = model.dependencyRows(target)
+            let r = row(package, use: use)
+            let nested = order.filter { nestedUnder[$0.package.id] == package.id }.compactMap { dep -> NestedDependency? in
+                guard let (p, u) = listed.first(where: { $0.0.id == dep.package.id }) else { return nil }
+                let depTarget = DependencyTarget.entry(entry.id, tweakID: p.id)
+                return NestedDependency(package: p, rows: [row(p, use: u)], remove: {
+                    guard model.confirmRemovingDependency(p, target: depTarget) else { return }
+                    Task { await model.removeTweak(p.id, for: entry) }
+                }, update: DependencySources.canDownload(p.packageID)
+                    ? { Task { await model.updateDependency(p, target: depTarget) } } : nil)
+            }
+            let group = TweakGroups.group([TweakGroups.DeviceState(verdict: r.verdict, isOn: r.isOn, isForced: r.isForced,
+                                                                   signedAnyway: r.signedAnyway,
+                                                                   missingDependencies: model.missingDependencies(package, for: entry))])
+            return TweakCardItem(package: package, rows: [r], group: group,
+                                 dependencies: found.map { model.dependencyState(target, rows: $0.rows, names: $0.deviceNames,
+                                                                                 elsewhere: elsewhere[package.id] ?? [:]) },
+                                 nested: nested,
+                                 setOn: { _, on in Task { await model.setTweak(package.id, enabled: on, for: entry) } },
+                                 setForce: { _, on in Task { await model.setTweakForce(package.id, on, for: entry) } },
+                                 remove: { Task { await model.removeTweak(package.id, for: entry) } })
+        }
+    }
+
+    private func row(_ package: TweakPackage, use: TweakUse) -> TweakRow {
         let v = model.tweakVerdicts(package, for: entry)
         let signed = entry.installation.signedChoices?.tweaks?.contains(package.id) == true
-        let row = TweakRow(deviceID: entry.installation.deviceID, deviceName: deviceName,
-                           verdict: v.verdict, forcedVerdict: v.forced, isOn: use.enabled, isForced: use.force == true,
-                           result: TweakText.result(entry.installation.tweakResults?[package.id], package: package,
-                                                    enabled: use.enabled, signed: signed, deviceName: deviceName),
-                           signedAnyway: {
-                               if case .injected? = entry.installation.tweakResults?[package.id] { true } else { false }
-                           }(),
-                           missingHere: !model.missingDependencies(package, for: entry).isEmpty)
-        return TweakCard(package: package, rows: [row], dependencyOf: dependencyOf,
-                         dependencies: found.map { model.dependencyState(target, rows: $0.rows, names: $0.deviceNames,
-                                                                         elsewhere: elsewhere) },
-                         ownState: isDependency ? model.ownDependencyState : nil,
-                         isDisabled: disabled, removeHelp: L("tweaks.remove.helpOne"),
-                         setOn: { _, on in Task { await model.setTweak(package.id, enabled: on, for: entry) } },
-                         setForce: { _, on in Task { await model.setTweakForce(package.id, on, for: entry) } },
-                         remove: {
-                             guard !isDependency || model.confirmRemovingDependency(package, target: target) else { return }
-                             Task { await model.removeTweak(package.id, for: entry) }
-                         },
-                         update: isDependency && DependencySources.canDownload(package.packageID)
-                             ? { Task { await model.updateDependency(package, target: target) } } : nil)
-            .id(package.id)
+        return TweakRow(deviceID: entry.installation.deviceID, deviceName: deviceName,
+                        verdict: v.verdict, forcedVerdict: v.forced, isOn: use.enabled, isForced: use.force == true,
+                        result: TweakText.result(entry.installation.tweakResults?[package.id], package: package,
+                                                 enabled: use.enabled, signed: signed, deviceName: deviceName),
+                        signedAnyway: {
+                            if case .injected? = entry.installation.tweakResults?[package.id] { true } else { false }
+                        }(),
+                        missingHere: !model.missingDependencies(package, for: entry).isEmpty)
     }
 }
