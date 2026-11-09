@@ -117,6 +117,8 @@ struct ReleaseNotes {
             ReleaseNotes(version: "1.2.0", label: "beta", items: [
                 Item(symbol: "rectangle.split.2x1",
                      title: L("whatsNew.120.duo.title"), text: L("whatsNew.120.duo.text")),
+                Item(symbol: "icloud.slash",
+                     title: L("whatsNew.120.icloud.title"), text: L("whatsNew.120.icloud.text")),
                 Item(symbol: "stethoscope",
                      title: L("whatsNew.120.crash.title"), text: L("whatsNew.120.crash.text")),
             ] + items110, thanks: []),

@@ -97,12 +97,15 @@ struct InstallSummaryView: View {
     var body: some View {
         let info = flow.info
         let duoOn = flow.deviceIDs.filter { flow.duoDevices.contains($0) && model.duoState(for: $0, app: info?.duo).canTurnOn }
+        let iCloudOn = model.iCloudState(app: info?.icloud).canTurnOn ? flow.deviceIDs.filter(flow.iCloudDevices.contains) : []
         let lines = InstallSummary.lines(options: flow.draft.options, inApp: flow.inApp,
                                          withoutXSideFeatures: flow.withoutXSideFeatures,
                                          openAppAfter: flow.openAppAfter, openTrustPage: flow.openTrustPage,
                                          offersKeychain: info?.sharedKeychainGroups.isEmpty == false,
                                          duoDevices: duoOn.map(deviceName),
-                                         offersDuo: flow.deviceIDs.contains { model.isDuo($0) })
+                                         offersDuo: flow.deviceIDs.contains { model.isDuo($0) },
+                                         iCloudDevices: iCloudOn.map(deviceName),
+                                         offersICloud: info?.icloud?.usesICloud == true)
         VStack(alignment: .leading, spacing: 10) {
             SectionTitle(L("install.summary.title"))
             group(L("install.optionsTitle"), lines.install, step: 1)
@@ -169,6 +172,8 @@ struct InstallSummaryView: View {
             (L("install.field.shareKeychain", flow.info.map(InstallOptionsSection.vendor(of:)) ?? ""), yesNo(on))
         case .duoCompatibility(let devices):
             (L("duo.option"), devices.isEmpty ? yesNo(false) : devices.joined(separator: ", "))
+        case .iCloudSignedOut(let devices):
+            (L("icloud.option"), devices.isEmpty ? yesNo(false) : devices.joined(separator: ", "))
         case .openAppAfter(let on): (L("settings.openAppAfterInstall"), yesNo(on))
         case .openTrustPage(let on): (L("settings.openTrustSettings"), yesNo(on))
         case .xsideFeatures(let on): (L("inApp.features"), yesNo(on))

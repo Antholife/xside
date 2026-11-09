@@ -41,7 +41,11 @@ struct CrashWording {
             let kind = what.isEmpty ? t("crash.unknownError") : what
             explanation = d.subject.map { f(base + ".text", app, kind, $0) } ?? f(base + ".textNoImage", app, kind)
             advice = t(base + ".advice")
-        case .codeSignature, .xsideModule, .iCloud, .outOfMemory, .launchTimeout, .hang:
+        case .iCloud:
+            explanation = f(base + ".text", app)
+            advice = t(base + (d.iCloudSignedOutOn == true ? ".adviceSignedOut"
+                : d.iCloudSignedOutUnavailable == true ? ".advice" : ".adviceOption"))
+        case .codeSignature, .xsideModule, .outOfMemory, .launchTimeout, .hang:
             explanation = f(base + ".text", app)
             advice = t(base + ".advice")
         }

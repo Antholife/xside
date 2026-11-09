@@ -45,6 +45,8 @@ final class InstallFlow {
     var inAppTouched: Set<InAppField> = []
     /// Devices getting iPhone Duo compatibility (step ②), prefilled with those that have it.
     var duoDevices: Set<String> = []
+    /// Devices getting "Simulate signed-out iCloud" (step ②), prefilled with those that have it.
+    var iCloudDevices: Set<String> = []
 
     /// Applies a step ③ change, remembering which fields it touched.
     func editInApp(_ change: (InAppSettings) -> InAppSettings) {
@@ -82,6 +84,8 @@ final class InstallFlow {
     var runInApp: InAppDraft?
     /// Devices of the last run getting iPhone Duo compatibility, reused by "Retry failed".
     var runDuo: Set<String> = []
+    /// Devices of the last run getting "Simulate signed-out iCloud", reused by "Retry failed".
+    var runICloud: Set<String> = []
     /// The app has old 32-bit code to remove: its step is listed from the start.
     var runLegacy32 = false
     /// The last run installs the app without XSide's features (the progress says so).
@@ -97,7 +101,7 @@ final class InstallFlow {
     func runSteps(for deviceID: String? = nil) -> [ProgressStep] {
         let id = deviceID ?? runs.first?.deviceID
         return ProgressStep.list(includingWifiCheck: wifiStepPlanned, includingDuo: id.map(runDuo.contains) ?? false,
-                                 includingLegacy32: runLegacy32)
+                                 includingLegacy32: runLegacy32, includingICloud: id.map(runICloud.contains) ?? false)
     }
 
     /// `skippedRunSteps`, and the Duo step on a device where it added nothing.
@@ -232,6 +236,8 @@ struct DeviceRun: Identifiable, Equatable {
     var duoMissing = false
     /// How the iPhone Duo step went in this run, once known (nil: not asked, or not there yet).
     var duoOutcome: DuoOutcome?
+    /// "Simulate signed-out iCloud" was asked for but the app was installed without it.
+    var iCloudMissing = false
     /// XSide opened the app and waits to see whether it stays up.
     var checkingLaunch = false
     /// The app crashed after the install, explained.

@@ -266,7 +266,9 @@ final class AppModel {
                                welcomeDylib: Self.featuresOff ? nil : Bundle.main.url(forResource: "XSideWelcome", withExtension: "dylib"),
                                settingsSection: Self.featuresOff ? nil : Self.settingsSection,
                                welcome: { _ in AppModel.welcomePayload() },
-                               textLanguage: { AppModel.textLanguage($0) }),
+                               textLanguage: { AppModel.textLanguage($0) },
+                               // Its own library, not XSide's module: kept with XSIDE_NO_FEATURES.
+                               iCloudLibrary: Bundle.main.url(forResource: "XSideICloud", withExtension: "dylib")),
             installer: Installer(runner: runner),
             workRoot: paths.jobsWork, now: { Date() }, macIsBeta: XcodeLauncher.macIsBeta,
             inAppDefaults: { AppModel.inAppDefaults(at: $0) },
@@ -1025,7 +1027,7 @@ final class AppModel {
     /// `imported` reports the record once imported with its options, even if the install then fails.
     @discardableResult
     func importAndInstall(_ ipa: URL, on device: Device, options: InstallOptions? = nil,
-                          inApp: InAppDraft? = nil, duoCompatibility: Bool? = nil,
+                          inApp: InAppDraft? = nil, duoCompatibility: Bool? = nil, iCloudSignedOut: Bool? = nil,
                           importedInto recordID: UUID? = nil,
                           imported: @MainActor (UUID) -> Void = { _ in },
                           progress: @escaping @MainActor @Sendable (JobStage) -> Void = { _ in },
@@ -1059,8 +1061,8 @@ final class AppModel {
         // (provisioning lock, or another job on the same device).
         if jobs[key] == .preparing { jobs[key] = .waiting }
         progress(jobs[key] ?? .waiting) // never replaces a real step another holder already reported
-        try await run(key: key, device: device, inApp: inApp, duoCompatibility: duoCompatibility, progress: progress,
-                      duoOutcome: duoOutcome)
+        try await run(key: key, device: device, inApp: inApp, duoCompatibility: duoCompatibility,
+                      iCloudSignedOut: iCloudSignedOut, progress: progress, duoOutcome: duoOutcome)
         return records.first { $0.id == record.id } ?? record
     }
 
@@ -1704,6 +1706,7 @@ final class AppModel {
                     .notMadeForDuo(deviceID: first.deviceID, optionPossible: true),
                     .notMadeForDuo(deviceID: first.deviceID, optionPossible: false),
                     .olderVersion(deviceID: first.deviceID, installing: "1.0", installed: "2.0"),
+                    .usesICloud(optionOn: false),
                     .noAppIDLeft]
         }
         #endif
@@ -1711,7 +1714,8 @@ final class AppModel {
         return InstallPreflight.check(minimumOS: minOS.isEmpty ? info.minimumOSVersion : minOS, targets: targets,
                                       needsNewAppID: needsNewAppID, appIDsRemaining: appIDsRemaining,
                                       sdkVersion: info.sdkVersion, appVersion: version.isEmpty ? info.version : version,
-                                      duo: info.duo)
+                                      duo: info.duo, icloud: info.icloud, paidTeam: isPaidTeam,
+                                      iCloudSignedOutDevices: flow.iCloudDevices)
     }
 
     /// The running step's progress per row, in whole percents, when its tool reports one.
@@ -1994,6 +1998,7 @@ final class AppModel {
     /// The caller must hold a claim on `key`. `refresh`: see `SideloadPipeline.install`.
     private func run(key: JobKey, device: Device, refresh: Bool = false,
                      automatic: Bool = false, inApp: InAppDraft? = nil, duoCompatibility: Bool? = nil,
+                     iCloudSignedOut: Bool? = nil,
                      progress: @escaping @MainActor @Sendable (JobStage) -> Void = { _ in },
                      duoOutcome: @escaping @MainActor @Sendable (DuoOutcome) -> Void = { _ in }) async throws {
         let job = RefreshJob(recordID: key.recordID, deviceID: key.deviceID)
@@ -2013,7 +2018,8 @@ final class AppModel {
             _ = try await StepProgress.$report.withValue(report) {
                 try await pipeline.install(recordID: key.recordID, device: device, environment: environment,
                                            refresh: refresh, inApp: inApp,
-                                           duoCompatibility: duoCompatibility) { step in
+                                           duoCompatibility: duoCompatibility,
+                                           iCloudSignedOut: iCloudSignedOut) { step in
                     await MainActor.run {
                         self.jobs[key] = .step(step)
                         self.stepPercent[key] = nil // a new step starts from nothing
@@ -2081,6 +2087,7 @@ final class AppModel {
                 flow.existing = existing
                 flow.draft = OptionsDraft(existing?.options ?? InstallOptions())
                 flow.duoDevices = Set(existing?.installations.filter { $0.duoCompatibility == true }.map(\.deviceID) ?? [])
+                flow.iCloudDevices = Set(existing?.installations.filter { $0.iCloudSignedOut == true }.map(\.deviceID) ?? [])
                 // The app's last-used values; a reinstall refreshes it again (as before 1.1), so
                 // automatic refresh starts on.
                 if let used = existing.flatMap({ InAppSettings.lastUsed(in: $0.installations) }) {
@@ -2158,6 +2165,7 @@ final class AppModel {
         // Only where the option can be on (a device unchecked meanwhile keeps its own choice).
         flow.runLegacy32 = flow.info?.hasLegacy32 == true
         flow.runDuo = flow.duoDevices.filter { duoState(for: $0, app: flow.info?.duo).canTurnOn }
+        flow.runICloud = iCloudState(app: flow.info?.icloud).canTurnOn ? flow.iCloudDevices : []
         // A new run imports again (the options may have changed); only its later devices reuse it.
         flow.importedRecordID = nil
         flow.guides = []
@@ -2237,6 +2245,7 @@ final class AppModel {
         if let i = flow.runs.firstIndex(where: { $0.deviceID == deviceID }) {
             flow.runs[i].duoMissing = false
             flow.runs[i].duoOutcome = nil
+            flow.runs[i].iCloudMissing = false
             flow.runs[i].crash = nil
             flow.runs[i].checkingLaunch = false
             flow.runs[i].attempt = UUID()
@@ -2253,6 +2262,7 @@ final class AppModel {
         do {
             let installed = try await importAndInstall(flow.ipa, on: device, options: flow.runOptions,
                                        inApp: flow.runInApp, duoCompatibility: flow.runDuo.contains(deviceID),
+                                       iCloudSignedOut: flow.runICloud.contains(deviceID),
                                        importedInto: flow.importedRecordID,
                                        imported: { flow.importedRecordID = $0 },
                                        progress: { stage in
@@ -2269,6 +2279,10 @@ final class AppModel {
             if installed.installations.first(where: { $0.deviceID == deviceID })?.duoCompatibilityMissing == true,
                let i = flow.runs.firstIndex(where: { $0.deviceID == deviceID }) {
                 flow.runs[i].duoMissing = true
+            }
+            if installed.installations.first(where: { $0.deviceID == deviceID })?.iCloudSignedOutMissing == true,
+               let i = flow.runs.firstIndex(where: { $0.deviceID == deviceID }) {
+                flow.runs[i].iCloudMissing = true
             }
             // "Rafraîchissement automatique" off in step ③: installed, then paused (a signing
             // always leaves it on).
@@ -2365,6 +2379,32 @@ final class AppModel {
             try await library.setDuoCompatibility(on, recordID: entry.record.id, deviceID: entry.installation.deviceID)
         } catch {
             Self.logger.error("duo choice failed: \(String(describing: error))")
+        }
+        await reloadRecords()
+    }
+
+    /// How "Simulate signed-out iCloud" shows for an app (`app`: what its .ipa uses of iCloud).
+    func iCloudState(app: ICloudAppInfo?) -> ICloudSignedOut.OptionState {
+        ICloudSignedOut.optionState(app: app, paidTeam: isPaidTeam)
+    }
+
+    /// The signing team is a paid one (Xcode's teams say so). Asked again when the team changes.
+    @ObservationIgnored private var paidTeamCache: (team: String, paid: Bool)?
+    var isPaidTeam: Bool {
+        guard case .success(let env)? = environment else { return false }
+        if let cached = paidTeamCache, cached.team == env.teamID { return cached.paid }
+        let paid = EnvironmentProbe.isPaidTeam(EnvironmentProbe.savedXcodeTeams(), teamID: env.teamID)
+        paidTeamCache = (env.teamID, paid)
+        return paid
+    }
+
+    /// Settings > Mes apps (and a crash's fix): "Simulate signed-out iCloud" for one installation,
+    /// from its next signing.
+    func setICloudSignedOut(_ on: Bool, for entry: AppEntry) async {
+        do {
+            try await library.setICloudSignedOut(on, recordID: entry.record.id, deviceID: entry.installation.deviceID)
+        } catch {
+            Self.logger.error("icloud choice failed: \(String(describing: error))")
         }
         await reloadRecords()
     }
@@ -2620,7 +2660,9 @@ final class AppModel {
     /// (it can be megabytes).
     private func finding(_ found: CrashLogFetcher.Found, record: AppRecord, installation: Installation) async -> CrashFinding {
         let context = CrashContext(moduleName: Resigner.welcomeName,
-                                   duoCompatibilityOn: installation.duoCompatibility == true)
+                                   duoCompatibilityOn: installation.duoCompatibility == true,
+                                   iCloudSignedOutOn: installation.iCloudSignedOut == true,
+                                   iCloudSignedOutUnavailable: isPaidTeam)
         let diagnosis = CrashClassifier.classify(found.log, context: context)
         let secrets = [installation.teamID, record.teamID, installation.deviceID].compactMap { $0 }
         let text = found.text
@@ -2832,6 +2874,7 @@ final class AppModel {
         switch action {
         case .reinstallWithoutXSide: await setWithoutXSideFeatures(true, recordID: key.recordID)
         case .turnOffDuo: await setDuoCompatibility(false, for: AppEntry(record: record, installation: installation))
+        case .turnOnICloudSignedOut: await setICloudSignedOut(true, for: AppEntry(record: record, installation: installation))
         case .refresh: break
         }
         return refreshNow(RefreshJob(recordID: key.recordID, deviceID: key.deviceID))

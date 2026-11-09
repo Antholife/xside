@@ -253,6 +253,7 @@ struct InstallSheet: View {
                     DeviceRunList(model: model, flow: flow)
                     summary
                     DuoMissingNotes(flow: flow)
+                    ICloudMissingNotes(flow: flow)
                     CrashNotes(model: model, flow: flow)
                     if !flow.failedDeviceIDs.isEmpty { ExportLogsLink(model: model) }
                 } else {
@@ -263,6 +264,7 @@ struct InstallSheet: View {
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(Color(nsColor: .systemGreen))
                     DuoMissingNotes(flow: flow)
+                    ICloudMissingNotes(flow: flow)
                     CrashNotes(model: model, flow: flow)
                 }
                 // Wi-Fi checks one device at a time, then every first-install guide.
@@ -304,6 +306,7 @@ struct InstallSheet: View {
             case 1:
                 InstallOptionsSection(model: model, flow: flow)
                 DuoOptionsCard(model: model, flow: flow)
+                ICloudOptionsCard(model: model, flow: flow)
                 // What this step's fields cause (minimum iOS, a new App ID, an older version).
                 PreflightNotes(warnings: model.preflightWarnings(for: flow).filter(\.followsInstallOptions),
                                model: model, flow: flow)
@@ -482,7 +485,7 @@ extension InstallPreflight.Warning {
     var followsInstallOptions: Bool {
         switch self {
         case .iOSTooOld, .noAppIDLeft, .lastAppID, .olderVersion: true
-        case .developerModeOff, .deviceFull, .notMadeForDuo: false
+        case .developerModeOff, .deviceFull, .notMadeForDuo, .usesICloud: false
         }
     }
 }
@@ -543,6 +546,7 @@ private struct PreflightNotes: View {
         case .noAppIDLeft, .lastAppID: "number"
         case .notMadeForDuo: "rectangle.split.2x1"
         case .olderVersion: "arrow.uturn.backward.circle"
+        case .usesICloud: "icloud.slash"
         }
     }
 
@@ -571,6 +575,7 @@ private struct PreflightNotes: View {
         case .notMadeForDuo(let id, let possible):
             L(possible ? "preflight.notMadeForDuo" : "preflight.notMadeForDuo.noOption", appName, name(id))
         case .olderVersion(let id, let installing, let installed): L("preflight.olderVersion", installing, installed, name(id))
+        case .usesICloud(let optionOn): L(optionOn ? "preflight.usesICloud.someDevices" : "preflight.usesICloud", appName)
         }
     }
 }

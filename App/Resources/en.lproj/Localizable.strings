@@ -797,6 +797,32 @@
 "whatsNew.120.duo.title" = "iPhone Duo compatibility";
 "whatsNew.120.duo.text" = "An install option, per device: \"Add iPhone Duo compatibility\" lets an app made before the iPhone Duo use all of its screens, inner and outer, in Duo mode. Recommended on an iPhone Duo when the app isn't made for it; the app wasn't made for this, so display glitches are possible. With or without the XSide module, and removable at any time in Settings > My apps.";
 
+/* Simulate signed-out iCloud (install option) */
+"icloud.section" = "iCloud";
+"icloud.option" = "Simulate signed-out iCloud";
+"icloud.recommended" = "Recommended";
+"icloud.caption" = "The app believes no iCloud account is signed in instead of crashing. It covers: CloudKit, Core Data and SwiftData with iCloud, CKSyncEngine, settings synced through iCloud (kept on the device) and iCloud Drive (seen as unavailable). Data stays on the device, nothing syncs. An app that requires iCloud to work will launch, but stay on its sign-in screen.";
+"icloud.details.title" = "Learn more";
+"icloud.details.cloudKit" = "CloudKit: the app sees \"no iCloud account\"; every request fails as on a signed-out device, without crashing.";
+"icloud.details.coreData" = "Core Data and SwiftData with iCloud, CKSyncEngine: syncing waits for an account that doesn't come; local data works as usual.";
+"icloud.details.kvs" = "Settings synced through iCloud: kept on the device. They last from one launch to the next, but not after an uninstall.";
+"icloud.details.drive" = "iCloud Drive: the app's iCloud folder is seen as unavailable, as without an account.";
+"icloud.details.limits" = "What it doesn't fix: nothing syncs with your other devices, and an app that requires an iCloud account to work launches, but stays on its sign-in screen.";
+"icloud.caption.recommended" = "%@ uses iCloud, which a free account can't give it access to: without this option it may crash.";
+"icloud.caption.notNeeded" = "Not needed: the app doesn't use iCloud.";
+"icloud.caption.paidTeam" = "Not needed with a paid account.";
+"icloud.missing" = "The last install couldn't add it: %@ was installed without it. The logs say why.";
+"icloud.missing.install" = "%1$@: signed-out iCloud couldn't be added, %2$@ was installed without it.";
+"icloud.missing.row" = "Signed-out iCloud not added (installed without it)";
+"install.step.icloud" = "Adding signed-out iCloud";
+"preflight.usesICloud" = "%@ uses iCloud, but a free account can't give it access: it may crash. The \"Simulate signed-out iCloud\" option (step ②) avoids that.";
+"preflight.usesICloud.someDevices" = "%@ uses iCloud, but a free account can't give it access: it may crash on the devices where \"Simulate signed-out iCloud\" (step ②) is off.";
+"crash.cause.iCloud.adviceOption" = "Reinstall it with signed-out iCloud: it will believe no iCloud account is signed in, and its data will stay on the device.";
+"crash.cause.iCloud.adviceSignedOut" = "Signed-out iCloud is already on: the app uses iCloud in a way it doesn't cover yet. Another version of the app may do without it.";
+"crash.action.turnOnICloudSignedOut" = "Reinstall with signed-out iCloud";
+"whatsNew.120.icloud.title" = "Simulate signed-out iCloud";
+"whatsNew.120.icloud.text" = "An install option, per device: an app that uses iCloud often crashes with a free account. \"Simulate signed-out iCloud\" makes it believe no iCloud account is signed in instead of crashing: CloudKit, Core Data and SwiftData with iCloud, CKSyncEngine, settings synced through iCloud (kept on the device) and iCloud Drive (seen as unavailable). Data stays on the device, nothing syncs; an app that requires iCloud to work launches, but stays on its sign-in screen. Recommended when the app uses iCloud, offered in one click when an app crashes in iCloud.";
+
 /* Crash diagnosis */
 "crash.window" = "Crash diagnosis";
 "crash.header" = "Why %@ crashes";
