@@ -7,14 +7,19 @@ public struct DebDependency: Codable, Equatable, Sendable {
     /// One of `>=`, `<=`, `>>`, `<<`, `=`; nil when any version will do.
     public var relation: String?
     public var version: String?
+    /// The version constraint could not be read. Never treated as "any version": it is not
+    /// satisfied by anything, so callers can report it instead of silently ignoring a bound.
+    public var unparseable: Bool
 
-    public init(package: String, relation: String? = nil, version: String? = nil) {
+    public init(package: String, relation: String? = nil, version: String? = nil, unparseable: Bool = false) {
         self.package = package
         self.relation = relation
         self.version = version
+        self.unparseable = unparseable
     }
 
     public func isSatisfied(by installed: String) -> Bool {
+        if unparseable { return false }
         guard let relation, let version else { return true }
         let c = DebVersion.compare(installed, version)
         switch relation {
@@ -34,6 +39,7 @@ public enum ControlLimits {
     public static let maxGroups = 512
     public static let maxAlternatives = 64
     public static let maxProvides = 512
+    public static let maxPackageIDBytes = 128
     public static let maxFilterStrings = 512
     public static let maxFilterStringBytes = 1024
 }
@@ -70,9 +76,10 @@ public struct DebControl: Codable, Equatable, Sendable {
 
     /// Builds a control from one stanza returned by `stanzas`.
     public static func make(_ fields: [String: String]) throws -> DebControl {
-        guard let package = fields["package"]?.lowercased(), !package.isEmpty else {
+        guard let package = fields["package"]?.trimmingCharacters(in: .whitespaces), !package.isEmpty else {
             throw DebError.malformed("control has no Package")
         }
+        guard isValidPackageID(package) else { throw DebError.malformed("invalid Package name") }
         func nonEmpty(_ key: String) -> String? {
             guard let v = fields[key]?.trimmingCharacters(in: .whitespaces), !v.isEmpty else { return nil }
             return v
@@ -84,8 +91,18 @@ public struct DebControl: Codable, Equatable, Sendable {
         }
         return DebControl(package: package, name: nonEmpty("name"), version: nonEmpty("version"),
                           author: author, architecture: nonEmpty("architecture"),
-                          depends: parseDepends(fields["depends"] ?? ""),
+                          depends: try parseDepends(fields["depends"] ?? ""),
                           provides: parseProvides(fields["provides"] ?? ""))
+    }
+
+    /// Debian package names: lowercase letters, digits, `+`, `-`, `.`; start with a letter or digit.
+    /// Ids later become folder names, so nothing else is allowed.
+    public static func isValidPackageID(_ id: String) -> Bool {
+        let b = Array(id.utf8)
+        guard !b.isEmpty, b.count <= ControlLimits.maxPackageIDBytes else { return false }
+        func alnum(_ c: UInt8) -> Bool { (c >= 97 && c <= 122) || (c >= 48 && c <= 57) }
+        guard alnum(b[0]) else { return false }
+        return b.allSatisfy { alnum($0) || $0 == 43 || $0 == 45 || $0 == 46 }
     }
 
     /// Splits RFC 822-style stanzas separated by blank lines. Keys are lowercased; continuation
@@ -97,17 +114,20 @@ public struct DebControl: Codable, Equatable, Sendable {
 
     private static func stanzas(_ text: String, maxStanzas: Int, firstOnly: Bool) throws -> [[String: String]] {
         var result: [[String: String]] = []
-        var current: [String: String] = [:]
+        // Per key: the pieces and their byte count, joined once at the end of the stanza.
+        var current: [String: (parts: [String], bytes: Int)] = [:]
         var lastKey: String?
         func flush() throws {
             if !current.isEmpty {
                 if result.count >= maxStanzas { throw DebError.tooLarge }
-                result.append(current)
+                result.append(current.mapValues { $0.parts.joined(separator: "\n") })
             }
             current = [:]
             lastKey = nil
         }
-        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
+        // "\r\n" is a single Character in Swift: normalise before splitting.
+        let normalized = text.contains("\r\n") ? text.replacingOccurrences(of: "\r\n", with: "\n") : text
+        for rawLine in normalized.split(separator: "\n", omittingEmptySubsequences: false) {
             let line = Substring(sanitized(String(rawLine.prefix(ControlLimits.maxFieldBytes))))
             if line.allSatisfy({ $0 == " " || $0 == "\t" }) {
                 try flush()
@@ -116,18 +136,21 @@ public struct DebControl: Codable, Equatable, Sendable {
             }
             if line.hasPrefix("#") { continue }
             if line.first == " " || line.first == "\t" {
-                if let key = lastKey, let old = current[key], old.utf8.count < ControlLimits.maxFieldBytes {
-                    current[key] = old + "\n" + line.trimmingCharacters(in: .whitespaces)
+                if let key = lastKey, let bytes = current[key]?.bytes, bytes < ControlLimits.maxFieldBytes {
+                    let piece = line.trimmingCharacters(in: .whitespaces)
+                    current[key]!.parts.append(piece)
+                    current[key]!.bytes += piece.utf8.count + 1
                 }
                 continue
             }
             guard let colon = line.firstIndex(of: ":") else { lastKey = nil; continue }
             let key = line[..<colon].trimmingCharacters(in: .whitespaces).lowercased()
             guard !key.isEmpty, !key.contains(" ") else { lastKey = nil; continue }
+            if current[key] != nil { lastKey = nil; continue }  // first occurrence wins
+            if current.count >= ControlLimits.maxFields { lastKey = nil; continue }
             let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
-            if current[key] == nil && current.count >= ControlLimits.maxFields { lastKey = nil; continue }
-            if current[key] == nil { current[key] = value }
-            lastKey = current[key] == value ? key : nil
+            current[key] = ([value], value.utf8.count)
+            lastKey = key
         }
         try flush()
         return result
@@ -147,16 +170,18 @@ public struct DebControl: Codable, Equatable, Sendable {
         return String(out)
     }
 
-    static func parseDepends(_ value: String) -> [[DebDependency]] {
+    /// Over-cap dependency lists are refused rather than truncated: a dropped group could be the
+    /// `firmware` bound.
+    static func parseDepends(_ value: String) throws -> [[DebDependency]] {
         var groups: [[DebDependency]] = []
         for part in value.replacingOccurrences(of: "\n", with: " ").split(separator: ",") {
-            if groups.count >= ControlLimits.maxGroups { break }
             var alternatives: [DebDependency] = []
             for alt in part.split(separator: "|") {
-                if alternatives.count >= ControlLimits.maxAlternatives { break }
                 if let dep = parseDependency(String(alt)) { alternatives.append(dep) }
             }
+            if alternatives.count > ControlLimits.maxAlternatives { throw DebError.tooLarge }
             if !alternatives.isEmpty { groups.append(alternatives) }
+            if groups.count > ControlLimits.maxGroups { throw DebError.tooLarge }
         }
         return groups
     }
@@ -164,7 +189,9 @@ public struct DebControl: Codable, Equatable, Sendable {
     private static func parseDependency(_ s: String) -> DebDependency? {
         var rest = s.trimmingCharacters(in: .whitespaces)
         var constraint: String?
+        var hadOpen = false
         if let o = rest.firstIndex(of: "(") {
+            hadOpen = true
             if let c = rest[o...].firstIndex(of: ")") {
                 constraint = String(rest[rest.index(after: o)..<c]).trimmingCharacters(in: .whitespaces)
             }
@@ -175,11 +202,17 @@ public struct DebControl: Codable, Equatable, Sendable {
         var name = rest.trimmingCharacters(in: .whitespaces).lowercased()
         if let colon = name.firstIndex(of: ":") { name = String(name[..<colon]) }
         guard !name.isEmpty, !name.contains(" ") else { return nil }
-        guard let constraint, !constraint.isEmpty else { return DebDependency(package: name) }
+        guard let constraint else {
+            // "(" without ")" is a broken constraint, not "no constraint".
+            return DebDependency(package: name, unparseable: hadOpen)
+        }
+        guard !constraint.isEmpty else { return DebDependency(package: name, unparseable: true) }
         let ops = [">=", "<=", ">>", "<<", "=", ">", "<"]
-        guard let op = ops.first(where: { constraint.hasPrefix($0) }) else { return DebDependency(package: name) }
+        guard let op = ops.first(where: { constraint.hasPrefix($0) }) else {
+            return DebDependency(package: name, unparseable: true)
+        }
         let version = constraint.dropFirst(op.count).trimmingCharacters(in: .whitespaces)
-        guard !version.isEmpty, !version.contains(" ") else { return DebDependency(package: name) }
+        guard !version.isEmpty, !version.contains(" ") else { return DebDependency(package: name, unparseable: true) }
         // Deprecated single-character forms mean "or equal".
         let relation = op == ">" ? ">=" : op == "<" ? "<=" : op
         return DebDependency(package: name, relation: relation, version: version)
@@ -197,21 +230,59 @@ public struct DebControl: Codable, Equatable, Sendable {
         return out
     }
 
-    /// The iOS range a package asks for through `firmware (>= x)` / `firmware (<< y)`. When several
-    /// bounds appear the tightest wins. `<=` and `>>` bounds are not representable and are ignored.
-    public static func firmwareRange(_ depends: [[DebDependency]]) -> (min: String?, belowMax: String?) {
-        var min: String?, belowMax: String?
-        for group in depends where group.count == 1 {
-            let d = group[0]
-            guard d.package == "firmware", let rel = d.relation, let v = d.version else { continue }
-            if rel == ">=" || rel == "=" {
-                if min == nil || DebVersion.compare(v, min!) == .orderedDescending { min = v }
+    /// What `firmware` dependencies ask of the iOS version.
+    public struct FirmwareBounds: Equatable, Sendable {
+        /// Highest lower bound (`>=`, `=`, or `>>` which is `minExclusive`).
+        public var min: String?
+        public var minExclusive = false
+        /// Lowest upper bound: exclusive for `<<`, inclusive (`maxInclusive`) for `<=`.
+        public var belowMax: String?
+        public var maxInclusive = false
+        /// A firmware constraint existed but could not be read.
+        public var unparseable = false
+
+        public func allows(_ device: String) -> Bool {
+            if unparseable { return false }
+            if let min {
+                let c = DebVersion.compare(device, min)
+                if c == .orderedAscending || (minExclusive && c == .orderedSame) { return false }
             }
-            if rel == "<<" {
-                if belowMax == nil || DebVersion.compare(v, belowMax!) == .orderedAscending { belowMax = v }
+            if let belowMax {
+                let c = DebVersion.compare(device, belowMax)
+                if c == .orderedDescending || (!maxInclusive && c == .orderedSame) { return false }
+            }
+            return true
+        }
+    }
+
+    /// Scans every group (single-alternative ones carry a hard requirement) for `firmware` bounds.
+    public static func firmwareBounds(_ depends: [[DebDependency]]) -> FirmwareBounds {
+        var b = FirmwareBounds()
+        for group in depends where group.count == 1 && group[0].package == "firmware" {
+            let d = group[0]
+            if d.unparseable { b.unparseable = true; continue }
+            guard let rel = d.relation, let v = d.version else { continue }
+            switch rel {
+            case ">=", "=", ">>":
+                let c = b.min.map { DebVersion.compare(v, $0) }
+                if c == nil || c == .orderedDescending { b.min = v; b.minExclusive = rel == ">>" }
+                else if c == .orderedSame, rel == ">>" { b.minExclusive = true }
+            case "<<", "<=":
+                let c = b.belowMax.map { DebVersion.compare(v, $0) }
+                if c == nil || c == .orderedAscending { b.belowMax = v; b.maxInclusive = rel == "<=" }
+                else if c == .orderedSame, rel == "<<" { b.maxInclusive = false }
+            default: break
             }
         }
-        return (min, belowMax)
+        return b
+    }
+
+    /// The iOS range a package asks for: `min` is the lowest acceptable version (for `>>` it is the
+    /// version just excluded, conservatively), `belowMax` the exclusive upper bound. Use
+    /// `firmwareBounds` for exactness (`>>`, `<=`, unreadable constraints).
+    public static func firmwareRange(_ depends: [[DebDependency]]) -> (min: String?, belowMax: String?) {
+        let b = firmwareBounds(depends)
+        return (b.min, b.belowMax)
     }
 }
 
@@ -236,9 +307,15 @@ public struct TweakFilter: Codable, Equatable, Sendable {
         guard data.count <= DebLimits.maxPlistBytes,
               let root = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any]
         else { return nil }
-        let filter = root["Filter"] as? [String: Any] ?? [:]
+        var filter: [String: Any] = [:]
+        if let raw = root["Filter"] {
+            guard let f = raw as? [String: Any] else { return nil }
+            filter = f
+        }
+        var wrongType = false
         func strings(_ key: String) -> [String] {
-            guard let list = filter[key] as? [Any] else { return [] }
+            guard let raw = filter[key] else { return [] }
+            guard let list = raw as? [Any] else { wrongType = true; return [] }
             var out: [String] = []
             for item in list {
                 guard let s = item as? String, s.utf8.count <= ControlLimits.maxFilterStringBytes else { continue }
@@ -248,8 +325,9 @@ public struct TweakFilter: Codable, Equatable, Sendable {
             return out
         }
         let mode = (filter["Mode"] as? String)?.lowercased()
-        return TweakFilter(bundles: strings("Bundles"), executables: strings("Executables"),
-                           classes: strings("Classes"), anyMode: mode == "any")
+        let result = TweakFilter(bundles: strings("Bundles"), executables: strings("Executables"),
+                                 classes: strings("Classes"), anyMode: mode == "any")
+        return wrongType ? nil : result
     }
 }
 
