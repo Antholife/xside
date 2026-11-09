@@ -22,6 +22,7 @@ struct DuoOptionRow: View {
     /// `isOn` is a choice already stored on an installation (Settings > Mes apps): it shows, and
     /// can be turned off, even when the app's current .ipa no longer allows it (duo review minor 2).
     var storedChoice = false
+    @State private var showsDetails = false
 
     /// The switch can be used: to turn it on when possible, or to clear a stored choice.
     private var usable: Bool { state.canTurnOn || (storedChoice && isOn) }
@@ -55,6 +56,10 @@ struct DuoOptionRow: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                Button(L("duo.details.title")) { showsDetails.toggle() }
+                    .buttonStyle(.link)
+                    .font(.system(size: 11))
+                    .popover(isPresented: $showsDetails, arrowEdge: .bottom) { DuoDetails(needsModule: needsModule) }
                 if needsModule {
                     Label(L("duo.caption.moduleWarning"), systemImage: "exclamationmark.triangle.fill")
                         .font(.system(size: 11))
@@ -95,8 +100,12 @@ struct DuoOptionRow: View {
         }
     }
 
-    /// What it does and what may go wrong: the same whatever the state.
-    private var caption: String { L(needsModule ? "duo.caption.module" : "duo.caption") }
+    /// What it does and what may go wrong. For an app that already supports the Duo, a neutral
+    /// sentence instead: it wasn't "not made for it", and the option would change nothing.
+    private var caption: String {
+        if state == .alreadySupported { return L("duo.caption.alreadySupported", appName) }
+        return L(needsModule ? "duo.caption.module" : "duo.caption")
+    }
 
     /// True when the user confirmed turning it on for `app`.
     static func confirm(app: String, needsModule: Bool) -> Bool {
@@ -106,6 +115,24 @@ struct DuoOptionRow: View {
         alert.addButton(withTitle: L("duo.confirm.turnOn"))
         alert.addButton(withTitle: L("install.cancel"))
         return alert.runModal() == .alertFirstButtonReturn
+    }
+}
+
+/// "Learn more": what the option does, what can go wrong, how to undo it, who it is for.
+private struct DuoDetails: View {
+    let needsModule: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(L("duo.option")).font(.system(size: 13, weight: .semibold))
+            ForEach([needsModule ? "whatModule" : "what", needsModule ? "riskModule" : "risk", "undo", "onlyDuo"], id: \.self) { key in
+                Text(L("duo.details.\(key)"))
+                    .font(.system(size: 12))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .frame(width: 360, alignment: .leading)
     }
 }
 

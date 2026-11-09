@@ -919,3 +919,11 @@
 "settings.notifyCrash.note" = "XSide looks at once when the XSide module or its live connection says an app stopped, and lists the connected devices' crash reports every 2 minutes (every 15 seconds just after an install or an app opening), then says why the app closed.";
 "whatsNew.120.crash.title" = "Why an app crashes";
 "whatsNew.120.crash.text" = "When an app installed by XSide crashes, at launch or while you use it, XSide sees it almost at once: its row in the panel shows a red box with the cause and See why, the install window shows a banner with the fix when XSide can apply it (reinstall without XSide features or without Duo compatibility), and a notification tells you. The XSide module tells the Mac when the app stopped without closing normally, and XSide lists the connected devices' crash reports every 2 minutes (every 15 seconds just after an install), apps without the module included. In plain words: iOS scenes, a missing library, the signature, memory, iCloud, the XSide module… with what to do. Also in the app's … menu (\"Why does it crash?\") and with xside crash. Everything stays on the Mac.";
+"duo.details.title" = "Learn more";
+"duo.details.what" = "What it does: the app is declared as built for iOS 27.1, so iOS gives it both screens of the iPhone Duo in Duo mode. It keeps using its own scene code.";
+"duo.details.whatModule" = "What it does: the app is declared as built for iOS 27.1, so iOS gives it both screens of the iPhone Duo in Duo mode. This app never had scenes, so XSide adds its small compatibility module to run it with them.";
+"duo.details.risk" = "What can go wrong: the app wasn't made for two screens, so the layout or a menu may look odd. Sometimes just relaunching the app is enough.";
+"duo.details.riskModule" = "What can go wrong: the app wasn't made for two screens, so the layout or a menu may look odd, and with the module links or quick actions may be imperfect. Sometimes just relaunching the app is enough.";
+"duo.details.undo" = "To undo: turn the option off. The next refresh reinstalls the app without it.";
+"duo.details.onlyDuo" = "It only matters on an iPhone Duo; on any other device it changes nothing.";
+"duo.caption.alreadySupported" = "%@ already uses all of the iPhone Duo's screens: this option wouldn't change anything.";
