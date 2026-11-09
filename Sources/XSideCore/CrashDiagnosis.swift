@@ -11,11 +11,15 @@ public struct CrashFrame: Equatable, Sendable, Codable {
     public var image: String?
     public var symbol: String?
     public var inApp: Bool
+    /// Where the image is inside the app's `Frameworks/XSideTweaks/` ("<id>/Alpha.dylib",
+    /// "deps/<package id>/…", "ElleKit.dylib"): what XSide put there. nil: elsewhere.
+    public var tweakPath: String?
 
-    public init(image: String?, symbol: String?, inApp: Bool) {
+    public init(image: String?, symbol: String?, inApp: Bool, tweakPath: String? = nil) {
         self.image = image
         self.symbol = symbol
         self.inApp = inApp
+        self.tweakPath = tweakPath
     }
 
     /// "UIKitCore  -[UIView layout]".
@@ -187,8 +191,28 @@ public enum CrashLogParser {
             if let index = integer(f["imageIndex"]), index >= 0, index < images.count { image = images[Int(index)] }
             let path = string(image?["path"])
             let name = string(image?["name"]) ?? path.map { ($0 as NSString).lastPathComponent }
-            return CrashFrame(image: name, symbol: string(f["symbol"]), inApp: path.map(isInAppBundle) ?? false)
+            return CrashFrame(image: name, symbol: string(f["symbol"]), inApp: path.map(isInAppBundle) ?? false,
+                              tweakPath: path.flatMap(tweakPath))
         }
+    }
+
+    /// The part of `path` under the app's `Frameworks/XSideTweaks/` ("<id>/Alpha.dylib"), when it
+    /// is there: in an installed app's bundle, or as `@executable_path/…` / `@rpath/…` says it.
+    /// No `.` or `..` component, nothing empty.
+    static func tweakPath(_ path: String) -> String? {
+        let rest: Substring
+        if path.hasPrefix(TweakLayout.loadPrefix) {
+            rest = path.dropFirst(TweakLayout.loadPrefix.count)
+        } else if path.hasPrefix("@rpath/XSideTweaks/") {
+            rest = path.dropFirst("@rpath/XSideTweaks/".count)
+        } else if path.contains("/Bundle/Application/"), let range = path.range(of: ".app/" + TweakLayout.folder + "/") {
+            rest = path[range.upperBound...]
+        } else {
+            return nil
+        }
+        let parts = rest.split(separator: "/", omittingEmptySubsequences: false)
+        guard !parts.isEmpty, !parts.contains(where: { $0.isEmpty || $0 == "." || $0 == ".." }) else { return nil }
+        return String(rest)
     }
 
     /// A path inside an installed app's bundle (not iOS's own apps nor libraries).
@@ -249,6 +273,8 @@ public struct CrashContext: Equatable, Sendable {
     public var moduleName: String
     /// Tweaks XSide injected into it (file names).
     public var tweakNames: Set<String>
+    /// Those tweaks' folders in `Frameworks/XSideTweaks/` (`TweakPackage.id`).
+    public var tweakIDs: Set<String>
     /// What XSide added so that converted tweaks work: ElleKit, the support library, the image
     /// names of the embedded dependencies (Cephei…).
     public var tweakSupportNames: Set<String>
@@ -259,8 +285,9 @@ public struct CrashContext: Equatable, Sendable {
     /// The installation has "Simulate signed-out iCloud": an iCloud crash is then one it doesn't cover.
     public var iCloudSignedOutOn: Bool
 
-    public init(moduleName: String, tweakNames: Set<String> = [], tweakSupportNames: Set<String> = [],
+    public init(moduleName: String, tweakNames: Set<String> = [], tweakIDs: Set<String> = [], tweakSupportNames: Set<String> = [],
                 tweakLabels: [String: String] = [:], duoCompatibilityOn: Bool = false, iCloudSignedOutOn: Bool = false) {
+        self.tweakIDs = tweakIDs
         self.tweakSupportNames = tweakSupportNames
         self.tweakLabels = tweakLabels
         self.iCloudSignedOutOn = iCloudSignedOutOn
@@ -387,29 +414,52 @@ public enum CrashClassifier {
                 // "Simulate signed-out iCloud"'s library: XSide added it, not the .ipa.
                 d.cause = .iCloudShim
                 d.iCloudSignedOutOn = true
-            } else if context.tweakSupportNames.contains(owner) {
-                // ElleKit, the support library or an embedded dependency: XSide added it for the
-                // converted tweaks, which are what calls into it.
+            } else if let place = stack.first(where: \.inApp)?.tweakPath, isTweakSupport(owner, at: place, context) {
+                // ElleKit, the support library or an embedded dependency, in XSide's folder and
+                // recorded by the last signing: added for the converted tweaks, which call into it.
                 d.cause = .tweakSupport
-            } else if context.tweakNames.contains(owner) {
+            } else if let place = stack.first(where: \.inApp)?.tweakPath, isTweak(owner, at: place, context) {
                 d.cause = .tweak
                 d.tweakName = context.tweakLabels[owner]
             } else if owner.hasSuffix(".dylib") {
                 d.cause = .bundledLibrary
             }
-            if d.cause == .tweak || d.cause == .tweakSupport, frames.contains(where: isShellCommand) { d.shellCommand = true }
+            if d.cause == .tweak || d.cause == .tweakSupport, stack.prefix(shellFrames).contains(where: isShellCommand) {
+                d.shellCommand = true
+            }
             return d
         }
         d.subject = stack.first(where: { $0.image != nil })?.image
         return d
     }
 
+    /// Top frames of the crashing stack looked at for a shell command.
+    static let shellFrames = 6
+
     /// Symbols of running a shell command: Cephei's `HBOutputForShellCommand` (`/var/jb/bin/sh`),
-    /// `system`, `popen`, `posix_spawn`, `NSTask`.
+    /// NSTask's launch methods, `posix_spawn`, `system`, `popen`.
     private static func isShellCommand(_ frame: CrashFrame) -> Bool {
         guard let symbol = frame.symbol else { return false }
-        if symbol.contains("HBOutputForShellCommand") || symbol.contains("NSTask") || symbol.hasPrefix("posix_spawn") { return true }
-        return ["system", "popen", "_system", "_popen"].contains(symbol)
+        if symbol.contains("HBOutputForShellCommand") { return true }
+        if symbol.hasPrefix("-[NSTask launch") || symbol.hasPrefix("-[NSConcreteTask launch")
+            || symbol.hasPrefix("+[NSTask launchedTask") { return true }
+        return ["posix_spawn", "posix_spawnp", "system", "popen", "_system", "_popen"].contains(symbol)
+    }
+
+    /// XSide's ElleKit or support library (at the folder's top), or an embedded dependency
+    /// (under `deps/`), that the last signing recorded.
+    private static func isTweakSupport(_ image: String, at place: String, _ context: CrashContext) -> Bool {
+        guard context.tweakSupportNames.contains(image) else { return false }
+        if place == image { return image == TweakLayout.elleKitName || image == TweakLayout.supportName }
+        return place.hasPrefix(TweakLayout.depsFolder + "/")
+    }
+
+    /// A tweak the last signing injected, in its own folder (`<id>/…`).
+    private static func isTweak(_ image: String, at place: String, _ context: CrashContext) -> Bool {
+        let parts = place.split(separator: "/")
+        guard parts.count >= 2, let folder = parts.first, folder != Substring(TweakLayout.depsFolder),
+              context.tweakNames.contains(image) else { return false }
+        return context.tweakIDs.contains(String(folder))
     }
 
     /// dyld refused to start the app: a library or a symbol it needs isn't there.

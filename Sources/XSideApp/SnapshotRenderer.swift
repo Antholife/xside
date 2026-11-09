@@ -47,6 +47,7 @@ enum SnapshotRenderer {
                        dark: dark, to: out.appendingPathComponent("panel-\(language)-\(scheme).png"))
                 // The install window's banner when the check after the install found the crash.
                 render(CrashBanner(app: "Duolingo", device: "iPhone Duo de Anthony", diagnosis: crash,
+                                   action: CrashAction.suggested(for: crash),
                                    onWhy: {}, onAction: { _ in })
                         .padding(20)
                         .frame(width: InstallWindow.width)

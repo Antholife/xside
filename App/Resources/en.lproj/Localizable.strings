@@ -900,6 +900,7 @@
 "crash.shellCommand" = "It was running a shell command, which apps can't do without a jailbreak.";
 "crash.action.disableTweak" = "Disable this tweak";
 "crash.action.disableConvertedTweaks" = "Disable the converted tweaks";
+"crash.action.tweaksFailed" = "XSide couldn't change the tweaks";
 "crash.scope.disableTweak.title" = "Disable %@?";
 "crash.scope.disableConvertedTweaks.title" = "Disable the converted tweaks of %@?";
 "crash.scope.tweaks.message" = "Only on %1$@ (the device where it crashed), or on all %2$ld devices that have it (the others at their next refresh)? The tweaks stay in XSide: you can turn them back on.";

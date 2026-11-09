@@ -900,6 +900,7 @@
 "crash.shellCommand" = "Il lançait une commande shell, ce qu'une app ne peut pas faire sans jailbreak.";
 "crash.action.disableTweak" = "Désactiver ce tweak";
 "crash.action.disableConvertedTweaks" = "Désactiver les tweaks convertis";
+"crash.action.tweaksFailed" = "XSide n'a pas pu modifier les tweaks";
 "crash.scope.disableTweak.title" = "Désactiver %@ ?";
 "crash.scope.disableConvertedTweaks.title" = "Désactiver les tweaks convertis de %@ ?";
 "crash.scope.tweaks.message" = "Seulement sur %1$@ (l'appareil où elle a planté), ou sur les %2$ld appareils qui l'ont (les autres à leur prochain rafraîchissement) ? Les tweaks restent dans XSide : tu peux les réactiver.";

@@ -129,7 +129,7 @@ private struct CrashView: View {
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            if let action = CrashAction.suggested(for: d) {
+            if let action = TweakCrashFix.action(for: d, crashed: entry.installation, record: entry.record) {
                 HStack(spacing: 8) {
                     Button(L("crash.action.\(action.rawValue)")) {
                         guard let all = model.crashActionScope(action, on: entry.id, diagnosis: d) else { return }
@@ -227,6 +227,7 @@ struct CrashNotes: View {
                     if let finding = run.crash {
                         let key = flow.importedRecordID.map { JobKey(recordID: $0, deviceID: run.deviceID) }
                         CrashBanner(app: flow.info?.name ?? "", device: run.name, diagnosis: finding.diagnosis,
+                                    action: key.flatMap { model.crashAction(for: finding.diagnosis, on: $0) },
                                     isFixing: key.map { model.jobs[$0] != nil } ?? false,
                                     actionStarted: actionStarted[run.deviceID],
                                     onWhy: key.map { key in { model.explainCrash(key) } },
@@ -254,6 +255,8 @@ struct CrashBanner: View {
     let app: String
     let device: String
     let diagnosis: CrashDiagnosis
+    /// The fix offered (`TweakCrashFix.action`): nil, none.
+    let action: CrashAction?
     /// The fix's refresh is running on that installation.
     var isFixing = false
     /// The fix was asked for: whether its refresh started (nil: not asked).
@@ -265,7 +268,6 @@ struct CrashBanner: View {
 
     var body: some View {
         let wording = CrashWording(diagnosis, app: app)
-        let action = CrashAction.suggested(for: diagnosis)
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "exclamationmark.octagon.fill")
                 .font(.system(size: 22, weight: .semibold))
@@ -337,6 +339,21 @@ struct CrashFilledButtonStyle: ButtonStyle {
 }
 
 extension AppModel {
+    /// The fix a crash of the installation offers, or nil (a tweak fix that would change nothing).
+    func crashAction(for d: CrashDiagnosis, on key: JobKey) -> CrashAction? {
+        guard let record = records.first(where: { $0.id == key.recordID }),
+              let installation = record.installations.first(where: { $0.deviceID == key.deviceID }) else { return nil }
+        return TweakCrashFix.action(for: d, crashed: installation, record: record)
+    }
+
+    /// A tweak fix couldn't be saved: said, not swallowed (nothing was signed again).
+    func showTweakFixFailure(_ error: any Error) {
+        let alert = NSAlert()
+        alert.messageText = L("crash.action.tweaksFailed")
+        alert.informativeText = error.localizedDescription
+        alert.runModal()
+    }
+
     /// Before a crash's fix: where "Reinstall without XSide features" applies when the app is on
     /// several devices, and « Désactiver ce tweak » / « Désactiver les tweaks convertis » when
     /// more than one installation has the tweak (this device, the default, or all of them).

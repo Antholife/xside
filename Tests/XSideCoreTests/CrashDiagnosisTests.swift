@@ -350,20 +350,28 @@ private func diagnose(_ data: Data, _ ctx: CrashContext = context) throws -> Cra
     }
 
     @Test func aKnownTweak() throws {
-        let frames = [IPS.frame(IPS.uikit), IPS.frame(2), IPS.frame(0)]
-        let known = try diagnose(IPS.crash(frames: frames), CrashContext(moduleName: "XSideWelcome.dylib", tweakNames: ["uTweak.dylib"]))
+        // XSide's copy, under Frameworks/XSideTweaks/<id>/: the tweak.
+        let images = IPS.images + [IPS.image("uTweak.dylib", path: "\(IPS.appPath)/Frameworks/XSideTweaks/0123456789abcdef/uTweak.dylib")]
+        let ours = IPS.images.count
+        let ctx = CrashContext(moduleName: "XSideWelcome.dylib", tweakNames: ["uTweak.dylib"], tweakIDs: ["0123456789abcdef"])
+        let known = try diagnose(IPS.crash(frames: [IPS.frame(IPS.uikit), IPS.frame(ours), IPS.frame(0)], images: images), ctx)
         #expect(known.cause == .tweak)
         #expect(known.subject == "uTweak.dylib")
-        // A dylib the app came with: named, but not claimed to be a tweak XSide added.
-        let bundled = try diagnose(IPS.crash(frames: frames))
+        // The same name elsewhere in the app (a dylib the .ipa came with): never blamed on XSide.
+        let frames = [IPS.frame(IPS.uikit), IPS.frame(2), IPS.frame(0)]
+        let bundled = try diagnose(IPS.crash(frames: frames), ctx)
         #expect(bundled.cause == .bundledLibrary)
         #expect(bundled.subject == "uTweak.dylib")
+        // Under XSideTweaks/ but in a folder that isn't one of the tweaks the signing injected.
+        let stray = IPS.images + [IPS.image("uTweak.dylib", path: "\(IPS.appPath)/Frameworks/XSideTweaks/ffffffffffffffff/uTweak.dylib")]
+        #expect(try diagnose(IPS.crash(frames: [IPS.frame(ours)], images: stray), ctx).cause == .bundledLibrary)
     }
 
     private static let tweakFolder = "\(IPS.appPath)/Frameworks/XSideTweaks"
-    private static let tweakContext = CrashContext(moduleName: "XSideWelcome.dylib", tweakNames: ["Alpha.dylib"],
+    private static let tweakContext = CrashContext(moduleName: "XSideWelcome.dylib", tweakNames: ["Alpha.dylib", "Cephei"],
+                                                   tweakIDs: ["0123456789abcdef", "fedcba9876543210"],
                                                    tweakSupportNames: [TweakLayout.elleKitName, TweakLayout.supportName, "Cephei"],
-                                                   tweakLabels: ["Alpha.dylib": "Alpha 1.2"])
+                                                   tweakLabels: ["Alpha.dylib": "Alpha 1.2", "Cephei": "Cephei 1.9"])
 
     @Test func aCrashInElleKitIsTheTweakSupport() throws {
         let images = IPS.images + [IPS.image("ElleKit.dylib", path: "\(Self.tweakFolder)/ElleKit.dylib"),
@@ -395,6 +403,66 @@ private func diagnose(_ data: Data, _ ctx: CrashContext = context) throws -> Cra
         // Without XSide having added it, the same image is just an app framework.
         let plain = try diagnose(IPS.crash(frames: [IPS.frame(cephei, "HBOutputForShellCommand")], images: images))
         #expect(plain.cause == .other && plain.shellCommand == nil)
+    }
+
+    @Test func theAppsOwnElleKitOrCepheiIsNotXSides() throws {
+        // A pre-patched .ipa shipping its own ElleKit and Cephei, outside XSideTweaks/.
+        let images = IPS.images + [IPS.image("ElleKit.dylib", path: "\(IPS.appPath)/Frameworks/ElleKit.dylib"),
+                                   IPS.image("Cephei", path: "\(IPS.appPath)/Frameworks/Cephei.framework/Cephei")]
+        let elle = IPS.images.count, cephei = elle + 1
+        let d = try diagnose(IPS.crash(frames: [IPS.frame(elle, "MSHookMessageEx"), IPS.frame(0)], images: images), Self.tweakContext)
+        #expect(d.cause == .bundledLibrary && d.subject == "ElleKit.dylib")
+        #expect(CrashAction.suggested(for: d) == nil)
+        let c = try diagnose(IPS.crash(frames: [IPS.frame(cephei, "HBOutputForShellCommand"), IPS.frame(0)], images: images),
+                             Self.tweakContext)
+        #expect(c.cause == .other && c.subject == "Cephei" && c.shellCommand == nil)
+    }
+
+    @Test func anInstallationWithoutTweaksNeverGetsTweakCauses() throws {
+        // Even XSide's folder names: nothing recorded, nothing blamed.
+        let images = IPS.images + [IPS.image("ElleKit.dylib", path: "\(Self.tweakFolder)/ElleKit.dylib"),
+                                   IPS.image("Alpha.dylib", path: "\(Self.tweakFolder)/0123456789abcdef/Alpha.dylib")]
+        let elle = IPS.images.count
+        let none = CrashContext(moduleName: "XSideWelcome.dylib")
+        #expect(try diagnose(IPS.crash(frames: [IPS.frame(elle)], images: images), none).cause == .bundledLibrary)
+        #expect(try diagnose(IPS.crash(frames: [IPS.frame(elle + 1)], images: images), none).cause == .bundledLibrary)
+    }
+
+    @Test func supportAndTweakAreToldApartByTheirFolder() throws {
+        // "Cephei" is both an embedded dependency and a tweak the person added: deps/ is XSide's support,
+        // the tweak's own folder is the tweak.
+        let images = IPS.images + [
+            IPS.image("Cephei", path: "\(Self.tweakFolder)/deps/ws.hbang.common/Library/Frameworks/Cephei.framework/Cephei"),
+            IPS.image("Cephei", path: "\(Self.tweakFolder)/fedcba9876543210/Library/Frameworks/Cephei.framework/Cephei")]
+        let dep = IPS.images.count, theirs = dep + 1
+        #expect(try diagnose(IPS.crash(frames: [IPS.frame(dep)], images: images), Self.tweakContext).cause == .tweakSupport)
+        let t = try diagnose(IPS.crash(frames: [IPS.frame(theirs)], images: images), Self.tweakContext)
+        #expect(t.cause == .tweak && t.tweakName == "Cephei 1.9")
+    }
+
+    @Test func shellCommandIsReadFromTheCrashingThreadsTopFramesOnly() throws {
+        let images = IPS.images + [IPS.image("Alpha.dylib", path: "\(Self.tweakFolder)/0123456789abcdef/Alpha.dylib")]
+        let alpha = IPS.images.count
+        func shell(_ frames: [[String: Any]]) throws -> Bool? {
+            try diagnose(IPS.crash(frames: frames, images: images), Self.tweakContext).shellCommand
+        }
+        #expect(try shell([IPS.frame(IPS.objc, "-[NSConcreteTask launchAndReturnError:]"), IPS.frame(alpha)]) == true)
+        #expect(try shell([IPS.frame(IPS.objc, "posix_spawn"), IPS.frame(alpha)]) == true)
+        // A class merely named like NSTask, or a spawn far down the stack: not a shell command.
+        #expect(try shell([IPS.frame(IPS.objc, "-[NSTaskHelper description]"), IPS.frame(alpha)]) == nil)
+        let deep = [IPS.frame(alpha)] + Array(repeating: IPS.frame(IPS.uikit), count: 7) + [IPS.frame(IPS.objc, "system")]
+        #expect(try shell(deep) == nil)
+    }
+
+    @Test func tweakPathsAreReadFromTheImagePath() throws {
+        let images = IPS.images + [
+            IPS.image("Cephei", path: "\(Self.tweakFolder)/deps/ws.hbang.common/Cephei"),
+            IPS.image("X.dylib", path: "@executable_path/Frameworks/XSideTweaks/0123456789abcdef/X.dylib"),
+            IPS.image("Y.dylib", path: "\(Self.tweakFolder)/../Y.dylib"),
+            IPS.image("Z.dylib", path: "/usr/lib/Frameworks/XSideTweaks/Z.dylib")]
+        let n = IPS.images.count
+        let log = try #require(CrashLogParser.parse(IPS.crash(frames: (n..<n + 4).map { IPS.frame($0) }, images: images)))
+        #expect(log.faultingFrames.map(\.tweakPath) == ["deps/ws.hbang.common/Cephei", "0123456789abcdef/X.dylib", nil, nil])
     }
 
     @Test func iCloudWithoutTheEntitlement() throws {

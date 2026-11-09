@@ -16,11 +16,13 @@ extension Installation {
         }
     }
 
-    /// What XSide added for converted tweaks, as crash logs name the images: ElleKit and the
-    /// support library always (only XSide puts them in an app), and the embedded dependencies'
-    /// images the last signing recorded.
+    /// What XSide added for converted tweaks, as crash logs name the images: what the last
+    /// signing recorded (ElleKit, the support library, the embedded dependencies' images). Older
+    /// state recorded none: ElleKit and the support library when a tweak there was converted.
     public var tweakSupportImageNames: Set<String> {
-        Set([TweakLayout.elleKitName, TweakLayout.supportName] + (tweakSupportImages ?? []))
+        if let tweakSupportImages { return Set(tweakSupportImages) }
+        guard injectedTweaks == nil, hasConvertedTweak else { return [] }
+        return [TweakLayout.elleKitName, TweakLayout.supportName]
     }
 }
 
@@ -30,7 +32,8 @@ extension CrashContext {
         let history = installation.injectedTweakHistory(pool: pool)
         tweakSupportNames.formUnion(installation.tweakSupportImageNames)
         for t in history {
-            for image in t.imageNames where !tweakSupportNames.contains(image) {
+            tweakIDs.insert(t.id)
+            for image in t.imageNames {
                 tweakNames.insert(image)
                 tweakLabels[image] = TweakCrashFix.label(t)
             }
@@ -119,11 +122,46 @@ public enum TweakCrashFix {
         }
     }
 
+    /// The fix to offer for `d`: `CrashAction.suggested`, except a tweak fix that would change
+    /// no installation (already off, or no subject): no button then.
+    public static func action(for d: CrashDiagnosis, crashed: Installation, record: AppRecord) -> CrashAction? {
+        guard let action = CrashAction.suggested(for: d) else { return nil }
+        guard action == .disableTweak || action == .disableConvertedTweaks else { return action }
+        return affected(action, subject: d.subject, crashed: crashed, record: record).isEmpty ? nil : action
+    }
+
     /// "N tweaks (M converted)" for the diagnostic summary; nil: none.
     public static func summary(_ installation: Installation, pool: [TweakPackage]) -> String? {
         let history = installation.injectedTweakHistory(pool: pool)
         guard !history.isEmpty else { return nil }
         let converted = history.filter(\.converted).count
         return "\(history.count) tweak\(history.count == 1 ? "" : "s") (\(converted) converted)"
+    }
+}
+
+extension AppLibrary {
+    /// « Désactiver ce tweak » / « Désactiver les tweaks convertis » after a crash on `deviceID`:
+    /// the tweak (`diagnosis.subject`, its image) or the converted tweaks of that device's last
+    /// signing are disabled there, or on every installation listing them (`allDevices`), in one
+    /// save. True when the crashed device's list changed (its refresh is worth starting); false
+    /// when there was nothing to change there. Throws when the save failed (nothing changed).
+    public func disableTweaksAfterCrash(_ action: CrashAction, diagnosis: CrashDiagnosis?, recordID: UUID, deviceID: String,
+                                        allDevices: Bool) throws -> Bool {
+        guard action == .disableTweak || action == .disableConvertedTweaks,
+              let record = records().first(where: { $0.id == recordID }),
+              let crashed = record.installations.first(where: { $0.deviceID == deviceID }) else { return false }
+        let subject = diagnosis?.subject
+        if action == .disableTweak, subject == nil { return false }
+        let pool = record.tweaks ?? []
+        var changes: [String: [TweakUse]] = [:]
+        for i in record.installations where allDevices || i.deviceID == deviceID {
+            let uses = action == .disableTweak
+                ? TweakCrashFix.disablingTweak(image: subject!, crashed: crashed, in: i, pool: pool)
+                : TweakCrashFix.disablingConverted(crashed: crashed, in: i, pool: pool)
+            if let uses { changes[i.deviceID] = uses }
+        }
+        guard !changes.isEmpty else { return false }
+        try changeInstallationTweaks(changes, recordID: recordID)
+        return changes[deviceID] != nil
     }
 }

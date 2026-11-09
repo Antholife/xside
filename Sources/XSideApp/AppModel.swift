@@ -2914,17 +2914,22 @@ final class AppModel {
         case .turnOffICloudSignedOut: await setICloudSignedOut(false, for: AppEntry(record: record, installation: installation))
         case .refresh: break
         case .disableTweak, .disableConvertedTweaks:
-            let pool = record.tweaks ?? []
-            for other in record.installations where allDevices || other.deviceID == key.deviceID {
-                let uses = action == .disableTweak
-                    ? diagnosis?.subject.flatMap { TweakCrashFix.disablingTweak(image: $0, crashed: installation, in: other, pool: pool) }
-                    : TweakCrashFix.disablingConverted(crashed: installation, in: other, pool: pool)
-                guard let uses else { continue }
-                do { try await library.setTweaks(uses, recordID: key.recordID, deviceID: other.deviceID) } catch {
-                    Self.logger.error("tweak crash fix failed on \(other.deviceID): \(String(describing: error))")
-                }
+            // Signing again only helps when this device's list changed: otherwise the same crash.
+            let changed: Bool
+            do {
+                changed = try await library.disableTweaksAfterCrash(action, diagnosis: diagnosis, recordID: key.recordID,
+                                                                    deviceID: key.deviceID, allDevices: allDevices)
+            } catch {
+                Self.logger.error("tweak crash fix failed: \(String(describing: error))")
+                await reloadRecords()
+                showTweakFixFailure(error)
+                return false
             }
             await reloadRecords()
+            guard changed else {
+                Self.logger.notice("tweak crash fix: nothing to change on \(key.deviceID)")
+                return false
+            }
         }
         return refreshNow(RefreshJob(recordID: key.recordID, deviceID: key.deviceID))
     }

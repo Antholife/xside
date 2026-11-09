@@ -1044,6 +1044,20 @@ extension AppLibrary {
         return true
     }
 
+    /// Sets several installations' tweak lists at once (by device id), pool-ordered, in one save:
+    /// all or nothing.
+    func changeInstallationTweaks(_ lists: [String: [TweakUse]], recordID: UUID) throws {
+        let index = try indexOf(recordID)
+        let pool = items[index].tweaks ?? []
+        let previous = items
+        for i in items[index].installations.indices {
+            if let uses = lists[items[index].installations[i].deviceID] {
+                items[index].installations[i].tweaks = Self.ordered(uses, pool: pool)
+            }
+        }
+        do { try save() } catch { items = previous; throw error }
+    }
+
     /// Drops from the pool the tweaks no device lists, none is waiting for, and no device's last
     /// signing included (asked or injected), with their files; also deletes the other unused
     /// stored folders (a version replaced, a replacement offered before XSide was last started),
