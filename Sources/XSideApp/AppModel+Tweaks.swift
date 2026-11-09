@@ -25,7 +25,7 @@ enum TweakResources {
 }
 
 extension AppModel {
-    // MARK: Step ②
+    // MARK: Step ③
 
     /// An app already in the library: its tweaks listed on the selected devices, each device's
     /// switch from that installation's own list (or the one chosen before its first install).
@@ -448,7 +448,7 @@ enum TweakText {
 
 // MARK: - « Dépendances »
 
-/// Whose dependencies the sheet shows: a tweak of the install window (step ②), or one of an
+/// Whose dependencies the sheet shows: a tweak of the install window (step ③), or one of an
 /// installation (Settings > Mes apps).
 enum DependencyTarget: Hashable {
     case draft(tweakID: String)

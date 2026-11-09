@@ -1,13 +1,13 @@
 import SwiftUI
 import XSideCore
 
-/// ① Appareils · ② Installation · ③ Module XSide dans l'app: where the install window is; each step
+/// ① Appareils · ② Installation · ③ Tweaks · ④ Module XSide dans l'app: where the install window is; each step
 /// can be clicked.
 struct StepBar: View {
     let flow: InstallFlow
 
     private static var titles: [String] {
-        [L("install.steps.devices"), L("install.steps.options"), L("install.steps.inApp")]
+        [L("install.steps.devices"), L("install.steps.options"), L("install.steps.tweaks"), L("install.steps.inApp")]
     }
 
     var body: some View {
@@ -53,7 +53,7 @@ struct StepBar: View {
     }
 }
 
-/// Step ③: the XSide module in the app for every checked device, with where each device stands.
+/// Step ④: the XSide module in the app for every checked device, with where each device stands.
 struct InAppStep: View {
     let model: AppModel
     @Bindable var flow: InstallFlow
@@ -119,8 +119,8 @@ struct InstallSummaryView: View {
             group(L("install.optionsTitle"), lines.install, step: 1)
             // The compatibility fixes, apart (step ② edits them too).
             if !lines.fixes.isEmpty { group(L("fixes.section"), lines.fixes, step: 1) }
-            if !lines.tweaks.isEmpty { group(L("tweaks.section"), lines.tweaks, step: 1) }
-            group(L("install.steps.inApp"), lines.inApp, step: 2)
+            if !lines.tweaks.isEmpty { group(L("tweaks.section"), lines.tweaks, step: 2) }
+            group(L("install.steps.inApp"), lines.inApp, step: 3)
             Text(L("install.summary.note", info?.name ?? ""))
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)

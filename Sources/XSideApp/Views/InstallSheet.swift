@@ -20,7 +20,7 @@ struct InstallWindowRoot: View {
                 InstallDropZone { url in openWindow.presentInstall(url, model: model) }
             }
         }
-        // Wide enough for step ③ in two columns and the other steps without scrolling (device
+        // Wide enough for step ④ in two columns and the other steps without scrolling (device
         // feedback 2026-11-08); the middle still scrolls past the screen's height (large text).
         .frame(width: InstallWindow.width)
         .fixedSize(horizontal: false, vertical: true)
@@ -209,7 +209,7 @@ struct InstallSheet: View {
 
     /// Room left for the scrolling middle on the current screen: what's left once the header, the
     /// buttons, the paddings and the title bar (28) are measured, less a small margin. Device
-    /// feedback round 2, M1: a fixed 300 pt reserve made step ③ scroll on screens where it fits;
+    /// feedback round 2, M1: a fixed 300 pt reserve made step ④ scroll on screens where it fits;
     /// now it only scrolls when the screen really is too short (or the text large).
     private var maxContentHeight: CGFloat {
         let screen = NSScreen.main?.visibleFrame.height ?? 800
@@ -291,7 +291,7 @@ struct InstallSheet: View {
     }
 
     /// The step being edited: ① devices (and, without the steps, everything that will apply),
-    /// ② install options, ③ XSide module in the app.
+    /// ② install options, ③ tweaks, ④ XSide module in the app.
     @ViewBuilder private var editingStep: some View {
         if !flow.reviewsSteps {
             DevicePicker(model: model, flow: flow)
@@ -311,11 +311,13 @@ struct InstallSheet: View {
                         ICloudOptionsCard(model: model, flow: flow)
                         CompatibilityFixCard { Legacy32InfoRow(appName: flow.appDisplayName, applied: flow.info?.hasLegacy32) }
                     }
-                    InstallTweaksSection(model: model, flow: flow)
                 }
                 // What this step's fields cause (minimum iOS, a new App ID, an older version).
                 PreflightNotes(warnings: model.preflightWarnings(for: flow).filter(\.followsInstallOptions),
                                model: model, flow: flow)
+            case 2:
+                // Always there, even empty, so people find it (device test 2026-11-09).
+                InstallTweaksSection(model: model, flow: flow)
             default:
                 InAppStep(model: model, flow: flow)
                 // Everything that may fail, where Install is pressed (Developer Mode off disables it).

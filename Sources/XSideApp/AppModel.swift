@@ -2332,7 +2332,7 @@ final class AppModel {
                 flow.runs[i].iCloudMissing = true
                 flow.runs[i].iCloudSkippedForModule = done.iCloudSignedOutSkippedForModule == true
             }
-            // "Rafraîchissement automatique" off in step ③: installed, then paused (a signing
+            // "Rafraîchissement automatique" off in step ④: installed, then paused (a signing
             // always leaves it on).
             if flow.runInApp?.settings.autoRefresh.value == false { await pauseAfterInstall(recordID: installed.id, deviceID: deviceID) }
             // Asked to the device itself; the remembered rule only when it can't tell.

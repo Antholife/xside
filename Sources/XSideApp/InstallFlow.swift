@@ -42,17 +42,17 @@ final class InstallFlow {
     var appDisplayName: String {
         draft.name.isEmpty ? info?.name ?? ipa.deletingPathExtension().lastPathComponent : draft.name
     }
-    /// The XSide module in the app (step ③): the values every checked device gets. Prefilled from the app's
+    /// The XSide module in the app (step ④): the values every checked device gets. Prefilled from the app's
     /// last-used values, else the Mac defaults; only the values count (see `InAppSettings.adopting`).
     var inApp = AppModel.inAppDefaults(at: Date())
-    /// The step ③ fields the user changed: the only ones a device that has the app adopts.
+    /// The step ④ fields the user changed: the only ones a device that has the app adopts.
     var inAppTouched: Set<InAppField> = []
     /// Devices getting iPhone Duo compatibility (step ②), prefilled with those that have it.
     var duoDevices: Set<String> = []
     /// Devices getting "Simulate signed-out iCloud" (step ②), prefilled with those that have it.
     var iCloudDevices: Set<String> = []
 
-    /// The tweaks of step ②, in load order: the app's own (already in the library, each device
+    /// The tweaks of step ③, in load order: the app's own (already in the library, each device
     /// from its installation's list) and those added in this window (analysed into `tweakStaging`).
     var tweaks: [TweakDraft] = []
     /// Why the last files added couldn't be (orange lines in the section, never an alert).
@@ -63,22 +63,22 @@ final class InstallFlow {
     /// deleted when the flow ends.
     var tweakStaging: URL?
 
-    /// Applies a step ③ change, remembering which fields it touched.
+    /// Applies a step ④ change, remembering which fields it touched.
     func editInApp(_ change: (InAppSettings) -> InAppSettings) {
         let edited = change(inApp)
         inAppTouched.formUnion(edited.fields(differingFrom: inApp))
         inApp = edited
     }
-    /// The step shown while editing: 0 devices, 1 install options, 2 the XSide module in the app.
+    /// The step shown while editing: 0 devices, 1 install options, 2 tweaks, 3 the XSide module in the app.
     var step = 0
-    /// Steps ①②③ with Next/Back. False for an app already installed when "Revoir les options à
+    /// Steps ①②③④ with Next/Back. False for an app already installed when "Revoir les options à
     /// chaque installation" is off: step ① then lists every option, with Edit, and Install.
     var reviewsSteps = true
 
     init(ipa: URL) { self.ipa = ipa }
 
     /// Steps of the install window, in order.
-    static let stepCount = 3
+    static let stepCount = 4
 
     /// Shows step `index`; from the summary, editing turns the steps on.
     func go(to index: Int) {
@@ -241,7 +241,7 @@ final class InstallFlow {
     }
 }
 
-/// One tweak of step ②, with each selected device's choice and verdict.
+/// One tweak of step ③, with each selected device's choice and verdict.
 struct TweakDraft: Identifiable {
     let package: TweakPackage
     /// The package's stored folder: in the library for the app's own, in `tweakStaging` otherwise.

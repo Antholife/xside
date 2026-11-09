@@ -6,7 +6,7 @@ import XSideCore
 typealias InAppEdit = @Sendable (InAppSettings) -> InAppSettings
 
 /// The XSide-in-app options, each explained, with a preview where there's something to see:
-/// what the install window's step ③ and Settings > Mes apps show. Every change
+/// what the install window's step ④ and Settings > Mes apps show. Every change
 /// goes through `edit`, stamped by the Mac now.
 struct InAppSettingsSection: View {
     let settings: InAppSettings
@@ -31,7 +31,7 @@ struct InAppSettingsSection: View {
     var body: some View {
         Group {
             if columns {
-                // The install window: side by side, so step ③ fits without scrolling.
+                // The install window: side by side, so step ④ fits without scrolling.
                 HStack(alignment: .top, spacing: 14) {
                     VStack(alignment: .leading, spacing: 10) {
                         featuresPart
