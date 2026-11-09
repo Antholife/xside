@@ -82,12 +82,16 @@ private struct FakeResigner: Resigning {
     var libraryAdded = true
     /// Whether the signed app fills an iPhone Duo's screens (false: the Duo patch failed).
     var duoApplied = true
+    /// Whether the signed app holds the signed-out iCloud library (false: this build has none).
+    var iCloudApplied = true
     func hasXSideLibrary(_ app: URL) -> Bool { libraryAdded }
     func hasDuoCompatibility(_ app: URL) -> Bool { duoApplied }
+    func hasICloudSignedOut(_ app: URL) -> Bool { iCloudApplied }
     func resign(ipa: URL, workDir: URL, bundleID: String, options: InstallOptions, iconURL: URL?,
                 profileURL: URL, profile: ProvisioningProfile, identitySHA1: String,
                 otherBundleIDs: Set<String>, facts: InstallationFacts?,
                 onDuo: @Sendable (DuoOutcome?) async -> Void,
+                onICloud: @Sendable () async -> Void,
                 onThinning: @Sendable () async -> Void,
                 onSigning: @Sendable () async -> Void) async throws -> URL {
         await log.resign(ipa, workDir, bundleID, iconURL, profileURL, profile)
@@ -97,6 +101,7 @@ private struct FakeResigner: Resigning {
             await onDuo(nil)
             await onDuo(duoApplied ? .added : .failed)
         }
+        if options.iCloudSignedOut == true { await onICloud() }
         await onSigning()
         // Simulate unpacking into the work dir.
         let app = workDir.appendingPathComponent("Payload/Demo.app", isDirectory: true)
@@ -199,10 +204,11 @@ private struct Fixture {
                   now: @escaping @Sendable () -> Date = { fixedNow },
                   inAppDefaults: (@Sendable (Date) -> InAppSettings)? = nil,
                   withoutFeaturesByDefault: Bool = false, libraryAdded: Bool = true,
-                  duoApplied: Bool = true) -> SideloadPipeline {
+                  duoApplied: Bool = true, iCloudApplied: Bool = true) -> SideloadPipeline {
         SideloadPipeline(library: library,
                          provisioner: provisioner ?? FakeProvisioner(log: log),
-                         resigner: FakeResigner(log: log, libraryAdded: libraryAdded, duoApplied: duoApplied),
+                         resigner: FakeResigner(log: log, libraryAdded: libraryAdded, duoApplied: duoApplied,
+                                                iCloudApplied: iCloudApplied),
                          installer: installer ?? FakeInstaller(log: log),
                          workRoot: workRoot, now: now,
                          inAppDefaults: inAppDefaults ?? { InAppSettings.defaults(reminder: true, at: $0) },
@@ -1316,6 +1322,60 @@ extension PipelineChannelTests {
         #expect(stored.inApp?.autoRefresh.value == false)
         #expect(stored.channelSecret == first.channelSecret)
         #expect(stored.lastErrorKey == XSideError.deviceUnavailable.key)
+    }
+
+    // MARK: Signed-out iCloud
+
+    /// Per device like the Duo option: remembered on the installation, applied at each refresh,
+    /// a step of its own between the Duo step and the signature.
+    @Test func iCloudSignedOutIsPerDeviceAStepAndKept() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let steps = StepLog()
+        let first = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env, iCloudSignedOut: true,
+                                                   progress: { await steps.add($0) })
+        #expect(await steps.items == [.profile, .welcome, .icloud, .signing, .installing])
+        #expect(await f.log.options.last?.iCloudSignedOut == true)
+        #expect(first.iCloudSignedOut == true)
+        #expect(first.iCloudSignedOutMissing == nil)
+        let refreshSteps = StepLog()
+        _ = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env, refresh: true,
+                                           progress: { await refreshSteps.add($0) })
+        #expect(await f.log.options.last?.iCloudSignedOut == true)
+        #expect(await refreshSteps.items.contains(.icloud))
+        let other = try await f.pipeline().install(recordID: f.record.id, device: device("dev-2", udid: "UDID-2"), env: env)
+        #expect(await f.log.options.last?.iCloudSignedOut == false)
+        #expect(other.iCloudSignedOut == nil)
+        let offSteps = StepLog()
+        let off = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env, iCloudSignedOut: false,
+                                                 progress: { await offSteps.add($0) })
+        #expect(off.iCloudSignedOut == nil)
+        #expect(await !offSteps.items.contains(.icloud))
+    }
+
+    /// Asked for, but the app went without (no library in this build): installed anyway, said so.
+    @Test func aMissingICloudLibraryIsRecorded() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let result = try await f.pipeline(iCloudApplied: false).install(recordID: f.record.id, device: device(), env: env,
+                                                                        iCloudSignedOut: true)
+        #expect(result.iCloudSignedOut == true)
+        #expect(result.iCloudSignedOutMissing == true)
+        let plain = try await f.pipeline(iCloudApplied: false).install(recordID: f.record.id, device: device("dev-2", udid: "U2"),
+                                                                       env: env)
+        #expect(plain.iCloudSignedOutMissing == nil)
+    }
+
+    @Test func libraryTurnsICloudSignedOutOnAndOff() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        _ = try await f.pipeline(iCloudApplied: false).install(recordID: f.record.id, device: device(), env: env,
+                                                               iCloudSignedOut: true)
+        #expect(try await !f.library.setICloudSignedOut(true, recordID: f.record.id, deviceID: "dev-1")) // already on
+        #expect(try await f.library.setICloudSignedOut(false, recordID: f.record.id, deviceID: "dev-1"))
+        let stored = try #require(await f.library.records().first?.installations.first)
+        #expect(stored.iCloudSignedOut == nil)
+        #expect(stored.iCloudSignedOutMissing == nil) // nothing asked, nothing missing
+        #expect(try await f.library.setICloudSignedOut(true, recordID: f.record.id, deviceID: "dev-1"))
+        #expect(await f.library.records().first?.installations.first?.iCloudSignedOut == true)
+        #expect(try await !f.library.setICloudSignedOut(true, recordID: f.record.id, deviceID: "nope"))
     }
 
     // MARK: iPhone Duo compatibility

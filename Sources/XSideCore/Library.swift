@@ -52,6 +52,12 @@ public struct Installation: Codable, Equatable, Sendable {
     public var duoCompatibilityMissing: Bool?
     /// The device was an iPhone Duo at the last signing: remembered for when it isn't connected.
     public var onDuo: Bool?
+    /// The user turned "Simulate signed-out iCloud" on for this installation: each signing adds
+    /// the library (see `ICloudSignedOut`). nil: off.
+    public var iCloudSignedOut: Bool?
+    /// Asked for at the last signing, but the app installed doesn't have it (this build has no
+    /// library, or it couldn't be added). nil otherwise.
+    public var iCloudSignedOutMissing: Bool?
 
     public init(deviceID: String, installedAt: Date, expiresAt: Date,
                 lastAttempt: Date? = nil, lastErrorKey: String? = nil, signedBundleID: String? = nil,
@@ -60,8 +66,11 @@ public struct Installation: Codable, Equatable, Sendable {
                 firstInstalledAt: Date? = nil, lastRefreshOutcome: RefreshOutcome? = nil,
                 channelSecret: Data? = nil, lastCheckIn: Date? = nil, lastDeviceRefreshRequest: Date? = nil,
                 lastMacEdit: Date? = nil, withoutXSideFeatures: Bool? = nil,
-                duoCompatibility: Bool? = nil, duoCompatibilityMissing: Bool? = nil, onDuo: Bool? = nil) {
+                duoCompatibility: Bool? = nil, duoCompatibilityMissing: Bool? = nil, onDuo: Bool? = nil,
+                iCloudSignedOut: Bool? = nil, iCloudSignedOutMissing: Bool? = nil) {
         self.onDuo = onDuo
+        self.iCloudSignedOut = iCloudSignedOut
+        self.iCloudSignedOutMissing = iCloudSignedOutMissing
         self.duoCompatibility = duoCompatibility
         self.duoCompatibilityMissing = duoCompatibilityMissing
         self.lastMacEdit = lastMacEdit
@@ -110,6 +119,8 @@ public struct Installation: Codable, Equatable, Sendable {
         duoCompatibility = try? c.decodeIfPresent(Bool.self, forKey: .duoCompatibility)
         duoCompatibilityMissing = try? c.decodeIfPresent(Bool.self, forKey: .duoCompatibilityMissing)
         onDuo = try? c.decodeIfPresent(Bool.self, forKey: .onDuo)
+        iCloudSignedOut = try? c.decodeIfPresent(Bool.self, forKey: .iCloudSignedOut)
+        iCloudSignedOutMissing = try? c.decodeIfPresent(Bool.self, forKey: .iCloudSignedOutMissing)
     }
 }
 
@@ -133,6 +144,8 @@ public struct AppRecord: Codable, Identifiable, Equatable, Sendable {
     public var version: String?
     /// What the current .ipa supports for the iPhone Duo option. nil in older state.
     public var duo: DuoAppInfo?
+    /// What the current .ipa uses of iCloud, for the signed-out iCloud option. nil in older state.
+    public var icloud: ICloudAppInfo?
     /// The app's `CFBundleExecutable`: its process name in the device's crash logs. nil in older
     /// state, until its next import or signing.
     public var executable: String?
@@ -170,6 +183,7 @@ public struct AppRecord: Codable, Identifiable, Equatable, Sendable {
         appIDFirstUse = try c.decodeIfPresent([String: Date].self, forKey: .appIDFirstUse)
         version = try? c.decodeIfPresent(String.self, forKey: .version)
         duo = try? c.decodeIfPresent(DuoAppInfo.self, forKey: .duo)
+        icloud = try? c.decodeIfPresent(ICloudAppInfo.self, forKey: .icloud)
         executable = try? c.decodeIfPresent(String.self, forKey: .executable)
     }
 }
@@ -299,6 +313,7 @@ public actor AppLibrary {
             items[index].ipaPath = relative
             items[index].version = info.version
             items[index].duo = info.duo
+            items[index].icloud = info.icloud
             items[index].executable = info.executable
             record = items[index]
         } else {
@@ -307,6 +322,7 @@ public actor AppLibrary {
                                options: InstallOptions(), installations: [], teamID: teamID)
             record.version = info.version
             record.duo = info.duo
+            record.icloud = info.icloud
             record.executable = info.executable
             items.append(record)
         }
@@ -449,6 +465,20 @@ public actor AppLibrary {
         let previous = items
         items[index].installations[i].duoCompatibility = on ? true : nil
         if !on { items[index].installations[i].duoCompatibilityMissing = nil } // nothing asked, nothing missing
+        do { try save() } catch { items = previous; throw error }
+        return true
+    }
+
+    /// Turns "Simulate signed-out iCloud" on or off for one installation, from its next signing on.
+    /// Returns false when there's no such installation or nothing changed.
+    @discardableResult
+    public func setICloudSignedOut(_ on: Bool, recordID: UUID, deviceID: String) throws -> Bool {
+        let index = try indexOf(recordID)
+        guard let i = items[index].installations.firstIndex(where: { $0.deviceID == deviceID }),
+              (items[index].installations[i].iCloudSignedOut == true) != on else { return false }
+        let previous = items
+        items[index].installations[i].iCloudSignedOut = on ? true : nil
+        if !on { items[index].installations[i].iCloudSignedOutMissing = nil }
         do { try save() } catch { items = previous; throw error }
         return true
     }

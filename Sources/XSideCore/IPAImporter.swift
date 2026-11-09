@@ -63,6 +63,7 @@ public enum IPAImporter {
                        minimumOSVersion: info.minimumOSVersion,
                        // The executable's SDK first: the one iOS goes by (preflight, Duo option).
                        sdkVersion: duo.sdkVersion ?? info.sdkVersion, duo: duo,
+                       icloud: ICloudAppInfo.read(executable: executable, entitlements: entitlements),
                        hasLegacy32: MachOThinner.hasARM32Slices(under: app))
     }
 

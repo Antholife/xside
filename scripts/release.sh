@@ -29,6 +29,9 @@ WELCOME="$APP/Contents/Resources/XSideWelcome.dylib"
 if strings -a "$WELCOME" | grep -qE 'XSIDE_TEST_(REMINDER|LATE)_BUILD'; then
     echo "$WELCOME is a test build (XSIDE_TEST_REMINDER / XSIDE_TEST_LATE): not releasing it" >&2; exit 1
 fi
+# The "Simulate signed-out iCloud" option adds this one: an app would go without it silently.
+ICLOUD="$APP/Contents/Resources/XSideICloud.dylib"
+[ -f "$ICLOUD" ] || { echo "No $ICLOUD (iOS SDK missing?): not releasing without it" >&2; exit 1; }
 ZIP="build/release/XSide-$TAG.zip"
 mkdir -p build/release
 rm -f "$ZIP"

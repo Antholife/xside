@@ -37,6 +37,8 @@ public enum CrashAction: String, Codable, Sendable, CaseIterable {
     case turnOffDuo
     /// A signature problem: signing it again is the fix.
     case refresh
+    /// The app stopped in CloudKit: "Simulate signed-out iCloud" makes it believe no account is signed in.
+    case turnOnICloudSignedOut
 
     /// The action the diagnosis suggests, if XSide can do it. A tweak XSide added would be
     /// removed here; XSide doesn't add tweaks yet, so a tweak crash has no button.
@@ -45,6 +47,7 @@ public enum CrashAction: String, Codable, Sendable, CaseIterable {
         case .xsideModule: return .reinstallWithoutXSide
         case .noSceneSupport: return d.duoCompatibilityOn ? .turnOffDuo : nil
         case .codeSignature: return .refresh
+        case .iCloud: return d.iCloudSignedOutOn == true || d.iCloudSignedOutUnavailable == true ? nil : .turnOnICloudSignedOut
         default: return nil
         }
     }

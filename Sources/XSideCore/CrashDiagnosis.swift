@@ -251,8 +251,15 @@ public struct CrashContext: Equatable, Sendable {
     public var tweakNames: Set<String>
     /// The installation has the iPhone Duo option: its SDK raise is what makes iOS ask for scenes.
     public var duoCompatibilityOn: Bool
+    /// The installation has "Simulate signed-out iCloud": an iCloud crash is then one it doesn't cover.
+    public var iCloudSignedOutOn: Bool
+    /// The option can't be turned on (a paid team): an iCloud crash suggests nothing.
+    public var iCloudSignedOutUnavailable: Bool
 
-    public init(moduleName: String, tweakNames: Set<String> = [], duoCompatibilityOn: Bool = false) {
+    public init(moduleName: String, tweakNames: Set<String> = [], duoCompatibilityOn: Bool = false,
+                iCloudSignedOutOn: Bool = false, iCloudSignedOutUnavailable: Bool = false) {
+        self.iCloudSignedOutOn = iCloudSignedOutOn
+        self.iCloudSignedOutUnavailable = iCloudSignedOutUnavailable
         self.moduleName = moduleName
         self.tweakNames = tweakNames
         self.duoCompatibilityOn = duoCompatibilityOn
@@ -275,6 +282,10 @@ public struct CrashDiagnosis: Codable, Equatable, Sendable {
     /// missingLibrary/missingSymbol: the library is the app's own (a framework or a tweak), not iOS's.
     public var inApp: Bool?
     public var duoCompatibilityOn: Bool
+    /// The installation had "Simulate signed-out iCloud" on (nil in older crash files: off).
+    public var iCloudSignedOutOn: Bool?
+    /// The option couldn't be turned on there (a paid team). nil: it could.
+    public var iCloudSignedOutUnavailable: Bool?
     public var date: Date?
     public var appVersion: String?
     public var exceptionType: String?
@@ -353,6 +364,8 @@ public enum CrashClassifier {
         // A trap inside CloudKit itself: the app uses iCloud, which a free account's profile lacks.
         if stack.first?.image == "CloudKit", log.exceptionType == "EXC_BREAKPOINT" || !log.exceptionBacktrace.isEmpty {
             d.cause = .iCloud
+            d.iCloudSignedOutOn = context.iCloudSignedOutOn ? true : nil
+            d.iCloudSignedOutUnavailable = context.iCloudSignedOutUnavailable ? true : nil
             return d
         }
         // The app-side code closest to the crash.

@@ -22,11 +22,15 @@ public struct InstallOptions: Codable, Equatable, Sendable {
     /// the pipeline sets it for each job from `Installation.duoCompatibility` (the app's options
     /// themselves leave it nil).
     public var duoCompatibility: Bool?
+    /// Add the signed-out iCloud library (see `ICloudSignedOut`) to this signing. Chosen per
+    /// device, like `duoCompatibility`: the pipeline sets it from `Installation.iCloudSignedOut`.
+    public var iCloudSignedOut: Bool?
     public init(displayName: String? = nil, customBundleID: String? = nil, version: String? = nil,
                 iconPath: String? = nil, fileSharing: Bool = false, iPadFullScreen: Bool = false,
                 proMotion: Bool = false, minimumOSVersion: String? = nil, shareKeychain: Bool = false,
-                withoutXSideFeatures: Bool? = nil, duoCompatibility: Bool? = nil) {
+                withoutXSideFeatures: Bool? = nil, duoCompatibility: Bool? = nil, iCloudSignedOut: Bool? = nil) {
         self.duoCompatibility = duoCompatibility
+        self.iCloudSignedOut = iCloudSignedOut
         self.displayName = displayName
         self.customBundleID = customBundleID
         self.version = version
@@ -53,6 +57,7 @@ public struct InstallOptions: Codable, Equatable, Sendable {
         shareKeychain = try c.decodeIfPresent(Bool.self, forKey: .shareKeychain) ?? false
         withoutXSideFeatures = try c.decodeIfPresent(Bool.self, forKey: .withoutXSideFeatures)
         duoCompatibility = try c.decodeIfPresent(Bool.self, forKey: .duoCompatibility)
+        iCloudSignedOut = try c.decodeIfPresent(Bool.self, forKey: .iCloudSignedOut)
     }
 }
 
@@ -60,6 +65,9 @@ public struct Resigner: Sendable {
     private let runner: CommandRunning
     /// The welcome popup's iOS library (XSide.app's resource), nil when this build has none.
     private let welcomeDylib: URL?
+    /// The signed-out iCloud library (`XSideICloud.dylib`, XSide.app's resource), nil when this
+    /// build has none: the option then adds nothing (see `hasICloudSignedOut`).
+    private let iCloudLibrary: URL?
     /// The section added to the app's iOS Settings page, built from the profile it's signed with
     /// and the installation's facts (nil when the caller has none).
     private let settingsSection: (@Sendable (ProvisioningProfile, InstallationFacts?) -> SettingsSection)?
@@ -78,8 +86,10 @@ public struct Resigner: Sendable {
     public init(runner: CommandRunning, welcomeDylib: URL? = nil,
                 settingsSection: (@Sendable (ProvisioningProfile, InstallationFacts?) -> SettingsSection)? = nil,
                 welcome: @escaping @Sendable (ProvisioningProfile) -> WelcomePayload? = { _ in nil },
-                textLanguage: @escaping @Sendable (InstallationFacts?) -> String = { _ in "en" }) {
+                textLanguage: @escaping @Sendable (InstallationFacts?) -> String = { _ in "en" },
+                iCloudLibrary: URL? = nil) {
         self.runner = runner
+        self.iCloudLibrary = iCloudLibrary
         self.welcomeDylib = welcomeDylib
         self.settingsSection = settingsSection
         self.welcome = welcome
@@ -100,6 +110,7 @@ public struct Resigner: Sendable {
                        iconURL: URL?, profileURL: URL, profile: ProvisioningProfile,
                        identitySHA1: String, otherBundleIDs: Set<String> = [], facts: InstallationFacts? = nil,
                        onDuo: @Sendable (DuoOutcome?) async -> Void = { _ in },
+                       onICloud: @Sendable () async -> Void = {},
                        onThinning: @Sendable () async -> Void = {},
                        onSigning: @Sendable () async -> Void = {}) async throws -> URL {
         let fm = FileManager.default
@@ -137,6 +148,9 @@ public struct Resigner: Sendable {
         if !thinned.isEmpty { Self.logger.info("removed 32-bit ARM slices from \(thinned.count) file(s)") }
 
         let features = options.withoutXSideFeatures != true
+        let library = features && welcomeDylib.map { FileManager.default.fileExists(atPath: $0.path) } == true
+        let iCloudAsked = options.iCloudSignedOut == true
+        let shim = iCloudAsked && iCloudLibrary.map { FileManager.default.fileExists(atPath: $0.path) } == true
         // Asked for this device: patched on a copy that replaces the executable only once it
         // declares the new SDK (XSide's load command included, when the features are on, so
         // both get the room); the Info.plist keys follow. Any problem leaves the executable
@@ -147,9 +161,8 @@ public struct Resigner: Sendable {
             let outcome: DuoOutcome
             switch duoPlan(app: app, executable: executableURL) {
             case .plan(let plan):
-                let library = features && welcomeDylib.map { FileManager.default.fileExists(atPath: $0.path) } == true
-                if await applyDuo(to: executableURL, growth: plan.growth, loading: library ? Self.welcomeLoadPath : nil,
-                                  workDir: workDir) {
+                let loading = (library ? [Self.welcomeLoadPath] : []) + (shim ? [ICloudSignedOut.loadPath] : [])
+                if await applyDuo(to: executableURL, growth: plan.growth, loading: loading, workDir: workDir) {
                     duoApplied = plan
                     outcome = .added
                 } else {
@@ -160,13 +173,24 @@ public struct Resigner: Sendable {
             }
             await onDuo(outcome)
         }
+        // Its own library, independent of XSide's module: added before it, so the room the
+        // module needs is counted too (the toolchain run paths go only when both don't fit).
+        var iCloudApplied = false
+        if iCloudAsked {
+            await onICloud()
+            iCloudApplied = shim && addICloudLibrary(to: app, executable: executableURL,
+                                                     alsoLoading: library ? Self.welcomeLoadPath : nil)
+        }
         // The library first among what follows: the payload, Bonjour keys and quick actions mean
         // nothing without it (quick actions nothing handles would be a regression), so they
         // follow its outcome. After a Duo patch its load command is already there.
         let hasLibrary = features && addWelcomePopup(to: app, executable: executableURL)
         let payload = hasLibrary ? welcome(profile).map { Self.payload($0, with: facts) } : nil
+        // The default container stands for the app's own: its original id and declared containers.
+        let iCloudKeys = iCloudApplied
+            ? (originalBundleID: info.bundleID, containers: ICloudSignedOut.containerIdentifiers(originalEntitlements)) : nil
         try editInfoPlist(app: app, bundleID: bundleID, options: options, payload: payload, features: hasLibrary,
-                          language: textLanguage(facts), duo: duoApplied)
+                          language: textLanguage(facts), duo: duoApplied, iCloud: iCloudKeys)
         if let iconURL { try await applyIcon(iconURL, to: app, workDir: workDir) }
         // The section's switches are read by the library: without it they'd do nothing.
         if hasLibrary, let settingsSection {
@@ -227,6 +251,43 @@ public struct Resigner: Sendable {
         }
     }
 
+    // MARK: - Signed-out iCloud
+
+    /// Copies `XSideICloud.dylib` into `Frameworks/` and makes the executable load it (weakly: a
+    /// missing library never stops the app, it then behaves as without the option). When the
+    /// header lacks room for it (and for `alsoLoading`, XSide's module, added next), the build
+    /// Mac's toolchain run paths go first. Never fails the install: on any problem the library is
+    /// removed and the executable keeps no command naming it. Returns whether it's in the app.
+    private func addICloudLibrary(to app: URL, executable: URL, alsoLoading other: String?) -> Bool {
+        guard let iCloudLibrary else { return false }
+        let fm = FileManager.default
+        let target = app.appendingPathComponent("Frameworks/\(ICloudSignedOut.dylibName)")
+        do {
+            try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if exists(target) { try fm.removeItem(at: target) }
+            try fm.copyItem(at: iCloudLibrary, to: target)
+            // Only what isn't there yet (a Duo patch already added both).
+            let needed = ([ICloudSignedOut.loadPath] + (other.map { [$0] } ?? []))
+                .filter { !MachOPatcher.loadsDylib($0, in: executable) }
+                .reduce(0) { $0 + MachOPatcher.dylibCommand($1).count }
+            makeRoom(in: executable, needing: needed)
+            let outcome = try MachOPatcher.addWeakDylib(ICloudSignedOut.loadPath, to: executable)
+            Self.logger.info("signed-out iCloud added (\(outcome == .added ? "new load command" : "already loaded"))")
+            return true
+        } catch {
+            try? fm.removeItem(at: target)
+            Self.logger.notice("signed-out iCloud skipped: \(String(describing: error))")
+            return false
+        }
+    }
+
+    /// Whether the signed `app` holds the signed-out iCloud library.
+    public func hasICloudSignedOut(_ app: URL) -> Bool {
+        guard iCloudLibrary != nil else { return false }
+        let url = app.appendingPathComponent("Frameworks/\(ICloudSignedOut.dylibName)")
+        return (try? FileManager.default.attributesOfItem(atPath: url.path)[.type] as? FileAttributeType) == .typeRegular
+    }
+
     // MARK: - iPhone Duo compatibility
 
     /// What the Duo option does to an app: the bytes its version command grows by, and the scene
@@ -272,8 +333,9 @@ public struct Resigner: Sendable {
     /// replaces the executable only once every slice declares 27.1. Never fails the install: on
     /// any problem the executable stays exactly as it was (run paths included). Returns whether
     /// it now declares 27.1.
-    /// `loading`: XSide's library, whose load command goes in the copy first (it takes room too).
-    private func applyDuo(to executable: URL, growth: Int, loading dylibPath: String?, workDir: URL) async -> Bool {
+    /// `loading`: XSide's libraries (its module, the signed-out iCloud one), whose load commands go
+    /// in the copy first (they take room too).
+    private func applyDuo(to executable: URL, growth: Int, loading dylibPaths: [String], workDir: URL) async -> Bool {
         let fm = FileManager.default
         let tag = UUID().uuidString
         let input = workDir.appendingPathComponent("duo-\(tag)-in")
@@ -286,12 +348,12 @@ public struct Resigner: Sendable {
         }
         do {
             try fm.copyItem(at: executable, to: input)
-            let command = dylibPath.map { MachOPatcher.dylibCommand($0).count } ?? 0
-            makeRoom(in: input, needing: growth + command)
-            if let dylibPath {
+            let commands = dylibPaths.reduce(0) { $0 + MachOPatcher.dylibCommand($1).count }
+            makeRoom(in: input, needing: growth + commands)
+            for dylibPath in dylibPaths {
                 // Its own failure (no room) is the library's, found again when it's added for real.
                 do { _ = try MachOPatcher.addWeakDylib(dylibPath, to: input) } catch {
-                    Self.logger.notice("duo compatibility: XSide's load command didn't fit: \(String(describing: error))")
+                    Self.logger.notice("duo compatibility: \(dylibPath) didn't fit: \(String(describing: error))")
                 }
             }
             let slices = try MachOBuildInfo.slices(of: input)
@@ -331,9 +393,9 @@ public struct Resigner: Sendable {
         guard bytes > 0, let free = try? MachOPatcher.freeSpace(in: executable), free < bytes else { return }
         do {
             let removed = try MachOPatcher.removeRpaths(from: executable, where: DuoCompatibility.isBuildMacToolchainPath)
-            Self.logger.info("duo compatibility: \(free) bytes free for \(bytes), removed \(removed.count) toolchain rpath(s)")
+            Self.logger.info("load commands: \(free) bytes free for \(bytes), removed \(removed.count) toolchain rpath(s)")
         } catch {
-            Self.logger.notice("duo compatibility: couldn't make room: \(String(describing: error))")
+            Self.logger.notice("load commands: couldn't make room: \(String(describing: error))")
         }
     }
 
@@ -524,7 +586,8 @@ public struct Resigner: Sendable {
     // MARK: - Info.plist
 
     private func editInfoPlist(app: URL, bundleID: String, options: InstallOptions,
-                               payload: WelcomePayload?, features: Bool, language: String, duo: DuoPlan?) throws {
+                               payload: WelcomePayload?, features: Bool, language: String, duo: DuoPlan?,
+                               iCloud: (originalBundleID: String, containers: [String])?) throws {
         let url = app.appendingPathComponent("Info.plist")
         let data = try IPAInspector.infoPlistData(of: app)
         var format = PropertyListSerialization.PropertyListFormat.binary
@@ -546,6 +609,11 @@ public struct Resigner: Sendable {
         if options.proMotion { plist["CADisableMinimumFrameDurationOnPhone"] = true }
         if let min = options.minimumOSVersion { plist["MinimumOSVersion"] = min }
         if let duo { DuoCompatibility.applyInfoPlist(&plist, sceneDelegateClass: duo.sceneDelegate) }
+        // Cleared first too (the .ipa may carry them); read by the signed-out iCloud library.
+        ICloudSignedOut.clearInfoPlist(&plist)
+        if let iCloud {
+            ICloudSignedOut.applyInfoPlist(&plist, originalBundleID: iCloud.originalBundleID, containers: iCloud.containers)
+        }
         let executable = plist["CFBundleExecutable"] as? String ?? "App"
         Self.plainBundleName(&plist, executable: executable)
         // Cleared first: an app signed by XSide before carries the previous payload.

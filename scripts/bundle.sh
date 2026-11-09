@@ -57,8 +57,15 @@ if xcrun -sdk iphoneos --show-sdk-path >/dev/null 2>&1; then
         -install_name @executable_path/Frameworks/XSideWelcome.dylib \
         -o "$APP/Contents/Resources/XSideWelcome.dylib" App/Welcome/*.m
     rm -rf "$WELCOME_GEN"
+    # The "Simulate signed-out iCloud" library (App/ICloud), an install option of its own:
+    # independent of the module above, added only to the installations that have the option.
+    # Foundation only: CloudKit is hooked when the app loads it.
+    xcrun -sdk iphoneos clang -dynamiclib -arch arm64 -mios-version-min=15.0 -fobjc-arc -O2 -Wall \
+        -I App/ICloud -framework Foundation \
+        -install_name @executable_path/Frameworks/XSideICloud.dylib \
+        -o "$APP/Contents/Resources/XSideICloud.dylib" App/ICloud/*.m
 else
-    echo "warning: no iOS SDK, building without the welcome popup library" >&2
+    echo "warning: no iOS SDK, building without the welcome popup and signed-out iCloud libraries" >&2
 fi
 # Sparkle (self-updates): the framework next to the executable, found through its rpath.
 mkdir -p "$APP/Contents/Frameworks"

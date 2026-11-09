@@ -19,13 +19,17 @@ public struct AppInfo: Equatable, Sendable {
     /// What decides the iPhone Duo option (read from the main executable at import); nil when
     /// not read.
     public let duo: DuoAppInfo?
+    /// What decides the signed-out iCloud option (entitlements and main executable, read at
+    /// import); nil when not read.
+    public let icloud: ICloudAppInfo?
     /// Some Mach-O of the app still carries a legacy 32-bit ARM slice, which XSide removes at signing.
     public let hasLegacy32: Bool
 
     public init(bundleID: String, name: String, version: String?, executable: String,
                 sharedKeychainGroups: [String] = [], sharedKeychainVendor: String? = nil,
                 minimumOSVersion: String? = nil, sdkVersion: String? = nil, duo: DuoAppInfo? = nil,
-                hasLegacy32: Bool = false) {
+                icloud: ICloudAppInfo? = nil, hasLegacy32: Bool = false) {
+        self.icloud = icloud
         self.hasLegacy32 = hasLegacy32
         self.sdkVersion = sdkVersion
         self.duo = duo

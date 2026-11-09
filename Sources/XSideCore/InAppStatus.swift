@@ -203,6 +203,8 @@ public enum InstallSummary {
         case shareKeychain(Bool)
         /// iPhone Duo compatibility: the devices getting it (empty: none).
         case duoCompatibility([String])
+        /// "Simulate signed-out iCloud": the devices getting it (empty: none).
+        case iCloudSignedOut([String])
         case openAppAfter(Bool), openTrustPage(Bool)
         case xsideFeatures(Bool)
         case messages(MessageLevel)
@@ -216,11 +218,13 @@ public enum InstallSummary {
     /// keychain groups (the option exists only then). The Trust page is listed only when the app
     /// is opened after the install (it can't open otherwise). `duoDevices`: the names of the
     /// devices getting iPhone Duo compatibility; `offersDuo`: a Duo is among the targets (the line
-    /// then shows even when none gets it).
+    /// then shows even when none gets it). `iCloudDevices` / `offersICloud`: the same for
+    /// "Simulate signed-out iCloud" (offered: the app uses iCloud).
     public static func lines(options o: InstallOptions, inApp s: InAppSettings, withoutXSideFeatures: Bool,
                              openAppAfter: Bool, openTrustPage: Bool,
                              offersKeychain: Bool, duoDevices: [String] = [],
-                             offersDuo: Bool = false) -> (install: [Line], inApp: [Line]) {
+                             offersDuo: Bool = false, iCloudDevices: [String] = [],
+                             offersICloud: Bool = false) -> (install: [Line], inApp: [Line]) {
         var install: [Line] = []
         if let v = o.displayName { install.append(.displayName(v)) }
         if let v = o.customBundleID { install.append(.bundleID(v)) }
@@ -233,6 +237,7 @@ public enum InstallSummary {
         if install.isEmpty { install.append(.appUnchanged) }
         if offersKeychain { install.append(.shareKeychain(o.shareKeychain)) }
         if offersDuo || !duoDevices.isEmpty { install.append(.duoCompatibility(duoDevices)) }
+        if offersICloud || !iCloudDevices.isEmpty { install.append(.iCloudSignedOut(iCloudDevices)) }
         install.append(.openAppAfter(openAppAfter))
         if openAppAfter { install.append(.openTrustPage(openTrustPage)) }
 

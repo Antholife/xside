@@ -36,7 +36,7 @@ public enum MachOPatcher {
         var seen = Set<Int>()
         for start in starts where seen.insert(start).inserted {
             let commands = try loadCommands(data, at: start)
-            if commands.contains(where: { [loadDylib, loadWeakDylib].contains($0.cmd) && name(data, $0) == dylibPath }) {
+            if commands.contains(where: { [loadDylib, loadWeakDylib].contains($0.cmd) && dylibName(data, $0) == dylibPath }) {
                 continue
             }
             let end = start + headerSize + Int(u32(data, start + 20))
@@ -63,6 +63,16 @@ public enum MachOPatcher {
         }
         do { try data.write(to: executable, options: .atomic) } catch { throw Failure.notMachO }
         return .added
+    }
+
+    /// Whether every 64-bit slice of `executable` already loads `dylibPath` (false when unreadable).
+    public static func loadsDylib(_ dylibPath: String, in executable: URL) -> Bool {
+        guard let data = try? Data(contentsOf: executable, options: .mappedIfSafe),
+              let starts = try? IPAInspector.sliceOffsets(data), !starts.isEmpty else { return false }
+        return starts.allSatisfy { start in
+            guard let commands = try? loadCommands(data, at: start) else { return false }
+            return commands.contains { [loadDylib, loadWeakDylib].contains($0.cmd) && dylibName(data, $0) == dylibPath }
+        }
     }
 
     /// The free bytes between the load commands and the first section, in the slice that has
@@ -209,7 +219,8 @@ public enum MachOPatcher {
         return first
     }
 
-    private static func name(_ data: Data, _ c: (cmd: UInt32, pos: Int, size: Int)) -> String? {
+    /// The library a `dylib_command` names (its `lc_str` offset, NUL-terminated within the command).
+    static func dylibName(_ data: Data, _ c: (cmd: UInt32, pos: Int, size: Int)) -> String? {
         guard c.size >= 24 else { return nil }
         let offset = Int(u32(data, c.pos + 8))
         guard offset >= 24, offset < c.size else { return nil }

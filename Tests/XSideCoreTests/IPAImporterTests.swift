@@ -65,7 +65,8 @@ struct IPAImporterTests {
 
         let info = try await IPAImporter.inspect(ipa: ipa, runner: ProcessRunner(), scratchRoot: scratch)
         #expect(info == AppInfo(bundleID: "com.example.demo", name: "Démo", version: "2.0", executable: "Demo",
-                                duo: DuoAppInfo(sdkVersion: nil, adoptsScenes: false, sceneDelegateClass: nil)))
+                                duo: DuoAppInfo(sdkVersion: nil, adoptsScenes: false, sceneDelegateClass: nil),
+                                icloud: ICloudAppInfo(usesICloud: false)))
         #expect(isEmpty(scratch))
     }
 

@@ -15,6 +15,7 @@ public protocol Resigning: Sendable {
                 iconURL: URL?, profileURL: URL, profile: ProvisioningProfile,
                 identitySHA1: String, otherBundleIDs: Set<String>, facts: InstallationFacts?,
                 onDuo: @Sendable (DuoOutcome?) async -> Void,
+                onICloud: @Sendable () async -> Void,
                 onThinning: @Sendable () async -> Void,
                 onSigning: @Sendable () async -> Void) async throws -> URL
     /// Whether the signed `app` holds XSide's library: features asked for can still be missing
@@ -22,10 +23,13 @@ public protocol Resigning: Sendable {
     func hasXSideLibrary(_ app: URL) -> Bool
     /// Whether the signed `app` fills an iPhone Duo's screens (see `DuoCompatibility`).
     func hasDuoCompatibility(_ app: URL) -> Bool
+    /// Whether the signed `app` holds the signed-out iCloud library (see `ICloudSignedOut`).
+    func hasICloudSignedOut(_ app: URL) -> Bool
 }
 
 extension Resigning {
     public func hasDuoCompatibility(_ app: URL) -> Bool { false }
+    public func hasICloudSignedOut(_ app: URL) -> Bool { false }
 }
 
 public protocol Installing: Sendable {
@@ -50,7 +54,8 @@ public enum InstallStep: Int, CaseIterable, Sendable {
     /// `welcome`: unpacking the app and adding the XSide welcome popup to it, before signing.
     /// `duo`: adding iPhone Duo compatibility, only when it was asked for.
     /// `legacy32`: removing the old 32-bit code, only when the app has some.
-    case profile, welcome, legacy32, duo, signing, installing
+    /// `icloud`: adding the signed-out iCloud library, only when it was asked for.
+    case profile, welcome, legacy32, duo, icloud, signing, installing
 }
 
 /// FIFO async mutex: `run` bodies execute one at a time, in arrival order. A task already
@@ -228,9 +233,11 @@ public actor SideloadPipeline {
     /// `duoCompatibility`: the iPhone Duo option for this device, remembered on the installation;
     /// nil keeps the installation's own choice (off for a new one). When it applies, `.duo` is a
     /// step of its own and `duoOutcome` tells how it went as soon as it's known.
+    /// `iCloudSignedOut`: "Simulate signed-out iCloud" for this device, the same way (`.icloud`).
     public func install(recordID: UUID, device: Device,
                         environment: @escaping @Sendable () async throws -> SigningEnvironment,
                         refresh: Bool = false, inApp: InAppDraft? = nil, duoCompatibility: Bool? = nil,
+                        iCloudSignedOut: Bool? = nil,
                         progress: @escaping @Sendable (InstallStep) async -> Void = { _ in },
                         duoOutcome: @escaping @Sendable (DuoOutcome) async -> Void = { _ in }) async throws -> Installation {
         let previous = tails[device.id]?.task
@@ -239,7 +246,8 @@ public actor SideloadPipeline {
             try await waitCancellably(for: previous)
             try Task.checkCancellation()
             return try await self.perform(recordID: recordID, device: device, environment: environment,
-                                          refresh: refresh, inApp: inApp, duo: duoCompatibility, progress: progress,
+                                          refresh: refresh, inApp: inApp, duo: duoCompatibility,
+                                          iCloud: iCloudSignedOut, progress: progress,
                                           duoOutcome: duoOutcome)
         }
         // The chain waits for the previous job too: one cancelled while queued ends at once, and a
@@ -315,11 +323,12 @@ public actor SideloadPipeline {
 
     /// A fixed environment (tests, callers that just probed).
     public func install(recordID: UUID, device: Device, env: SigningEnvironment, refresh: Bool = false,
-                        inApp: InAppDraft? = nil, duoCompatibility: Bool? = nil,
+                        inApp: InAppDraft? = nil, duoCompatibility: Bool? = nil, iCloudSignedOut: Bool? = nil,
                         progress: @escaping @Sendable (InstallStep) async -> Void = { _ in },
                         duoOutcome: @escaping @Sendable (DuoOutcome) async -> Void = { _ in }) async throws -> Installation {
         try await install(recordID: recordID, device: device, environment: { env }, refresh: refresh, inApp: inApp,
-                          duoCompatibility: duoCompatibility, progress: progress, duoOutcome: duoOutcome)
+                          duoCompatibility: duoCompatibility, iCloudSignedOut: iCloudSignedOut, progress: progress,
+                          duoOutcome: duoOutcome)
     }
 
     /// Thrown inside the provisioning lock when `environment` fails, to tell it from a job failure.
@@ -327,7 +336,7 @@ public actor SideloadPipeline {
 
     private nonisolated func perform(recordID: UUID, device: Device,
                                      environment: @escaping @Sendable () async throws -> SigningEnvironment,
-                                     refresh: Bool, inApp draft: InAppDraft?, duo: Bool?,
+                                     refresh: Bool, inApp draft: InAppDraft?, duo: Bool?, iCloud: Bool?,
                                      progress: @escaping @Sendable (InstallStep) async -> Void,
                                      duoOutcome: @escaping @Sendable (DuoOutcome) async -> Void) async throws -> Installation {
         guard let record = await library.records().first(where: { $0.id == recordID }) else {
@@ -406,6 +415,8 @@ public actor SideloadPipeline {
             // Per device: this job's choice, else the installation's.
             let duoAsked = duo ?? (previous?.duoCompatibility == true)
             options.duoCompatibility = duoAsked
+            let iCloudAsked = iCloud ?? (previous?.iCloudSignedOut == true)
+            options.iCloudSignedOut = iCloudAsked
             // The job's tools all use the Xcode of the environment it started with.
             let app = try await CommandEnvironment.withDeveloperDir(current.developerDir) { [resigner] in
                 try await resigner.resign(
@@ -419,6 +430,10 @@ public actor SideloadPipeline {
                             await progress(.duo)
                             Self.logger.info("\(what): adding iPhone Duo compatibility")
                         }
+                    },
+                    onICloud: {
+                        await progress(.icloud)
+                        Self.logger.info("\(what): adding signed-out iCloud")
                     },
                     onThinning: {
                         await progress(.legacy32)
@@ -457,7 +472,9 @@ public actor SideloadPipeline {
                                       duoCompatibility: duoAsked ? true : nil,
                                       duoCompatibilityMissing: duoAsked && !resigner.hasDuoCompatibility(app) ? true : nil,
                                       // Kept when devicectl doesn't say what the device is.
-                                      onDuo: device.isDuo(remembered: previous?.onDuo) ? true : nil)
+                                      onDuo: device.isDuo(remembered: previous?.onDuo) ? true : nil,
+                                      iCloudSignedOut: iCloudAsked ? true : nil,
+                                      iCloudSignedOutMissing: iCloudAsked && !resigner.hasICloudSignedOut(app) ? true : nil)
             let installation = try await library.recordSigning(signed, for: recordID, requireExisting: previous != nil)
             Self.logger.notice("\(what): done, expires \(installation.expiresAt.formatted(.iso8601))")
             return installation
