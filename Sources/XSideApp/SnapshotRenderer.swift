@@ -91,25 +91,43 @@ enum SnapshotRenderer {
                         ICloudOptionsCard(model: model, flow: flow)
                         CompatibilityFixCard { Legacy32InfoRow(appName: flow.appDisplayName, applied: flow.info?.hasLegacy32) }
                     }
-                    InstallTweaksSection(model: model, flow: flow)
                 }
                 .padding(20).frame(width: InstallWindow.width).background(Color(nsColor: .windowBackgroundColor)),
                        dark: dark, to: out.appendingPathComponent("install-step2-\(language)-\(scheme).png"))
                 render(InstallSummaryView(model: model, flow: flow)
                         .padding(20).frame(width: InstallWindow.width).background(Color(nsColor: .windowBackgroundColor)),
                        dark: dark, to: out.appendingPathComponent("install-summary-\(language)-\(scheme).png"))
-                // The tweaks on two devices: ✅ on both; 🔧 with every change and a note; ❌ needs a
-                // jailbreak; ✅ on one and ❌ iOS on the other; made for another app, forced on one.
-                render(InstallTweaksSection(model: model, flow: flow)
-                        .padding(20).frame(width: InstallWindow.width).background(Color(nsColor: .windowBackgroundColor)),
-                       dark: dark, to: out.appendingPathComponent("tweaks-\(language)-\(scheme).png"))
-                // « Dépendances »: every status, then missing ones with each kind of action (a known
-                // page and a trusted repo with the last add's error, a known page only, two searches
-                // while a .deb is checked, an id too odd to search for).
-                let names = Dictionary(uniqueKeysWithValues: sample.devices.map { ($0.id, $0.name) })
-                render(Self.dependencies([sample.deviceIDs[0], sample.deviceIDs[1]], names: names)
-                        .background(Color(nsColor: .windowBackgroundColor)),
-                       dark: dark, to: out.appendingPathComponent("deps-\(language)-\(scheme).png"))
+                // Step ③ as the approved mockup (A): two devices, then one; empty (B); the kept
+                // downloads (C).
+                for (suffix, ids) in [("", sample.deviceIDs), ("-single", [sample.deviceIDs[0]])] {
+                    let step = sample.flow()
+                    step.deviceIDs = ids
+                    step.step = 2
+                    model.showSnapshotFlow(step)
+                    render(VStack(alignment: .leading, spacing: 14) {
+                        StepBar(flow: step)
+                        InstallTweaksSection(model: model, flow: step)
+                    }
+                    .padding(20).frame(width: InstallWindow.width).background(Color(nsColor: .windowBackgroundColor)),
+                           dark: dark, to: out.appendingPathComponent("tweaks\(suffix)-\(language)-\(scheme).png"))
+                }
+                let empty = sample.flow()
+                empty.tweaks = []
+                empty.tweakErrors = []
+                empty.step = 2
+                model.showSnapshotFlow(empty)
+                render(VStack(alignment: .leading, spacing: 14) {
+                    StepBar(flow: empty)
+                    InstallTweaksSection(model: model, flow: empty)
+                }
+                .padding(20).frame(width: InstallWindow.width).background(Color(nsColor: .windowBackgroundColor)),
+                       dark: dark, to: out.appendingPathComponent("tweaks-empty-\(language)-\(scheme).png"))
+                model.showSnapshotFlow(nil)
+                render(DownloadedDependenciesTable(usage: sample.downloads, deviceName: { id in
+                    DeviceShortName.short(sample.devices.first { $0.id == id }?.name ?? id)
+                }, remove: { _ in }, removeUnused: {}, done: {})
+                    .background(Color(nsColor: .windowBackgroundColor)),
+                       dark: dark, to: out.appendingPathComponent("downloads-\(language)-\(scheme).png"))
                 // One device, no tweak: « Aucun ».
                 let single = sample.flow()
                 single.deviceIDs = [sample.deviceIDs[1]]
@@ -160,37 +178,6 @@ enum SnapshotRenderer {
         }
     }
 
-    /// The iPhone has Alderis and the iPad doesn't: per-device lines for it.
-    @MainActor private static func dependencies(_ deviceIDs: [String], names: [String: String]) -> some View {
-        func row(_ i: Int, _ id: String, _ relation: String? = nil, _ version: String? = nil,
-                 is status: (DebDependency) -> DependencyStatus, added: String? = nil) -> DependencyRow {
-            let dep = DebDependency(package: id, relation: relation, version: version)
-            return DependencyRow(id: i, statuses: [DependencyDeviceStatus(deviceID: nil, dependency: dep, status: status(dep),
-                                                                          addedVersion: added)])
-        }
-        let alderis = DebDependency(package: "com.hbang.alderis", relation: ">=", version: "1.1")
-        let rows = [
-            row(0, "ws.hbang.common", ">=", "1.16", is: { _ in .providedByXSide("Cephei") }),
-            DependencyRow(id: 1, statuses: [
-                DependencyDeviceStatus(deviceID: deviceIDs[0], dependency: alderis, status: .addedByYou("Alderis"), addedVersion: "1.2.1"),
-                DependencyDeviceStatus(deviceID: deviceIDs[1], dependency: alderis, status: .missing(alderis), addedVersion: nil),
-            ]),
-            row(2, "libroot", is: { _ in .builtIntoTweak("libroot") }),
-            row(3, "mobilesubstrate", is: { _ in .notNeeded }),
-            row(4, "com.rpetrich.rocketbootstrap", is: { _ in .jailbreakOnly("RocketBootstrap") }),
-            row(5, "com.opa334.altlist", ">=", "1.0", is: { .missing($0) }),
-            row(6, "com.mrgcgamer.libgcuniversal", is: { .missing($0) }),
-            row(7, "com.example.libfancy", ">>", "2.0", is: { .missing($0) }),
-            row(8, "lib_odd name", is: { .missing($0) }),
-        ]
-        return TweakDependenciesView(tweakName: "InstaPlus Reborn", rows: rows, deviceNames: names,
-                                     errors: ["com.opa334.altlist": L("deps.tooNew", "2.1", "< 2.0")],
-                                     notices: ["com.hbang.alderis": L("deps.added", "Alderis 1.2.1", names[deviceIDs[0]] ?? "")
-                                                + " " + L("deps.added.tweakOn", "InstaPlus Reborn")],
-                                     beingAdded: ["com.example.libfancy"], maxListHeight: .infinity,
-                                     open: { _ in }, addDeb: { _, _ in }, download: { _ in }, done: {})
-    }
-
     /// Lays the view out in an off-screen window at its own size, lets SwiftUI settle (pages report
     /// their height a turn later), and saves what it draws.
     @MainActor private static func render(_ view: some View, dark: Bool, to url: URL) {
@@ -226,6 +213,26 @@ enum SnapshotRenderer {
         let legacyApp: AppRecord
         let deviceIDs: [String]
 
+        /// Cephei used by three tweaks in two apps, AltList by none.
+        var downloads: [DownloadUsage] {
+            let (iPhone, iPad) = (deviceIDs[0], deviceIDs[1])
+            return [
+                DownloadUsage(sha256: String(repeating: "c", count: 64), packageID: "ws.hbang.common", version: "1.17.1",
+                              repo: "chariz", repoName: "Chariz", size: 208_096, downloadedAt: Date(timeIntervalSince1970: 1_800_000_000),
+                              apps: ["Tweak Test", "YouTube"],
+                              users: [DownloadUser(app: "Tweak Test", tweaks: [.init(name: "XSide Test Cephei", deviceIDs: [iPhone])]),
+                                      DownloadUser(app: "YouTube", tweaks: [.init(name: "uYouPlus", deviceIDs: [iPhone, iPad]),
+                                                                            .init(name: "YouPiP", deviceIDs: [iPhone])])]),
+                DownloadUsage(sha256: String(repeating: "a", count: 64), packageID: "com.opa334.altlist", version: "1.0.4",
+                              repo: "opa334", repoName: "opa334", size: 61_440, downloadedAt: Date(timeIntervalSince1970: 1_800_000_000),
+                              apps: []),
+                DownloadUsage(sha256: String(repeating: "b", count: 64), packageID: "com.hbang.alderis", version: "1.2.1",
+                              repo: "chariz", repoName: "Chariz", size: 96_000, downloadedAt: Date(timeIntervalSince1970: 1_800_000_000),
+                              apps: ["YouTube"], users: [DownloadUser(app: "YouTube", tweaks: [.init(name: "Return YouTube Dislike",
+                                                                                                   deviceIDs: [iPhone])])]),
+            ]
+        }
+
         /// An install of `legacyApp` on both devices, Duo compatibility on for the iPhone.
         @MainActor func flow() -> InstallFlow {
             let flow = InstallFlow(ipa: URL(fileURLWithPath: "/tmp/Instagram.ipa"))
@@ -241,24 +248,33 @@ enum SnapshotRenderer {
                 TweakDraft(package: p, directory: URL(fileURLWithPath: "/tmp/\(p.id)"), enabledDevices: on, force: force,
                            verdicts: verdicts, forcedVerdicts: forced, seenDevices: both)
             }
-            let converted = TweakVerdict.converted([.hookingLibrary, .jailbreakPaths, .dependency("Alderis"),
-                                                    .dependencyAdded("Cephei")])
+            let converted = TweakVerdict.converted([.hookingLibrary, .jailbreakPaths, .dependencyAdded("Cephei")])
+            let altlistNeed = DebDependency(package: "com.opa334.altlist", relation: ">=", version: "1.0")
+            let app = legacyApp.originalBundleID
             flow.tweaks = [
-                draft(Self.tweak(1, "Dark Mode Pro", version: "1.4", author: "Lumen", bundles: [legacyApp.originalBundleID]),
+                draft(Self.tweak(1, "YouPiP", version: "1.8.6", author: "PoomSmart", bundles: [app]),
                       on: both, [iPhone: .compatible, iPad: .compatible]),
-                draft(Self.tweak(2, "InstaPlus Reborn", version: "3.2.1", author: "Alex Rivera", bundles: [legacyApp.originalBundleID],
-                                 notes: [.settingsNotConverted]),
-                      on: both, [iPhone: converted, iPad: converted]),
-                draft(Self.tweak(3, "Spotlight Shortcuts", version: "2.0", author: nil, bundles: ["com.apple.springboard"]),
-                      on: [], [iPhone: .incompatible(.needsJailbreak("com.apple.springboard")),
-                               iPad: .incompatible(.needsJailbreak("com.apple.springboard"))]),
-                draft(Self.tweak(4, "Swipe Speed", version: "0.9", author: "kb", bundles: nil),
-                      on: [iPhone], [iPhone: .compatible, iPad: .incompatible(.iOSVersion(required: "≥ 18.0", device: "17.5"))]),
+                draft(Self.tweak(2, "uYouPlus", version: "3.0.5", author: "MiRO92", bundles: [app], notes: [.settingsNotConverted],
+                                 depends: [[altlistNeed]]),
+                      on: [iPhone], [iPhone: converted, iPad: converted]),
+                draft(Self.tweak(3, "AltList", version: "1.0.4", author: "opa334", bundles: nil, entry: false,
+                                 packageID: "com.opa334.altlist",
+                                 origin: .downloaded(repo: "opa334", url: "https://opa334.github.io/debs/altlist.deb",
+                                                     sha256: String(repeating: "a", count: 64))),
+                      on: [iPhone], [iPhone: .compatible, iPad: .compatible]),
+                draft(Self.tweak(4, "Rocket for Instagram", version: "2.4", author: "Rocket", bundles: [app],
+                                 depends: [[DebDependency(package: "ws.hbang.common", relation: ">=", version: "1.11")],
+                                           [DebDependency(package: "libroot")], [altlistNeed]]),
+                      on: [], [iPhone: .compatible, iPad: .compatible]),
                 draft(Self.tweak(5, "ReelsBlock", version: "1.0", author: "Nora", bundles: ["com.burbn.instagram"]),
                       on: [iPhone], [iPhone: .incompatible(.madeForAnotherApp(["com.burbn.instagram"])),
                                      iPad: .incompatible(.madeForAnotherApp(["com.burbn.instagram"]))],
                       forced: [iPhone: .compatible, iPad: .compatible], force: [iPhone]),
+                draft(Self.tweak(6, "Spotlight Shortcuts", version: "2.0", author: nil, bundles: ["com.apple.springboard"]),
+                      on: [], [iPhone: .incompatible(.needsJailbreak("com.apple.springboard")),
+                               iPad: .incompatible(.needsJailbreak("com.apple.springboard"))]),
             ]
+            flow.tweaks[3].missingDependencies = [iPad: ["com.opa334.altlist"]] // AltList is on the iPhone only
             flow.tweakErrors = [L("tweaks.error.unreadable", "Broken-Tweak.deb")]
             return flow
         }
@@ -266,15 +282,17 @@ enum SnapshotRenderer {
         /// A made-up tweak: one entry (or, `entry: false`, a library) for `bundles` (nil: a
         /// dropped .dylib, made for this app).
         static func tweak(_ n: Int, _ name: String, version: String, author: String?, bundles: [String]?,
-                          notes: [TweakNote] = [], entry: Bool = true) -> TweakPackage {
+                          notes: [TweakNote] = [], entry: Bool = true, depends: [[DebDependency]] = [],
+                          packageID: String? = nil, origin: TweakOrigin = .added) -> TweakPackage {
             let file = (entry ? "Library/MobileSubstrate/DynamicLibraries/" : "usr/lib/") + name.replacingOccurrences(of: " ", with: "") + ".dylib"
             let binary = TweakBinary(path: file, isEntry: entry, filter: bundles.map { TweakFilter(bundles: $0) },
                                      slices: [TweakSlice(arch: "arm64", platform: 2, minOS: "15.0")],
                                      linked: ["/usr/lib/libobjc.A.dylib"], mentionsJailbreakPaths: false,
                                      imageName: (file as NSString).lastPathComponent)
-            return TweakPackage(id: String(format: "5a5a%012lx", n), kind: .deb, origin: .added,
-                                packageID: "com.example.tweak\(n)", name: name, version: version, author: author,
-                                files: [file], binaries: [binary], notes: notes, addedAt: Date(timeIntervalSince1970: 1_800_000_000))
+            return TweakPackage(id: String(format: "5a5a%012lx", n), kind: .deb, origin: origin,
+                                packageID: packageID ?? "com.example.tweak\(n)", name: name, version: version, author: author,
+                                depends: depends, files: [file], binaries: [binary], notes: notes,
+                                addedAt: Date(timeIntervalSince1970: 1_800_000_000))
         }
 
         init(now: Date, library: URL) {
