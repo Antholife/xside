@@ -50,6 +50,8 @@ public struct Installation: Codable, Equatable, Sendable {
     /// Asked for at the last signing, but the app installed doesn't have it (not possible, or the
     /// patch failed and the app was installed without it). nil otherwise.
     public var duoCompatibilityMissing: Bool?
+    /// The last signing added the Duo compatibility module (an app without scenes). nil otherwise.
+    public var duoLegacyModule: Bool?
     /// The device was an iPhone Duo at the last signing: remembered for when it isn't connected.
     public var onDuo: Bool?
     /// The user turned "Simulate signed-out iCloud" on for this installation: each signing adds
@@ -63,6 +65,10 @@ public struct Installation: Codable, Equatable, Sendable {
     public var iCloudSignedOutSkippedForModule: Bool?
     /// The app on the device has the library: asked for, and the last signing added it.
     public var hasICloudSignedOut: Bool { iCloudSignedOut == true && iCloudSignedOutMissing != true }
+    /// The app on the device has iPhone Duo compatibility: asked for, and the last signing applied it.
+    public var hasDuoCompatibility: Bool { duoCompatibility == true && duoCompatibilityMissing != true }
+    /// The app on the device has XSide's module (`withoutXSideFeatures` is what the last signing did).
+    public var hasXSideModule: Bool { withoutXSideFeatures != true }
 
     public init(deviceID: String, installedAt: Date, expiresAt: Date,
                 lastAttempt: Date? = nil, lastErrorKey: String? = nil, signedBundleID: String? = nil,
@@ -73,7 +79,8 @@ public struct Installation: Codable, Equatable, Sendable {
                 lastMacEdit: Date? = nil, withoutXSideFeatures: Bool? = nil,
                 duoCompatibility: Bool? = nil, duoCompatibilityMissing: Bool? = nil, onDuo: Bool? = nil,
                 iCloudSignedOut: Bool? = nil, iCloudSignedOutMissing: Bool? = nil,
-                iCloudSignedOutSkippedForModule: Bool? = nil) {
+                iCloudSignedOutSkippedForModule: Bool? = nil, duoLegacyModule: Bool? = nil) {
+        self.duoLegacyModule = duoLegacyModule
         self.iCloudSignedOutSkippedForModule = iCloudSignedOutSkippedForModule
         self.onDuo = onDuo
         self.iCloudSignedOut = iCloudSignedOut
@@ -129,6 +136,7 @@ public struct Installation: Codable, Equatable, Sendable {
         iCloudSignedOut = try? c.decodeIfPresent(Bool.self, forKey: .iCloudSignedOut)
         iCloudSignedOutMissing = try? c.decodeIfPresent(Bool.self, forKey: .iCloudSignedOutMissing)
         iCloudSignedOutSkippedForModule = try? c.decodeIfPresent(Bool.self, forKey: .iCloudSignedOutSkippedForModule)
+        duoLegacyModule = try? c.decodeIfPresent(Bool.self, forKey: .duoLegacyModule)
     }
 }
 

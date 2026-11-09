@@ -2659,7 +2659,8 @@ final class AppModel {
     /// (it can be megabytes).
     private func finding(_ found: CrashLogFetcher.Found, record: AppRecord, installation: Installation) async -> CrashFinding {
         let context = CrashContext(moduleName: Resigner.welcomeName,
-                                   duoCompatibilityOn: installation.duoCompatibility == true,
+                                   // What the last signing applied: a patch that failed isn't in the app.
+                                   duoCompatibilityOn: installation.hasDuoCompatibility,
                                    // Asked for but not added by the last signing: it's off in the app.
                                    iCloudSignedOutOn: installation.hasICloudSignedOut)
         let diagnosis = CrashClassifier.classify(found.log, context: context)

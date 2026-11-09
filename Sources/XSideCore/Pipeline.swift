@@ -26,9 +26,12 @@ public protocol Resigning: Sendable {
     func hasDuoCompatibility(_ app: URL) -> Bool
     /// Whether the signed `app` holds the signed-out iCloud library (see `ICloudSignedOut`).
     func hasICloudSignedOut(_ app: URL) -> Bool
+    /// Whether the signed `app` holds the iPhone Duo compatibility module (apps without scenes).
+    func hasDuoLegacyModule(_ app: URL) -> Bool
 }
 
 extension Resigning {
+    public func hasDuoLegacyModule(_ app: URL) -> Bool { false }
     public func hasDuoCompatibility(_ app: URL) -> Bool { false }
     public func hasICloudSignedOut(_ app: URL) -> Bool { false }
 }
@@ -489,7 +492,8 @@ public actor SideloadPipeline {
                                       iCloudSignedOut: iCloudAsked ? true : nil,
                                       iCloudSignedOutMissing: iCloudAsked && !resigner.hasICloudSignedOut(app) ? true : nil,
                                       iCloudSignedOutSkippedForModule: iCloudAsked && !resigner.hasICloudSignedOut(app)
-                                          && skippedICloud == .noRoomBesideModule ? true : nil)
+                                          && skippedICloud == .noRoomBesideModule ? true : nil,
+                                      duoLegacyModule: duoAsked && resigner.hasDuoLegacyModule(app) ? true : nil)
             let installation = try await library.recordSigning(signed, for: recordID, requireExisting: previous != nil)
             Self.logger.notice("\(what): done, expires \(installation.expiresAt.formatted(.iso8601))")
             return installation

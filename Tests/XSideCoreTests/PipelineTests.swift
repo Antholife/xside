@@ -86,6 +86,9 @@ private struct FakeResigner: Resigning {
     var iCloudApplied = true
     /// What the iCloud step says when the library isn't added.
     var iCloudSkip: ICloudOutcome = .failed
+    /// Whether the signed app holds the Duo compatibility module.
+    var duoModule = false
+    func hasDuoLegacyModule(_ app: URL) -> Bool { duoModule }
     func hasXSideLibrary(_ app: URL) -> Bool { libraryAdded }
     func hasDuoCompatibility(_ app: URL) -> Bool { duoApplied }
     func hasICloudSignedOut(_ app: URL) -> Bool { iCloudApplied }
@@ -211,11 +214,11 @@ private struct Fixture {
                   inAppDefaults: (@Sendable (Date) -> InAppSettings)? = nil,
                   withoutFeaturesByDefault: Bool = false, libraryAdded: Bool = true,
                   duoApplied: Bool = true, iCloudApplied: Bool = true,
-                  iCloudSkip: ICloudOutcome = .failed) -> SideloadPipeline {
+                  iCloudSkip: ICloudOutcome = .failed, duoModule: Bool = false) -> SideloadPipeline {
         SideloadPipeline(library: library,
                          provisioner: provisioner ?? FakeProvisioner(log: log),
                          resigner: FakeResigner(log: log, libraryAdded: libraryAdded, duoApplied: duoApplied,
-                                                iCloudApplied: iCloudApplied, iCloudSkip: iCloudSkip),
+                                                iCloudApplied: iCloudApplied, iCloudSkip: iCloudSkip, duoModule: duoModule),
                          installer: installer ?? FakeInstaller(log: log),
                          workRoot: workRoot, now: now,
                          inAppDefaults: inAppDefaults ?? { InAppSettings.defaults(reminder: true, at: $0) },
@@ -1420,6 +1423,11 @@ extension PipelineChannelTests {
                                                                      duoCompatibility: true)
         #expect(result.duoCompatibility == true)
         #expect(result.duoCompatibilityMissing == true)
+        #expect(!result.hasDuoCompatibility)
+        // Morning review M3: what the signed app has, for the crash context and a fix request.
+        let module = try await f.pipeline(duoModule: true).install(recordID: f.record.id, device: device(), env: env,
+                                                                    duoCompatibility: true)
+        #expect(module.hasDuoCompatibility && module.duoLegacyModule == true)
         // Not asked: nothing is missing, whatever the app is.
         let plain = try await f.pipeline(duoApplied: false).install(recordID: f.record.id, device: device("dev-2", udid: "U2"), env: env)
         #expect(plain.duoCompatibilityMissing == nil)

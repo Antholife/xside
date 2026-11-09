@@ -76,20 +76,23 @@ extension AppModel {
     /// the sanitized diagnosis (no bundle id, team id, device name or id) and the fixes that were on.
     func requestFix(for entry: AppEntry, finding: CrashFinding?) {
         let record = entry.record, installation = entry.installation
-        let appName = record.options.displayName ?? record.displayName
+        // The .ipa's own name: a custom display name is the person's choice, not for a public issue.
+        let appName = record.displayName
         let prompt = L("fixes.request.prompt")
         guard let finding else {
             NSWorkspace.shared.open(FixRequest.crashURL(appName: appName, prompt: prompt, details: "No crash diagnosis."))
             return
         }
         let info = Bundle.main.infoDictionary ?? [:]
-        let duoOn = installation.duoCompatibility == true && installation.duoCompatibilityMissing != true
+        // What the signed app has (the last signing's outcome), not only what was chosen.
+        let duoOn = installation.hasDuoCompatibility
         let facts = FixRequest.CrashFacts(
             appVersion: installation.appVersion,
             iOSVersion: devices.first { $0.id == installation.deviceID }?.osVersion,
             xsideVersion: "\(info["CFBundleShortVersionString"] as? String ?? "?") (\(info["CFBundleVersion"] as? String ?? "?"))",
-            xsideModule: installation.withoutXSideFeatures != true,
-            duoCompatibility: duoOn, duoModule: duoOn && record.duo?.needsLegacyModule == true,
+            xsideModule: installation.hasXSideModule,
+            duoCompatibility: duoOn, duoModule: duoOn && (installation.duoLegacyModule
+                ?? (record.duo?.needsLegacyModule == true)),
             iCloudSignedOut: installation.hasICloudSignedOut)
         let deviceName = devices.first { $0.id == installation.deviceID }?.name ?? cachedNames[installation.deviceID]
         let secrets = [installation.teamID, record.teamID, installation.deviceID, deviceName].compactMap { $0 }
