@@ -238,6 +238,8 @@ struct DeviceRun: Identifiable, Equatable {
     var duoOutcome: DuoOutcome?
     /// "Simulate signed-out iCloud" was asked for but the app was installed without it.
     var iCloudMissing = false
+    /// …because the app had room for one more library only, and XSide's module got it.
+    var iCloudSkippedForModule = false
     /// XSide opened the app and waits to see whether it stays up.
     var checkingLaunch = false
     /// The app crashed after the install, explained.

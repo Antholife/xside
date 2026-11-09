@@ -58,6 +58,9 @@ public struct Installation: Codable, Equatable, Sendable {
     /// Asked for at the last signing, but the app installed doesn't have it (this build has no
     /// library, or it couldn't be added). nil otherwise.
     public var iCloudSignedOutMissing: Bool?
+    /// Missing because the app's header had room for one more library only, and XSide's module
+    /// got it (turning the XSide features off for the app makes room). nil otherwise.
+    public var iCloudSignedOutSkippedForModule: Bool?
     /// The app on the device has the library: asked for, and the last signing added it.
     public var hasICloudSignedOut: Bool { iCloudSignedOut == true && iCloudSignedOutMissing != true }
 
@@ -69,7 +72,9 @@ public struct Installation: Codable, Equatable, Sendable {
                 channelSecret: Data? = nil, lastCheckIn: Date? = nil, lastDeviceRefreshRequest: Date? = nil,
                 lastMacEdit: Date? = nil, withoutXSideFeatures: Bool? = nil,
                 duoCompatibility: Bool? = nil, duoCompatibilityMissing: Bool? = nil, onDuo: Bool? = nil,
-                iCloudSignedOut: Bool? = nil, iCloudSignedOutMissing: Bool? = nil) {
+                iCloudSignedOut: Bool? = nil, iCloudSignedOutMissing: Bool? = nil,
+                iCloudSignedOutSkippedForModule: Bool? = nil) {
+        self.iCloudSignedOutSkippedForModule = iCloudSignedOutSkippedForModule
         self.onDuo = onDuo
         self.iCloudSignedOut = iCloudSignedOut
         self.iCloudSignedOutMissing = iCloudSignedOutMissing
@@ -123,6 +128,7 @@ public struct Installation: Codable, Equatable, Sendable {
         onDuo = try? c.decodeIfPresent(Bool.self, forKey: .onDuo)
         iCloudSignedOut = try? c.decodeIfPresent(Bool.self, forKey: .iCloudSignedOut)
         iCloudSignedOutMissing = try? c.decodeIfPresent(Bool.self, forKey: .iCloudSignedOutMissing)
+        iCloudSignedOutSkippedForModule = try? c.decodeIfPresent(Bool.self, forKey: .iCloudSignedOutSkippedForModule)
     }
 }
 
@@ -480,7 +486,10 @@ public actor AppLibrary {
               (items[index].installations[i].iCloudSignedOut == true) != on else { return false }
         let previous = items
         items[index].installations[i].iCloudSignedOut = on ? true : nil
-        if !on { items[index].installations[i].iCloudSignedOutMissing = nil }
+        if !on {
+            items[index].installations[i].iCloudSignedOutMissing = nil
+            items[index].installations[i].iCloudSignedOutSkippedForModule = nil
+        }
         do { try save() } catch { items = previous; throw error }
         return true
     }

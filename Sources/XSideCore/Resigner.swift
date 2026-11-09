@@ -61,6 +61,15 @@ public struct InstallOptions: Codable, Equatable, Sendable {
     }
 }
 
+/// How adding "Simulate signed-out iCloud"'s library went.
+public enum ICloudOutcome: String, Codable, Sendable, Equatable {
+    case added
+    /// Not added: no library in this build, or a problem (the logs say which).
+    case failed
+    /// Not added: the app's header had room for one more library only, and XSide's module got it.
+    case noRoomBesideModule
+}
+
 public struct Resigner: Sendable {
     private let runner: CommandRunning
     /// The welcome popup's iOS library (XSide.app's resource), nil when this build has none.
@@ -115,6 +124,7 @@ public struct Resigner: Sendable {
                        identitySHA1: String, otherBundleIDs: Set<String> = [], facts: InstallationFacts? = nil,
                        onDuo: @Sendable (DuoOutcome?) async -> Void = { _ in },
                        onICloud: @Sendable () async -> Void = {},
+                       onICloudSkipped: @Sendable (ICloudOutcome) async -> Void = { _ in },
                        onThinning: @Sendable () async -> Void = {},
                        onSigning: @Sendable () async -> Void = {}) async throws -> URL {
         let fm = FileManager.default
@@ -193,8 +203,10 @@ public struct Resigner: Sendable {
         var iCloudApplied = false
         if iCloudAsked {
             await onICloud()
-            iCloudApplied = shim && addICloudLibrary(to: app, executable: executableURL,
-                                                     alsoLoading: library ? Self.welcomeLoadPath : nil)
+            let outcome = shim ? addICloudLibrary(to: app, executable: executableURL,
+                                                  alsoLoading: library ? Self.welcomeLoadPath : nil) : .failed
+            iCloudApplied = outcome == .added
+            if outcome != .added { await onICloudSkipped(outcome) }
         }
         // The library first among what follows: the payload, Bonjour keys and quick actions mean
         // nothing without it (quick actions nothing handles would be a regression), so they
@@ -310,9 +322,10 @@ public struct Resigner: Sendable {
     /// Mac's toolchain run paths go first. Never fails the install: on any problem the library is
     /// removed. The executable may still name it when the iPhone Duo patch already added the load
     /// command (its copy carries both): harmless, the command is weak and the app runs as without
-    /// the option. Returns whether the library is in the app.
-    private func addICloudLibrary(to app: URL, executable: URL, alsoLoading other: String?) -> Bool {
-        guard let iCloudLibrary else { return false }
+    /// the option. When the header has room for only one of the two (even without those run paths),
+    /// XSide's module keeps it: `.noRoomBesideModule`, nothing of the library left.
+    private func addICloudLibrary(to app: URL, executable: URL, alsoLoading other: String?) -> ICloudOutcome {
+        guard let iCloudLibrary else { return .failed }
         let fm = FileManager.default
         let target = app.appendingPathComponent("Frameworks/\(ICloudSignedOut.dylibName)")
         do {
@@ -324,13 +337,22 @@ public struct Resigner: Sendable {
                 .filter { !MachOPatcher.loadsDylib($0, in: executable) }
                 .reduce(0) { $0 + MachOPatcher.dylibCommand($1).count }
             makeRoom(in: executable, needing: needed)
+            // Room for one of the two only: XSide's module keeps it (the person turned the
+            // module off otherwise), and the install says signed-out iCloud wasn't added for that.
+            if let other, !MachOPatcher.loadsDylib(ICloudSignedOut.loadPath, in: executable),
+               !MachOPatcher.loadsDylib(other, in: executable),
+               let free = try? MachOPatcher.freeSpace(in: executable), free < needed {
+                try? fm.removeItem(at: target)
+                Self.logger.notice("signed-out iCloud skipped: room for one load command only (\(free) bytes for \(needed)), kept for XSide's module")
+                return .noRoomBesideModule
+            }
             let outcome = try MachOPatcher.addWeakDylib(ICloudSignedOut.loadPath, to: executable)
             Self.logger.info("signed-out iCloud added (\(outcome == .added ? "new load command" : "already loaded"))")
-            return true
+            return .added
         } catch {
             try? fm.removeItem(at: target)
             Self.logger.notice("signed-out iCloud skipped: \(String(describing: error))")
-            return false
+            return .failed
         }
     }
 

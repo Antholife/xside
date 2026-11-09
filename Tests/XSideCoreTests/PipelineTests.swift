@@ -84,6 +84,8 @@ private struct FakeResigner: Resigning {
     var duoApplied = true
     /// Whether the signed app holds the signed-out iCloud library (false: this build has none).
     var iCloudApplied = true
+    /// What the iCloud step says when the library isn't added.
+    var iCloudSkip: ICloudOutcome = .failed
     func hasXSideLibrary(_ app: URL) -> Bool { libraryAdded }
     func hasDuoCompatibility(_ app: URL) -> Bool { duoApplied }
     func hasICloudSignedOut(_ app: URL) -> Bool { iCloudApplied }
@@ -92,6 +94,7 @@ private struct FakeResigner: Resigning {
                 otherBundleIDs: Set<String>, facts: InstallationFacts?,
                 onDuo: @Sendable (DuoOutcome?) async -> Void,
                 onICloud: @Sendable () async -> Void,
+                onICloudSkipped: @Sendable (ICloudOutcome) async -> Void,
                 onThinning: @Sendable () async -> Void,
                 onSigning: @Sendable () async -> Void) async throws -> URL {
         await log.resign(ipa, workDir, bundleID, iconURL, profileURL, profile)
@@ -101,7 +104,10 @@ private struct FakeResigner: Resigning {
             await onDuo(nil)
             await onDuo(duoApplied ? .added : .failed)
         }
-        if options.iCloudSignedOut == true { await onICloud() }
+        if options.iCloudSignedOut == true {
+            await onICloud()
+            if !iCloudApplied { await onICloudSkipped(iCloudSkip) }
+        }
         await onSigning()
         // Simulate unpacking into the work dir.
         let app = workDir.appendingPathComponent("Payload/Demo.app", isDirectory: true)
@@ -204,11 +210,12 @@ private struct Fixture {
                   now: @escaping @Sendable () -> Date = { fixedNow },
                   inAppDefaults: (@Sendable (Date) -> InAppSettings)? = nil,
                   withoutFeaturesByDefault: Bool = false, libraryAdded: Bool = true,
-                  duoApplied: Bool = true, iCloudApplied: Bool = true) -> SideloadPipeline {
+                  duoApplied: Bool = true, iCloudApplied: Bool = true,
+                  iCloudSkip: ICloudOutcome = .failed) -> SideloadPipeline {
         SideloadPipeline(library: library,
                          provisioner: provisioner ?? FakeProvisioner(log: log),
                          resigner: FakeResigner(log: log, libraryAdded: libraryAdded, duoApplied: duoApplied,
-                                                iCloudApplied: iCloudApplied),
+                                                iCloudApplied: iCloudApplied, iCloudSkip: iCloudSkip),
                          installer: installer ?? FakeInstaller(log: log),
                          workRoot: workRoot, now: now,
                          inAppDefaults: inAppDefaults ?? { InAppSettings.defaults(reminder: true, at: $0) },
@@ -1359,6 +1366,11 @@ extension PipelineChannelTests {
                                                                         iCloudSignedOut: true)
         #expect(result.iCloudSignedOut == true)
         #expect(result.iCloudSignedOutMissing == true)
+        #expect(result.iCloudSignedOutSkippedForModule == nil)
+        // No room beside XSide's module: recorded, so the install and My apps say why.
+        let room = try await f.pipeline(iCloudApplied: false, iCloudSkip: .noRoomBesideModule)
+            .install(recordID: f.record.id, device: device(), env: env, iCloudSignedOut: true)
+        #expect(room.iCloudSignedOutMissing == true && room.iCloudSignedOutSkippedForModule == true)
         let plain = try await f.pipeline(iCloudApplied: false).install(recordID: f.record.id, device: device("dev-2", udid: "U2"),
                                                                        env: env)
         #expect(plain.iCloudSignedOutMissing == nil)

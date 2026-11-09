@@ -2252,6 +2252,7 @@ final class AppModel {
             flow.runs[i].duoMissing = false
             flow.runs[i].duoOutcome = nil
             flow.runs[i].iCloudMissing = false
+            flow.runs[i].iCloudSkippedForModule = false
             flow.runs[i].crash = nil
             flow.runs[i].checkingLaunch = false
             flow.runs[i].attempt = UUID()
@@ -2286,9 +2287,10 @@ final class AppModel {
                let i = flow.runs.firstIndex(where: { $0.deviceID == deviceID }) {
                 flow.runs[i].duoMissing = true
             }
-            if installed.installations.first(where: { $0.deviceID == deviceID })?.iCloudSignedOutMissing == true,
+            if let done = installed.installations.first(where: { $0.deviceID == deviceID }), done.iCloudSignedOutMissing == true,
                let i = flow.runs.firstIndex(where: { $0.deviceID == deviceID }) {
                 flow.runs[i].iCloudMissing = true
+                flow.runs[i].iCloudSkippedForModule = done.iCloudSignedOutSkippedForModule == true
             }
             // "Rafraîchissement automatique" off in step ③: installed, then paused (a signing
             // always leaves it on).

@@ -15,6 +15,8 @@ struct ICloudOptionRow: View {
     @Binding var isOn: Bool
     /// The last signing couldn't add it (Settings > Mes apps).
     var missing = false
+    /// …because the app had room for one more library only, and XSide's module got it.
+    var skippedForModule = false
     @State private var showsDetails = false
 
     var body: some View {
@@ -50,7 +52,7 @@ struct ICloudOptionRow: View {
                     .font(.system(size: 11))
                     .popover(isPresented: $showsDetails, arrowEdge: .bottom) { ICloudDetails() }
                 if missing {
-                    Label(L("icloud.missing", appName), systemImage: "exclamationmark.triangle.fill")
+                    Label(L(skippedForModule ? "icloud.missing.module" : "icloud.missing", appName), systemImage: "exclamationmark.triangle.fill")
                         .font(.system(size: 11))
                         .foregroundStyle(Color(nsColor: .systemOrange))
                         .fixedSize(horizontal: false, vertical: true)
@@ -153,7 +155,8 @@ struct ICloudMissingNotes: View {
         if !missing.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(missing) { run in
-                    Label(L("icloud.missing.install", run.name, flow.info?.name ?? ""), systemImage: "exclamationmark.triangle.fill")
+                    Label(L(run.iCloudSkippedForModule ? "icloud.missing.install.module" : "icloud.missing.install",
+                            run.name, flow.info?.name ?? ""), systemImage: "exclamationmark.triangle.fill")
                         .font(.system(size: 12))
                         .foregroundStyle(Color(nsColor: .systemOrange))
                         .fixedSize(horizontal: false, vertical: true)

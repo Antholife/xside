@@ -164,7 +164,7 @@ struct AppRow: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if step == nil, entry.installation.iCloudSignedOut == true, entry.installation.iCloudSignedOutMissing == true {
-                    Text(L("icloud.missing.row"))
+                    Text(L(entry.installation.iCloudSignedOutSkippedForModule == true ? "icloud.missing.row.module" : "icloud.missing.row"))
                         .font(.system(size: 11))
                         .foregroundStyle(Color(nsColor: .systemOrange))
                         .fixedSize(horizontal: false, vertical: true)

@@ -308,10 +308,11 @@ private struct ICloudFixture {
 
     var resigner: Resigner { Resigner(runner: RoutingRunner(fake: fake), welcomeDylib: welcome, iCloudLibrary: shim) }
 
-    func run(_ options: InstallOptions, onICloud: @Sendable () async -> Void = {}) async throws -> URL {
+    func run(_ options: InstallOptions, onICloud: @Sendable () async -> Void = {},
+             onICloudSkipped: @Sendable (ICloudOutcome) async -> Void = { _ in }) async throws -> URL {
         try await resigner.resign(ipa: ipa, workDir: work, bundleID: "com.vendor.app.\(team)", options: options, iconURL: nil,
                                   profileURL: profileURL, profile: profile(), identitySHA1: "SHA", facts: nil,
-                                  onICloud: onICloud)
+                                  onICloud: onICloud, onICloudSkipped: onICloudSkipped)
     }
 }
 
@@ -321,6 +322,7 @@ private func plist(_ app: URL) throws -> [String: Any] {
 }
 
 private actor Count { var n = 0; func add() { n += 1 } }
+private actor Outcomes { var all: [ICloudOutcome] = []; func add(_ o: ICloudOutcome) { all.append(o) } }
 
 struct ICloudResignTests {
     private let ents: [String: Any] = ["application-identifier": "OLDTEAM123.com.vendor.app",
@@ -469,6 +471,26 @@ struct ICloudResignTests {
         let app = try await f.run(InstallOptions())
         #expect(FileManager.default.fileExists(atPath: app.appendingPathComponent("Frameworks/XSideDuoLegacy.dylib").path))
         #expect(MachOPatcher.loadsDylib(DuoCompatibility.legacyLoadPath, in: app.appendingPathComponent("Demo")))
+    }
+
+    /// Morning review M2: room for one more load command only. XSide's module keeps it and the
+    /// install says why signed-out iCloud is missing; with the module turned off, iCloud gets it.
+    @Test func roomForOneKeepsTheModule() async throws {
+        let exe = try iCloudMachO(dylibs: [(0xC, cloudKit)], padding: 80)
+        let f = try await ICloudFixture(executable: exe)
+        let said = Outcomes()
+        let app = try await f.run(InstallOptions(iCloudSignedOut: true), onICloudSkipped: { await said.add($0) })
+        #expect(f.resigner.hasXSideLibrary(app))
+        #expect(!f.resigner.hasICloudSignedOut(app))
+        #expect(!FileManager.default.fileExists(atPath: app.appendingPathComponent("Frameworks/XSideICloud.dylib").path))
+        #expect(try plist(app)["XSideICloudSignedOut"] == nil)
+        #expect(await said.all == [.noRoomBesideModule])
+        let off = try await ICloudFixture(executable: exe)
+        let offSaid = Outcomes()
+        let offApp = try await off.run(InstallOptions(withoutXSideFeatures: true, iCloudSignedOut: true),
+                                       onICloudSkipped: { await offSaid.add($0) })
+        #expect(off.resigner.hasICloudSignedOut(offApp))
+        #expect(await offSaid.all.isEmpty)
     }
 
     @Test func loadsDylibIsFalseForUnreadable() throws {

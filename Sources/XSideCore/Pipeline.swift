@@ -16,6 +16,7 @@ public protocol Resigning: Sendable {
                 identitySHA1: String, otherBundleIDs: Set<String>, facts: InstallationFacts?,
                 onDuo: @Sendable (DuoOutcome?) async -> Void,
                 onICloud: @Sendable () async -> Void,
+                onICloudSkipped: @Sendable (ICloudOutcome) async -> Void,
                 onThinning: @Sendable () async -> Void,
                 onSigning: @Sendable () async -> Void) async throws -> URL
     /// Whether the signed `app` holds XSide's library: features asked for can still be missing
@@ -61,6 +62,12 @@ public enum InstallStep: Int, CaseIterable, Sendable {
 /// FIFO async mutex: `run` bodies execute one at a time, in arrival order. A task already
 /// cancelled, or cancelled while it waits, throws `CancellationError` without taking the lock
 /// (its body never runs); a body that throws, or is cancelled while running, still hands it on.
+/// How the job's signed-out iCloud step went, from the resigner's callback.
+private actor ICloudSkipBox {
+    var value: ICloudOutcome?
+    func set(_ outcome: ICloudOutcome) { value = outcome }
+}
+
 actor AsyncLock {
     private var busy = false
     private var waiters: [(id: UUID, continuation: CheckedContinuation<Void, any Error>)] = []
@@ -417,6 +424,7 @@ public actor SideloadPipeline {
             options.duoCompatibility = duoAsked
             let iCloudAsked = iCloud ?? (previous?.iCloudSignedOut == true)
             options.iCloudSignedOut = iCloudAsked
+            let iCloudSkip = ICloudSkipBox()
             // The job's tools all use the Xcode of the environment it started with.
             let app = try await CommandEnvironment.withDeveloperDir(current.developerDir) { [resigner] in
                 try await resigner.resign(
@@ -434,6 +442,10 @@ public actor SideloadPipeline {
                     onICloud: {
                         await progress(.icloud)
                         Self.logger.info("\(what): adding signed-out iCloud")
+                    },
+                    onICloudSkipped: { outcome in
+                        await iCloudSkip.set(outcome)
+                        Self.logger.notice("\(what): signed-out iCloud not added (\(outcome.rawValue))")
                     },
                     onThinning: {
                         await progress(.legacy32)
@@ -454,6 +466,7 @@ public actor SideloadPipeline {
                 try await installer.install(app: app, deviceID: device.id)
             }
 
+            let skippedICloud = await iCloudSkip.value
             let date = now()
             // The secret written into the app becomes the installation's only now: had the install
             // failed, the app still on the device would hold the previous one, which is kept.
@@ -474,7 +487,9 @@ public actor SideloadPipeline {
                                       // Kept when devicectl doesn't say what the device is.
                                       onDuo: device.isDuo(remembered: previous?.onDuo) ? true : nil,
                                       iCloudSignedOut: iCloudAsked ? true : nil,
-                                      iCloudSignedOutMissing: iCloudAsked && !resigner.hasICloudSignedOut(app) ? true : nil)
+                                      iCloudSignedOutMissing: iCloudAsked && !resigner.hasICloudSignedOut(app) ? true : nil,
+                                      iCloudSignedOutSkippedForModule: iCloudAsked && !resigner.hasICloudSignedOut(app)
+                                          && skippedICloud == .noRoomBesideModule ? true : nil)
             let installation = try await library.recordSigning(signed, for: recordID, requireExisting: previous != nil)
             Self.logger.notice("\(what): done, expires \(installation.expiresAt.formatted(.iso8601))")
             return installation
