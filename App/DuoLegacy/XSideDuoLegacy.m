@@ -25,6 +25,8 @@
 //    accelerometer:didAccelerate:). Boost 2 needed both.
 //  - UIScreen.mainScreen is the scene's screen once it connects: on the Duo it otherwise stays the
 //    outer screen while the app shows on the inner one (Boost 2 sized itself to it: a small picture).
+//  - on a screen other than iOS's main one (the Duo's inner screen), accelerometer x/y are turned a
+//    quarter to that screen's axes (the outer screen's are the sensor's).
 //  - forwards URL contexts -> application:openURL:options: (or the older forms), user activities ->
 //    application:continueUserActivity:restorationHandler:, shortcut items ->
 //    application:performActionForShortcutItem:completionHandler: (also those in the connection options).
@@ -177,6 +179,26 @@ static UIInterfaceOrientation h_statusBarOrientation(UIApplication *self, SEL _c
 @implementation XSAcceleration
 @end
 
+static IMP oMainScreen;
+
+// The sensor's x/y, turned to the axes of the screen the app shows on. On the Duo the sensor's
+// axes are the outer screen's (iOS's own main screen); on the inner one they are a quarter turn
+// off for the app: at rest, held in landscape, y read -0.5 instead of x (Boost 2 steered by itself).
+static void XSAccelAxes(double *x, double *y) {
+    UIScreen *shown = gScene.screen;
+    UIScreen *main = oMainScreen ? ((id (*)(id, SEL))oMainScreen)(UIScreen.class, @selector(mainScreen)) : nil;
+    BOOL turned = shown && main && shown != main;
+    static int logged = -1;
+    if (logged != turned) {
+        logged = turned;
+        XSLOG("accelerometer axes: %{public}s", turned ? "inner screen, turned a quarter" : "main screen, as is");
+    }
+    if (!turned) return;
+    double sx = *x;
+    *x = -*y;
+    *y = sx;
+}
+
 static CMMotionManager *gMotion;
 static NSTimeInterval gAccelInterval = 0.1;       // UIAccelerometer's default
 static __weak id gAccelDelegate;
@@ -193,7 +215,9 @@ static void XSAccelStart(id accelerometer) {
         SEL sel = NSSelectorFromString(@"accelerometer:didAccelerate:");
         if (!data || ![d respondsToSelector:sel]) return;
         XSAcceleration *a = [XSAcceleration new];
-        a.x = data.acceleration.x; a.y = data.acceleration.y; a.z = data.acceleration.z;
+        double x = data.acceleration.x, y = data.acceleration.y;
+        XSAccelAxes(&x, &y);
+        a.x = x; a.y = y; a.z = data.acceleration.z;
         a.timestamp = data.timestamp;
         NSInteger every = MAX(1, (NSInteger)lround(1 / MAX(gAccelInterval, 0.01)));
         if (gAccelLogged < 20 * every && gAccelLogged++ % every == 0) {
@@ -226,7 +250,6 @@ static void h_accelSetInterval(id self, SEL _cmd, NSTimeInterval interval) {
 }
 
 // The scene's screen, once there is one.
-static IMP oMainScreen;
 static UIScreen *h_mainScreen(id self, SEL _cmd) {
     UIScreen *real = ((id (*)(id, SEL))oMainScreen)(self, _cmd);
     UIScreen *scene = gScene.screen;
