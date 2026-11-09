@@ -33,6 +33,8 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 - **New `xside` commands**: `xside apps` and `xside devices` (`--json` too); `xside settings <app>` shows an app's XSide module settings, and `xside settings <app> reminder=off level=essentials…` changes them as *Settings > My apps* does (`--device` for one device); `xside pause <app> [2h|30m|1d]` and `xside resume <app>` for one app; `xside uninstall <app>` (asks first unless `--yes`); `xside logs [-f]`; `xside report` writes the logs archive and prints its path. Apps are named by name or bundle id, any case; when several match, `xside` lists them. `xside` waits for a long uninstall or report as long as it takes, saying it's still working; exit status 2 means the outcome isn't known yet (see the panel).
 
 ### Changed
+
+- The panel's app rows no longer show a refresh button on hover: *Refresh now* is in the row's ... menu (and its right-click menu).
 - The app's SDK is read from its executable at import. The "built for an older iOS" preflight note no longer shows: outside an iPhone Duo the layout difference it promised mostly isn't there, and on a Duo the iPhone Duo note says what matters (and only offers the option when the app can take it).
 - **Settings reorganized** into General, Refreshing, Installing, XSide module in the apps (defaults for new installs), My apps, Notifications, Xcode and signing, Updates, Reports & Logs, Build & contribute, About.
 - XSide's switches use the brand gradient and respond to the keyboard (focus ring, Space).

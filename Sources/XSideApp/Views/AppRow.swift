@@ -177,16 +177,7 @@ struct AppRow: View {
                 }
             }
             Spacer(minLength: 4)
-            if isHovering && canRefresh {
-                Button(action: onRefresh) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 11, weight: .semibold))
-                }
-                .buttonStyle(.borderless)
-                .help(L("popover.refreshNow"))
-                .accessibilityLabel(L("popover.refreshNow"))
-                .transition(.opacity)
-            }
+            // Refreshing is in the … menu (and the row's context menu and VoiceOver actions).
             RingView(validity: validity, isPaused: looksPaused, isBusy: step != nil || isUninstalling, size: 28)
             Menu { actions } label: {
                 Image(systemName: "ellipsis")
@@ -201,7 +192,6 @@ struct AppRow: View {
             .help(L("popover.app.menu", appName))
             .accessibilityLabel(L("popover.app.menu", appName))
         }
-        .animation(.easeOut(duration: 0.15), value: isHovering)
     }
 
     private func subtitle(validity: Validity, now: Date) -> String {
