@@ -11,8 +11,12 @@ public struct SigningChoices: Codable, Equatable, Sendable {
     /// The tweaks enabled for that signing (`TweakPackage.id`s, in load order). nil in state
     /// written before tweaks: none were asked.
     public var tweaks: [String]?
+    /// Those of `tweaks` loaded despite a ❌ (« Injecter quand même »). nil in older state: none.
+    public var forcedTweaks: [String]?
 
-    public init(withoutXSideFeatures: Bool, duoCompatibility: Bool, iCloudSignedOut: Bool, tweaks: [String]? = nil) {
+    public init(withoutXSideFeatures: Bool, duoCompatibility: Bool, iCloudSignedOut: Bool, tweaks: [String]? = nil,
+                forcedTweaks: [String]? = nil) {
+        self.forcedTweaks = forcedTweaks
         self.withoutXSideFeatures = withoutXSideFeatures
         self.duoCompatibility = duoCompatibility
         self.iCloudSignedOut = iCloudSignedOut
@@ -32,7 +36,8 @@ extension Installation {
     /// caller). In older state (no `signedChoices`) the module compares with what the last
     /// signing did (`withoutXSideFeatures`); Duo, iCloud and tweaks are unknown, so never pending.
     /// Tweaks are pending when the ids enabled on this device, in order, differ from those the
-    /// last signing was asked for (enabled, disabled, added, removed, replaced or reordered).
+    /// last signing was asked for (enabled, disabled, added, removed, replaced or reordered), or
+    /// when « Injecter quand même » changed on one of the enabled ones.
     public func pendingSigningChanges(wantsWithoutXSideFeatures: Bool) -> Set<SigningTimeSetting> {
         var pending: Set<SigningTimeSetting> = []
         let signedWithout = signedChoices?.withoutXSideFeatures ?? (withoutXSideFeatures == true)
@@ -40,7 +45,9 @@ extension Installation {
         if let signed = signedChoices {
             if signed.duoCompatibility != (duoCompatibility == true) { pending.insert(.duoCompatibility) }
             if signed.iCloudSignedOut != (iCloudSignedOut == true) { pending.insert(.iCloudSignedOut) }
-            if enabledTweakIDs != (signed.tweaks ?? []) { pending.insert(.tweaks) }
+            if enabledTweakIDs != (signed.tweaks ?? []) || Set(forcedTweakIDs) != Set(signed.forcedTweaks ?? []) {
+                pending.insert(.tweaks)
+            }
         }
         return pending
     }
@@ -49,4 +56,6 @@ extension Installation {
 extension Installation {
     /// The tweaks enabled on this device, in its list's order (the pool's load order).
     public var enabledTweakIDs: [String] { (tweaks ?? []).filter(\.enabled).map(\.id) }
+    /// The enabled ones the person chose to load despite a ❌.
+    public var forcedTweakIDs: [String] { (tweaks ?? []).filter { $0.enabled && $0.force == true }.map(\.id) }
 }

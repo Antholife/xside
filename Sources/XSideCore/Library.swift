@@ -119,9 +119,14 @@ public struct Installation: Codable, Equatable, Sendable {
         (tweakResults ?? [:]).values.contains(.injected(converted: true))
     }
     /// The app on the device has the library: asked for, and the last signing added it.
-    public var hasICloudSignedOut: Bool { iCloudSignedOut == true && iCloudSignedOutMissing != true }
+    /// (Turned on since that signing, e.g. while it ran: not there yet.)
+    public var hasICloudSignedOut: Bool {
+        iCloudSignedOut == true && iCloudSignedOutMissing != true && signedChoices?.iCloudSignedOut != false
+    }
     /// The app on the device has iPhone Duo compatibility: asked for, and the last signing applied it.
-    public var hasDuoCompatibility: Bool { duoCompatibility == true && duoCompatibilityMissing != true }
+    public var hasDuoCompatibility: Bool {
+        duoCompatibility == true && duoCompatibilityMissing != true && signedChoices?.duoCompatibility != false
+    }
     /// The app on the device has XSide's module (`withoutXSideFeatures` is what the last signing did).
     public var hasXSideModule: Bool { withoutXSideFeatures != true }
 
@@ -290,6 +295,27 @@ public struct AppRecord: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
+/// What a signing job read of its device's choices when it started, so that `recordSigning`
+/// keeps the ones the person changed while it ran.
+public struct SigningSnapshot: Equatable, Sendable {
+    /// The device's installation then (nil: a first install).
+    public var installation: Installation?
+    /// The tweaks chosen for the device before its first install (`AppRecord.pendingTweakUses`).
+    public var pendingTweaks: [TweakUse]?
+
+    public init(installation: Installation?, pendingTweaks: [TweakUse]?) {
+        self.installation = installation
+        self.pendingTweaks = pendingTweaks
+    }
+}
+
+extension AppRecord {
+    public func signingSnapshot(deviceID: String) -> SigningSnapshot {
+        SigningSnapshot(installation: installations.first { $0.deviceID == deviceID },
+                        pendingTweaks: pendingTweakUses?[deviceID])
+    }
+}
+
 /// Name of the library folder in Application Support: the debug bundle
 /// (`io.github.xside.XSide.debug`) keeps its own, so it never touches the release app's apps.
 public enum LibraryLocation {
@@ -318,6 +344,10 @@ public actor AppLibrary {
     private var tweaksInFlight = 0
     /// Versions `addTweak` stored and offered as a replacement, not confirmed yet (by record).
     private var offeredTweaks: [UUID: Set<String>] = [:]
+    /// Tweak ids running jobs hold (by record, with a count): never collected meanwhile.
+    private var reservedTweaks: [UUID: [String: Int]] = [:]
+    /// Downloads whose bytes were checked, with the size and date they had then.
+    private var verifiedDownloads: [String: FileStamp] = [:]
     private var stateURL: URL { root.appendingPathComponent("state.json") }
     private var backupURL: URL { root.appendingPathComponent("state.json.bak") }
 
@@ -526,7 +556,7 @@ public actor AppLibrary {
     /// with none left, with its files: the caller deletes it with `removeIfEmpty` once no job
     /// uses it. Returns false when there was no such installation.
     @discardableResult
-    public func removeInstallation(recordID: UUID, deviceID: String) throws -> Bool {
+    public func removeInstallation(recordID: UUID, deviceID: String, keepingTweaks: Set<String> = []) throws -> Bool {
         let index = try indexOf(recordID)
         guard items[index].installations.contains(where: { $0.deviceID == deviceID }) else { return false }
         let previous = items
@@ -534,7 +564,7 @@ public actor AppLibrary {
         do { try save() } catch { items = previous; throw error }
         // With none left the record goes with its files (`removeIfEmpty`), or a job is installing
         // it elsewhere with its own choice: its tweaks are left alone.
-        if !items[index].installations.isEmpty { collectUnusedTweaks(recordID: recordID) }
+        if !items[index].installations.isEmpty { collectUnusedTweaks(recordID: recordID, keeping: keepingTweaks) }
         return true
     }
 
@@ -771,10 +801,25 @@ public actor AppLibrary {
 
     /// Records a successful signing, keeping what arrived through the channel meanwhile (see
     /// `Installation.keepingChannelState`). Same rules as `upsert`. Returns what was stored.
-    public func recordSigning(_ installation: Installation, for id: UUID, requireExisting: Bool) throws -> Installation {
+    /// `startedFrom`: what the job read when it started; a choice changed since (tweaks, Duo,
+    /// signed-out iCloud) is kept as it is now, for the next signing, instead of the job's.
+    /// `keepingTweaks`: tweak ids other jobs use, never collected here.
+    public func recordSigning(_ installation: Installation, for id: UUID, requireExisting: Bool,
+                              startedFrom: SigningSnapshot? = nil, keepingTweaks: Set<String> = []) throws -> Installation {
         let index = try indexOf(id)
         let current = items[index].installations.first { $0.deviceID == installation.deviceID }
-        let stored = current.map { installation.keepingChannelState(of: $0) } ?? installation
+        var stored = current.map { installation.keepingChannelState(of: $0) } ?? installation
+        if let start = startedFrom {
+            let pool = items[index].tweaks ?? []
+            if let current {
+                stored.tweaks = Self.mergedUses(job: installation.tweaks, start: start.installation?.tweaks,
+                                                now: current.tweaks, pool: pool)
+                Self.keepChoicesChanged(since: start.installation, now: current, in: &stored)
+            } else {
+                stored.tweaks = Self.mergedUses(job: installation.tweaks, start: start.pendingTweaks,
+                                                now: items[index].pendingTweakUses?[installation.deviceID], pool: pool)
+            }
+        }
         let previous = items
         // The device's own list now says which tweaks it has: the choice made before it was installed goes.
         if items[index].pendingTweakUses?[installation.deviceID] != nil {
@@ -782,7 +827,7 @@ public actor AppLibrary {
             if items[index].pendingTweakUses?.isEmpty == true { items[index].pendingTweakUses = nil }
         }
         do { try upsert(stored, for: id, requireExisting: requireExisting) } catch { items = previous; throw error }
-        collectUnusedTweaks(recordID: id)
+        collectUnusedTweaks(recordID: id, keeping: keepingTweaks)
         return stored
     }
 
@@ -791,7 +836,7 @@ public actor AppLibrary {
     /// device right now). One atomic save. Returns the number of installations removed.
     /// Nothing is uninstalled from the device itself.
     @discardableResult
-    public func removeDevice(_ deviceID: String, keeping: Set<UUID> = []) throws -> Int {
+    public func removeDevice(_ deviceID: String, keeping: Set<UUID> = [], keepingTweaks: Set<String> = []) throws -> Int {
         let previous = items
         var removed = 0
         var emptied: [UUID] = []
@@ -817,7 +862,7 @@ public actor AppLibrary {
             try? FileManager.default.removeItem(at: root.appendingPathComponent("apps/\(id.uuidString)"))
         }
         for id in touched where items.first(where: { $0.id == id })?.installations.isEmpty == false {
-            collectUnusedTweaks(recordID: id)
+            collectUnusedTweaks(recordID: id, keeping: keepingTweaks)
         }
         return removed
     }
@@ -915,7 +960,7 @@ extension AppLibrary {
     /// Puts `new` (stored by `addTweak`) in `old`'s place in the pool: same load position, and
     /// every device that listed `old` lists `new` with the same `enabled` and `force`. The old
     /// files stay until no device's last signing has them.
-    public func replaceTweak(_ old: String, with new: TweakPackage, recordID: UUID) throws {
+    public func replaceTweak(_ old: String, with new: TweakPackage, recordID: UUID, keepingTweaks: Set<String> = []) throws {
         let index = try indexOf(recordID)
         var pool = items[index].tweaks ?? []
         guard let position = pool.firstIndex(where: { $0.id == old }) else { throw XSideError.recordNotFound }
@@ -935,7 +980,7 @@ extension AppLibrary {
         if let pending = items[index].pendingTweakUses { items[index].pendingTweakUses = pending.mapValues(renamed) }
         do { try save() } catch { items = previous; throw error }
         offeredTweaks[recordID]?.remove(new.id)
-        collectUnusedTweaks(recordID: recordID)
+        collectUnusedTweaks(recordID: recordID, keeping: keepingTweaks)
     }
 
     /// Sets the tweaks chosen for one device, from its next signing on: ids not in the pool are
@@ -960,11 +1005,12 @@ extension AppLibrary {
     /// Drops from the pool the tweaks no device lists, none is waiting for, and no device's last
     /// signing included (asked or injected), with their files; also deletes the other unused
     /// stored folders (a version replaced, a replacement offered before XSide was last started),
-    /// except while a tweak is being added. Best effort.
-    func collectUnusedTweaks(recordID: UUID) {
+    /// except while a tweak is being added. Tweaks in `keeping` or reserved by a running job
+    /// (`reserveTweaks`) count as used. Best effort.
+    func collectUnusedTweaks(recordID: UUID, keeping: Set<String> = []) {
         guard let index = items.firstIndex(where: { $0.id == recordID }) else { return }
         let record = items[index]
-        var used = Set<String>()
+        var used = keeping.union((reservedTweaks[recordID] ?? [:]).keys)
         for i in record.installations {
             used.formUnion((i.tweaks ?? []).map(\.id))
             used.formUnion(i.signedChoices?.tweaks ?? [])
@@ -986,10 +1032,53 @@ extension AppLibrary {
         let folder = tweaksFolder(recordID)
         let fm = FileManager.default
         guard let names = try? fm.contentsOfDirectory(atPath: folder.path) else { return }
+        // An analysis may have just stored a folder (maybe one being dropped here, added again)
+        // for a pool it isn't in yet: the folders wait for the next collection.
+        guard tweaksInFlight == 0 else { return }
         for name in names where Self.isTweakID(name) && !keep.contains(name) {
-            // An analysis may have just stored it, for a pool it isn't in yet.
-            guard dropped.contains(name) || tweaksInFlight == 0 else { continue }
             try? fm.removeItem(at: folder.appendingPathComponent(name))
+        }
+    }
+
+    /// A job about to sign with these tweaks holds them until `releaseTweaks`: no collection
+    /// deletes them meanwhile (the person may disable or replace one while the job copies it).
+    public func reserveTweaks(_ ids: [String], recordID: UUID) {
+        for id in ids { reservedTweaks[recordID, default: [:]][id, default: 0] += 1 }
+    }
+
+    public func releaseTweaks(_ ids: [String], recordID: UUID) {
+        for id in ids {
+            guard let n = reservedTweaks[recordID]?[id] else { continue }
+            reservedTweaks[recordID]?[id] = n > 1 ? n - 1 : nil
+        }
+        if reservedTweaks[recordID]?.isEmpty == true { reservedTweaks[recordID] = nil }
+    }
+
+    /// The job's list, except for each tweak the person changed (added, removed, enabled,
+    /// disabled, forced) since the job started: that one as it is now.
+    static func mergedUses(job: [TweakUse]?, start: [TweakUse]?, now: [TweakUse]?, pool: [TweakPackage]) -> [TweakUse]? {
+        guard job != nil || now != nil else { return nil }
+        func byID(_ uses: [TweakUse]?) -> [String: TweakUse] {
+            Dictionary((uses ?? []).map { ($0.id, $0) }) { first, _ in first }
+        }
+        let j = byID(job), s = byID(start), n = byID(now)
+        var seen = Set<String>()
+        let ids = ((job ?? []) + (now ?? [])).map(\.id).filter { seen.insert($0).inserted }
+        return ordered(ids.compactMap { s[$0] != n[$0] ? n[$0] : j[$0] }, pool: pool)
+    }
+
+    /// Duo and signed-out iCloud turned on or off since the job started stay as they are now.
+    static func keepChoicesChanged(since start: Installation?, now current: Installation, in stored: inout Installation) {
+        if (current.duoCompatibility == true) != (start?.duoCompatibility == true) {
+            stored.duoCompatibility = current.duoCompatibility
+            if current.duoCompatibility != true { stored.duoCompatibilityMissing = nil }
+        }
+        if (current.iCloudSignedOut == true) != (start?.iCloudSignedOut == true) {
+            stored.iCloudSignedOut = current.iCloudSignedOut
+            if current.iCloudSignedOut != true {
+                stored.iCloudSignedOutMissing = nil
+                stored.iCloudSignedOutSkippedForModule = nil
+            }
         }
     }
 
@@ -1050,7 +1139,7 @@ extension AppLibrary {
         let fm = FileManager.default
         let limit = now.addingTimeInterval(-leftoverAge)
         func sweep(_ folder: URL, _ matches: (String) -> Bool) {
-            guard let names = try? fm.contentsOfDirectory(atPath: folder.path) else { return }
+            guard isDirectory(folder), let names = try? fm.contentsOfDirectory(atPath: folder.path) else { return }
             for name in names where matches(name) {
                 let url = folder.appendingPathComponent(name)
                 guard let date = modified(url), date < limit else { continue }
@@ -1059,7 +1148,8 @@ extension AppLibrary {
         }
         let staging: (String) -> Bool = { $0.hasPrefix(".incoming-") || $0.hasPrefix(".stale-") }
         let apps = root.appendingPathComponent("apps")
-        for app in (try? fm.contentsOfDirectory(atPath: apps.path)) ?? [] where UUID(uuidString: app) != nil {
+        let appNames = isDirectory(apps) ? (try? fm.contentsOfDirectory(atPath: apps.path)) ?? [] : []
+        for app in appNames where UUID(uuidString: app) != nil && isDirectory(apps.appendingPathComponent(app)) {
             sweep(apps.appendingPathComponent(app).appendingPathComponent("tweaks"), staging)
         }
         sweep(root.appendingPathComponent("downloads")) { $0.hasPrefix(".incoming-") }
@@ -1076,6 +1166,13 @@ extension AppLibrary {
 }
 
 // MARK: Download cache
+
+struct FileStamp: Equatable, Sendable {
+    var size: Int64
+    var inode: UInt64
+    var mtime: [Int64]
+    var ctime: [Int64]
+}
 
 /// One `.deb` XSide downloaded (`downloads/index.json`).
 struct DownloadCacheEntry: Codable, Equatable, Sendable {
@@ -1098,7 +1195,7 @@ extension AppLibrary {
     /// Keeps a downloaded `.deb` as `downloads/<sha256>.deb`, checking its bytes against
     /// `sha256` first, and lists it in the index. Returns where it is.
     public func storeDownload(_ file: URL, sha256: String, packageID: String, version: String,
-                              repo: String, url: String) throws -> URL {
+                              repo: String, url: String, now: Date = Date()) throws -> URL {
         let sha = sha256.lowercased()
         guard Self.isSHA256(sha) else { throw TweakError.unreadable("invalid SHA-256") }
         let fm = FileManager.default
@@ -1118,8 +1215,9 @@ extension AppLibrary {
             }
             var entries = readDownloadIndex().filter { $0.sha256 != sha }
             entries.append(DownloadCacheEntry(sha256: sha, packageID: packageID, version: version, repo: repo,
-                                              url: url, downloadedAt: Date()))
+                                              url: url, downloadedAt: now))
             try writeDownloadIndex(Array(entries.suffix(Self.maxDownloadEntries)))
+            verifiedDownloads[sha] = Self.stamp(destination)
             return destination
         } catch {
             try? fm.removeItem(at: staging)
@@ -1138,7 +1236,14 @@ extension AppLibrary {
         var found: URL?
         for entry in candidates {
             let url = downloadURL(entry.sha256)
-            if Self.hashFile(url, maxBytes: DebLimits.maxDebBytes) == entry.sha256 { found = url; break }
+            // Checked before and unchanged since (same size and date): not hashed again.
+            if let known = verifiedDownloads[entry.sha256], known == Self.stamp(url) { found = url; break }
+            if Self.hashFile(url, maxBytes: DebLimits.maxDebBytes) == entry.sha256 {
+                verifiedDownloads[entry.sha256] = Self.stamp(url)
+                found = url
+                break
+            }
+            verifiedDownloads[entry.sha256] = nil
             Self.logger.error("download cache: \(entry.sha256).deb is damaged, dropped")
             try? FileManager.default.removeItem(at: url)
             entries.removeAll { $0.sha256 == entry.sha256 }
@@ -1181,6 +1286,15 @@ extension AppLibrary {
             try? fm.removeItem(at: temp)
             throw error
         }
+    }
+
+    /// Size, modification and status-change times of a regular file (nil otherwise).
+    static func stamp(_ url: URL) -> FileStamp? {
+        var st = stat()
+        guard lstat(url.path, &st) == 0, st.st_mode & S_IFMT == S_IFREG else { return nil }
+        return FileStamp(size: Int64(st.st_size), inode: UInt64(st.st_ino),
+                         mtime: [Int64(st.st_mtimespec.tv_sec), Int64(st.st_mtimespec.tv_nsec)],
+                         ctime: [Int64(st.st_ctimespec.tv_sec), Int64(st.st_ctimespec.tv_nsec)])
     }
 
     static func isSHA256(_ s: String) -> Bool {

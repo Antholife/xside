@@ -426,12 +426,12 @@ struct LibraryResilienceTests {
 
 private let tweakNow = Date(timeIntervalSince1970: 1_800_000_000)
 
-private func tweakDeb(in dir: URL, version: String, payload: String = "") async throws -> URL {
+private func tweakDeb(in dir: URL, version: String, payload: String = "", compression: String = "gz") async throws -> URL {
     let control = "Package: com.example.tweak\nName: Example\nVersion: \(version)\nArchitecture: iphoneos-arm64\n"
     let dylib = FakeIPA.dylibMachO(linking: [], padding: 64, strings: payload.isEmpty ? [] : [payload])
     let url = dir.appendingPathComponent("tweak-\(UUID().uuidString).deb")
     try await FakeDeb.deb(control: control, files: [.file("./Library/MobileSubstrate/DynamicLibraries/Example.dylib", dylib)],
-                          compression: "gz").write(to: url)
+                          compression: compression).write(to: url)
     return url
 }
 
@@ -641,6 +641,129 @@ struct LibraryTweakTests {
         #expect(r.tweaks?.map(\.id) == ["0123456789abcdef"])
     }
 
+    // MARK: Edits made while a job runs
+
+    @Test func aTweakAddedWhileAJobRunsSurvivesItsSigning() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let (lib, rec) = try await library(tmp, devices: ["A"])
+        let atStart = try await record(lib)
+        // The jobs start (A refreshes, C is a first install), then the person adds a tweak to both.
+        let startA = atStart.signingSnapshot(deviceID: "A"), startC = atStart.signingSnapshot(deviceID: "C")
+        let p = try await lib.addTweak(try tweakDylib(in: tmp), recordID: rec.id, deviceIDs: ["A", "C"],
+                                       runner: ProcessRunner(), now: tweakNow).package
+        _ = try await lib.recordSigning(signing("A", uses: [], signed: []), for: rec.id, requireExisting: true, startedFrom: startA)
+        _ = try await lib.recordSigning(signing("C", uses: [], signed: []), for: rec.id, requireExisting: false, startedFrom: startC)
+        #expect(try await uses(lib, "A") == [TweakUse(id: p.id, enabled: true)])
+        #expect(try await uses(lib, "C") == [TweakUse(id: p.id, enabled: true)])
+        #expect(try await record(lib).pendingTweakUses == nil)
+        #expect(try await record(lib).tweaks == [p])
+        #expect(exists(lib.tweakDirectory(recordID: rec.id, id: p.id)))
+        // Not signed yet: pending on both.
+        let a = try #require(try await record(lib).installations.first { $0.deviceID == "A" })
+        #expect(a.pendingSigningChanges(wantsWithoutXSideFeatures: false) == [.tweaks])
+    }
+
+    @Test func theJobsOwnChoiceWinsWhenNothingChangedMeanwhile() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let (lib, rec) = try await library(tmp, devices: ["A"])
+        let p = try await lib.addTweak(try tweakDylib(in: tmp), recordID: rec.id, deviceIDs: [], runner: ProcessRunner(), now: tweakNow).package
+        _ = try await lib.setTweaks([TweakUse(id: p.id, enabled: true)], recordID: rec.id, deviceID: "A")
+        let start = try await record(lib).signingSnapshot(deviceID: "A")
+        // The install window turned it off and Duo on for this device, through the job.
+        var job = signing("A", uses: [TweakUse(id: p.id, enabled: false)], signed: [])
+        job.duoCompatibility = true
+        job.signedChoices?.duoCompatibility = true
+        let stored = try await lib.recordSigning(job, for: rec.id, requireExisting: true, startedFrom: start)
+        #expect(stored.tweaks == [TweakUse(id: p.id, enabled: false)] && stored.duoCompatibility == true)
+    }
+
+    @Test func compatibilityChoicesMadeWhileAJobRunsWin() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let (lib, rec) = try await library(tmp, devices: ["A"])
+        #expect(try await lib.setICloudSignedOut(true, recordID: rec.id, deviceID: "A"))
+        let start = try await record(lib).signingSnapshot(deviceID: "A")
+        // During the job: Duo on, iCloud off.
+        #expect(try await lib.setDuoCompatibility(true, recordID: rec.id, deviceID: "A"))
+        #expect(try await lib.setICloudSignedOut(false, recordID: rec.id, deviceID: "A"))
+        var job = signing("A", uses: [], signed: [])
+        job.iCloudSignedOut = true
+        job.iCloudSignedOutMissing = true
+        job.signedChoices?.iCloudSignedOut = true
+        let stored = try await lib.recordSigning(job, for: rec.id, requireExisting: true, startedFrom: start)
+        #expect(stored.duoCompatibility == true && !stored.hasDuoCompatibility) // asked, not signed yet
+        #expect(stored.iCloudSignedOut == nil && stored.iCloudSignedOutMissing == nil)
+        #expect(stored.pendingSigningChanges(wantsWithoutXSideFeatures: false) == [.duoCompatibility, .iCloudSignedOut])
+    }
+
+    @Test func tweaksHeldByARunningJobAreNotCollected() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let (lib, rec) = try await library(tmp, devices: ["A", "B", "C"])
+        let p = try await lib.addTweak(try tweakDylib(in: tmp), recordID: rec.id, deviceIDs: ["A"], runner: ProcessRunner(), now: tweakNow).package
+        let folder = lib.tweakDirectory(recordID: rec.id, id: p.id)
+        // A's job holds it; meanwhile the person turns it off and another device's job ends.
+        await lib.reserveTweaks([p.id], recordID: rec.id)
+        _ = try await lib.setTweaks([], recordID: rec.id, deviceID: "A")
+        _ = try await lib.recordSigning(signing("B", uses: [], signed: []), for: rec.id, requireExisting: true)
+        try await lib.removeInstallation(recordID: rec.id, deviceID: "C")
+        #expect(exists(folder))
+        // A caller's own reservation (`keepingTweaks`) works the same way.
+        await lib.releaseTweaks([p.id], recordID: rec.id)
+        _ = try await lib.recordSigning(signing("B", uses: [], signed: []), for: rec.id, requireExisting: true, keepingTweaks: [p.id])
+        #expect(exists(folder))
+        _ = try await lib.recordSigning(signing("B", uses: [], signed: []), for: rec.id, requireExisting: true)
+        #expect(!exists(folder))
+    }
+
+    @Test func aTweakAddedAgainWhileItIsCollectedIsKept() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let (lib, rec) = try await library(tmp, devices: ["A", "B"])
+        // bzip2 goes through the runner: the gate can hold it.
+        let src = try await tweakDeb(in: tmp, version: "1.0", compression: "bz2")
+        let p = try await lib.addTweak(src, recordID: rec.id, deviceIDs: ["A"], runner: ProcessRunner(), now: tweakNow).package
+        _ = try await lib.setTweaks([], recordID: rec.id, deviceID: "A")
+        // The same .deb again, its analysis held in the middle while a collection drops it.
+        let gate = GateRunner()
+        async let again = lib.addTweak(src, recordID: rec.id, deviceIDs: ["A"], runner: gate, now: tweakNow)
+        await gate.waitUntilHeld()
+        _ = try await lib.recordSigning(signing("B", uses: [], signed: []), for: rec.id, requireExisting: true)
+        await gate.release()
+        let added = try await again
+        #expect(added.package.id == p.id)
+        #expect(try await record(lib).tweaks == [p])
+        #expect(exists(lib.tweakDirectory(recordID: rec.id, id: p.id)))
+        // No folder is deleted while any analysis runs (it may be keeping one it found stored):
+        // the dropped one waits for the next collection.
+        _ = try await lib.setTweaks([], recordID: rec.id, deviceID: "A")
+        let other = GateRunner()
+        async let q = lib.addTweak(try await tweakDeb(in: tmp, version: "1.0", payload: "q", compression: "bz2"),
+                                   recordID: rec.id, deviceIDs: ["B"], runner: other, now: tweakNow)
+        await other.waitUntilHeld()
+        _ = try await lib.recordSigning(signing("B", uses: [], signed: []), for: rec.id, requireExisting: true)
+        #expect(try await record(lib).tweaks?.contains(p) == false)
+        #expect(exists(lib.tweakDirectory(recordID: rec.id, id: p.id)))
+        await other.release()
+        _ = try await q
+        _ = try await lib.recordSigning(signing("A", uses: [], signed: []), for: rec.id, requireExisting: true)
+        #expect(!exists(lib.tweakDirectory(recordID: rec.id, id: p.id)))
+    }
+
+    @Test func forcingATweakIsPendingUntilSigned() {
+        let signed = SigningChoices(withoutXSideFeatures: false, duoCompatibility: false, iCloudSignedOut: false,
+                                    tweaks: ["a"], forcedTweaks: [])
+        var i = inst("A")
+        i.signedChoices = signed
+        i.tweaks = [TweakUse(id: "a", enabled: true)]
+        #expect(i.pendingSigningChanges(wantsWithoutXSideFeatures: false).isEmpty)
+        i.tweaks = [TweakUse(id: "a", enabled: true, force: true)]
+        #expect(i.pendingSigningChanges(wantsWithoutXSideFeatures: false) == [.tweaks])
+        i.signedChoices?.forcedTweaks = ["a"]
+        #expect(i.pendingSigningChanges(wantsWithoutXSideFeatures: false).isEmpty)
+        // Forcing a disabled tweak changes nothing on the device.
+        i.tweaks = [TweakUse(id: "a", enabled: true, force: true), TweakUse(id: "b", enabled: false, force: true)]
+        #expect(i.pendingSigningChanges(wantsWithoutXSideFeatures: false).isEmpty)
+        #expect(i.forcedTweakIDs == ["a"])
+    }
+
     // MARK: Download cache
 
     @Test func aDownloadIsCachedAndFoundAgain() async throws {
@@ -651,10 +774,15 @@ struct LibraryTweakTests {
         try bytes.write(to: src)
         let sha = sha256(bytes)
         let stored = try await lib.storeDownload(src, sha256: sha, packageID: "com.opa334.altlist", version: "1.2",
-                                                 repo: "https://repo.example", url: "https://repo.example/altlist.deb")
+                                                 repo: "https://repo.example", url: "https://repo.example/altlist.deb", now: tweakNow)
         #expect(stored == lib.root.appendingPathComponent("downloads/\(sha).deb"))
         #expect(try Data(contentsOf: stored) == bytes)
-        #expect(exists(lib.root.appendingPathComponent("downloads/index.json")))
+        let indexData = try Data(contentsOf: lib.root.appendingPathComponent("downloads/index.json"))
+        let indexDecoder = JSONDecoder()
+        indexDecoder.dateDecodingStrategy = .iso8601
+        #expect(try indexDecoder.decode([DownloadCacheEntry].self, from: indexData)
+                == [DownloadCacheEntry(sha256: sha, packageID: "com.opa334.altlist", version: "1.2", repo: "https://repo.example",
+                                       url: "https://repo.example/altlist.deb", downloadedAt: tweakNow)])
         let atLeast1 = DebDependency(package: "com.opa334.altlist", relation: ">=", version: "1.0")
         #expect(await lib.cachedDownload(packageID: "com.opa334.altlist", satisfying: atLeast1) == stored)
         #expect(await lib.cachedDownload(packageID: "com.opa334.altlist",
@@ -717,15 +845,48 @@ struct LibraryTweakTests {
                     downloads.appendingPathComponent(".incoming-\(u)"),
                     temp.appendingPathComponent("deb-\(u)"), temp.appendingPathComponent("bzip2-\(u)"),
                     temp.appendingPathComponent("tweak-src-\(u).deb")]
-        let kept = [tweaks.appendingPathComponent("0123456789abcdef"), temp.appendingPathComponent("deb-notauuid"),
+        var kept = [tweaks.appendingPathComponent("0123456789abcdef"), temp.appendingPathComponent("deb-notauuid"),
                     temp.appendingPathComponent("other-\(u)"), temp.appendingPathComponent("deb-\(UUID().uuidString)-recent")]
         for url in gone { try make(url, dir: !url.lastPathComponent.hasSuffix(".deb")) }
         for url in kept { try make(url) }
         let recent = [tweaks.appendingPathComponent(".incoming-\(UUID().uuidString)"), temp.appendingPathComponent("deb-\(UUID().uuidString)")]
         for url in recent { try make(url, date: Date()) }
 
+        // A `tweaks` folder that is a link is never followed.
+        let elsewhere = tmp.appendingPathComponent("elsewhere")
+        let linkedApp = root.appendingPathComponent("apps/\(UUID().uuidString)")
+        try fm.createDirectory(at: linkedApp, withIntermediateDirectories: true)
+        try fm.createSymbolicLink(at: linkedApp.appendingPathComponent("tweaks"), withDestinationURL: elsewhere)
+        let outside = elsewhere.appendingPathComponent(".incoming-\(UUID().uuidString)")
+        try make(outside)
+        kept.append(outside)
+
         _ = AppLibrary(root: root, temporaryDirectory: temp)
         for url in gone { #expect(!exists(url), "\(url.lastPathComponent)") }
         for url in kept + recent { #expect(exists(url), "\(url.lastPathComponent)") }
+    }
+}
+
+/// Holds the first command until released (an analysis caught in the middle), then runs it for real.
+private actor GateRunnerState {
+    var held = false, open = false
+    var waiters: [CheckedContinuation<Void, Never>] = [], heldWaiters: [CheckedContinuation<Void, Never>] = []
+    func hold() async {
+        held = true
+        heldWaiters.forEach { $0.resume() }; heldWaiters = []
+        if open { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+    func waitUntilHeld() async { if held { return }; await withCheckedContinuation { heldWaiters.append($0) } }
+    func release() { open = true; waiters.forEach { $0.resume() }; waiters = [] }
+}
+
+private struct GateRunner: CommandRunning {
+    let state = GateRunnerState()
+    func waitUntilHeld() async { await state.waitUntilHeld() }
+    func release() async { await state.release() }
+    func run(_ executable: String, _ arguments: [String], cwd: URL?, timeout: Duration) async throws -> CommandResult {
+        await state.hold()
+        return try await ProcessRunner().run(executable, arguments, cwd: cwd, timeout: timeout)
     }
 }

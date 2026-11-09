@@ -499,7 +499,9 @@ public actor SideloadPipeline {
                                       withoutXSideFeaturesHere: previous?.withoutXSideFeaturesHere,
                                       signedChoices: SigningChoices(withoutXSideFeatures: options.withoutXSideFeatures == true,
                                                                     duoCompatibility: duoAsked, iCloudSignedOut: iCloudAsked))
-            let installation = try await library.recordSigning(signed, for: recordID, requireExisting: previous != nil)
+            // Choices the person changed while this job ran stay for the next signing.
+            let installation = try await library.recordSigning(signed, for: recordID, requireExisting: previous != nil,
+                                                               startedFrom: record.signingSnapshot(deviceID: device.id))
             Self.logger.notice("\(what): done, expires \(installation.expiresAt.formatted(.iso8601))")
             return installation
         } catch let unavailable as EnvironmentUnavailable {
