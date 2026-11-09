@@ -832,6 +832,7 @@
 "icloud.missing.install.module" = "%1$@: %2$@ had room for only one more library, and XSide kept its module: signed-out iCloud wasn't added. Turn off \"XSide features in this app\" to get signed-out iCloud instead.";
 "icloud.missing.row.module" = "Signed-out iCloud not added (no room beside the XSide module)";
 "install.step.icloud" = "Adding signed-out iCloud";
+"progress.step.tweaks" = "Adding tweaks";
 "preflight.usesICloud" = "%@ uses iCloud, but apps installed by XSide don't get access to it: it may crash. The \"Simulate signed-out iCloud\" option (step ②) avoids that.";
 "preflight.usesICloud.someDevices" = "%@ uses iCloud, but apps installed by XSide don't get access to it: it may crash on the devices where \"Simulate signed-out iCloud\" (step ②) is off.";
 "crash.cause.iCloud.adviceOption" = "Reinstall it with signed-out iCloud: it will believe no iCloud account is signed in, and its data will stay on the device.";

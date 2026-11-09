@@ -832,6 +832,7 @@
 "icloud.missing.install.module" = "%1$@ : %2$@ n'avait de place que pour une bibliothèque de plus, et XSide y a gardé son module : le mode iCloud déconnecté n'a pas été ajouté. Désactive « Fonctionnalités XSide dans cette app » pour l'avoir à la place.";
 "icloud.missing.row.module" = "Mode iCloud déconnecté non ajouté (pas de place à côté du module XSide)";
 "install.step.icloud" = "Ajout du mode iCloud déconnecté";
+"progress.step.tweaks" = "Ajout des tweaks";
 "preflight.usesICloud" = "%@ utilise iCloud, mais les apps installées par XSide n'y ont pas accès : elle risque de planter. L'option « Simuler iCloud déconnecté » (étape ②) l'évite.";
 "preflight.usesICloud.someDevices" = "%@ utilise iCloud, mais les apps installées par XSide n'y ont pas accès : elle risque de planter sur les appareils où « Simuler iCloud déconnecté » (étape ②) n'est pas activé.";
 "crash.cause.iCloud.adviceOption" = "Réinstalle-la en mode iCloud déconnecté : elle croira qu'aucun compte iCloud n'est connecté et ses données resteront sur l'appareil.";

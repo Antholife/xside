@@ -88,6 +88,10 @@ private struct FakeResigner: Resigning {
     var iCloudSkip: ICloudOutcome = .failed
     /// Whether the signed app holds the Duo compatibility module.
     var duoModule = false
+    /// What the tweak step says of each item; nil: as the real one for a stored folder, injected
+    /// when it's there and failed when it's gone.
+    var tweakResult: (@Sendable (TweakSigningItem) -> TweakResult)?
+    var embeddedDependencies: [String] = []
     func hasDuoLegacyModule(_ app: URL) -> Bool { duoModule }
     func hasXSideLibrary(_ app: URL) -> Bool { libraryAdded }
     func hasDuoCompatibility(_ app: URL) -> Bool { duoApplied }
@@ -111,6 +115,14 @@ private struct FakeResigner: Resigning {
         if options.iCloudSignedOut == true {
             await onICloud()
             if !iCloudApplied { await onICloudSkipped(iCloudSkip) }
+        }
+        if let items = options.tweaks?.items, !items.isEmpty {
+            await onTweaks(nil)
+            let results = items.map { item in
+                (item.package.id, tweakResult?(item) ?? (FileManager.default.fileExists(atPath: item.directory)
+                    ? .injected(converted: false) : .skipped(.failed)))
+            }
+            await onTweaks(TweakSigningReport(results: Dictionary(results) { a, _ in a }, embedded: embeddedDependencies))
         }
         await onSigning()
         // Simulate unpacking into the work dir.
@@ -215,11 +227,14 @@ private struct Fixture {
                   inAppDefaults: (@Sendable (Date) -> InAppSettings)? = nil,
                   withoutFeaturesByDefault: Bool = false, libraryAdded: Bool = true,
                   duoApplied: Bool = true, iCloudApplied: Bool = true,
-                  iCloudSkip: ICloudOutcome = .failed, duoModule: Bool = false) -> SideloadPipeline {
+                  iCloudSkip: ICloudOutcome = .failed, duoModule: Bool = false,
+                  tweakResult: (@Sendable (TweakSigningItem) -> TweakResult)? = nil,
+                  embeddedDependencies: [String] = []) -> SideloadPipeline {
         SideloadPipeline(library: library,
                          provisioner: provisioner ?? FakeProvisioner(log: log),
                          resigner: FakeResigner(log: log, libraryAdded: libraryAdded, duoApplied: duoApplied,
-                                                iCloudApplied: iCloudApplied, iCloudSkip: iCloudSkip, duoModule: duoModule),
+                                                iCloudApplied: iCloudApplied, iCloudSkip: iCloudSkip, duoModule: duoModule,
+                                                tweakResult: tweakResult, embeddedDependencies: embeddedDependencies),
                          installer: installer ?? FakeInstaller(log: log),
                          workRoot: workRoot, now: now,
                          inAppDefaults: inAppDefaults ?? { InAppSettings.defaults(reminder: true, at: $0) },
@@ -1547,6 +1562,193 @@ extension PipelineChannelTests {
         let record = try await f.library.importIPA(src, info: info, teamID: "TEAM123456")
         #expect(record.duo == duo)
         #expect(AppLibrary.readRecords(root: f.library.root)?.first?.duo == duo)
+    }
+}
+
+// MARK: - Tweaks (Task 14)
+
+/// A dropped `.dylib` stored in the record's pool, chosen for `deviceIDs`.
+private func addTweak(_ f: Fixture, _ name: String, deviceIDs: [String]) async throws -> TweakPackage {
+    let folder = f.tmp.appendingPathComponent("drop-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let url = folder.appendingPathComponent(name)
+    try FakeIPA.dylibMachO(linking: [], padding: 64, strings: [name]).write(to: url)
+    return try await f.library.addTweak(url, recordID: f.record.id, deviceIDs: deviceIDs, runner: ProcessRunner(),
+                                        now: fixedNow).package
+}
+
+private func ids(_ options: InstallOptions?) -> [String] { (options?.tweaks?.items ?? []).map(\.package.id) }
+
+/// Lets a test act on the library while the job installs.
+private struct HookInstaller: Installing {
+    let log: CallLog
+    var error: (any Error)?
+    let during: @Sendable () async throws -> Void
+    func install(app: URL, deviceID: String) async throws {
+        try await during()
+        await log.install(app, deviceID)
+        if let error { throw error }
+    }
+    func uninstall(bundleID: String, deviceID: String) async throws {}
+}
+
+struct PipelineTweakTests {
+    /// The device's enabled tweaks go into each refresh, with its iOS version, and the result is kept.
+    @Test func tweaksAreKeptAcrossARefresh() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let one = try await addTweak(f, "One.dylib", deviceIDs: ["dev-1"])
+        let phone = Device(id: "dev-1", udid: "UDID-1", name: "Test", model: "iPhone", kind: .iPhone, transport: .usb,
+                           isPaired: true, isAvailable: true, developerModeEnabled: true, osVersion: "18.2")
+        let steps = StepLog()
+        let first = try await f.pipeline().install(recordID: f.record.id, device: phone, env: env,
+                                                   progress: { await steps.add($0) })
+        #expect(await steps.items == [.profile, .welcome, .tweaks, .signing, .installing])
+        let job = try #require(await f.log.options.last?.tweaks)
+        #expect(job.deviceOS == "18.2")
+        #expect(job.items == [TweakSigningItem(package: one,
+                                               directory: f.library.tweakDirectory(recordID: f.record.id, id: one.id).path)])
+        #expect(first.tweaks == [TweakUse(id: one.id)])
+        #expect(first.tweakResults == [one.id: .injected(converted: false)])
+        #expect(await f.library.records().first?.pendingTweakUses == nil)
+        let again = try await f.pipeline(embeddedDependencies: ["ws.hbang.common"])
+            .install(recordID: f.record.id, device: phone, env: env, refresh: true)
+        #expect(ids(await f.log.options.last) == [one.id])
+        #expect(again.tweaks == [TweakUse(id: one.id)])
+        #expect(again.tweakResults == [one.id: .injected(converted: false)])
+        #expect(again.embeddedDependencies == ["ws.hbang.common"])
+        let stored = try #require(await f.library.records().first?.installations.first)
+        #expect(stored.tweakResults == again.tweakResults && stored.embeddedDependencies == ["ws.hbang.common"])
+    }
+
+    /// Same app, two devices, each with its own list: each signing gets that device's only.
+    @Test func eachDeviceGetsItsOwnTweaks() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let one = try await addTweak(f, "One.dylib", deviceIDs: ["dev-1"])
+        let two = try await addTweak(f, "Two.dylib", deviceIDs: ["dev-2"])
+        let a = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
+        #expect(ids(await f.log.options.last) == [one.id])
+        let b = try await f.pipeline().install(recordID: f.record.id, device: device("dev-2", udid: "UDID-2"), env: env)
+        #expect(ids(await f.log.options.last) == [two.id])
+        #expect(a.tweakResults?.keys.sorted() == [one.id] && b.tweakResults?.keys.sorted() == [two.id])
+        // This job's own choice for one device leaves the other's alone.
+        let both = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env,
+                                                  tweaks: [TweakUse(id: two.id), TweakUse(id: one.id)])
+        #expect(ids(await f.log.options.last) == [one.id, two.id]) // the pool's load order
+        #expect(both.tweaks == [TweakUse(id: one.id), TweakUse(id: two.id)])
+        _ = try await f.pipeline().install(recordID: f.record.id, device: device("dev-2", udid: "UDID-2"), env: env, refresh: true)
+        #expect(ids(await f.log.options.last) == [two.id])
+        // A device with none gets no tweak step at all.
+        _ = try await f.pipeline().install(recordID: f.record.id, device: device("dev-3", udid: "UDID-3"), env: env)
+        #expect(await f.log.options.last?.tweaks == nil)
+    }
+
+    /// Review Focus 4: the app was updated and a tweak no longer fits it. The refresh skips that
+    /// one, installs, and the installation says which and why; the choice stays on.
+    @Test func aTweakThatBecameIncompatibleIsReportedNotFatal() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let one = try await addTweak(f, "One.dylib", deviceIDs: ["dev-1"])
+        let two = try await addTweak(f, "Two.dylib", deviceIDs: ["dev-1"])
+        _ = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
+        let problem = TweakProblem.madeForAnotherApp(["com.example.demo"])
+        let oneID = one.id
+        let after = try await f.pipeline(tweakResult: { $0.package.id == oneID ? .skipped(.incompatible(problem)) : .injected(converted: true) })
+            .install(recordID: f.record.id, device: device(), env: env, refresh: true)
+        #expect(await f.log.installs.count == 2)
+        #expect(after.tweakResults == [one.id: .skipped(.incompatible(problem)), two.id: .injected(converted: true)])
+        #expect(after.tweaks == [TweakUse(id: one.id), TweakUse(id: two.id)])
+        #expect(after.lastErrorKey == nil && after.injectedTweakCount == 1 && after.hasConvertedTweak)
+    }
+
+    @Test func disabledTweaksAreNotSent() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let one = try await addTweak(f, "One.dylib", deviceIDs: ["dev-1"])
+        let two = try await addTweak(f, "Two.dylib", deviceIDs: ["dev-1"])
+        let steps = StepLog()
+        let result = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env,
+                                                    tweaks: [TweakUse(id: one.id, enabled: false), TweakUse(id: two.id)])
+        #expect(ids(await f.log.options.last) == [two.id])
+        #expect(result.tweaks == [TweakUse(id: one.id, enabled: false), TweakUse(id: two.id)])
+        #expect(result.tweakResults == [two.id: .injected(converted: false)])
+        // All off: no tweak step, nothing to report.
+        let off = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env,
+                                                 tweaks: [TweakUse(id: one.id, enabled: false), TweakUse(id: two.id, enabled: false)],
+                                                 progress: { await steps.add($0) })
+        #expect(await f.log.options.last?.tweaks == nil)
+        #expect(await !steps.items.contains(.tweaks))
+        #expect(off.tweakResults == nil && off.signedChoices?.tweaks == nil)
+        #expect(off.tweaks?.count == 2) // kept, off, for later
+        // An id that left the pool is never sent.
+        _ = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env,
+                                           tweaks: [TweakUse(id: "0123456789abcdef"), TweakUse(id: two.id)])
+        #expect(ids(await f.log.options.last) == [two.id])
+    }
+
+    @Test func signedChoicesListTheAskedTweaks() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let one = try await addTweak(f, "One.dylib", deviceIDs: ["dev-1"])
+        let two = try await addTweak(f, "Two.dylib", deviceIDs: ["dev-1"])
+        let three = try await addTweak(f, "Three.dylib", deviceIDs: ["dev-1"])
+        let result = try await f.pipeline(tweakResult: { _ in .skipped(.noRoom) })
+            .install(recordID: f.record.id, device: device(), env: env,
+                     tweaks: [TweakUse(id: one.id, force: true), TweakUse(id: two.id, enabled: false), TweakUse(id: three.id)])
+        #expect(await f.log.options.last?.tweaks?.items.map(\.force) == [true, false])
+        // What was asked, not what went in.
+        #expect(result.signedChoices == SigningChoices(withoutXSideFeatures: false, duoCompatibility: false, iCloudSignedOut: false,
+                                                       tweaks: [one.id, three.id], forcedTweaks: [one.id]))
+        #expect(result.pendingSigningChanges(wantsWithoutXSideFeatures: false).isEmpty)
+    }
+
+    /// Review Focus 5: XSide holds no downloader (a compile-time fact). A tweak whose stored folder
+    /// is gone is skipped as failed, and the install goes on.
+    @Test func aRefreshNeverDownloads() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let one = try await addTweak(f, "One.dylib", deviceIDs: ["dev-1"])
+        let two = try await addTweak(f, "Two.dylib", deviceIDs: ["dev-1"])
+        _ = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
+        try FileManager.default.removeItem(at: f.library.tweakDirectory(recordID: f.record.id, id: one.id))
+        let after = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env, refresh: true)
+        #expect(ids(await f.log.options.last) == [one.id, two.id])
+        #expect(after.tweakResults == [one.id: .skipped(.failed), two.id: .injected(converted: false)])
+        #expect(await f.log.installs.count == 2)
+    }
+
+    /// The step's report is the app's only once it's on the device.
+    @Test func aFailedInstallKeepsThePreviousResults() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let one = try await addTweak(f, "One.dylib", deviceIDs: ["dev-1"])
+        let first = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env)
+        let failing = FakeInstaller(log: f.log, error: XSideError.deviceUnavailable)
+        let oneID = one.id
+        await #expect(throws: XSideError.self) {
+            _ = try await f.pipeline(installer: failing, tweakResult: { _ in .skipped(.noRoom) }, embeddedDependencies: ["x"])
+                .install(recordID: f.record.id, device: device(), env: env, refresh: true)
+        }
+        let stored = try #require(await f.library.records().first?.installations.first)
+        #expect(stored.tweakResults == [oneID: .injected(converted: false)])
+        #expect(stored.tweakResults == first.tweakResults && stored.embeddedDependencies == nil)
+    }
+
+    /// A running job holds its tweaks: the person removing one meanwhile doesn't delete its files
+    /// under the signing. Released when the job ends, failed or not.
+    @Test func aJobHoldsItsTweaksUntilItEnds() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let one = try await addTweak(f, "One.dylib", deviceIDs: ["dev-1"])
+        let (library, recordID, oneID) = (f.library, f.record.id, one.id)
+        let held = HookInstaller(log: f.log, error: XSideError.deviceUnavailable) {
+            _ = try await library.setTweaks([], recordID: recordID, deviceID: "dev-1")
+            await library.collectUnusedTweaks(recordID: recordID)
+            #expect(await library.records().first?.tweaks?.map(\.id) == [oneID])
+        }
+        let pipeline = SideloadPipeline(library: f.library, provisioner: FakeProvisioner(log: f.log),
+                                        resigner: FakeResigner(log: f.log), installer: held,
+                                        workRoot: f.workRoot, now: { fixedNow })
+        await #expect(throws: XSideError.self) {
+            _ = try await pipeline.install(recordID: f.record.id, device: device(), env: env)
+        }
+        #expect(await f.log.installs.count == 1)
+        await f.library.collectUnusedTweaks(recordID: f.record.id)
+        #expect(await f.library.records().first?.tweaks?.isEmpty != false)
+        #expect(!FileManager.default.fileExists(atPath: f.library.tweakDirectory(recordID: f.record.id, id: one.id).path))
     }
 }
 

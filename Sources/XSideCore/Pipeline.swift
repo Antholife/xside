@@ -60,18 +60,25 @@ public enum InstallStep: Int, CaseIterable, Sendable {
     /// `duo`: adding iPhone Duo compatibility, only when it was asked for.
     /// `legacy32`: removing the old 32-bit code, only when the app has some.
     /// `icloud`: adding the signed-out iCloud library, only when it was asked for.
-    case profile, welcome, legacy32, duo, icloud, signing, installing
+    /// `tweaks`: injecting the device's enabled tweaks, only when it has some.
+    case profile, welcome, legacy32, duo, icloud, tweaks, signing, installing
 }
 
-/// FIFO async mutex: `run` bodies execute one at a time, in arrival order. A task already
-/// cancelled, or cancelled while it waits, throws `CancellationError` without taking the lock
-/// (its body never runs); a body that throws, or is cancelled while running, still hands it on.
 /// How the job's signed-out iCloud step went, from the resigner's callback.
 private actor ICloudSkipBox {
     var value: ICloudOutcome?
     func set(_ outcome: ICloudOutcome) { value = outcome }
 }
 
+/// What the job's tweak step did, from the resigner's callback. The app's only once installed.
+private actor TweakReportBox {
+    var value: TweakSigningReport?
+    func set(_ report: TweakSigningReport) { value = report }
+}
+
+/// FIFO async mutex: `run` bodies execute one at a time, in arrival order. A task already
+/// cancelled, or cancelled while it waits, throws `CancellationError` without taking the lock
+/// (its body never runs); a body that throws, or is cancelled while running, still hands it on.
 actor AsyncLock {
     private var busy = false
     private var waiters: [(id: UUID, continuation: CheckedContinuation<Void, any Error>)] = []
@@ -245,10 +252,15 @@ public actor SideloadPipeline {
     /// nil keeps the installation's own choice (off for a new one). When it applies, `.duo` is a
     /// step of its own and `duoOutcome` tells how it went as soon as it's known.
     /// `iCloudSignedOut`: "Simulate signed-out iCloud" for this device, the same way (`.icloud`).
+    /// `tweaks`: this device's tweak list, remembered on the installation; nil keeps its own (for
+    /// a first install, the one chosen before it, `AppRecord.pendingTweakUses`). Its enabled
+    /// tweaks of the app's pool are injected (`.tweaks`, a step only when there is one), and
+    /// what each one got is recorded once the app is on the device. Never any network: a tweak
+    /// whose stored files are gone is skipped as failed, and the install goes on.
     public func install(recordID: UUID, device: Device,
                         environment: @escaping @Sendable () async throws -> SigningEnvironment,
                         refresh: Bool = false, inApp: InAppDraft? = nil, duoCompatibility: Bool? = nil,
-                        iCloudSignedOut: Bool? = nil,
+                        iCloudSignedOut: Bool? = nil, tweaks: [TweakUse]? = nil,
                         progress: @escaping @Sendable (InstallStep) async -> Void = { _ in },
                         duoOutcome: @escaping @Sendable (DuoOutcome) async -> Void = { _ in }) async throws -> Installation {
         let previous = tails[device.id]?.task
@@ -258,7 +270,7 @@ public actor SideloadPipeline {
             try Task.checkCancellation()
             return try await self.perform(recordID: recordID, device: device, environment: environment,
                                           refresh: refresh, inApp: inApp, duo: duoCompatibility,
-                                          iCloud: iCloudSignedOut, progress: progress,
+                                          iCloud: iCloudSignedOut, tweaks: tweaks, progress: progress,
                                           duoOutcome: duoOutcome)
         }
         // The chain waits for the previous job too: one cancelled while queued ends at once, and a
@@ -335,25 +347,71 @@ public actor SideloadPipeline {
     /// A fixed environment (tests, callers that just probed).
     public func install(recordID: UUID, device: Device, env: SigningEnvironment, refresh: Bool = false,
                         inApp: InAppDraft? = nil, duoCompatibility: Bool? = nil, iCloudSignedOut: Bool? = nil,
+                        tweaks: [TweakUse]? = nil,
                         progress: @escaping @Sendable (InstallStep) async -> Void = { _ in },
                         duoOutcome: @escaping @Sendable (DuoOutcome) async -> Void = { _ in }) async throws -> Installation {
         try await install(recordID: recordID, device: device, environment: { env }, refresh: refresh, inApp: inApp,
-                          duoCompatibility: duoCompatibility, iCloudSignedOut: iCloudSignedOut, progress: progress,
+                          duoCompatibility: duoCompatibility, iCloudSignedOut: iCloudSignedOut, tweaks: tweaks,
+                          progress: progress,
                           duoOutcome: duoOutcome)
     }
 
     /// Thrown inside the provisioning lock when `environment` fails, to tell it from a job failure.
     private struct EnvironmentUnavailable: Error { let underlying: any Error }
 
+    /// The device's tweak list for this job (ordered as the pool, ids not in it dropped) and the
+    /// items its enabled ones make, with their stored folders.
+    private nonisolated func tweakJob(_ asked: [TweakUse]?, record: AppRecord, previous: Installation?,
+                                      device: Device) -> (uses: [TweakUse]?, job: TweakJob?) {
+        let pool = record.tweaks ?? []
+        guard let chosen = asked ?? previous?.tweaks ?? (previous == nil ? record.pendingTweakUses?[device.id] : nil) else {
+            return (nil, nil)
+        }
+        let uses = AppLibrary.ordered(chosen, pool: pool)
+        let byID = Dictionary(pool.map { ($0.id, $0) }) { a, _ in a }
+        let items = uses.filter(\.enabled).compactMap { use in
+            byID[use.id].map {
+                TweakSigningItem(package: $0, directory: library.tweakDirectory(recordID: record.id, id: $0.id).path,
+                                 force: use.force == true)
+            }
+        }
+        return (uses.isEmpty ? nil : uses, items.isEmpty ? nil : TweakJob(items: items, deviceOS: device.osVersion))
+    }
+
+    /// Holds the job's tweaks (`AppLibrary.reserveTweaks`) for as long as it runs, whichever way
+    /// it ends, so removing one meanwhile never deletes files the signing is copying.
     private nonisolated func perform(recordID: UUID, device: Device,
                                      environment: @escaping @Sendable () async throws -> SigningEnvironment,
                                      refresh: Bool, inApp draft: InAppDraft?, duo: Bool?, iCloud: Bool?,
+                                     tweaks asked: [TweakUse]?,
                                      progress: @escaping @Sendable (InstallStep) async -> Void,
                                      duoOutcome: @escaping @Sendable (DuoOutcome) async -> Void) async throws -> Installation {
         guard let record = await library.records().first(where: { $0.id == recordID }) else {
             throw XSideError.recordNotFound
         }
         let previous = record.installations.first { $0.deviceID == device.id }
+        let tweaks = tweakJob(asked, record: record, previous: previous, device: device)
+        let held = (tweaks.uses ?? []).map(\.id)
+        await library.reserveTweaks(held, recordID: recordID)
+        do {
+            let installation = try await perform(record: record, previous: previous, device: device,
+                                                 environment: environment, refresh: refresh, inApp: draft, duo: duo,
+                                                 iCloud: iCloud, tweaks: tweaks, progress: progress, duoOutcome: duoOutcome)
+            await library.releaseTweaks(held, recordID: recordID)
+            return installation
+        } catch {
+            await library.releaseTweaks(held, recordID: recordID)
+            throw error
+        }
+    }
+
+    private nonisolated func perform(record: AppRecord, previous: Installation?, device: Device,
+                                     environment: @escaping @Sendable () async throws -> SigningEnvironment,
+                                     refresh: Bool, inApp draft: InAppDraft?, duo: Bool?, iCloud: Bool?,
+                                     tweaks: (uses: [TweakUse]?, job: TweakJob?),
+                                     progress: @escaping @Sendable (InstallStep) async -> Void,
+                                     duoOutcome: @escaping @Sendable (DuoOutcome) async -> Void) async throws -> Installation {
+        let recordID = record.id
         let previousBundleID = previous.map { $0.signedBundleID ?? record.signedBundleID }
         let bundleID = refresh ? previousBundleID ?? record.signedBundleID : record.signedBundleID
 
@@ -431,6 +489,9 @@ public actor SideloadPipeline {
             let iCloudAsked = iCloud ?? (previous?.iCloudSignedOut == true)
             options.iCloudSignedOut = iCloudAsked
             let iCloudSkip = ICloudSkipBox()
+            // Per device too: this device's enabled tweaks only.
+            options.tweaks = tweaks.job
+            let tweakReport = TweakReportBox()
             // The job's tools all use the Xcode of the environment it started with.
             let app = try await CommandEnvironment.withDeveloperDir(current.developerDir) { [resigner] in
                 try await resigner.resign(
@@ -461,7 +522,14 @@ public actor SideloadPipeline {
                         await progress(.signing)
                         Self.logger.info("\(what): signing")
                     },
-                    onTweaks: { _ in })
+                    onTweaks: { report in
+                        if let report {
+                            await tweakReport.set(report)
+                        } else {
+                            await progress(.tweaks)
+                            Self.logger.info("\(what): adding \(tweaks.job?.items.count ?? 0) tweak(s)")
+                        }
+                    })
             }
             // The process name crash logs go by, for records imported before XSide kept it.
             if record.executable == nil, let executable = try? IPAInspector.info(of: app).executable {
@@ -474,6 +542,10 @@ public actor SideloadPipeline {
             }
 
             let skippedICloud = await iCloudSkip.value
+            // Only now: had the install failed, the app on the device would have the previous ones.
+            let report = tweaks.job == nil ? nil : await tweakReport.value
+            let askedTweaks = tweaks.job?.items.map(\.package.id)
+            let forcedTweaks = tweaks.job?.items.filter(\.force).map(\.package.id)
             let date = now()
             // The secret written into the app becomes the installation's only now: had the install
             // failed, the app still on the device would hold the previous one, which is kept.
@@ -500,7 +572,12 @@ public actor SideloadPipeline {
                                       duoLegacyModule: duoAsked && resigner.hasDuoLegacyModule(app) ? true : nil,
                                       withoutXSideFeaturesHere: previous?.withoutXSideFeaturesHere,
                                       signedChoices: SigningChoices(withoutXSideFeatures: options.withoutXSideFeatures == true,
-                                                                    duoCompatibility: duoAsked, iCloudSignedOut: iCloudAsked))
+                                                                    duoCompatibility: duoAsked, iCloudSignedOut: iCloudAsked,
+                                                                    tweaks: askedTweaks,
+                                                                    forcedTweaks: forcedTweaks?.isEmpty == false ? forcedTweaks : nil),
+                                      tweaks: tweaks.uses,
+                                      tweakResults: report.flatMap { $0.results.isEmpty ? nil : $0.results },
+                                      embeddedDependencies: report.flatMap { $0.embedded.isEmpty ? nil : $0.embedded })
             // Choices the person changed while this job ran stay for the next signing.
             let installation = try await library.recordSigning(signed, for: recordID, requireExisting: previous != nil,
                                                                startedFrom: record.signingSnapshot(deviceID: device.id))

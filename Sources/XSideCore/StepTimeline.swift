@@ -14,7 +14,8 @@ public enum ProgressStep: Int, CaseIterable, Sendable {
     /// `duo`: adding iPhone Duo compatibility, listed only for a run that asked for it.
     /// `legacy32`: removing the old 32-bit code, listed only for an app that has some.
     /// `icloud`: adding the signed-out iCloud library, listed only for a run that asked for it.
-    case preparing, profile, welcome, legacy32, duo, icloud, signing, installing, wifiCheck
+    /// `tweaks`: injecting the device's enabled tweaks, listed only for a device that has some.
+    case preparing, profile, welcome, legacy32, duo, icloud, tweaks, signing, installing, wifiCheck
 
     public init(_ step: InstallStep) {
         switch step {
@@ -22,6 +23,7 @@ public enum ProgressStep: Int, CaseIterable, Sendable {
         case .welcome: self = .welcome
         case .duo: self = .duo
         case .icloud: self = .icloud
+        case .tweaks: self = .tweaks
         case .legacy32: self = .legacy32
         case .signing: self = .signing
         case .installing: self = .installing
@@ -29,12 +31,15 @@ public enum ProgressStep: Int, CaseIterable, Sendable {
     }
 
     /// The list for a run; Wi-Fi verification only exists after a first install, the Duo step
-    /// only when the option is on for the device, the iCloud one likewise.
+    /// only when the option is on for the device, the iCloud one likewise, the tweak one only
+    /// when the device has an enabled tweak.
     public static func list(includingWifiCheck: Bool, includingDuo: Bool = false,
-                            includingLegacy32: Bool = false, includingICloud: Bool = false) -> [ProgressStep] {
+                            includingLegacy32: Bool = false, includingICloud: Bool = false,
+                            includingTweaks: Bool = false) -> [ProgressStep] {
         allCases.filter {
             ($0 != .wifiCheck || includingWifiCheck) && ($0 != .duo || includingDuo)
                 && ($0 != .legacy32 || includingLegacy32) && ($0 != .icloud || includingICloud)
+                && ($0 != .tweaks || includingTweaks)
         }
     }
 }

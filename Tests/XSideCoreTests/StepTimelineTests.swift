@@ -26,6 +26,18 @@ import Testing
         #expect(StepTimeline(steps: run, stage: .step(.duo)).status(of: .signing) == .active)
     }
 
+    /// Listed only for a run on a device with an enabled tweak: after iCloud, before the signature.
+    @Test func tweakStepOnlyWhenAsked() {
+        #expect(!run.contains(.tweaks))
+        let all = ProgressStep.list(includingWifiCheck: false, includingICloud: true, includingTweaks: true)
+        #expect(all == [.preparing, .profile, .welcome, .icloud, .tweaks, .signing, .installing])
+        #expect(ProgressStep(InstallStep.tweaks) == .tweaks)
+        let t = StepTimeline(steps: all, stage: .step(.tweaks))
+        #expect(t.status(of: .icloud) == .done && t.status(of: .tweaks) == .active && t.status(of: .signing) == .pending)
+        // Not listed: a .tweaks stage resolves to the signature.
+        #expect(StepTimeline(steps: run, stage: .step(.tweaks)).status(of: .signing) == .active)
+    }
+
     @Test func midRunStatuses() {
         let t = StepTimeline(steps: firstRun, stage: .step(.signing))
         #expect(t.status(of: .preparing) == .done)
