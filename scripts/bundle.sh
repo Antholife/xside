@@ -93,7 +93,7 @@ if xcrun -sdk iphoneos --show-sdk-path >/dev/null 2>&1; then
     # support of their own when the option is on; independent of XSide's module too.
     xcrun -sdk iphoneos clang -dynamiclib -arch arm64 -mios-version-min=15.0 -fobjc-arc -O2 \
         -Wall -Wextra -Werror -Wno-unused-parameter \
-        -framework UIKit -framework Foundation -framework CoreGraphics \
+        -framework UIKit -framework Foundation -framework CoreGraphics -weak_framework CoreMotion \
         -install_name @executable_path/Frameworks/XSideDuoLegacy.dylib \
         -o "$APP/Contents/Resources/XSideDuoLegacy.dylib" App/DuoLegacy/*.m
     # The converted tweaks' path redirect (App/TweakSupport), added with them under

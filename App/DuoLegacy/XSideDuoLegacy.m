@@ -19,6 +19,10 @@
 //  - until the scene connects, lists the windows the app made in UIApplication.windows (and the one
 //    it made key in keyWindow): iOS lists none before then, and old apps read windows[0] in
 //    didFinishLaunching (Plague Inc. crashed on it).
+//  - gives back two APIs that iOS 27 turns off for apps built with its SDK (the SDK raise): UIApplication
+//    statusBarOrientation (a no-op: now the scene's orientation, which old games lay out from) and
+//    UIAccelerometer ("no longer available": now fed by CoreMotion, same values in g, to the delegate's
+//    accelerometer:didAccelerate:). Boost 2 needed both.
 //  - forwards URL contexts -> application:openURL:options: (or the older forms), user activities ->
 //    application:continueUserActivity:restorationHandler:, shortcut items ->
 //    application:performActionForShortcutItem:completionHandler: (also those in the connection options).
@@ -36,6 +40,7 @@
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <os/log.h>
+#import <CoreMotion/CoreMotion.h>
 
 #define XSLOG(fmt, ...) os_log(OS_LOG_DEFAULT, "[XSDuoLegacy] " fmt, ##__VA_ARGS__)
 
@@ -147,6 +152,75 @@ static UIWindow *h_appKeyWindow(UIApplication *self, SEL _cmd) {
     if (real || gScene || !gActive) return real;
     UIWindow *k = gKeyCandidate;
     return (k && !k.windowScene) ? k : real;
+}
+
+#pragma mark - APIs iOS 27 turns off for its SDK: statusBarOrientation, UIAccelerometer
+
+static IMP oStatusBarOrientation;
+static UIInterfaceOrientation h_statusBarOrientation(UIApplication *self, SEL _cmd) {
+    UIWindowScene *s = gScene;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    if (s && s.interfaceOrientation != UIInterfaceOrientationUnknown) return s.interfaceOrientation;
+#pragma clang diagnostic pop
+    return ((UIInterfaceOrientation (*)(id, SEL))oStatusBarOrientation)(self, _cmd);
+}
+
+// What the delegate gets in place of a UIAcceleration (the class itself can't be made any more):
+// the same readers.
+@interface XSAcceleration : NSObject
+@property (nonatomic) double x, y, z;
+@property (nonatomic) NSTimeInterval timestamp;
+@end
+@implementation XSAcceleration
+@end
+
+static CMMotionManager *gMotion;
+static NSTimeInterval gAccelInterval = 0.1;       // UIAccelerometer's default
+static __weak id gAccelDelegate;
+static NSInteger gAccelLogged;                    // samples logged, the first seconds only
+
+static void XSAccelStart(id accelerometer) {
+    if (!gMotion) gMotion = [CMMotionManager new];
+    if (!gMotion.accelerometerAvailable) { XSLOG("accelerometer: not available"); return; }
+    gMotion.accelerometerUpdateInterval = gAccelInterval;
+    if (gMotion.accelerometerActive) return;
+    __weak id weakAccelerometer = accelerometer;
+    [gMotion startAccelerometerUpdatesToQueue:NSOperationQueue.mainQueue withHandler:^(CMAccelerometerData *data, NSError *error) {
+        id d = gAccelDelegate;
+        SEL sel = NSSelectorFromString(@"accelerometer:didAccelerate:");
+        if (!data || ![d respondsToSelector:sel]) return;
+        XSAcceleration *a = [XSAcceleration new];
+        a.x = data.acceleration.x; a.y = data.acceleration.y; a.z = data.acceleration.z;
+        a.timestamp = data.timestamp;
+        NSInteger every = MAX(1, (NSInteger)lround(1 / MAX(gAccelInterval, 0.01)));
+        if (gAccelLogged < 20 * every && gAccelLogged++ % every == 0) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+            long o = (long)gScene.interfaceOrientation;
+#pragma clang diagnostic pop
+            XSLOG("accelerometer x %.2f y %.2f z %.2f (orientation %ld)", a.x, a.y, a.z, o);
+        }
+        ((void (*)(id, SEL, id, id))objc_msgSend)(d, sel, weakAccelerometer, a);
+    }];
+    XSLOG("accelerometer: CoreMotion every %.3f s", gAccelInterval);
+}
+
+static IMP oAccelSetDelegate, oAccelSetInterval;
+static void h_accelSetDelegate(id self, SEL _cmd, id delegate) {
+    ((void (*)(id, SEL, id))oAccelSetDelegate)(self, _cmd, delegate);
+    gAccelDelegate = delegate;
+    @try {
+        if (delegate) XSAccelStart(self);
+        else if (gMotion.accelerometerActive) { [gMotion stopAccelerometerUpdates]; XSLOG("accelerometer: stopped"); }
+    } @catch (NSException *e) {
+        XSLOG("accelerometer failed: %{public}@", e.reason);
+    }
+}
+static void h_accelSetInterval(id self, SEL _cmd, NSTimeInterval interval) {
+    ((void (*)(id, SEL, NSTimeInterval))oAccelSetInterval)(self, _cmd, interval);
+    if (interval > 0) gAccelInterval = MAX(interval, 0.01);
+    if (gMotion) gMotion.accelerometerUpdateInterval = gAccelInterval;
 }
 
 // Replaces `sel` on `c` (added on `c` when inherited) and keeps the original. Returns NO, and
@@ -424,6 +498,12 @@ __attribute__((constructor)) static void XSDuoLegacyInit(void) {
             XSHook(A, @selector(windows), (IMP)h_appWindows, &oAppWindows);
             XSHook(A, @selector(keyWindow), (IMP)h_appKeyWindow, &oAppKeyWindow);
             XSHook(A, @selector(setDelegate:), (IMP)h_setDelegate, &oSetDelegate);
+            XSHook(A, NSSelectorFromString(@"statusBarOrientation"), (IMP)h_statusBarOrientation, &oStatusBarOrientation);
+            Class accel = NSClassFromString(@"UIAccelerometer");
+            if (accel && NSClassFromString(@"CMMotionManager")) {
+                XSHook(accel, @selector(setDelegate:), (IMP)h_accelSetDelegate, &oAccelSetDelegate);
+                XSHook(accel, NSSelectorFromString(@"setUpdateInterval:"), (IMP)h_accelSetInterval, &oAccelSetInterval);
+            }
             gActive = YES;
             XSLOG("loaded");
         } @catch (NSException *e) {
