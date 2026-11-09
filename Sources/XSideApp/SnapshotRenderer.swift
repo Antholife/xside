@@ -185,6 +185,8 @@ enum SnapshotRenderer {
         ]
         return TweakDependenciesView(tweakName: "InstaPlus Reborn", rows: rows, deviceNames: names,
                                      errors: ["com.opa334.altlist": L("deps.tooNew", "2.1", "< 2.0")],
+                                     notices: ["com.hbang.alderis": L("deps.added", "Alderis 1.2.1", names[deviceIDs[0]] ?? "")
+                                                + " " + L("deps.added.tweakOn", "InstaPlus Reborn")],
                                      beingAdded: ["com.example.libfancy"], maxListHeight: .infinity,
                                      open: { _ in }, addDeb: { _, _ in }, download: { _ in }, done: {})
     }
