@@ -927,3 +927,6 @@
 "duo.details.undo" = "To undo: turn the option off. The next refresh reinstalls the app without it.";
 "duo.details.onlyDuo" = "It only matters on an iPhone Duo; on any other device it changes nothing.";
 "duo.caption.alreadySupported" = "%@ already uses all of the iPhone Duo's screens: this option wouldn't change anything.";
+"icloud.confirm.title" = "Simulate signed-out iCloud?";
+"icloud.confirm.message" = "%@ will believe no iCloud account is signed in. It will no longer crash because of iCloud, but its data will stay on this device: nothing will sync. An app that requires iCloud may stay on its sign-in screen. You can turn the option off at any time.";
+"icloud.confirm.turnOn" = "Turn on";

@@ -927,3 +927,6 @@
 "duo.details.undo" = "Pour annuler : désactive l'option. Le prochain rafraîchissement réinstalle l'app sans elle.";
 "duo.details.onlyDuo" = "Ça ne compte que sur un iPhone Duo ; sur tout autre appareil, ça ne change rien.";
 "duo.caption.alreadySupported" = "%@ utilise déjà tous les écrans de l'iPhone Duo : cette option ne changerait rien.";
+"icloud.confirm.title" = "Simuler iCloud déconnecté ?";
+"icloud.confirm.message" = "%@ croira qu'aucun compte iCloud n'est connecté. Elle ne plantera plus à cause d'iCloud, mais ses données resteront sur cet appareil : rien ne sera synchronisé. Une app qui exige iCloud peut rester sur son écran de connexion. Tu pourras désactiver l'option à tout moment.";
+"icloud.confirm.turnOn" = "Activer";

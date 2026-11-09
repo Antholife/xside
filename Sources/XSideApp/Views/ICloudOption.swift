@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import XSideCore
 
@@ -56,7 +57,9 @@ struct ICloudOptionRow: View {
                 }
             }
             Spacer(minLength: 8)
-            Toggle(L("icloud.option"), isOn: $isOn)
+            Toggle(L("icloud.option"), isOn: Binding(get: { isOn }, set: { on in
+                if !on || Self.confirm(app: appName) { isOn = on }
+            }))
                 .labelsHidden()
                 .toggleStyle(.xside)
                 .controlSize(.small)
@@ -77,6 +80,18 @@ struct ICloudOptionRow: View {
         case .notNeeded: (L("icloud.caption.notNeeded"), .caution)
         case .unknown: nil
         }
+    }
+}
+
+extension ICloudOptionRow {
+    /// True when the user confirmed turning it on for `app` (same style as the Duo option's).
+    static func confirm(app: String) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = L("icloud.confirm.title")
+        alert.informativeText = L("icloud.confirm.message", app)
+        alert.addButton(withTitle: L("icloud.confirm.turnOn"))
+        alert.addButton(withTitle: L("install.cancel"))
+        return alert.runModal() == .alertFirstButtonReturn
     }
 }
 
