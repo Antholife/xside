@@ -246,7 +246,9 @@ struct PipelineTests {
                                        inApp: InAppSettings.defaults(reminder: true, at: fixedNow),
                                        firstInstalledAt: fixedNow,
                                        lastRefreshOutcome: RefreshOutcome(at: fixedNow, succeeded: true),
-                                       channelSecret: result.channelSecret))
+                                       channelSecret: result.channelSecret,
+                                       signedChoices: SigningChoices(withoutXSideFeatures: false, duoCompatibility: false,
+                                                                     iCloudSignedOut: false)))
         #expect(result.channelSecret?.count == 32)
         let stored = try #require(await f.library.records().first?.installations.first)
         #expect(stored.deviceID == "dev-1")

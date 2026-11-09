@@ -779,8 +779,6 @@
 "duo.missing" = "La dernière installation n'a pas pu l'ajouter : %@ a été installée sans. Les journaux disent pourquoi.";
 "duo.missing.install" = "%1$@ : la compatibilité iPhone Duo n'a pas pu être ajoutée, %2$@ a été installée sans.";
 "duo.missing.row" = "Compatibilité iPhone Duo non ajoutée (installée sans)";
-"duo.nextSigning" = "Pris en compte au prochain rafraîchissement de l'app sur cet appareil.";
-"duo.refreshNow" = "Rafraîchir maintenant";
 "fixes.request.help" = "Ouvre un formulaire sur GitHub.";
 "fixes.request.crashHelp" = "Ouvre un formulaire sur GitHub avec le diagnostic, sans données personnelles (ni identifiant d'app, ni nom d'appareil).";
 "fixes.request.prompt" = "Décris ce qui se passe (ce que tu fais, ce que l'app fait ou ne fait pas) :";
@@ -949,3 +947,6 @@
 "icloud.confirm.title" = "Simuler iCloud déconnecté ?";
 "icloud.confirm.message" = "%@ croira qu'aucun compte iCloud n'est connecté. Elle ne plantera plus à cause d'iCloud, mais ses données resteront sur cet appareil : rien ne sera synchronisé. Une app qui exige iCloud peut rester sur son écran de connexion. Tu pourras désactiver l'option à tout moment.";
 "icloud.confirm.turnOn" = "Activer";
+
+"pending.line" = "Changement en attente : s'appliquera au prochain rafraîchissement de l'app sur %@";
+"pending.refreshNow" = "Rafraîchir maintenant";

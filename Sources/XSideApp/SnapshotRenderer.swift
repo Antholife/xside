@@ -28,6 +28,7 @@ enum SnapshotRenderer {
         NSApplication.shared.setActivationPolicy(.prohibited)
         UserDefaults.standard.set(true, forKey: JourneyStep.completedKey)
 
+        SettingsView.snapshotScreenHeight = 1_800
         let model = AppModel(startsServices: false)
         let now = Date()
         let sample = Sample(now: now, library: out.appendingPathComponent("library", isDirectory: true))
@@ -193,6 +194,16 @@ enum SnapshotRenderer {
             video.duo = DuoAppInfo(sdkVersion: "26.4", adoptsScenes: false, sceneDelegateClass: "YTSceneDelegate")
             video.icloud = ICloudAppInfo(declaresICloud: false, linksCloudKit: true)
             video.legacy32 = false
+            // The iPhone's copy was signed with the module and without Duo or iCloud; the choices since:
+            // the module off for the app, Duo and signed-out iCloud on. All three wait for a refresh.
+            video.options.withoutXSideFeatures = true
+            video.installations[1].duoCompatibility = true
+            video.installations[1].iCloudSignedOut = true
+            video.installations[1].signedChoices = SigningChoices(withoutXSideFeatures: false, duoCompatibility: false,
+                                                                  iCloudSignedOut: false)
+            video.installations[0].withoutXSideFeatures = true // the iPad: already signed that way, nothing pending
+            video.installations[0].signedChoices = SigningChoices(withoutXSideFeatures: true, duoCompatibility: false,
+                                                                  iCloudSignedOut: false)
             // No scene support of its own: the Duo option brings the compatibility module.
             var photos = record(2, "Instagram", [installation(iPhone, days: 1.3, version: "412.0", paused: true)])
             photos.duo = DuoAppInfo(sdkVersion: "26.0", adoptsScenes: false, sceneDelegateClass: nil)

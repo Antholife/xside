@@ -113,9 +113,16 @@ struct SettingsView: View {
     /// Before the page reports: the former fixed height.
     private static let defaultHeight: CGFloat = 560
 
+    #if DEBUG
+    nonisolated(unsafe) static var snapshotScreenHeight: CGFloat?
+    #endif
+
     /// The page's content height, within the screen (less the title bar and a margin).
     private var height: CGFloat {
-        let screen = (NSScreen.main?.visibleFrame.height ?? 800) - 28 - 24
+        var screen = (NSScreen.main?.visibleFrame.height ?? 800) - 28 - 24
+        #if DEBUG
+        if let tall = Self.snapshotScreenHeight { screen = tall } // the snapshot harness: tall enough to see every row
+        #endif
         guard let content = paneHeights[model.settingsPane]?.values.max() else { return min(Self.defaultHeight, screen) }
         return min(max(Self.minHeight, content.rounded(.up)), screen)
     }

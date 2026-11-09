@@ -66,6 +66,9 @@ public struct Installation: Codable, Equatable, Sendable {
     /// Missing because the app's header had room for one more library only, and XSide's module
     /// got it (turning the XSide features off for the app makes room). nil otherwise.
     public var iCloudSignedOutSkippedForModule: Bool?
+    /// What the last signing was asked to do for the options that only apply at signing (nil in
+    /// older state: not known). Compared with the choices now by `pendingSigningChanges`.
+    public var signedChoices: SigningChoices?
     /// The app on the device has the library: asked for, and the last signing added it.
     public var hasICloudSignedOut: Bool { iCloudSignedOut == true && iCloudSignedOutMissing != true }
     /// The app on the device has iPhone Duo compatibility: asked for, and the last signing applied it.
@@ -83,7 +86,8 @@ public struct Installation: Codable, Equatable, Sendable {
                 duoCompatibility: Bool? = nil, duoCompatibilityMissing: Bool? = nil, onDuo: Bool? = nil,
                 iCloudSignedOut: Bool? = nil, iCloudSignedOutMissing: Bool? = nil,
                 iCloudSignedOutSkippedForModule: Bool? = nil, duoLegacyModule: Bool? = nil,
-                withoutXSideFeaturesHere: Bool? = nil) {
+                withoutXSideFeaturesHere: Bool? = nil, signedChoices: SigningChoices? = nil) {
+        self.signedChoices = signedChoices
         self.withoutXSideFeaturesHere = withoutXSideFeaturesHere
         self.duoLegacyModule = duoLegacyModule
         self.iCloudSignedOutSkippedForModule = iCloudSignedOutSkippedForModule
@@ -143,6 +147,7 @@ public struct Installation: Codable, Equatable, Sendable {
         iCloudSignedOutSkippedForModule = try? c.decodeIfPresent(Bool.self, forKey: .iCloudSignedOutSkippedForModule)
         duoLegacyModule = try? c.decodeIfPresent(Bool.self, forKey: .duoLegacyModule)
         withoutXSideFeaturesHere = try? c.decodeIfPresent(Bool.self, forKey: .withoutXSideFeaturesHere)
+        signedChoices = try? c.decodeIfPresent(SigningChoices.self, forKey: .signedChoices)
     }
 }
 

@@ -779,8 +779,6 @@
 "duo.missing" = "The last install couldn't add it: %@ was installed without it. The logs say why.";
 "duo.missing.install" = "%1$@: iPhone Duo compatibility couldn't be added, %2$@ was installed without it.";
 "duo.missing.row" = "iPhone Duo compatibility not added (installed without it)";
-"duo.nextSigning" = "Applied at the app's next refresh on this device.";
-"duo.refreshNow" = "Refresh now";
 "fixes.request.help" = "Opens a form on GitHub.";
 "fixes.request.crashHelp" = "Opens a form on GitHub with the diagnosis, without personal data (no app identifier, no device name).";
 "fixes.request.prompt" = "Describe what happens (what you do, what the app does or doesn't do):";
@@ -949,3 +947,6 @@
 "icloud.confirm.title" = "Simulate signed-out iCloud?";
 "icloud.confirm.message" = "%@ will believe no iCloud account is signed in. It will no longer crash because of iCloud, but its data will stay on this device: nothing will sync. An app that requires iCloud may stay on its sign-in screen. You can turn the option off at any time.";
 "icloud.confirm.turnOn" = "Turn on";
+
+"pending.line" = "Change pending: will apply at the app's next refresh on %@";
+"pending.refreshNow" = "Refresh now";

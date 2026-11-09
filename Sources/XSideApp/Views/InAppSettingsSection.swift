@@ -20,6 +20,8 @@ struct InAppSettingsSection: View {
     var setAutoRefresh: ((Bool) -> Void)?
     /// Per-device status lines, under the box.
     var statuses: [DeviceSyncLine] = []
+    /// Right under the features card (Mes apps: the change waits for the next refresh).
+    var featuresNotice: AnyView?
     var isDisabled = false
     /// Two columns (features, status and where to find them | the options): the install window.
     var columns = false
@@ -89,6 +91,7 @@ struct InAppSettingsSection: View {
             .background(Color(nsColor: .systemOrange).opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .padding(.horizontal, 10)
             .padding(.bottom, 10)
+            if let featuresNotice { featuresNotice }
         }
         if !hasFeatures {
             Label(L("inApp.features.off"), systemImage: "minus.circle")

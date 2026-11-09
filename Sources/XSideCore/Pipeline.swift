@@ -496,7 +496,9 @@ public actor SideloadPipeline {
                                       iCloudSignedOutSkippedForModule: iCloudAsked && !resigner.hasICloudSignedOut(app)
                                           && skippedICloud == .noRoomBesideModule ? true : nil,
                                       duoLegacyModule: duoAsked && resigner.hasDuoLegacyModule(app) ? true : nil,
-                                      withoutXSideFeaturesHere: previous?.withoutXSideFeaturesHere)
+                                      withoutXSideFeaturesHere: previous?.withoutXSideFeaturesHere,
+                                      signedChoices: SigningChoices(withoutXSideFeatures: options.withoutXSideFeatures == true,
+                                                                    duoCompatibility: duoAsked, iCloudSignedOut: iCloudAsked))
             let installation = try await library.recordSigning(signed, for: recordID, requireExisting: previous != nil)
             Self.logger.notice("\(what): done, expires \(installation.expiresAt.formatted(.iso8601))")
             return installation

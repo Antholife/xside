@@ -295,6 +295,7 @@ private struct AppSettingsContent: View {
                         statuses: [DeviceSyncLine(deviceID: entry.installation.deviceID, deviceName: deviceName,
                                                   installation: entry.installation, lastSeen: model.channelSeen[entry.id],
                                                   live: model.isLive(entry.id))],
+                        featuresNotice: AnyView(pendingNotice(.xsideModule)),
                         isDisabled: !model.canManage(entry))
                     Text(L("appSettings.note"))
                         .font(.system(size: 11))
@@ -313,6 +314,21 @@ private struct AppSettingsContent: View {
         }
     }
 
+    /// The Mac's choice for XSide's module now: this device's own, else the app's, else the Mac's default.
+    private var wantsWithoutFeatures: Bool { !hasFeatures }
+    private var pending: Set<SigningTimeSetting> {
+        entry.installation.pendingSigningChanges(wantsWithoutXSideFeatures: wantsWithoutFeatures)
+    }
+
+    /// Under a signing-time option: its stored choice isn't in the installed copy yet.
+    @ViewBuilder private func pendingNotice(_ setting: SigningTimeSetting) -> some View {
+        if pending.contains(setting) {
+            PendingChangeNotice(deviceName: deviceName, isDisabled: !model.canManage(entry)) {
+                _ = model.refreshNow(RefreshJob(recordID: entry.record.id, deviceID: entry.installation.deviceID))
+            }
+        }
+    }
+
     /// "Simulate signed-out iCloud": an install option like the Duo one, from the next signing.
     private var iCloudOption: some View {
         let on = entry.installation.iCloudSignedOut == true
@@ -324,20 +340,7 @@ private struct AppSettingsContent: View {
                             missing: on && entry.installation.iCloudSignedOutMissing == true,
                             skippedForModule: entry.installation.iCloudSignedOutSkippedForModule == true)
             .disabled(!model.canManage(entry))
-            HStack(spacing: 8) {
-                Text(L("duo.nextSigning"))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-                Button(L("duo.refreshNow")) {
-                    _ = model.refreshNow(RefreshJob(recordID: entry.record.id, deviceID: entry.installation.deviceID))
-                }
-                .controlSize(.small)
-                .disabled(!model.canManage(entry))
-            }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 10)
+            pendingNotice(.iCloudSignedOut)
         }
     }
 
@@ -356,20 +359,7 @@ private struct AppSettingsContent: View {
                          missing: on && entry.installation.duoCompatibilityMissing == true,
                          storedChoice: true)
             .disabled(!model.canManage(entry))
-            HStack(spacing: 8) {
-                Text(L("duo.nextSigning"))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-                Button(L("duo.refreshNow")) {
-                    _ = model.refreshNow(RefreshJob(recordID: entry.record.id, deviceID: entry.installation.deviceID))
-                }
-                .controlSize(.small)
-                .disabled(!model.canManage(entry))
-            }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 10)
+            pendingNotice(.duoCompatibility)
         }
     }
 
