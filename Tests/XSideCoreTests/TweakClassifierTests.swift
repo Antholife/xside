@@ -1,0 +1,488 @@
+import Foundation
+import Testing
+@testable import XSideCore
+
+/// The classification matrix: ✅ compatible / 🔧 converted (what changed) / ❌ not compatible (why).
+struct TweakClassifierTests {
+    private static let now = Date(timeIntervalSince1970: 1_800_000_000)
+    private static let dylibFolder = "Library/MobileSubstrate/DynamicLibraries/"
+    private static let substrate = "/Library/Frameworks/CydiaSubstrate.framework/CydiaSubstrate"
+    private static let cephei = "/Library/Frameworks/Cephei.framework/Cephei"
+
+    private func slice(_ arch: String = "arm64", platform: UInt32? = 2, minOS: String? = "15.0") -> TweakSlice {
+        TweakSlice(arch: arch, platform: platform, minOS: minOS)
+    }
+
+    private func entry(_ name: String = "Example", filter: TweakFilter? = TweakFilter(bundles: ["com.example.app"]),
+                       slices: [TweakSlice]? = nil, linked: [String] = ["/usr/lib/libobjc.A.dylib"],
+                       mentions: Bool = false) -> TweakBinary {
+        TweakBinary(path: Self.dylibFolder + name + ".dylib", isEntry: true, filter: filter,
+                    slices: slices ?? [slice()], linked: linked, mentionsJailbreakPaths: mentions,
+                    imageName: name + ".dylib")
+    }
+
+    private func library(_ path: String, linked: [String] = []) -> TweakBinary {
+        TweakBinary(path: path, isEntry: false, filter: nil, slices: [slice()], linked: linked,
+                    mentionsJailbreakPaths: false, imageName: String(path.split(separator: "/").last ?? ""))
+    }
+
+    private func package(_ binaries: [TweakBinary], id: String = "0123456789abcdef", kind: TweakKind = .deb,
+                         origin: TweakOrigin = .added, packageID: String = "com.example.tweak",
+                         name: String = "Example Tweak", version: String? = "1.0", provides: [String] = [],
+                         depends: [[DebDependency]] = [], extraFiles: [String] = []) -> TweakPackage {
+        var files = extraFiles + binaries.map(\.path)
+        for b in binaries where b.filter != nil {
+            files.append(String(b.path.dropLast(".dylib".count)) + ".plist")
+        }
+        return TweakPackage(id: id, kind: kind, origin: origin, packageID: packageID, provides: provides, name: name,
+                            version: version, depends: depends, files: files.sorted(), binaries: binaries, addedAt: Self.now)
+    }
+
+    private func context(others: [TweakPackage] = [], embedded: [TweakPackage] = [], deviceOS: String? = "17.5",
+                         classes: Set<String>? = nil, frameworks: Set<String>? = nil,
+                         appFiles: (@Sendable (String) -> Bool)? = nil,
+                         elleKit: Bool = true, support: Bool = true, libhooker: Bool = false,
+                         system: (@Sendable (String) -> Bool)? = nil) -> TweakContext {
+        TweakContext(originalBundleID: "com.example.app", executableName: "Example", appClassNames: classes,
+                     appLinkedFrameworks: frameworks, appFiles: appFiles, deviceOS: deviceOS,
+                     elleKitAvailable: elleKit, supportAvailable: support, elleKitHasLibhooker: libhooker,
+                     isSystemLibrary: system ?? TweakClassifier.systemLibraries(sdk: nil),
+                     others: others, embedded: embedded)
+    }
+
+    private func dep(_ p: String, _ rel: String? = nil, _ v: String? = nil) -> [DebDependency] {
+        [DebDependency(package: p, relation: rel, version: v)]
+    }
+
+    private func embeddedCephei(version: String = "2.0") -> TweakPackage {
+        package([library(String(Self.cephei.dropFirst()))], id: "ws.hbang.common", origin: .embedded,
+                packageID: "ws.hbang.common", name: "Cephei", version: version)
+    }
+
+    private func verdict(_ p: TweakPackage, _ c: TweakContext? = nil) -> TweakVerdict {
+        TweakClassifier.verdict(p, c ?? context())
+    }
+
+    // MARK: hooking
+
+    @Test func plainObjCTweakForThisApp() {
+        let p = package([entry(linked: ["/usr/lib/libobjc.A.dylib", "/System/Library/Frameworks/UIKit.framework/UIKit",
+                                        "/usr/lib/libSystem.B.dylib"])])
+        #expect(verdict(p) == .compatible)
+        #expect(TweakClassifier.resolution(p, context()).isEmpty)
+    }
+
+    @Test func substrateTweak() {
+        let p = package([entry(linked: [Self.substrate, "/usr/lib/libobjc.A.dylib"])])
+        #expect(verdict(p) == .converted([.hookingLibrary]))
+        #expect(TweakClassifier.resolution(p, context()) == [Self.substrate: TweakLayout.elleKitLoadPath])
+    }
+
+    @Test func substrateWithoutElleKit() {
+        let p = package([entry(linked: [Self.substrate])])
+        #expect(verdict(p, context(elleKit: false)) == .incompatible(.missingDependency("ElleKit")))
+    }
+
+    @Test func rootlessRpathSubstrate() {
+        let p = package([entry(linked: ["@rpath/CydiaSubstrate.framework/CydiaSubstrate", "/var/jb/usr/lib/libsubstrate.dylib"])])
+        #expect(verdict(p) == .converted([.hookingLibrary]))
+    }
+
+    @Test func libhookerOnlyWhenElleKitHasIt() {
+        let p = package([entry(linked: ["/usr/lib/libhooker.dylib"])])
+        #expect(verdict(p, context(libhooker: true)) == .converted([.hookingLibrary]))
+        #expect(verdict(p, context(libhooker: false)) == .incompatible(.needsJailbreak("libhooker.dylib")))
+        #expect(TweakClassifier.isHookingLibrary("/usr/lib/libhooker.dylib", libhooker: true))
+        #expect(!TweakClassifier.isHookingLibrary("/usr/lib/libhooker.dylib", libhooker: false))
+        #expect(TweakClassifier.isHookingLibrary("/usr/lib/libsubstitute.dylib", libhooker: false))
+        #expect(!TweakClassifier.isHookingLibrary("/usr/lib/libobjc.A.dylib", libhooker: true))
+    }
+
+    // MARK: filter
+
+    @Test func springBoardOnly() {
+        let v = verdict(package([entry(filter: TweakFilter(bundles: ["com.apple.springboard"]))]))
+        #expect(v == .incompatible(.needsJailbreak("com.apple.springboard")))
+        #expect(!v.canOverride)
+    }
+
+    @Test func executablesSpringBoard() {
+        let v = verdict(package([entry(filter: TweakFilter(executables: ["SpringBoard", "backboardd"]))]))
+        #expect(v == .incompatible(.needsJailbreak("SpringBoard")))
+        #expect(!v.canOverride)
+    }
+
+    @Test func anotherApp() {
+        let v = verdict(package([entry(filter: TweakFilter(bundles: ["com.other.app"]))]))
+        #expect(v == .incompatible(.madeForAnotherApp(["com.other.app"])))
+        #expect(v.canOverride)
+        // Another app next to an Apple daemon is still another app, not a jailbreak-only tweak.
+        let mixed = verdict(package([entry(filter: TweakFilter(bundles: ["com.apple.springboard", "com.other.app"]))]))
+        #expect(mixed == .incompatible(.madeForAnotherApp(["com.apple.springboard", "com.other.app"])))
+    }
+
+    @Test func mixedSpringBoardAndThisApp() {
+        let p = package([entry(filter: TweakFilter(bundles: ["com.apple.springboard", "com.example.app"]))])
+        #expect(verdict(p) == .compatible)
+    }
+
+    @Test func bundleIDsCompareWithoutCase() {
+        #expect(verdict(package([entry(filter: TweakFilter(bundles: ["COM.Example.App"]))])) == .compatible)
+    }
+
+    @Test func uikitFilterMatchesAnyApp() {
+        for id in ["com.apple.UIKit", "com.apple.Foundation", "com.apple.CoreFoundation"] {
+            #expect(verdict(package([entry(filter: TweakFilter(bundles: [id]))]), context(frameworks: [])) == .compatible)
+        }
+    }
+
+    @Test func webKitFilterNeedsTheAppToLinkWebKit() {
+        let p = package([entry(filter: TweakFilter(bundles: ["com.apple.WebKit"]))])
+        #expect(verdict(p, context(frameworks: ["UIKit"])) == .incompatible(.needsJailbreak("com.apple.WebKit")))
+        #expect(verdict(p, context(frameworks: ["UIKit", "WebKit"])) == .compatible)
+        #expect(verdict(p, context(frameworks: nil)) == .compatible)
+    }
+
+    @Test func classesFilterUsesTheAppClasses() {
+        let p = package([entry(filter: TweakFilter(classes: ["YTPlayerView"]))])
+        #expect(verdict(p, context(classes: ["YTPlayerView", "AppDelegate"])) == .compatible)
+        #expect(verdict(p, context(classes: ["AppDelegate"])) == .incompatible(.madeForAnotherApp(["YTPlayerView"])))
+        #expect(verdict(p, context(classes: nil)) == .compatible)
+    }
+
+    @Test func modeAnyVsAll() {
+        let all = package([entry(filter: TweakFilter(bundles: ["com.example.app"], executables: ["Other"]))])
+        #expect(verdict(all) == .incompatible(.madeForAnotherApp(["Other"])))
+        let any = package([entry(filter: TweakFilter(bundles: ["com.example.app"], executables: ["Other"], anyMode: true))])
+        #expect(verdict(any) == .compatible)
+        let none = package([entry(filter: TweakFilter(bundles: ["com.other.app"], executables: ["Other"], anyMode: true))])
+        #expect(verdict(none) == .incompatible(.madeForAnotherApp(["com.other.app", "Other"])))
+    }
+
+    @Test func anEmptyFilterSaysNoApp() {
+        let v = verdict(package([entry(filter: TweakFilter())]))
+        #expect(v == .incompatible(.noFilter))
+        #expect(v.canOverride)
+    }
+
+    @Test func aDroppedDylibIsForThisApp() {
+        let p = package([entry(filter: nil)], kind: .dylib)
+        #expect(verdict(p) == .compatible)
+    }
+
+    // MARK: architecture and iOS
+
+    @Test func arm64eOnly() {
+        let p = package([entry(slices: [slice("arm64e")])])
+        #expect(verdict(p) == .incompatible(.wrongArchitecture(["arm64e"])))
+        #expect(verdict(package([entry(slices: [slice("arm64e"), slice("arm64")])])) == .compatible)
+    }
+
+    @Test func catalystSlice() {
+        #expect(verdict(package([entry(slices: [slice(platform: 6)])])) == .incompatible(.notForIOS))
+        #expect(verdict(package([entry(slices: [slice(platform: nil)])])) == .compatible)
+    }
+
+    @Test func minOSAboveDevice() {
+        let p = package([entry(slices: [slice(minOS: "18.0")])])
+        #expect(verdict(p) == .incompatible(.iOSVersion(required: "18.0", device: "17.5")))
+        #expect(verdict(p, context(deviceOS: "18.0")) == .compatible)
+    }
+
+    @Test func firmwareBelowMax() {
+        let below17 = package([entry()], depends: [dep("firmware", "<<", "17.0")])
+        #expect(verdict(below17) == .incompatible(.iOSVersion(required: "< 17.0", device: "17.5")))
+        #expect(verdict(below17, context(deviceOS: "16.7")) == .compatible)
+        // `<=` is inclusive, `>>` exclusive.
+        #expect(verdict(package([entry()], depends: [dep("firmware", "<=", "17.5")])) == .compatible)
+        #expect(verdict(package([entry()], depends: [dep("firmware", ">>", "17.5")]))
+                == .incompatible(.iOSVersion(required: "> 17.5", device: "17.5")))
+        let range = package([entry()], depends: [dep("firmware", ">=", "15.0"), dep("firmware", "<<", "17.0")])
+        #expect(verdict(range) == .incompatible(.iOSVersion(required: "≥ 15.0, < 17.0", device: "17.5")))
+        #expect(verdict(package([entry()], depends: [dep("firmware", ">=", "18.0")]))
+                == .incompatible(.iOSVersion(required: "18.0", device: "17.5")))
+    }
+
+    @Test func anUnreadableFirmwareConstraintIsNeverSatisfied() {
+        let p = package([entry()], depends: [[DebDependency(package: "firmware", unparseable: true)]])
+        #expect(verdict(p) == .incompatible(.unreadableRequirement("iOS")))
+        #expect(verdict(p, context(deviceOS: nil)) == .incompatible(.unreadableRequirement("iOS")))
+    }
+
+    @Test func unknownDeviceOSPasses() {
+        let p = package([entry(slices: [slice(minOS: "99.0")])], depends: [dep("firmware", ">=", "99.0")])
+        #expect(verdict(p, context(deviceOS: nil)) == .compatible)
+    }
+
+    // MARK: dependencies
+
+    @Test func rocketBootstrap() {
+        let p = package([entry()], depends: [dep("mobilesubstrate"), dep("com.rpetrich.rocketbootstrap")])
+        #expect(verdict(p) == .incompatible(.needsJailbreak("RocketBootstrap")))
+    }
+
+    @Test func cepheiEmbedded() {
+        let p = package([entry(linked: [Self.cephei])], depends: [dep("ws.hbang.common", ">=", "1.17")])
+        let c = context(embedded: [embeddedCephei()])
+        #expect(verdict(p, c) == .converted([.dependencyAdded("Cephei")]))
+        #expect(TweakClassifier.providers(p, c) == [embeddedCephei()])
+        #expect(TweakClassifier.resolution(p, c) == [
+            Self.cephei: "@executable_path/Frameworks/XSideTweaks/deps/ws.hbang.common/Library/Frameworks/Cephei.framework/Cephei",
+        ])
+    }
+
+    @Test func rootlessRpathCepheiUsesTheEmbeddedCopy() {
+        let p = package([entry(linked: ["@rpath/Cephei.framework/Cephei"])], depends: [dep("ws.hbang.common")])
+        let c = context(embedded: [embeddedCephei()])
+        #expect(verdict(p, c) == .converted([.dependencyAdded("Cephei")]))
+        #expect(TweakClassifier.resolution(p, c)["@rpath/Cephei.framework/Cephei"]
+                == "@executable_path/Frameworks/XSideTweaks/deps/ws.hbang.common/Library/Frameworks/Cephei.framework/Cephei")
+    }
+
+    @Test func cepheiNotEmbeddedAndNotAdded() {
+        let p = package([entry(linked: [Self.cephei])], depends: [dep("ws.hbang.common", ">=", "1.17")])
+        #expect(verdict(p) == .incompatible(.missingDependency("Cephei")))
+        // Linked without being declared: still named, not called a jailbreak library.
+        #expect(verdict(package([entry(linked: [Self.cephei])])) == .incompatible(.missingDependency("Cephei")))
+    }
+
+    @Test func libGCUniversalIsKnownButNotEmbedded() {
+        let p = package([entry()], depends: [dep("com.mrgcgamer.libgcuniversal")])
+        #expect(verdict(p) == .incompatible(.missingDependency("libGCUniversal")))
+    }
+
+    @Test func theOnesDebWinsOverTheEmbeddedCopy() {
+        let theirs = package([library(String(Self.cephei.dropFirst()))], id: "aaaaaaaaaaaaaaaa", packageID: "ws.hbang.common",
+                             name: "Cephei", version: "1.17")
+        let embedded = embeddedCephei(version: "2.0")
+        let p = package([entry(linked: [Self.cephei])], depends: [dep("ws.hbang.common", ">=", "1.17")])
+        let c = context(others: [theirs], embedded: [embedded])
+        #expect(verdict(p, c) == .converted([.dependency("Cephei")]))
+        #expect(TweakClassifier.resolution(p, c)[Self.cephei]
+                == "@executable_path/Frameworks/XSideTweaks/aaaaaaaaaaaaaaaa/Library/Frameworks/Cephei.framework/Cephei")
+        #expect(TweakClassifier.providers(p, c).isEmpty)
+
+        let newer = package([entry(linked: [Self.cephei])], depends: [dep("ws.hbang.common", ">=", "1.18")])
+        #expect(verdict(newer, c) == .converted([.dependencyAdded("Cephei")]))
+        #expect(TweakClassifier.resolution(newer, c)[Self.cephei]
+                == "@executable_path/Frameworks/XSideTweaks/deps/ws.hbang.common/Library/Frameworks/Cephei.framework/Cephei")
+        #expect(TweakClassifier.providers(newer, c) == [embedded])
+        // Neither satisfies: missing, named.
+        let tooNew = package([entry()], depends: [dep("ws.hbang.common", ">=", "3.0")])
+        #expect(verdict(tooNew, c) == .incompatible(.missingDependency("Cephei")))
+    }
+
+    @Test func providesSatisfiesADependency() {
+        let fork = package([library("usr/lib/libfoobar.dylib")], id: "bbbbbbbbbbbbbbbb", packageID: "com.someone.foobar-fork",
+                           name: "Foo Bar Fork", provides: ["com.foo.bar"])
+        let p = package([entry(linked: ["/usr/lib/libfoobar.dylib"])], depends: [dep("com.foo.bar")])
+        let c = context(others: [fork])
+        #expect(verdict(p, c) == .converted([.dependency("Foo Bar Fork")]))
+        #expect(TweakClassifier.resolution(p, c)["/usr/lib/libfoobar.dylib"]
+                == "@executable_path/Frameworks/XSideTweaks/bbbbbbbbbbbbbbbb/usr/lib/libfoobar.dylib")
+        // An unversioned Provides never satisfies a versioned dependency (Debian's rule).
+        let versioned = package([entry()], depends: [dep("com.foo.bar", ">=", "2")])
+        #expect(TweakClassifier.dependencies(versioned, c).map(\.1) == [.missing(DebDependency(package: "com.foo.bar", relation: ">=", version: "2"))])
+    }
+
+    @Test func twoProvidersFirstEnabledWins() {
+        let first = package([library("usr/lib/libfoo.dylib")], id: "1111111111111111", packageID: "com.foo", name: "Foo One")
+        let second = package([library("usr/lib/libfoo.dylib")], id: "2222222222222222", packageID: "com.foo2", name: "Foo Two",
+                             provides: ["com.foo"])
+        let p = package([entry(linked: ["/usr/lib/libfoo.dylib"])], depends: [dep("com.foo")])
+        let c = context(others: [first, second])
+        #expect(verdict(p, c) == .converted([.dependency("Foo One")]))
+        #expect(TweakClassifier.resolution(p, c)["/usr/lib/libfoo.dylib"]
+                == "@executable_path/Frameworks/XSideTweaks/1111111111111111/usr/lib/libfoo.dylib")
+        let swapped = context(others: [second, first])
+        #expect(verdict(p, swapped) == .converted([.dependency("Foo Two")]))
+        #expect(TweakClassifier.dependencies(p, swapped).map(\.1) == [.addedByYou("Foo Two")])
+    }
+
+    @Test func alternativesTakeTheFirstSatisfiedOne() {
+        let p = package([entry()], depends: [[DebDependency(package: "com.rpetrich.rocketbootstrap"),
+                                               DebDependency(package: "ws.hbang.common")]])
+        let c = context(embedded: [embeddedCephei()])
+        #expect(verdict(p, c) == .converted([.dependencyAdded("Cephei")]))
+        #expect(TweakClassifier.dependencies(p, c).map(\.1) == [.providedByXSide("Cephei")])
+        // None satisfied: the first alternative's problem.
+        #expect(verdict(p) == .incompatible(.needsJailbreak("RocketBootstrap")))
+    }
+
+    @Test func anUnreadableConstraintIsReportedNotSatisfied() {
+        let p = package([entry()], depends: [[DebDependency(package: "ws.hbang.common", unparseable: true)]])
+        #expect(verdict(p, context(embedded: [embeddedCephei()])) == .incompatible(.unreadableRequirement("Cephei")))
+        let unknown = package([entry()], depends: [[DebDependency(package: "com.foo.bar", unparseable: true)]])
+        let other = package([library("usr/lib/libbar.dylib")], id: "cccccccccccccccc", packageID: "com.foo.bar", name: "Bar")
+        #expect(verdict(unknown, context(others: [other])) == .incompatible(.unreadableRequirement("com.foo.bar")))
+    }
+
+    @Test func dependenciesListsEachGroupWithItsStatus() {
+        let p = package([entry()], depends: [dep("mobilesubstrate"), dep("ws.hbang.common", ">=", "1.17"),
+                                              dep("com.foo.bar", ">=", "2"), dep("com.rpetrich.rocketbootstrap")])
+        let list = TweakClassifier.dependencies(p, context(embedded: [embeddedCephei()]))
+        #expect(list.map(\.0.package) == ["mobilesubstrate", "ws.hbang.common", "com.foo.bar", "com.rpetrich.rocketbootstrap"])
+        #expect(list.map(\.1) == [.notNeeded, .providedByXSide("Cephei"),
+                                  .missing(DebDependency(package: "com.foo.bar", relation: ">=", version: "2")),
+                                  .jailbreakOnly("RocketBootstrap")])
+    }
+
+    @Test func aSubstrateDebAddedByThePersonIsNotUsed() {
+        // Hooking frameworks are always XSide's ElleKit, even when someone added a Substrate .deb.
+        let sub = package([library("Library/Frameworks/CydiaSubstrate.framework/CydiaSubstrate")], id: "dddddddddddddddd",
+                          packageID: "mobilesubstrate", name: "Cydia Substrate")
+        let p = package([entry(linked: [Self.substrate])], depends: [dep("mobilesubstrate")])
+        let c = context(others: [sub])
+        #expect(verdict(p, c) == .converted([.hookingLibrary]))
+        #expect(TweakClassifier.dependencies(p, c).map(\.1) == [.notNeeded])
+        #expect(TweakClassifier.resolution(p, c) == [Self.substrate: TweakLayout.elleKitLoadPath])
+    }
+
+    // MARK: linked libraries
+
+    @Test func rpathLibrariesComeFromThePackageThenTheApp() {
+        let own = package([entry(linked: ["@rpath/Foo.framework/Foo"]), library("Library/Frameworks/Foo.framework/Foo")])
+        #expect(verdict(own) == .compatible)
+        #expect(TweakClassifier.resolution(own, context())["@rpath/Foo.framework/Foo"]
+                == "@executable_path/Frameworks/XSideTweaks/0123456789abcdef/Library/Frameworks/Foo.framework/Foo")
+
+        let fromApp = package([entry(linked: ["@rpath/Bar.framework/Bar", "@loader_path/../Frameworks/Baz.framework/Baz"])])
+        #expect(verdict(fromApp, context(appFiles: nil)) == .compatible)
+        #expect(verdict(fromApp, context(appFiles: { _ in true })) == .compatible)
+        #expect(verdict(fromApp, context(appFiles: { $0 == "Frameworks/Baz.framework/Baz" })) == .incompatible(.missingDependency("Bar.framework")))
+        #expect(TweakClassifier.resolution(fromApp, context(appFiles: { _ in true })).isEmpty)
+    }
+
+    @Test func absolutePathsInThePackageAreConverted() {
+        let p = package([entry(linked: ["/var/jb/Library/Frameworks/Foo.framework/Foo"]),
+                         library("Library/Frameworks/Foo.framework/Foo")])
+        #expect(verdict(p) == .converted([.jailbreakPaths]))
+        #expect(TweakClassifier.resolution(p, context())["/var/jb/Library/Frameworks/Foo.framework/Foo"]
+                == "@executable_path/Frameworks/XSideTweaks/0123456789abcdef/Library/Frameworks/Foo.framework/Foo")
+    }
+
+    @Test func anUnknownJailbreakLibraryNeedsAJailbreak() {
+        #expect(verdict(package([entry(linked: ["/Library/Frameworks/Unknown.framework/Unknown"])]))
+                == .incompatible(.needsJailbreak("Unknown.framework")))
+    }
+
+    @Test func resourcesMeanPathConversion() {
+        let p = package([entry()], extraFiles: ["Library/Application Support/Example/icon.png"])
+        #expect(verdict(p) == .converted([.jailbreakPaths]))
+        #expect(verdict(package([entry(mentions: true)])) == .converted([.jailbreakPaths]))
+        // A framework's own resources travel with it.
+        let fw = package([entry(linked: ["@rpath/Foo.framework/Foo"]), library("Library/Frameworks/Foo.framework/Foo")],
+                         extraFiles: ["Library/Frameworks/Foo.framework/Info.plist"])
+        #expect(verdict(fw) == .compatible)
+    }
+
+    @Test func conversionsAccumulateInOrderAndOnce() {
+        let p = package([entry(linked: [Self.substrate, Self.cephei], mentions: true),
+                         entry("Second", linked: [Self.substrate])],
+                        depends: [dep("ws.hbang.common")])
+        #expect(verdict(p, context(embedded: [embeddedCephei()])) == .converted([.dependencyAdded("Cephei"), .hookingLibrary, .jailbreakPaths]))
+    }
+
+    @Test func theFirstProblemWins() {
+        let p = package([entry(filter: TweakFilter(bundles: ["com.other.app"]), slices: [slice("arm64e")])],
+                        depends: [dep("com.rpetrich.rocketbootstrap")])
+        #expect(verdict(p) == .incompatible(.wrongArchitecture(["arm64e"])))
+    }
+
+    @Test func pathsWithoutSupportLibrary() {
+        let p = package([entry(mentions: true)])
+        #expect(verdict(p, context(support: false)) == .incompatible(.missingDependency("XSideTweakSupport")))
+    }
+
+    @Test func unknownUsrLibIsJailbreakWhenNotInTheSDK() throws {
+        let sdk = FileManager.default.temporaryDirectory.appendingPathComponent("sdk-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: sdk) }
+        try FileManager.default.createDirectory(at: sdk.appendingPathComponent("usr/lib/system"), withIntermediateDirectories: true)
+        try Data().write(to: sdk.appendingPathComponent("usr/lib/libz.1.tbd"))
+        try Data().write(to: sdk.appendingPathComponent("usr/lib/system/libsystem_kernel.tbd"))
+        let system = TweakClassifier.systemLibraries(sdk: sdk)
+        #expect(system("/usr/lib/libz.1.dylib"))
+        #expect(system("/usr/lib/system/libsystem_kernel.dylib"))
+        #expect(system("/System/Library/Frameworks/UIKit.framework/UIKit"))
+        #expect(system("/usr/lib/swift/libswiftCore.dylib"))
+        #expect(!system("/usr/lib/libcolorpicker.dylib"))
+        #expect(!system("/usr/lib/../../tmp/libz.1.dylib"))
+        #expect(!system("/System/../var/jb/usr/lib/libfoo.dylib"))
+        #expect(!system("@rpath/libz.1.dylib"))
+
+        let p = package([entry(linked: ["/usr/lib/libcolorpicker.dylib", "/usr/lib/libz.1.dylib"])])
+        #expect(verdict(p, context(system: system)) == .incompatible(.needsJailbreak("libcolorpicker.dylib")))
+        #expect(verdict(package([entry(linked: ["/usr/lib/libz.1.dylib"])]), context(system: system)) == .compatible)
+
+        let noSDK = TweakClassifier.systemLibraries(sdk: nil)
+        #expect(noSDK("/usr/lib/libcolorpicker.dylib"))
+        #expect(!noSDK("/usr/lib/libsubstrate.dylib"))
+        #expect(!noSDK("/Library/Frameworks/Cephei.framework/Cephei"))
+        #expect(!noSDK("/var/jb/usr/lib/libz.dylib"))
+        #expect(!noSDK("@rpath/Foo.framework/Foo"))
+        #expect(!noSDK("/System/../Library/Frameworks/X.framework/X"))
+    }
+
+    @Test func libraryPackageIsCompatible() {
+        #expect(verdict(package([library("usr/lib/libfoo.dylib", linked: [Self.substrate])])) == .compatible)
+        #expect(verdict(package([], kind: .bundle, extraFiles: ["Example.bundle/icon.png"])) == .compatible)
+    }
+
+    @Test func deliberatelyEmptyDebIsNothingToInject() {
+        let v = verdict(package([], extraFiles: ["Library/Application Support/Example/readme.txt"]))
+        #expect(v == .incompatible(.nothingToInject))
+        #expect(!v.canOverride)
+    }
+
+    @Test func hostileNamesNeverTrap() {
+        let names = ["", "/", "@rpath/", "@rpath/../../..", "@loader_path", "relative.dylib", "/var/jb/", "/var/jb",
+                     String(repeating: "/a", count: 2000), "@executable_path/\u{0}"]
+        let p = package([entry(linked: names)])
+        if case .incompatible = verdict(p, context(appFiles: { _ in false })) {} else { Issue.record("expected a problem") }
+        _ = TweakClassifier.resolution(p, context())
+    }
+
+    // MARK: verdict
+
+    @Test func onlyAnotherAppAndNoFilterCanBeOverridden() {
+        let problems: [TweakProblem] = [.needsJailbreak("x"), .wrongArchitecture(["arm64e"]), .notForIOS,
+                                        .iOSVersion(required: "18.0", device: "17.5"), .missingDependency("x"),
+                                        .nothingToInject, .unreadableRequirement("x")]
+        for problem in problems { #expect(!TweakVerdict.incompatible(problem).canOverride) }
+        #expect(TweakVerdict.incompatible(.madeForAnotherApp(["a"])).canOverride)
+        #expect(TweakVerdict.incompatible(.noFilter).canOverride)
+        #expect(!TweakVerdict.compatible.canOverride)
+        #expect(!TweakVerdict.converted([.hookingLibrary]).canOverride)
+    }
+
+    @Test func verdictsRoundTripThroughJSON() throws {
+        let verdicts: [TweakVerdict] = [.compatible, .converted([.hookingLibrary, .dependency("A"), .dependencyAdded("B"), .jailbreakPaths]),
+                                        .incompatible(.iOSVersion(required: "18.0", device: "17.5")),
+                                        .incompatible(.madeForAnotherApp(["a", "b"])), .incompatible(.noFilter)]
+        let data = try JSONEncoder().encode(verdicts)
+        #expect(try JSONDecoder().decode([TweakVerdict].self, from: data) == verdicts)
+    }
+
+    @Test func everyReasonExistsInEnglishAndFrench() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        func table(_ lang: String) throws -> [String: String] {
+            let data = try Data(contentsOf: root.appendingPathComponent("App/Resources/\(lang).lproj/Localizable.strings"))
+            return try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: String] ?? [:]
+        }
+        let en = try table("en"), fr = try table("fr")
+        let problems: [TweakProblem] = [.needsJailbreak("x"), .madeForAnotherApp(["a"]), .wrongArchitecture(["arm64e"]), .notForIOS,
+                                        .iOSVersion(required: "18.0", device: "17.5"), .missingDependency("x"), .nothingToInject,
+                                        .noFilter, .unreadableRequirement("x")]
+        let conversions: [TweakConversion] = [.hookingLibrary, .jailbreakPaths, .dependency("x"), .dependencyAdded("x")]
+        let keys = problems.map(\.stringKey) + conversions.map(\.stringKey) + [TweakVerdict.overrideKey]
+        #expect(Set(keys).count == keys.count)
+        for key in keys {
+            #expect(en[key] != nil, "missing in English: \(key)")
+            #expect(fr[key] != nil, "missing in French: \(key)")
+        }
+        #expect(fr[TweakProblem.noFilter.stringKey] == "Ce tweak ne dit pas dans quelles apps il se charge.")
+        #expect(en[TweakProblem.noFilter.stringKey] == "This tweak doesn't say which apps it loads into.")
+        #expect(fr[TweakVerdict.overrideKey] == "Injecter quand même")
+        #expect(fr[TweakConversion.dependencyAdded("x").stringKey] == "Dépendance ajoutée : %@")
+    }
+}

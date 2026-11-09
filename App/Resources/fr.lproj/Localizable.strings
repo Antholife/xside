@@ -950,3 +950,18 @@
 
 "pending.line" = "Changement en attente : s'appliquera au prochain rafraîchissement de l'app sur %@";
 "pending.refreshNow" = "Rafraîchir maintenant";
+
+"tweaks.conversion.hookingLibrary" = "Sa bibliothèque d'injection (Substrate) est remplacée par ElleKit, ajouté à l'app";
+"tweaks.conversion.jailbreakPaths" = "Ses fichiers sont copiés dans l'app et trouvés là plutôt que dans les dossiers du jailbreak";
+"tweaks.conversion.dependency" = "Utilise %@, venu d'un autre tweak que tu as ajouté";
+"tweaks.conversion.dependencyAdded" = "Dépendance ajoutée : %@";
+"tweaks.problem.needsJailbreak" = "Demande un jailbreak : il agit dans %@, où seul un appareil jailbreaké laisse entrer un tweak.";
+"tweaks.problem.madeForAnotherApp" = "Fait pour une autre app (%@).";
+"tweaks.problem.wrongArchitecture" = "Pas compilé pour le processeur de cette app (seulement %@).";
+"tweaks.problem.notForIOS" = "Pas une bibliothèque iOS.";
+"tweaks.problem.iOSVersion" = "Demande iOS %1$@ ; %2$@ a iOS %3$@.";
+"tweaks.problem.missingDependency" = "A besoin de %@ : voir Dépendances.";
+"tweaks.problem.nothingToInject" = "Rien dedans à ajouter à une app.";
+"tweaks.problem.noFilter" = "Ce tweak ne dit pas dans quelles apps il se charge.";
+"tweaks.problem.unreadableRequirement" = "Sa condition sur %@ est illisible.";
+"tweaks.force" = "Injecter quand même";

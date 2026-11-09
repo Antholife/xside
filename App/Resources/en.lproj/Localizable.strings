@@ -950,3 +950,18 @@
 
 "pending.line" = "Change pending: will apply at the app's next refresh on %@";
 "pending.refreshNow" = "Refresh now";
+
+"tweaks.conversion.hookingLibrary" = "Its hooking library (Substrate) is replaced by ElleKit, added to the app";
+"tweaks.conversion.jailbreakPaths" = "Its files are copied into the app and found there instead of the jailbreak's folders";
+"tweaks.conversion.dependency" = "Uses %@, from another tweak you added";
+"tweaks.conversion.dependencyAdded" = "Dependency added: %@";
+"tweaks.problem.needsJailbreak" = "Needs a jailbreak: it works in %@, which only a jailbroken device lets a tweak into.";
+"tweaks.problem.madeForAnotherApp" = "Made for another app (%@).";
+"tweaks.problem.wrongArchitecture" = "Not built for this app's processor (only %@).";
+"tweaks.problem.notForIOS" = "Not an iOS library.";
+"tweaks.problem.iOSVersion" = "Needs iOS %1$@; %2$@ has iOS %3$@.";
+"tweaks.problem.missingDependency" = "Needs %@: see Dependencies.";
+"tweaks.problem.nothingToInject" = "Nothing in it to add to an app.";
+"tweaks.problem.noFilter" = "This tweak doesn't say which apps it loads into.";
+"tweaks.problem.unreadableRequirement" = "Its requirement on %@ can't be read.";
+"tweaks.force" = "Inject anyway";
