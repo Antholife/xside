@@ -99,7 +99,8 @@ private struct FakeResigner: Resigning {
                 onICloud: @Sendable () async -> Void,
                 onICloudSkipped: @Sendable (ICloudOutcome) async -> Void,
                 onThinning: @Sendable () async -> Void,
-                onSigning: @Sendable () async -> Void) async throws -> URL {
+                onSigning: @Sendable () async -> Void,
+                onTweaks: @Sendable (TweakSigningReport?) async -> Void) async throws -> URL {
         await log.resign(ipa, workDir, bundleID, iconURL, profileURL, profile)
         await log.fact(facts)
         await log.option(options)

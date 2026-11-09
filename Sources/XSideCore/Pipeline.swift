@@ -18,7 +18,8 @@ public protocol Resigning: Sendable {
                 onICloud: @Sendable () async -> Void,
                 onICloudSkipped: @Sendable (ICloudOutcome) async -> Void,
                 onThinning: @Sendable () async -> Void,
-                onSigning: @Sendable () async -> Void) async throws -> URL
+                onSigning: @Sendable () async -> Void,
+                onTweaks: @Sendable (TweakSigningReport?) async -> Void) async throws -> URL
     /// Whether the signed `app` holds XSide's library: features asked for can still be missing
     /// when the library couldn't be added (the app is then installed as it came).
     func hasXSideLibrary(_ app: URL) -> Bool
@@ -459,7 +460,8 @@ public actor SideloadPipeline {
                     onSigning: {
                         await progress(.signing)
                         Self.logger.info("\(what): signing")
-                    })
+                    },
+                    onTweaks: { _ in })
             }
             // The process name crash logs go by, for records imported before XSide kept it.
             if record.executable == nil, let executable = try? IPAInspector.info(of: app).executable {

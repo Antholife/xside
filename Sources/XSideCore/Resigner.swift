@@ -25,10 +25,15 @@ public struct InstallOptions: Codable, Equatable, Sendable {
     /// Add the signed-out iCloud library (see `ICloudSignedOut`) to this signing. Chosen per
     /// device, like `duoCompatibility`: the pipeline sets it from `Installation.iCloudSignedOut`.
     public var iCloudSignedOut: Bool?
+    /// The tweaks to inject into this signing. Per device, like `duoCompatibility`: the pipeline
+    /// sets it for each job (the app's options themselves leave it nil).
+    public var tweaks: TweakJob?
     public init(displayName: String? = nil, customBundleID: String? = nil, version: String? = nil,
                 iconPath: String? = nil, fileSharing: Bool = false, iPadFullScreen: Bool = false,
                 proMotion: Bool = false, minimumOSVersion: String? = nil, shareKeychain: Bool = false,
-                withoutXSideFeatures: Bool? = nil, duoCompatibility: Bool? = nil, iCloudSignedOut: Bool? = nil) {
+                withoutXSideFeatures: Bool? = nil, duoCompatibility: Bool? = nil, iCloudSignedOut: Bool? = nil,
+                tweaks: TweakJob? = nil) {
+        self.tweaks = tweaks
         self.duoCompatibility = duoCompatibility
         self.iCloudSignedOut = iCloudSignedOut
         self.displayName = displayName
@@ -58,6 +63,45 @@ public struct InstallOptions: Codable, Equatable, Sendable {
         withoutXSideFeatures = try c.decodeIfPresent(Bool.self, forKey: .withoutXSideFeatures)
         duoCompatibility = try c.decodeIfPresent(Bool.self, forKey: .duoCompatibility)
         iCloudSignedOut = try c.decodeIfPresent(Bool.self, forKey: .iCloudSignedOut)
+        tweaks = (try? c.decodeIfPresent(TweakJob.self, forKey: .tweaks)) ?? nil
+    }
+}
+
+/// One enabled tweak of a signing: the stored package, its folder in the library, and whether the
+/// person chose « Injecter quand même ».
+public struct TweakSigningItem: Codable, Equatable, Sendable {
+    public var package: TweakPackage
+    /// The stored package's folder (absolute path).
+    public var directory: String
+    public var force: Bool
+
+    public init(package: TweakPackage, directory: String, force: Bool = false) {
+        self.package = package
+        self.directory = directory
+        self.force = force
+    }
+}
+
+/// The tweaks one signing injects, in list order, for one device.
+public struct TweakJob: Codable, Equatable, Sendable {
+    public var items: [TweakSigningItem]
+    public var deviceOS: String?
+
+    public init(items: [TweakSigningItem], deviceOS: String? = nil) {
+        self.items = items
+        self.deviceOS = deviceOS
+    }
+}
+
+/// What the tweak step did: a result per item (`TweakPackage.id`), and the package ids of XSide's
+/// embedded dependencies copied into the app (`Frameworks/XSideTweaks/deps/`).
+public struct TweakSigningReport: Equatable, Sendable {
+    public var results: [String: TweakResult]
+    public var embedded: [String]
+
+    public init(results: [String: TweakResult], embedded: [String]) {
+        self.results = results
+        self.embedded = embedded
     }
 }
 
@@ -90,6 +134,16 @@ public struct Resigner: Sendable {
     /// "fr" or "en": the language of the plain texts XSide writes into the Info.plist (shown when
     /// the app has no localization of its own; XSide adds none).
     private let textLanguage: @Sendable (InstallationFacts?) -> String
+    /// ElleKit (`ElleKit.dylib`) and its licence, which goes next to it in every app that gets it;
+    /// the support library (`XSideTweakSupport.dylib`); XSide's embedded dependencies
+    /// (`TweakDependencies/`, see `TweakDependencyCatalog`). All XSide.app resources, nil when this
+    /// build has none: the tweaks needing them are then skipped.
+    private let elleKitLibrary: URL?
+    private let elleKitLicense: URL?
+    private let tweakSupportLibrary: URL?
+    private let tweakDependencies: URL?
+    /// This build's ElleKit also answers for libhooker.
+    private let elleKitHasLibhooker: Bool
     private static let codesign = "/usr/bin/codesign"
     private static let logger = Log("resign")
     public static let welcomeName = "XSideWelcome.dylib"
@@ -99,8 +153,15 @@ public struct Resigner: Sendable {
                 settingsSection: (@Sendable (ProvisioningProfile, InstallationFacts?) -> SettingsSection)? = nil,
                 welcome: @escaping @Sendable (ProvisioningProfile) -> WelcomePayload? = { _ in nil },
                 textLanguage: @escaping @Sendable (InstallationFacts?) -> String = { _ in "en" },
-                iCloudLibrary: URL? = nil, duoLegacyLibrary: URL? = nil) {
+                iCloudLibrary: URL? = nil, duoLegacyLibrary: URL? = nil,
+                elleKitLibrary: URL? = nil, elleKitLicense: URL? = nil, tweakSupportLibrary: URL? = nil,
+                tweakDependencies: URL? = nil, elleKitHasLibhooker: Bool = false) {
         self.runner = runner
+        self.elleKitLibrary = elleKitLibrary
+        self.elleKitLicense = elleKitLicense
+        self.tweakSupportLibrary = tweakSupportLibrary
+        self.tweakDependencies = tweakDependencies
+        self.elleKitHasLibhooker = elleKitHasLibhooker
         self.iCloudLibrary = iCloudLibrary
         self.duoLegacyLibrary = duoLegacyLibrary
         self.welcomeDylib = welcomeDylib
@@ -126,7 +187,8 @@ public struct Resigner: Sendable {
                        onICloud: @Sendable () async -> Void = {},
                        onICloudSkipped: @Sendable (ICloudOutcome) async -> Void = { _ in },
                        onThinning: @Sendable () async -> Void = {},
-                       onSigning: @Sendable () async -> Void = {}) async throws -> URL {
+                       onSigning: @Sendable () async -> Void = {},
+                       onTweaks: @Sendable (TweakSigningReport?) async -> Void = { _ in }) async throws -> URL {
         let fm = FileManager.default
         try fm.createDirectory(at: workDir, withIntermediateDirectories: true)
         try cleanPreviousRun(in: workDir)
@@ -168,6 +230,10 @@ public struct Resigner: Sendable {
         // An .ipa XSide signed before carries its libraries: those this signing doesn't add again
         // go, with their load commands (a stray iCloud library would stay active with the option off).
         removeStaleLibraries(app: app, executable: executableURL, keepWelcome: library, keepICloud: shim)
+        // Read-only: which tweaks go in and the load commands they need (the Duo copy carries them).
+        let tweakItems = options.tweaks?.items ?? []
+        let tweakPlan = tweakItems.isEmpty ? nil
+            : planTweaks(tweakItems, deviceOS: options.tweaks?.deviceOS, app: app, executable: executableURL, info: info)
         // Asked for this device: patched on a copy that replaces the executable only once it
         // declares the new SDK (XSide's load command included, when the features are on, so
         // both get the room); the Info.plist keys follow. Any problem leaves the executable
@@ -182,6 +248,7 @@ public struct Resigner: Sendable {
             switch duoPlan(app: app, executable: executableURL) {
             case .plan(let plan):
                 let loading = (library ? [Self.welcomeLoadPath] : []) + (shim ? [ICloudSignedOut.loadPath] : [])
+                    + (tweakPlan?.loadPaths ?? [])
                 let module = plan.legacyModule ? copyDuoLegacyLibrary(to: app) : nil
                 if plan.legacyModule, module == nil {
                     outcome = .failed
@@ -208,6 +275,18 @@ public struct Resigner: Sendable {
             iCloudApplied = outcome == .added
             if outcome != .added { await onICloudSkipped(outcome) }
         }
+        // After iCloud, before XSide's module: tweaks get what header room is left once the
+        // module's command is set aside. Never fails the install.
+        var tweakPaths = false
+        if let tweakPlan {
+            await onTweaks(nil)
+            let reserve = library && !MachOPatcher.loadsDylib(Self.welcomeLoadPath, in: executableURL)
+                ? MachOPatcher.dylibCommand(Self.welcomeLoadPath).count : 0
+            let applied = await applyTweaks(tweakPlan, app: app, executable: executableURL, reserve: reserve,
+                                            identity: identitySHA1)
+            tweakPaths = applied.supportAdded
+            await onTweaks(applied.report)
+        }
         // The library first among what follows: the payload, Bonjour keys and quick actions mean
         // nothing without it (quick actions nothing handles would be a regression), so they
         // follow its outcome. After a Duo patch its load command is already there.
@@ -217,7 +296,7 @@ public struct Resigner: Sendable {
         let iCloudKeys = iCloudApplied
             ? (originalBundleID: info.bundleID, containers: ICloudSignedOut.containerIdentifiers(originalEntitlements)) : nil
         try editInfoPlist(app: app, bundleID: bundleID, options: options, payload: payload, features: hasLibrary,
-                          language: textLanguage(facts), duo: duoApplied, iCloud: iCloudKeys)
+                          language: textLanguage(facts), duo: duoApplied, iCloud: iCloudKeys, tweakPaths: tweakPaths)
         if let iconURL { try await applyIcon(iconURL, to: app, workDir: workDir) }
         // The section's switches are read by the library: without it they'd do nothing.
         if hasLibrary, let settingsSection {
@@ -293,6 +372,18 @@ public struct Resigner: Sendable {
         if !keepICloud { stale.append((ICloudSignedOut.dylibName, ICloudSignedOut.loadPath)) }
         if !namesDuoLegacyDelegate(app) { stale.append((DuoCompatibility.legacyDylibName, DuoCompatibility.legacyLoadPath)) }
         var paths = Set<String>()
+        // Tweaks an earlier signing injected: all go (this signing copies its own again).
+        let tweaks = app.appendingPathComponent(TweakLayout.folder)
+        if exists(tweaks) {
+            do {
+                try fm.removeItem(at: tweaks)
+                Self.logger.info("removed the tweaks of an earlier signing")
+            } catch {
+                Self.logger.notice("tweaks from an earlier signing not removed: \(String(describing: error))")
+            }
+        }
+        let tweakLoads = ((try? MachOPatcher.linkedDylibs(in: executable)) ?? []).filter { $0.hasPrefix(TweakLayout.loadPrefix) }
+        paths.formUnion(tweakLoads)
         for library in stale {
             let file = app.appendingPathComponent("Frameworks/\(library.name)")
             let present = (try? fm.attributesOfItem(atPath: file.path)) != nil
@@ -305,13 +396,391 @@ public struct Resigner: Sendable {
             if present { Self.logger.info("removed \(library.name) from an earlier signing") }
         }
         guard !paths.isEmpty else { return }
-        let movable: Set<String> = [Self.welcomeLoadPath, ICloudSignedOut.loadPath, DuoCompatibility.legacyLoadPath]
         do {
-            let removed = try MachOPatcher.removeDylibs(paths, from: executable, movable: movable)
+            let removed = try MachOPatcher.removeDylibs(where: paths.contains, from: executable, movable: Self.isXSideLoadPath)
             if !removed.isEmpty { Self.logger.info("removed \(removed.count) load command(s) from an earlier signing") }
         } catch {
             Self.logger.notice("load commands from an earlier signing kept: \(String(describing: error))")
         }
+    }
+
+    /// A library XSide adds (its module, signed-out iCloud, the Duo module, tweaks): nothing in
+    /// the app binds to it, so its load command may move.
+    static func isXSideLoadPath(_ path: String) -> Bool {
+        [welcomeLoadPath, ICloudSignedOut.loadPath, DuoCompatibility.legacyLoadPath].contains(path)
+            || path.hasPrefix(TweakLayout.loadPrefix)
+    }
+
+    // MARK: - Tweaks
+
+    /// One tweak that goes in, as planned before Duo.
+    struct PlannedTweak {
+        let item: TweakSigningItem
+        let classification: TweakClassification
+        /// The verdict that applies (« Injecter quand même »: the filter's problem ignored).
+        let verdict: TweakVerdict
+        var id: String { item.package.id }
+        var converted: Bool { if case .converted = verdict { true } else { false } }
+        var needsSupport: Bool { if case .converted(let c) = verdict { c.contains(.jailbreakPaths) } else { false } }
+        var loadPaths: [String] { item.package.entries.map { TweakLayout.loadPath(item.package, $0) } }
+    }
+
+    struct TweakPlan {
+        var planned: [PlannedTweak]
+        /// Items left out by the plan (incompatible, or their stored folder is missing).
+        var results: [String: TweakResult]
+        /// Every item's id, in list order (each once).
+        var order: [String]
+        /// Each embedded provider's own name rewrites, by package id.
+        var providerResolutions: [String: [String: String]]
+
+        func needsElleKit(_ t: PlannedTweak) -> Bool {
+            t.classification.resolution.values.contains(TweakLayout.elleKitLoadPath)
+                || t.classification.providers.contains { providerResolutions[$0.id]?.values.contains(TweakLayout.elleKitLoadPath) == true }
+        }
+
+        /// What the executable loads for the planned tweaks, in order: ElleKit, the support
+        /// library, then each tweak's entries (what the Duo copy carries).
+        var loadPaths: [String] {
+            (planned.contains(where: needsElleKit) ? [TweakLayout.elleKitLoadPath] : [])
+                + (planned.contains(where: \.needsSupport) ? [TweakLayout.supportLoadPath] : [])
+                + planned.flatMap(\.loadPaths)
+        }
+    }
+
+    /// Classifies each item for this app and device, once (again only when a package another
+    /// one could rely on is left out). Reads only. A missing stored folder → `.failed`; an
+    /// incompatible tweak (unless forced and overridable) → `.incompatible`.
+    private func planTweaks(_ items: [TweakSigningItem], deviceOS: String?, app: URL, executable: URL,
+                            info: AppInfo) -> TweakPlan {
+        var seen = Set<String>()
+        let unique = items.filter { seen.insert($0.package.id).inserted }
+        var results: [String: TweakResult] = [:]
+        for item in unique where !Self.isRealDirectory(URL(fileURLWithPath: item.directory)) {
+            Self.logger.notice("tweak \(item.package.name) (\(item.package.id)) skipped: its stored folder is missing")
+            results[item.package.id] = .skipped(.failed)
+        }
+        let linked = try? MachOPatcher.linkedDylibs(in: executable)
+        let frameworks = linked.map { names in
+            Set(names.compactMap { name -> String? in
+                let prefix = "/System/Library/Frameworks/"
+                guard name.hasPrefix(prefix), let folder = name.dropFirst(prefix.count).split(separator: "/").first,
+                      folder.hasSuffix(".framework") else { return nil }
+                return String(folder.dropLast(".framework".count))
+            })
+        }
+        let appPath = app.path
+        var context = TweakContext(
+            originalBundleID: info.bundleID, executableName: info.executable,
+            appClassNames: (try? ObjCClassScanner.classes(in: executable)).map { Set($0.map(\.name)) },
+            appLinkedFrameworks: frameworks,
+            appFiles: { rel in
+                guard !rel.isEmpty, !rel.hasPrefix("/"),
+                      !rel.split(separator: "/", omittingEmptySubsequences: false).contains(where: { $0 == ".." }) else { return false }
+                var st = stat()
+                return lstat(appPath + "/" + rel, &st) == 0
+            },
+            deviceOS: deviceOS,
+            elleKitAvailable: Self.isRegularFile(elleKitLibrary) && Self.isRegularFile(elleKitLicense),
+            supportAvailable: Self.isRegularFile(tweakSupportLibrary),
+            elleKitHasLibhooker: elleKitHasLibhooker,
+            isSystemLibrary: TweakClassifier.systemLibraries(sdk: Self.iOSSDK()),
+            embedded: TweakDependencyCatalog.load(from: tweakDependencies))
+        // Packages left out can't provide for others: classified again without them (XSide's own
+        // copy may then do), until nothing more is left out.
+        var planned: [PlannedTweak] = []
+        for _ in 0...unique.count {
+            let usable = unique.filter { results[$0.package.id] == nil }
+            var excluded = false
+            planned = []
+            for item in usable {
+                context.others = usable.filter { $0.package.id != item.package.id }.map(\.package)
+                let c = TweakClassifier.classify(item.package, context)
+                let verdict = item.force && c.verdict.canOverride ? c.verdictOverridingFilter : c.verdict
+                if case .incompatible(let problem) = verdict {
+                    Self.logger.notice("tweak \(item.package.name) (\(item.package.id)) skipped: \(String(describing: problem))")
+                    results[item.package.id] = .skipped(.incompatible(problem))
+                    excluded = true
+                    continue
+                }
+                planned.append(PlannedTweak(item: item, classification: c, verdict: verdict))
+            }
+            if !excluded { break }
+        }
+        var providerResolutions: [String: [String: String]] = [:]
+        for p in planned.flatMap(\.classification.providers) where providerResolutions[p.id] == nil {
+            providerResolutions[p.id] = TweakClassifier.classify(p, context).resolution
+        }
+        return TweakPlan(planned: planned, results: results, order: unique.map(\.package.id),
+                         providerResolutions: providerResolutions)
+    }
+
+    /// Copies, rewrites and signs the planned tweaks and what they need into
+    /// `Frameworks/XSideTweaks/`, then adds their weak load commands: lowest priority, `reserve`
+    /// bytes kept for XSide's module. A tweak that can't go in is left out with what it brought
+    /// (files, load commands) and the reason; the others go on. Returns the report and whether the
+    /// support library is in.
+    private func applyTweaks(_ plan: TweakPlan, app: URL, executable: URL, reserve: Int,
+                             identity: String) async -> (report: TweakSigningReport, supportAdded: Bool) {
+        let fm = FileManager.default
+        let root = app.appendingPathComponent(TweakLayout.folder)
+        var results = plan.results
+        var chosen: [PlannedTweak] = []
+        func skip(_ t: PlannedTweak, _ why: TweakSkip, _ reason: String) {
+            Self.logger.notice("tweak \(t.item.package.name) (\(t.id)) skipped: \(reason)")
+            results[t.id] = .skipped(why)
+            try? fm.removeItem(at: root.appendingPathComponent(TweakLayout.directory(t.item.package)))
+        }
+        // The other items a tweak's rewritten names lead to.
+        func reliesOn(_ t: PlannedTweak) -> [String] {
+            plan.planned.map(\.id).filter { other in
+                other != t.id && t.classification.resolution.values.contains { $0.hasPrefix(TweakLayout.loadPrefix + other + "/") }
+            }
+        }
+        // A tweak whose provider (another item) is left out goes too, for the same reason.
+        func cascade() {
+            var changed = true
+            while changed {
+                changed = false
+                for t in chosen {
+                    guard let missing = reliesOn(t).first(where: { id in !chosen.contains { $0.id == id } }) else { continue }
+                    let why: TweakSkip = if case .skipped(let s)? = results[missing], s == .noRoom { .noRoom } else { .failed }
+                    skip(t, why, "the package it relies on (\(missing)) isn't in")
+                    chosen.removeAll { $0.id == t.id }
+                    changed = true
+                }
+            }
+        }
+
+        // 1. Files: each tweak's folder, then XSide's dependencies it needs (once each).
+        if exists(root) {
+            for t in plan.planned { skip(t, .failed, "the earlier signing's tweaks couldn't be removed") }
+        } else {
+            var providers: [String: Bool] = [:]
+            for t in plan.planned {
+                let dest = root.appendingPathComponent(TweakLayout.directory(t.item.package))
+                if exists(dest) { skip(t, .failed, "its folder name is taken"); continue }
+                do {
+                    try copyPackage(t.item.package, from: URL(fileURLWithPath: t.item.directory), to: dest)
+                    try prepareBinaries(of: t.item.package, at: dest, resolution: t.classification.resolution)
+                    try await signTweakFiles(of: t.item.package, at: dest, identity: identity)
+                } catch {
+                    skip(t, .failed, String(describing: error))
+                    continue
+                }
+                var ready = true
+                for p in t.classification.providers {
+                    if providers[p.id] == nil {
+                        providers[p.id] = await copyProvider(p, into: root, resolution: plan.providerResolutions[p.id] ?? [:],
+                                                             identity: identity)
+                    }
+                    if providers[p.id] != true { ready = false }
+                }
+                if !ready { skip(t, .failed, "an embedded dependency couldn't be copied"); continue }
+                chosen.append(t)
+            }
+            cascade()
+        }
+        // ElleKit with its licence, and the support library, when a tweak still needs them.
+        if chosen.contains(where: plan.needsElleKit), !copyLibrary(elleKitLibrary, as: TweakLayout.elleKitName, into: root)
+            || !copyLibrary(elleKitLicense, as: TweakLayout.elleKitLicenseName, into: root) {
+            for t in chosen where plan.needsElleKit(t) { skip(t, .failed, "ElleKit couldn't be copied") }
+            chosen.removeAll(where: plan.needsElleKit)
+            cascade()
+        }
+        if chosen.contains(where: \.needsSupport), !copyLibrary(tweakSupportLibrary, as: TweakLayout.supportName, into: root) {
+            for t in chosen where t.needsSupport { skip(t, .failed, "the support library couldn't be copied") }
+            chosen.removeAll(where: \.needsSupport)
+            cascade()
+        }
+
+        // 2. Load commands, lowest priority: in list order, each tweak only if its commands (and
+        // ElleKit's or the support library's, the first time) fit beside XSide's module.
+        func cost(_ path: String) -> Int {
+            MachOPatcher.loadsDylib(path, in: executable) ? 0 : MachOPatcher.dylibCommand(path).count
+        }
+        let all = (chosen.contains(where: plan.needsElleKit) ? [TweakLayout.elleKitLoadPath] : [])
+            + (chosen.contains(where: \.needsSupport) ? [TweakLayout.supportLoadPath] : []) + chosen.flatMap(\.loadPaths)
+        makeRoom(in: executable, needing: all.reduce(reserve) { $0 + cost($1) })
+        var free = ((try? MachOPatcher.freeSpace(in: executable)) ?? 0) - reserve
+        var withElleKit = false, withSupport = false
+        for t in chosen {
+            let elle = plan.needsElleKit(t) && !withElleKit, support = t.needsSupport && !withSupport
+            let needed = t.loadPaths.reduce(0) { $0 + cost($1) }
+                + (elle ? cost(TweakLayout.elleKitLoadPath) : 0) + (support ? cost(TweakLayout.supportLoadPath) : 0)
+            guard needed <= free else {
+                skip(t, .noRoom, "no room left in the app's header (\(max(free, 0)) bytes for \(needed))")
+                chosen.removeAll { $0.id == t.id }
+                continue
+            }
+            free -= needed
+            if elle { withElleKit = true }
+            if support { withSupport = true }
+        }
+        cascade()
+        // Written in their order: ElleKit, the support library (before any tweak), the tweaks.
+        func add(_ path: String) -> Bool {
+            do { _ = try MachOPatcher.addWeakDylib(path, to: executable); return true } catch {
+                Self.logger.notice("tweaks: \(path) not loaded: \(String(describing: error))")
+                return false
+            }
+        }
+        if chosen.contains(where: plan.needsElleKit), !add(TweakLayout.elleKitLoadPath) {
+            for t in chosen where plan.needsElleKit(t) { skip(t, .failed, "ElleKit's load command couldn't be added") }
+            chosen.removeAll(where: plan.needsElleKit)
+        }
+        if chosen.contains(where: \.needsSupport), !add(TweakLayout.supportLoadPath) {
+            for t in chosen where t.needsSupport { skip(t, .failed, "the support library's load command couldn't be added") }
+            chosen.removeAll(where: \.needsSupport)
+        }
+        for t in chosen where !t.loadPaths.allSatisfy(add) {
+            skip(t, .failed, "its load command couldn't be added")
+            chosen.removeAll { $0.id == t.id }
+        }
+        cascade()
+
+        // 3. What the left-out tweaks brought goes: load commands (the Duo copy's too), files.
+        let needElleKit = chosen.contains(where: plan.needsElleKit), needSupport = chosen.contains(where: \.needsSupport)
+        let kept = Set((needElleKit ? [TweakLayout.elleKitLoadPath] : []) + (needSupport ? [TweakLayout.supportLoadPath] : [])
+                       + chosen.flatMap(\.loadPaths))
+        let stale = Set(plan.loadPaths + [TweakLayout.elleKitLoadPath, TweakLayout.supportLoadPath])
+            .filter { !kept.contains($0) && MachOPatcher.loadsAnySlice($0, in: executable) }
+        if !stale.isEmpty {
+            do { _ = try MachOPatcher.removeDylibs(where: stale.contains, from: executable, movable: Self.isXSideLoadPath) } catch {
+                Self.logger.notice("tweaks: load commands of left-out tweaks kept (weak, files gone): \(String(describing: error))")
+            }
+        }
+        if !needElleKit {
+            try? fm.removeItem(at: root.appendingPathComponent(TweakLayout.elleKitName))
+            try? fm.removeItem(at: root.appendingPathComponent(TweakLayout.elleKitLicenseName))
+        }
+        if !needSupport { try? fm.removeItem(at: root.appendingPathComponent(TweakLayout.supportName)) }
+        let neededDeps = Set(chosen.flatMap(\.classification.providers).map(\.id))
+        var embedded: [String] = []
+        var depsSeen = Set<String>()
+        for p in plan.planned.flatMap(\.classification.providers) where depsSeen.insert(p.id).inserted {
+            if neededDeps.contains(p.id) { embedded.append(p.packageID) } else {
+                try? fm.removeItem(at: root.appendingPathComponent(TweakLayout.directory(p)))
+            }
+        }
+        let deps = root.appendingPathComponent(TweakLayout.depsFolder)
+        if (try? fm.contentsOfDirectory(atPath: deps.path))?.isEmpty == true { try? fm.removeItem(at: deps) }
+        if (try? fm.contentsOfDirectory(atPath: root.path))?.isEmpty == true { try? fm.removeItem(at: root) }
+
+        for t in chosen { results[t.id] = .injected(converted: t.converted) }
+        if !chosen.isEmpty {
+            Self.logger.info("tweaks: \(chosen.count) injected\(embedded.isEmpty ? "" : ", with \(embedded.joined(separator: ", "))")")
+        }
+        return (TweakSigningReport(results: results.filter { id, _ in plan.order.contains(id) }, embedded: embedded),
+                needSupport)
+    }
+
+    /// Copies the files `package` lists from its stored folder `source` into `dest`: only real
+    /// files under real folders (no link anywhere, nothing outside), every binary among them.
+    private func copyPackage(_ package: TweakPackage, from source: URL, to dest: URL) throws {
+        struct Refused: Error, CustomStringConvertible { let description: String }
+        guard Self.isRealDirectory(source) else { throw Refused(description: "its stored folder is missing") }
+        let files = Set(package.files)
+        guard package.binaries.allSatisfy({ files.contains($0.path) }) else { throw Refused(description: "a binary isn't among its files") }
+        let fm = FileManager.default
+        try fm.createDirectory(at: dest, withIntermediateDirectories: true)
+        for path in package.files {
+            let parts = path.split(separator: "/", omittingEmptySubsequences: false)
+            guard !path.isEmpty, !path.utf8.contains(0), parts.count <= DebLimits.maxPathDepth,
+                  !parts.contains(where: { $0.isEmpty || $0 == "." || $0 == ".." }) else {
+                throw Refused(description: "unsafe file path")
+            }
+            var url = source
+            for (i, part) in parts.enumerated() {
+                url.appendPathComponent(String(part))
+                var st = stat()
+                guard lstat(url.path, &st) == 0,
+                      st.st_mode & S_IFMT == (i == parts.count - 1 ? S_IFREG : S_IFDIR) else {
+                    throw Refused(description: "\(path) is missing or not a plain file")
+                }
+            }
+            let to = dest.appendingPathComponent(path)
+            try fm.createDirectory(at: to.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try fm.copyItem(at: url, to: to)
+        }
+    }
+
+    /// Drops the 32-bit ARM slices of each binary and gives its library names their new paths
+    /// (throws `MachOPatcher.Failure.noRoom` when one doesn't fit).
+    private func prepareBinaries(of package: TweakPackage, at dest: URL, resolution: [String: String]) throws {
+        for binary in package.binaries {
+            let url = dest.appendingPathComponent(binary.path)
+            let data = try Data(contentsOf: url)
+            if let thinned = MachOThinner.removingARM32(from: data) { try thinned.write(to: url, options: .atomic) }
+            _ = try MachOPatcher.rewriteDylibNames(resolution, in: url)
+        }
+    }
+
+    /// Signs the package's binaries, then its `.framework` / `.dylib` items, as the signing step
+    /// will: one that can't be signed leaves the tweak out instead of failing the install.
+    private func signTweakFiles(of package: TweakPackage, at dest: URL, identity: String) async throws {
+        let targets = signTargets(in: dest)
+        for target in targets {
+            try requireType(target.pathExtension == "dylib" ? .typeRegular : .typeDirectory, target)
+        }
+        let covered = Set(targets.map(\.standardizedFileURL.path))
+        for binary in package.binaries {
+            let url = dest.appendingPathComponent(binary.path)
+            if !covered.contains(url.standardizedFileURL.path) { try await sign(url, identity: identity, entitlements: nil) }
+        }
+        for target in targets { try await sign(target, identity: identity, entitlements: nil) }
+    }
+
+    /// XSide's embedded package `p` into `deps/<packageID>/`, thinned, rewritten and signed.
+    private func copyProvider(_ p: TweakPackage, into root: URL, resolution: [String: String], identity: String) async -> Bool {
+        let dest = root.appendingPathComponent(TweakLayout.directory(p))
+        do {
+            guard let catalog = tweakDependencies else { throw XSideError.invalidIPA("no embedded dependencies") }
+            try copyPackage(p, from: catalog.appendingPathComponent(p.packageID), to: dest)
+            try prepareBinaries(of: p, at: dest, resolution: resolution)
+            try await signTweakFiles(of: p, at: dest, identity: identity)
+            return true
+        } catch {
+            try? FileManager.default.removeItem(at: dest)
+            Self.logger.notice("tweaks: \(p.packageID) not copied: \(String(describing: error))")
+            return false
+        }
+    }
+
+    /// Copies one of XSide's files (ElleKit, its licence, the support library) into `root`.
+    private func copyLibrary(_ source: URL?, as name: String, into root: URL) -> Bool {
+        guard let source, Self.isRegularFile(source) else { return false }
+        let target = root.appendingPathComponent(name)
+        do {
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            if exists(target) { try FileManager.default.removeItem(at: target) }
+            try FileManager.default.copyItem(at: source, to: target)
+            return true
+        } catch {
+            try? FileManager.default.removeItem(at: target)
+            Self.logger.notice("tweaks: \(name) not copied: \(String(describing: error))")
+            return false
+        }
+    }
+
+    /// The iOS SDK of the job's Xcode (`DEVELOPER_DIR`), for which `/usr/lib` names iOS ships.
+    private static func iOSSDK() -> URL? {
+        guard let dir = CommandEnvironment.overrides["DEVELOPER_DIR"] ?? ProcessInfo.processInfo.environment["DEVELOPER_DIR"],
+              !dir.isEmpty else { return nil }
+        let sdk = URL(fileURLWithPath: dir).appendingPathComponent("Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk")
+        var isDir: ObjCBool = false
+        return FileManager.default.fileExists(atPath: sdk.path, isDirectory: &isDir) && isDir.boolValue ? sdk : nil
+    }
+
+    private static func isRealDirectory(_ url: URL) -> Bool {
+        var st = stat()
+        return lstat(url.path, &st) == 0 && st.st_mode & S_IFMT == S_IFDIR
+    }
+
+    private static func isRegularFile(_ url: URL?) -> Bool {
+        guard let url else { return false }
+        var st = stat()
+        return lstat(url.path, &st) == 0 && st.st_mode & S_IFMT == S_IFREG
     }
 
     // MARK: - Signed-out iCloud
@@ -712,7 +1181,7 @@ public struct Resigner: Sendable {
 
     private func editInfoPlist(app: URL, bundleID: String, options: InstallOptions,
                                payload: WelcomePayload?, features: Bool, language: String, duo: DuoPlan?,
-                               iCloud: (originalBundleID: String, containers: [String])?) throws {
+                               iCloud: (originalBundleID: String, containers: [String])?, tweakPaths: Bool) throws {
         let url = app.appendingPathComponent("Info.plist")
         let data = try IPAInspector.infoPlistData(of: app)
         var format = PropertyListSerialization.PropertyListFormat.binary
@@ -739,6 +1208,10 @@ public struct Resigner: Sendable {
         if let iCloud {
             ICloudSignedOut.applyInfoPlist(&plist, originalBundleID: iCloud.originalBundleID, containers: iCloud.containers)
         }
+        // Cleared first too; read by the tweak support library, written only when it was added.
+        plist[TweakLayout.pathsKey] = nil
+        plist[TweakLayout.bundlesKey] = nil
+        if tweakPaths { plist[TweakLayout.pathsKey] = true }
         let executable = plist["CFBundleExecutable"] as? String ?? "App"
         Self.plainBundleName(&plist, executable: executable)
         // Cleared first: an app signed by XSide before carries the previous payload.
