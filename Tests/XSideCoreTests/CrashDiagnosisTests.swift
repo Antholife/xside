@@ -630,7 +630,7 @@ private final class CrashDeviceRunner: CommandRunning, @unchecked Sendable {
     }
 
     private func scratch() throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("crash-tests-\(UUID().uuidString)")
+        let url = TestTemp.root.appendingPathComponent("crash-tests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }

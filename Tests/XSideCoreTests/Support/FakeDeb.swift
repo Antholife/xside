@@ -141,7 +141,7 @@ enum FakeDeb {
         case "none", "zst", "": flag = nil
         default: throw DebError.unsupportedCompression(compression)
         }
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("fakedeb-\(UUID().uuidString)")
+        let dir = TestTemp.root.appendingPathComponent("fakedeb-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         func compressed(_ tar: Data, _ name: String) throws -> Data {

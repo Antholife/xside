@@ -9,7 +9,7 @@ struct TweakAnalyzerTests {
     private let control = "Package: com.example.tweak\nName: Example Tweak\nVersion: 1.2\nAuthor: Jane <j@x.y>\nArchitecture: iphoneos-arm64\nDepends: mobilesubstrate, firmware (>= 15.0)\nProvides: example-tweak\n"
 
     private func scratch(_ label: String) -> URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("tweak-\(label)-\(UUID().uuidString)")
+        TestTemp.root.appendingPathComponent("tweak-\(label)-\(UUID().uuidString)")
     }
     private func dylib(_ strings: [String] = [], linking: [String] = ["/Library/Frameworks/CydiaSubstrate.framework/CydiaSubstrate"]) -> Data {
         FakeIPA.dylibMachO(linking: linking, padding: 64, strings: strings)

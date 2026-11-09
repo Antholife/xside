@@ -130,7 +130,7 @@ private func profile(_ team: String, _ bundle: String, daysAgo: Double, now: Dat
     }
 
     @Test func scanToleratesMissingDirsAndBadFiles() async throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("xside-prof-\(UUID().uuidString)")
+        let dir = TestTemp.root.appendingPathComponent("xside-prof-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         try Data().write(to: dir.appendingPathComponent("a.mobileprovision"))

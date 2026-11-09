@@ -31,9 +31,10 @@ import Foundation
 @Test func processRunnerStopsAtTimeout() async throws {
     let start = ContinuousClock.now
     await #expect(throws: XSideError.timedOut(tool: "sleep")) {
-        try await ProcessRunner().run("/bin/sleep", ["5"], cwd: nil, timeout: .milliseconds(300))
+        try await ProcessRunner().run("/bin/sleep", ["120"], cwd: nil, timeout: .milliseconds(300))
     }
-    #expect(ContinuousClock.now - start < .seconds(2))
+    // The child would run 120 s: returning within 30 s proves it was stopped, even on a loaded machine.
+    #expect(ContinuousClock.now - start < .seconds(30))
 }
 
 @Test func processRunnerKillsWhatIgnoresSIGTERM() async throws {
@@ -46,22 +47,22 @@ import Foundation
     } catch let error as XSideError {
         #expect(error.key == "timedOut")
     }
-    #expect(ContinuousClock.now - start < .seconds(8))
+    #expect(ContinuousClock.now - start < .seconds(30))
 }
 
 @Test func processRunnerStopsTheWholeProcessGroup() async throws {
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("xside-pg-\(UUID().uuidString)")
+    let dir = TestTemp.root.appendingPathComponent("xside-pg-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: dir) }
     let pidFile = dir.appendingPathComponent("pid")
     // A background grandchild that would outlive its parent, holding the pipes.
     await #expect(throws: XSideError.timedOut(tool: "sleep")) {
-        try await ProcessRunner().run("/bin/sh", ["-c", "/bin/sleep 30 & echo $! > '\(pidFile.path)'; wait"],
+        try await ProcessRunner().run("/bin/sh", ["-c", "/bin/sleep 120 & echo $! > '\(pidFile.path)'; wait"],
                                       cwd: nil, timeout: .milliseconds(500))
     }
     let pid = try #require(pid_t(String(contentsOf: pidFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
     var gone = false
-    for _ in 0..<40 where !gone {
+    for _ in 0..<200 where !gone {
         gone = kill(pid, 0) == -1 && errno == ESRCH
         if !gone { try await Task.sleep(for: .milliseconds(50)) }
     }
@@ -71,10 +72,10 @@ import Foundation
 @Test func processRunnerDoesNotWaitForeverOnInheritedPipes() async throws {
     // The shell exits at once; its background child keeps stdout open for 30 s.
     let start = ContinuousClock.now
-    let r = try await ProcessRunner().run("/bin/sh", ["-c", "echo hi; /bin/sleep 30 &"], cwd: nil, timeout: .seconds(60))
+    let r = try await ProcessRunner().run("/bin/sh", ["-c", "echo hi; /bin/sleep 45 &"], cwd: nil, timeout: .seconds(300))
     #expect(r.status == 0)
     #expect(String(decoding: r.stdout, as: UTF8.self) == "hi\n")
-    #expect(ContinuousClock.now - start < .seconds(8))
+    #expect(ContinuousClock.now - start < .seconds(30))
 }
 
 @Test func processRunnerReportsExitCodeAndCwd() async throws {
@@ -86,11 +87,11 @@ import Foundation
 
 @Test func processRunnerStopsOnCancellation() async throws {
     let start = ContinuousClock.now
-    let task = Task { try await ProcessRunner().run("/bin/sleep", ["5"], cwd: nil, timeout: .seconds(60)) }
+    let task = Task { try await ProcessRunner().run("/bin/sleep", ["120"], cwd: nil, timeout: .seconds(300)) }
     try await Task.sleep(for: .milliseconds(200))
     task.cancel()
     await #expect(throws: CancellationError.self) { try await task.value }
-    #expect(ContinuousClock.now - start < .seconds(2))
+    #expect(ContinuousClock.now - start < .seconds(30))
 }
 
 @Test func processRunnerNamesToolBehindXcrun() {

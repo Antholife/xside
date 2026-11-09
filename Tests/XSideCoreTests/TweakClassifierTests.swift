@@ -395,7 +395,7 @@ struct TweakClassifierTests {
     }
 
     @Test func unknownUsrLibIsJailbreakWhenNotInTheSDK() throws {
-        let sdk = FileManager.default.temporaryDirectory.appendingPathComponent("sdk-\(UUID().uuidString)")
+        let sdk = TestTemp.root.appendingPathComponent("sdk-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: sdk) }
         try FileManager.default.createDirectory(at: sdk.appendingPathComponent("usr/lib/system"), withIntermediateDirectories: true)
         try Data().write(to: sdk.appendingPathComponent("usr/lib/libz.1.tbd"))

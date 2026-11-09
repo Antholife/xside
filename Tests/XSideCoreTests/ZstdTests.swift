@@ -8,7 +8,7 @@ struct ZstdTests {
         URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/zstd/\(name)")
     }
     private func scratch() -> URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("zstd-\(UUID().uuidString)")
+        TestTemp.root.appendingPathComponent("zstd-\(UUID().uuidString)")
     }
 
     @Test func decompressesAFrame() async throws {
@@ -66,14 +66,14 @@ struct ZstdNoHelperTests {
     @Test func noHelperSaysUnsupported() async throws {
         // XSIDE_UNZSTD set to a missing file: no helper, and no fallback to another one.
         #expect(Zstd.helper(environment: ["XSIDE_UNZSTD": "/nonexistent"]) == nil)
-        let out = FileManager.default.temporaryDirectory.appendingPathComponent("zstd-\(UUID().uuidString)")
+        let out = TestTemp.root.appendingPathComponent("zstd-\(UUID().uuidString)")
         await #expect(throws: DebError.unsupportedCompression("zstd")) {
             try await Zstd.decompress(out, to: out, maxBytes: 1, runner: ProcessRunner(), helper: nil)
         }
     }
 
     private func fakeHelper(_ body: String) throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("fake-unzstd-\(UUID().uuidString)")
+        let url = TestTemp.root.appendingPathComponent("fake-unzstd-\(UUID().uuidString)")
         try Data("#!/bin/sh\n\(body)\n".utf8).write(to: url)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
         return url
@@ -83,7 +83,7 @@ struct ZstdNoHelperTests {
         // The runner reports a signal as its number: SIGINT (2) looks like the cap's exit code.
         let helper = try fakeHelper("kill -INT $$")
         defer { try? FileManager.default.removeItem(at: helper) }
-        let out = FileManager.default.temporaryDirectory.appendingPathComponent("zstd-\(UUID().uuidString)")
+        let out = TestTemp.root.appendingPathComponent("zstd-\(UUID().uuidString)")
         await #expect(throws: DebError.malformed("zstd helper failed")) {
             try await Zstd.decompress(out, to: out, maxBytes: 1, runner: ProcessRunner(), helper: helper)
         }
@@ -92,7 +92,7 @@ struct ZstdNoHelperTests {
     @Test func exitTwoNeedsTheCapMessage() async throws {
         let helper = try fakeHelper("exit 2")
         defer { try? FileManager.default.removeItem(at: helper) }
-        let out = FileManager.default.temporaryDirectory.appendingPathComponent("zstd-\(UUID().uuidString)")
+        let out = TestTemp.root.appendingPathComponent("zstd-\(UUID().uuidString)")
         await #expect(throws: DebError.malformed("zstd helper failed")) {
             try await Zstd.decompress(out, to: out, maxBytes: 1, runner: ProcessRunner(), helper: helper)
         }
@@ -101,14 +101,14 @@ struct ZstdNoHelperTests {
     @Test func aHelperThatNeverEndsTimesOut() async throws {
         let helper = try fakeHelper("sleep 30")
         defer { try? FileManager.default.removeItem(at: helper) }
-        let out = FileManager.default.temporaryDirectory.appendingPathComponent("zstd-\(UUID().uuidString)")
+        let out = TestTemp.root.appendingPathComponent("zstd-\(UUID().uuidString)")
         await #expect(throws: XSideError.self) {
             try await Zstd.decompress(out, to: out, maxBytes: 1, runner: ProcessRunner(), helper: helper, timeout: .milliseconds(300))
         }
     }
 
     @Test func helperPathInsideAnAppIsFoundFromTheCLI() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("zstd-\(UUID().uuidString)")
+        let root = TestTemp.root.appendingPathComponent("zstd-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
         let helpers = root.appendingPathComponent("XSide.app/Contents/Helpers")
         try FileManager.default.createDirectory(at: helpers, withIntermediateDirectories: true)

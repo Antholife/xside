@@ -185,7 +185,7 @@ import Foundation
 
     /// A change stored on the Mac reaches the open watch in the same turn: no timer, no poll.
     @Test func aMacChangeIsWrittenAtOnce() async throws {
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let tmp = TestTemp.root.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: tmp) }
         let lib = AppLibrary(root: tmp)
         let src = tmp.appendingPathComponent("src.ipa")

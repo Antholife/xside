@@ -225,7 +225,7 @@ import Foundation
     }
 
     @Test func survivesASaveAndOldFiles() throws {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("crash-watch-\(UUID().uuidString)")
+        let folder = TestTemp.root.appendingPathComponent("crash-watch-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: folder) }
         let store = CrashWatchStore(libraryRoot: folder)
         #expect(store.load() == CrashWatch()) // none yet

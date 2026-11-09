@@ -127,7 +127,7 @@ struct CLIBridgeWaitTests {
 /// can read; a request without it, or with another, is no request.
 struct CLIBridgeKeyTests {
     @Test func keyFileIsPrivateAndNewAtEachLaunch() throws {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let folder = TestTemp.root.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: folder) }
         let first = try CLIBridge.Key.create(in: folder)
         #expect(first.count == 64)

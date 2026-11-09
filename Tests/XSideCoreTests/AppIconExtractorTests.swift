@@ -16,7 +16,7 @@ struct AppIconExtractorTests {
     }
 
     @Test func fallsBackToLargestPNGFile() throws {
-        let app = FileManager.default.temporaryDirectory.appendingPathComponent("icon-\(UUID().uuidString)/X.app")
+        let app = TestTemp.root.appendingPathComponent("icon-\(UUID().uuidString)/X.app")
         defer { try? FileManager.default.removeItem(at: app.deletingLastPathComponent()) }
         try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
         try writePNG(width: 120, to: app.appendingPathComponent("AppIcon60x60@2x.png"))
@@ -30,7 +30,7 @@ struct AppIconExtractorTests {
     }
 
     @Test func downscalesLargeIconAndSkipsHugeOnes() throws {
-        let app = FileManager.default.temporaryDirectory.appendingPathComponent("icon-\(UUID().uuidString)/X.app")
+        let app = TestTemp.root.appendingPathComponent("icon-\(UUID().uuidString)/X.app")
         defer { try? FileManager.default.removeItem(at: app.deletingLastPathComponent()) }
         try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
         let plist: [String: Any] = ["CFBundleIcons": ["CFBundlePrimaryIcon": ["CFBundleIconFiles": ["AppIcon60x60"]]]]
@@ -48,7 +48,7 @@ struct AppIconExtractorTests {
     }
 
     @Test func noIconNamesMeansNoIcon() {
-        let out = FileManager.default.temporaryDirectory.appendingPathComponent("none-\(UUID().uuidString).png")
+        let out = TestTemp.root.appendingPathComponent("none-\(UUID().uuidString).png")
         #expect(!AppIconExtractor.extract(from: URL(fileURLWithPath: "/nonexistent.app"), plist: [:], to: out))
     }
 

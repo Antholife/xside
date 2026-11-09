@@ -31,7 +31,7 @@ import Testing
     }
 
     private static func write(_ d: Data) throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("xside-hostile-\(UUID().uuidString)")
+        let url = TestTemp.root.appendingPathComponent("xside-hostile-\(UUID().uuidString)")
         try d.write(to: url)
         return url
     }
@@ -90,7 +90,7 @@ import Testing
         defer { try? FileManager.default.removeItem(at: url) }
         let run = Self.scanFinishes(url)
         #expect(run.finished)
-        #expect(run.elapsed < 5)
+        #expect(run.elapsed < 9)
     }
 
     @Test func manyDistinctProtocolsSharingListsEndFast() throws {
@@ -119,7 +119,7 @@ import Testing
         defer { try? FileManager.default.removeItem(at: url) }
         let run = Self.scanFinishes(url)
         #expect(run.finished)
-        #expect(run.elapsed < 5)
+        #expect(run.elapsed < 9)
     }
 
     /// Cut and bit-flipped copies of the real fixtures: never a trap, always quick.

@@ -92,7 +92,7 @@ import Foundation
 
 @Suite struct LocalizedStringsTests {
     private func dir(_ lprojs: [String]) throws -> URL {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let dir = TestTemp.root.appendingPathComponent(UUID().uuidString)
         for name in lprojs {
             try FileManager.default.createDirectory(at: dir.appendingPathComponent(name), withIntermediateDirectories: true)
         }

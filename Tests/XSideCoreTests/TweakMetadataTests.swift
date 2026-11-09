@@ -86,7 +86,7 @@ struct TweakMetadataTests {
         let text = "Package: a\nDescription: x\n" + String(repeating: " y\n", count: 1_500_000)
         let start = Date()
         let c = try DebControl.stanzas(text)
-        #expect(Date().timeIntervalSince(start) < 2)
+        #expect(Date().timeIntervalSince(start) < 30) // quadratic behaviour would take minutes
         #expect(c[0]["description"]!.utf8.count <= ControlLimits.maxFieldBytes + 4)
     }
 

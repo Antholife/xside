@@ -45,7 +45,7 @@ struct XcodeCompatTests {
     }
 
     @Test func readsSDKVersion() throws {
-        let dev = FileManager.default.temporaryDirectory.appendingPathComponent("dev-\(UUID().uuidString)")
+        let dev = TestTemp.root.appendingPathComponent("dev-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dev) }
         let sdk = dev.appendingPathComponent("Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk")
         try FileManager.default.createDirectory(at: sdk, withIntermediateDirectories: true)
@@ -56,7 +56,7 @@ struct XcodeCompatTests {
     }
 
     @Test func readsXcodeVersionAndBeta() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("xc-\(UUID().uuidString)")
+        let root = TestTemp.root.appendingPathComponent("xc-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
         func make(_ app: String, build: String) throws -> URL {
             let contents = root.appendingPathComponent("\(app)/Contents")

@@ -109,7 +109,7 @@ struct PlannerTests {
     }
 
     @Test func gateStoreRoundTrip() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("xside-gate-\(UUID().uuidString)")
+        let dir = TestTemp.root.appendingPathComponent("xside-gate-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
         let store = NotificationGateStore(libraryRoot: dir)
         #expect(store.url.lastPathComponent == "notifications.json")
@@ -130,7 +130,7 @@ struct PlannerTests {
     }
 
     @Test func gateStoreCorruptFileLoadsEmpty() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("xside-gate-\(UUID().uuidString)")
+        let dir = TestTemp.root.appendingPathComponent("xside-gate-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let store = NotificationGateStore(libraryRoot: dir)

@@ -15,13 +15,13 @@ private func machO(_ name: String) -> URL {
 }
 
 private func copy(_ name: String) throws -> URL {
-    let url = FileManager.default.temporaryDirectory.appendingPathComponent("xside-duo-\(UUID().uuidString)")
+    let url = TestTemp.root.appendingPathComponent("xside-duo-\(UUID().uuidString)")
     try FileManager.default.copyItem(at: machO(name), to: url)
     return url
 }
 
 private func write(_ data: Data) throws -> URL {
-    let url = FileManager.default.temporaryDirectory.appendingPathComponent("xside-duo-\(UUID().uuidString)")
+    let url = TestTemp.root.appendingPathComponent("xside-duo-\(UUID().uuidString)")
     try data.write(to: url)
     return url
 }

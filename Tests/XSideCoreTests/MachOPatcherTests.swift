@@ -6,7 +6,7 @@ struct MachOPatcherTests {
     private static let path = "@executable_path/Frameworks/XSideWelcome.dylib"
 
     private func file(_ data: Data) throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("xside-macho-\(UUID().uuidString)")
+        let url = TestTemp.root.appendingPathComponent("xside-macho-\(UUID().uuidString)")
         try data.write(to: url)
         return url
     }
@@ -100,7 +100,7 @@ struct MachOPatcherTests {
 
     /// A real iOS executable from clang: otool sees the command and codesign accepts the result.
     @Test(.enabled(if: MachOPatcherTests.hasIOSSDK)) func realBinaryLoadsTheCommand() async throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("xside-real-\(UUID().uuidString)")
+        let dir = TestTemp.root.appendingPathComponent("xside-real-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let source = dir.appendingPathComponent("main.c"), binary = dir.appendingPathComponent("app")
         try Data("int main(void) { return 0; }\n".utf8).write(to: source)
@@ -256,7 +256,7 @@ extension MachOPatcherTests {
 
     /// A real iOS dylib from clang: otool sees the new names and codesign accepts the result.
     @Test(.enabled(if: MachOPatcherTests.hasIOSSDK)) func realDylibIsRewritten() async throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("xside-real-\(UUID().uuidString)")
+        let dir = TestTemp.root.appendingPathComponent("xside-real-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let source = dir.appendingPathComponent("t.c"), binary = dir.appendingPathComponent("t.dylib")
@@ -314,7 +314,7 @@ extension MachOPatcherTests {
 
     /// A FIFO (or anything not a regular file) is never read: no hang.
     @Test func containsAnyNeverReadsAFIFO() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("xside-fifo-\(UUID().uuidString)")
+        let url = TestTemp.root.appendingPathComponent("xside-fifo-\(UUID().uuidString)")
         #expect(mkfifo(url.path, 0o600) == 0)
         defer { try? FileManager.default.removeItem(at: url) }
         #expect(!MachOPatcher.containsAny(["/var/jb"], in: url))

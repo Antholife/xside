@@ -3,7 +3,7 @@ import Testing
 @testable import XSideCore
 
 struct StreamDecompressorTests {
-    private let dir = FileManager.default.temporaryDirectory.appendingPathComponent("stream-\(UUID().uuidString)")
+    private let dir = TestTemp.root.appendingPathComponent("stream-\(UUID().uuidString)")
     init() throws { try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true) }
 
     private func file(_ name: String, _ data: Data) throws -> URL {

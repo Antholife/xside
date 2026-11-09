@@ -3,7 +3,7 @@ import Foundation
 @testable import XSideCore
 
 private func tempDir() throws -> URL {
-    let d = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let d = TestTemp.root.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
     return d
 }

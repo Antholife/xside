@@ -7,7 +7,7 @@ struct MachOThinnerTests {
     private let armv7: UInt32 = 12
 
     private func file(_ data: Data) throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("macho-\(UUID().uuidString)")
+        let url = TestTemp.root.appendingPathComponent("macho-\(UUID().uuidString)")
         try data.write(to: url)
         return url
     }
@@ -51,7 +51,7 @@ struct MachOThinnerTests {
     }
 
     @Test func strippingWholeBundleRewritesFilesAndLeavesBrokenOnesAlone() throws {
-        let app = FileManager.default.temporaryDirectory.appendingPathComponent("thin-\(UUID().uuidString).app")
+        let app = TestTemp.root.appendingPathComponent("thin-\(UUID().uuidString).app")
         let fw = app.appendingPathComponent("Frameworks/X.framework")
         try FileManager.default.createDirectory(at: fw, withIntermediateDirectories: true)
         let slice = FakeIPA.machO(cpuType: arm64, cryptid: 0)
@@ -71,7 +71,7 @@ struct MachOThinnerTests {
     @Test func detectsLegacySlicesFromTheHeaderAndListsTheStepOnlyForThem() throws {
         let slice = FakeIPA.machO(cpuType: arm64, cryptid: 0)
         let fat = FakeIPA.fat([(armv7, 9, FakeIPA.machO(cpuType: armv7, cryptid: 1)), (arm64, 0, slice)])
-        let app = FileManager.default.temporaryDirectory.appendingPathComponent("scan-\(UUID().uuidString).app")
+        let app = TestTemp.root.appendingPathComponent("scan-\(UUID().uuidString).app")
         try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: app) }
         try slice.write(to: app.appendingPathComponent("Main"))

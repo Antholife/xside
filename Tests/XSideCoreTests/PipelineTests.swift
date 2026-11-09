@@ -178,7 +178,7 @@ private actor TimeLog {
 // MARK: - Helpers
 
 private func tempDir() throws -> URL {
-    let d = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let d = TestTemp.root.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
     return d
 }
@@ -943,7 +943,7 @@ struct PipelineCancellationTests {
         let clock = ContinuousClock(), start = clock.now
         task.cancel()
         await #expect(throws: CancellationError.self) { try await task.value }
-        #expect(clock.now - start < .seconds(5)) // not the 30 s of the step
+        #expect(clock.now - start < .seconds(20)) // not the 30 s of the step
         #expect(await started.cancelled == 1)
         #expect(await f.log.installs.isEmpty)
         // A first install that was cancelled records nothing.

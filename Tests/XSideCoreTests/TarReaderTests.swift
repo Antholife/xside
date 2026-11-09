@@ -4,7 +4,7 @@ import Testing
 
 struct TarReaderTests {
     private func scratch() throws -> (parent: URL, root: URL) {
-        let parent = FileManager.default.temporaryDirectory.appendingPathComponent("tar-\(UUID().uuidString)")
+        let parent = TestTemp.root.appendingPathComponent("tar-\(UUID().uuidString)")
         let root = parent.appendingPathComponent("root")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         return (parent, root)

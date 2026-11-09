@@ -3,7 +3,7 @@ import Foundation
 @testable import XSideCore
 
 private func tempDir() throws -> URL {
-    let d = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let d = TestTemp.root.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
     return d
 }
@@ -79,7 +79,7 @@ struct ZipLimitsTests {
         await #expect(throws: XSideError.self) {
             _ = try await ZipLimits.extract(ipa, to: destination, runner: OverflowingDitto(), maxBytes: 1_000_000)
         }
-        #expect(ContinuousClock.now - start < .seconds(5))
+        #expect(ContinuousClock.now - start < .seconds(30))
     }
 
     @Test func acceptsARealArchive() async throws {

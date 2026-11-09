@@ -24,7 +24,7 @@ private func env() -> SigningEnvironment {
 }
 
 private func tempDir(_ name: String) throws -> URL {
-    let u = FileManager.default.temporaryDirectory.appendingPathComponent("xside-\(name)-\(UUID().uuidString)")
+    let u = TestTemp.root.appendingPathComponent("xside-\(name)-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
     return u
 }

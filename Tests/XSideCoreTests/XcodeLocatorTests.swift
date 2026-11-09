@@ -66,7 +66,7 @@ struct XcodeLocatorTests {
     }
 
     @Test func findsXcodeAppsByBundleIdentifier() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("loc-\(UUID().uuidString)")
+        let root = TestTemp.root.appendingPathComponent("loc-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
         let apps = root.appendingPathComponent("Applications")
         let home = root.appendingPathComponent("home/Applications")

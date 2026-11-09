@@ -335,7 +335,7 @@ import Foundation
     let now = Date(timeIntervalSince1970: 1_800_000_000)
 
     func library() async throws -> (AppLibrary, AppRecord, URL) {
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let tmp = TestTemp.root.appendingPathComponent(UUID().uuidString)
         let lib = AppLibrary(root: tmp)
         let src = tmp.appendingPathComponent("src.ipa")
         try Data("ipa".utf8).write(to: src)

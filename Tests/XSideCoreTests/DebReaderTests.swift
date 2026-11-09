@@ -10,7 +10,7 @@ struct DebReaderTests {
     ]
 
     private func scratch() -> URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("debreader-\(UUID().uuidString)")
+        TestTemp.root.appendingPathComponent("debreader-\(UUID().uuidString)")
     }
     private func write(_ data: Data) throws -> URL {
         let url = scratch().appendingPathExtension("deb")
