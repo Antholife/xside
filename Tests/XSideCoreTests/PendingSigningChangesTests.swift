@@ -45,8 +45,38 @@ struct PendingSigningChangesTests {
         #expect(installation(without: true).pendingSigningChanges(wantsWithoutXSideFeatures: true).isEmpty)
     }
 
+    @Test func tweaksArePendingUntilSigned() {
+        let signed = SigningChoices(withoutXSideFeatures: false, duoCompatibility: false, iCloudSignedOut: false, tweaks: ["a", "b"])
+        var i = installation(signed: signed)
+        // Signed with a and b; the device lists them enabled, in that order: nothing pending.
+        i.tweaks = [TweakUse(id: "a", enabled: true), TweakUse(id: "b", enabled: true)]
+        #expect(i.pendingSigningChanges(wantsWithoutXSideFeatures: false).isEmpty)
+        // Disabled, added, removed, reordered: pending until the next signing.
+        i.tweaks = [TweakUse(id: "a", enabled: true), TweakUse(id: "b", enabled: false)]
+        #expect(i.pendingSigningChanges(wantsWithoutXSideFeatures: false) == [.tweaks])
+        i.tweaks = [TweakUse(id: "a", enabled: true), TweakUse(id: "b", enabled: true), TweakUse(id: "c", enabled: true)]
+        #expect(i.pendingSigningChanges(wantsWithoutXSideFeatures: false) == [.tweaks])
+        i.tweaks = [TweakUse(id: "a", enabled: true)]
+        #expect(i.pendingSigningChanges(wantsWithoutXSideFeatures: false) == [.tweaks])
+        i.tweaks = [TweakUse(id: "b", enabled: true), TweakUse(id: "a", enabled: true)]
+        #expect(i.pendingSigningChanges(wantsWithoutXSideFeatures: false) == [.tweaks])
+        // A disabled tweak that was never signed is not a change.
+        i.tweaks = [TweakUse(id: "a", enabled: true), TweakUse(id: "b", enabled: true), TweakUse(id: "c", enabled: false)]
+        #expect(i.pendingSigningChanges(wantsWithoutXSideFeatures: false).isEmpty)
+        // Signed before tweaks were tracked (no list): none asked.
+        var older = installation(signed: none)
+        #expect(older.pendingSigningChanges(wantsWithoutXSideFeatures: false).isEmpty)
+        older.tweaks = [TweakUse(id: "a", enabled: true)]
+        #expect(older.pendingSigningChanges(wantsWithoutXSideFeatures: false) == [.tweaks])
+        // No signedChoices at all (older state): unknown, never pending.
+        var unknown = installation()
+        unknown.tweaks = [TweakUse(id: "a", enabled: true)]
+        #expect(unknown.pendingSigningChanges(wantsWithoutXSideFeatures: false).isEmpty)
+    }
+
     @Test func signedChoicesSurviveEncoding() throws {
-        let i = installation(signed: SigningChoices(withoutXSideFeatures: true, duoCompatibility: true, iCloudSignedOut: false))
+        let i = installation(signed: SigningChoices(withoutXSideFeatures: true, duoCompatibility: true, iCloudSignedOut: false,
+                                                          tweaks: ["a"]))
         let back = try JSONDecoder().decode(Installation.self, from: JSONEncoder().encode(i))
         #expect(back.signedChoices == i.signedChoices)
     }

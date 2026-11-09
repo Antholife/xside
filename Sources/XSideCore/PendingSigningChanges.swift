@@ -8,17 +8,21 @@ public struct SigningChoices: Codable, Equatable, Sendable {
     public var withoutXSideFeatures: Bool
     public var duoCompatibility: Bool
     public var iCloudSignedOut: Bool
+    /// The tweaks enabled for that signing (`TweakPackage.id`s, in load order). nil in state
+    /// written before tweaks: none were asked.
+    public var tweaks: [String]?
 
-    public init(withoutXSideFeatures: Bool, duoCompatibility: Bool, iCloudSignedOut: Bool) {
+    public init(withoutXSideFeatures: Bool, duoCompatibility: Bool, iCloudSignedOut: Bool, tweaks: [String]? = nil) {
         self.withoutXSideFeatures = withoutXSideFeatures
         self.duoCompatibility = duoCompatibility
         self.iCloudSignedOut = iCloudSignedOut
+        self.tweaks = tweaks
     }
 }
 
 /// An option of Settings > Mes apps that only applies at signing.
 public enum SigningTimeSetting: String, Sendable, CaseIterable {
-    case xsideModule, duoCompatibility, iCloudSignedOut
+    case xsideModule, duoCompatibility, iCloudSignedOut, tweaks
 }
 
 extension Installation {
@@ -26,7 +30,9 @@ extension Installation {
     /// signed with: they take effect at its next refresh. `wantsWithoutXSideFeatures` is the
     /// choice now (the app's, the Mac's default, or this device's own, already resolved by the
     /// caller). In older state (no `signedChoices`) the module compares with what the last
-    /// signing did (`withoutXSideFeatures`); Duo and iCloud are unknown, so never pending.
+    /// signing did (`withoutXSideFeatures`); Duo, iCloud and tweaks are unknown, so never pending.
+    /// Tweaks are pending when the ids enabled on this device, in order, differ from those the
+    /// last signing was asked for (enabled, disabled, added, removed, replaced or reordered).
     public func pendingSigningChanges(wantsWithoutXSideFeatures: Bool) -> Set<SigningTimeSetting> {
         var pending: Set<SigningTimeSetting> = []
         let signedWithout = signedChoices?.withoutXSideFeatures ?? (withoutXSideFeatures == true)
@@ -34,7 +40,13 @@ extension Installation {
         if let signed = signedChoices {
             if signed.duoCompatibility != (duoCompatibility == true) { pending.insert(.duoCompatibility) }
             if signed.iCloudSignedOut != (iCloudSignedOut == true) { pending.insert(.iCloudSignedOut) }
+            if enabledTweakIDs != (signed.tweaks ?? []) { pending.insert(.tweaks) }
         }
         return pending
     }
+}
+
+extension Installation {
+    /// The tweaks enabled on this device, in its list's order (the pool's load order).
+    public var enabledTweakIDs: [String] { (tweaks ?? []).filter(\.enabled).map(\.id) }
 }

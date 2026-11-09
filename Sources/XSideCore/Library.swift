@@ -1,5 +1,37 @@
 import Foundation
+import CryptoKit
+import Darwin
 import os
+
+/// A tweak of the app's pool (`AppRecord.tweaks`) as chosen for one device.
+public struct TweakUse: Codable, Equatable, Sendable {
+    /// `TweakPackage.id`.
+    public var id: String
+    public var enabled: Bool
+    /// « Injecter quand même »: the person overrode an overridable ❌. nil: not overridden.
+    public var force: Bool?
+
+    public init(id: String, enabled: Bool = true, force: Bool? = nil) {
+        self.id = id
+        self.enabled = enabled
+        self.force = force
+    }
+}
+
+/// Why a signing left an enabled tweak out.
+public enum TweakSkip: Codable, Equatable, Sendable {
+    case incompatible(TweakProblem)
+    /// The app's header had no room left for its load command.
+    case noRoom
+    /// Its stored files were missing or damaged, or copying them failed.
+    case failed
+}
+
+/// What the last signing did with one enabled tweak.
+public enum TweakResult: Codable, Equatable, Sendable {
+    case injected(converted: Bool)
+    case skipped(TweakSkip)
+}
 
 public struct Installation: Codable, Equatable, Sendable {
     public var deviceID: String
@@ -69,6 +101,23 @@ public struct Installation: Codable, Equatable, Sendable {
     /// What the last signing was asked to do for the options that only apply at signing (nil in
     /// older state: not known). Compared with the choices now by `pendingSigningChanges`.
     public var signedChoices: SigningChoices?
+    /// The tweaks of the app's pool chosen for this device, in load order. nil in older state
+    /// (none). What its last signing was asked for is `signedChoices.tweaks`.
+    public var tweaks: [TweakUse]?
+    /// What the last signing did with each enabled tweak, by `TweakPackage.id`. nil: no tweak
+    /// was asked (or older state).
+    public var tweakResults: [String: TweakResult]?
+    /// Package ids of the dependencies XSide added by itself at the last signing (for the crash
+    /// wording). nil: none.
+    public var embeddedDependencies: [String]?
+    /// Tweaks the app on the device has.
+    public var injectedTweakCount: Int {
+        (tweakResults ?? [:]).values.reduce(0) { n, r in if case .injected = r { n + 1 } else { n } }
+    }
+    /// One of them was converted to work without a jailbreak.
+    public var hasConvertedTweak: Bool {
+        (tweakResults ?? [:]).values.contains(.injected(converted: true))
+    }
     /// The app on the device has the library: asked for, and the last signing added it.
     public var hasICloudSignedOut: Bool { iCloudSignedOut == true && iCloudSignedOutMissing != true }
     /// The app on the device has iPhone Duo compatibility: asked for, and the last signing applied it.
@@ -86,7 +135,12 @@ public struct Installation: Codable, Equatable, Sendable {
                 duoCompatibility: Bool? = nil, duoCompatibilityMissing: Bool? = nil, onDuo: Bool? = nil,
                 iCloudSignedOut: Bool? = nil, iCloudSignedOutMissing: Bool? = nil,
                 iCloudSignedOutSkippedForModule: Bool? = nil, duoLegacyModule: Bool? = nil,
-                withoutXSideFeaturesHere: Bool? = nil, signedChoices: SigningChoices? = nil) {
+                withoutXSideFeaturesHere: Bool? = nil, signedChoices: SigningChoices? = nil,
+                tweaks: [TweakUse]? = nil, tweakResults: [String: TweakResult]? = nil,
+                embeddedDependencies: [String]? = nil) {
+        self.tweaks = tweaks
+        self.tweakResults = tweakResults
+        self.embeddedDependencies = embeddedDependencies
         self.signedChoices = signedChoices
         self.withoutXSideFeaturesHere = withoutXSideFeaturesHere
         self.duoLegacyModule = duoLegacyModule
@@ -148,6 +202,9 @@ public struct Installation: Codable, Equatable, Sendable {
         duoLegacyModule = try? c.decodeIfPresent(Bool.self, forKey: .duoLegacyModule)
         withoutXSideFeaturesHere = try? c.decodeIfPresent(Bool.self, forKey: .withoutXSideFeaturesHere)
         signedChoices = try? c.decodeIfPresent(SigningChoices.self, forKey: .signedChoices)
+        tweaks = try? c.decodeIfPresent([TweakUse].self, forKey: .tweaks)
+        tweakResults = try? c.decodeIfPresent([String: TweakResult].self, forKey: .tweakResults)
+        embeddedDependencies = try? c.decodeIfPresent([String].self, forKey: .embeddedDependencies)
     }
 }
 
@@ -179,6 +236,12 @@ public struct AppRecord: Codable, Identifiable, Equatable, Sendable {
     /// The app's `CFBundleExecutable`: its process name in the device's crash logs. nil in older
     /// state, until its next import or signing.
     public var executable: String?
+    /// The app's tweaks, stored once under `apps/<id>/tweaks/<tweak id>/`; the list's order is
+    /// the load order. Which device gets which is `Installation.tweaks`. nil in older state.
+    public var tweaks: [TweakPackage]?
+    /// Tweaks chosen for a device the app isn't installed on yet (by device id): they keep the
+    /// tweak's files until that device's first signing, which records its own list.
+    public var pendingTweakUses: [String: [TweakUse]]?
 
     public init(id: UUID, displayName: String, originalBundleID: String, signedBundleID: String,
                 ipaPath: String, options: InstallOptions, installations: [Installation], teamID: String,
@@ -216,6 +279,14 @@ public struct AppRecord: Codable, Identifiable, Equatable, Sendable {
         icloud = try? c.decodeIfPresent(ICloudAppInfo.self, forKey: .icloud)
         legacy32 = try? c.decodeIfPresent(Bool.self, forKey: .legacy32)
         executable = try? c.decodeIfPresent(String.self, forKey: .executable)
+        // One at a time: a damaged (or newer) entry doesn't cost the others.
+        tweaks = (try? c.decodeIfPresent([LossyTweak].self, forKey: .tweaks))?.compactMap(\.package)
+        pendingTweakUses = try? c.decodeIfPresent([String: [TweakUse]].self, forKey: .pendingTweakUses)
+    }
+
+    private struct LossyTweak: Decodable {
+        let package: TweakPackage?
+        init(from decoder: any Decoder) throws { package = try? TweakPackage(from: decoder) }
     }
 }
 
@@ -243,13 +314,20 @@ public actor AppLibrary {
     /// Set when `state.json` couldn't be fully read at init, nil otherwise.
     public nonisolated let loadIssue: LibraryLoadIssue?
     private var items: [AppRecord] = []
+    /// `addTweak` calls analysing right now: a folder they store isn't in a pool yet.
+    private var tweaksInFlight = 0
+    /// Versions `addTweak` stored and offered as a replacement, not confirmed yet (by record).
+    private var offeredTweaks: [UUID: Set<String>] = [:]
     private var stateURL: URL { root.appendingPathComponent("state.json") }
     private var backupURL: URL { root.appendingPathComponent("state.json.bak") }
 
-    public init(root: URL) {
+    /// `temporaryDirectory`: where XSide's own temporary folders left by a run that was killed
+    /// are swept from (see `sweepLeftovers`).
+    public init(root: URL, temporaryDirectory: URL = FileManager.default.temporaryDirectory) {
         self.root = root
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         (items, loadIssue) = Self.load(root: root)
+        Self.sweepLeftovers(root: root, temporaryDirectory: temporaryDirectory)
     }
 
     /// Decodes one record at a time, so a single bad record doesn't cost the whole library.
@@ -454,6 +532,9 @@ public actor AppLibrary {
         let previous = items
         items[index].installations.removeAll { $0.deviceID == deviceID }
         do { try save() } catch { items = previous; throw error }
+        // With none left the record goes with its files (`removeIfEmpty`), or a job is installing
+        // it elsewhere with its own choice: its tweaks are left alone.
+        if !items[index].installations.isEmpty { collectUnusedTweaks(recordID: recordID) }
         return true
     }
 
@@ -694,7 +775,14 @@ public actor AppLibrary {
         let index = try indexOf(id)
         let current = items[index].installations.first { $0.deviceID == installation.deviceID }
         let stored = current.map { installation.keepingChannelState(of: $0) } ?? installation
-        try upsert(stored, for: id, requireExisting: requireExisting)
+        let previous = items
+        // The device's own list now says which tweaks it has: the choice made before it was installed goes.
+        if items[index].pendingTweakUses?[installation.deviceID] != nil {
+            items[index].pendingTweakUses?[installation.deviceID] = nil
+            if items[index].pendingTweakUses?.isEmpty == true { items[index].pendingTweakUses = nil }
+        }
+        do { try upsert(stored, for: id, requireExisting: requireExisting) } catch { items = previous; throw error }
+        collectUnusedTweaks(recordID: id)
         return stored
     }
 
@@ -707,20 +795,29 @@ public actor AppLibrary {
         let previous = items
         var removed = 0
         var emptied: [UUID] = []
+        var touched: [UUID] = []
         for index in items.indices {
             let before = items[index].installations.count
             items[index].installations.removeAll { $0.deviceID == deviceID }
+            if items[index].pendingTweakUses?.removeValue(forKey: deviceID) != nil {
+                if items[index].pendingTweakUses?.isEmpty == true { items[index].pendingTweakUses = nil }
+                touched.append(items[index].id)
+            }
             let dropped = before - items[index].installations.count
             removed += dropped
+            if dropped > 0 { touched.append(items[index].id) }
             if dropped > 0, items[index].installations.isEmpty, !keeping.contains(items[index].id) {
                 emptied.append(items[index].id)
             }
         }
-        guard removed > 0 else { return 0 }
+        guard removed > 0 || !touched.isEmpty else { return 0 }
         items.removeAll { emptied.contains($0.id) }
         do { try save() } catch { items = previous; throw error }
         for id in emptied {
             try? FileManager.default.removeItem(at: root.appendingPathComponent("apps/\(id.uuidString)"))
+        }
+        for id in touched where items.first(where: { $0.id == id })?.installations.isEmpty == false {
+            collectUnusedTweaks(recordID: id)
         }
         return removed
     }
@@ -757,5 +854,361 @@ public actor AppLibrary {
         } else if (try? fm.moveItem(at: temp, to: backupURL)) == nil {
             try? fm.removeItem(at: temp)
         }
+    }
+}
+
+// MARK: Tweaks
+
+extension AppLibrary {
+    private static let sweptTemporaryFolders = OSAllocatedUnfairLock(initialState: Set<String>())
+
+    /// A leftover this old (or older) is XSide's own and no longer in use.
+    static let leftoverAge: TimeInterval = 3600
+
+    /// `apps/<recordID>/tweaks/<id>`: where the package's files are stored.
+    public nonisolated func tweakDirectory(recordID: UUID, id: String) -> URL {
+        tweaksFolder(recordID).appendingPathComponent(id)
+    }
+
+    nonisolated func tweaksFolder(_ recordID: UUID) -> URL {
+        root.appendingPathComponent("apps/\(recordID.uuidString)/tweaks")
+    }
+
+    /// Analyses `source` and adds it to the app's pool, enabled on `deviceIDs` only (a device
+    /// without an installation yet keeps the choice in `pendingTweakUses`). The same bytes again
+    /// are stored once and enabled on those devices too. Another version of a package already in
+    /// the pool (same package id) is stored but not applied: it comes back with `replacing`, the
+    /// package it would replace, for the person to confirm (`replaceTweak`).
+    public func addTweak(_ source: URL, origin: TweakOrigin = .added, recordID: UUID, deviceIDs: [String],
+                         runner: CommandRunning, now: Date) async throws -> (package: TweakPackage, replacing: TweakPackage?) {
+        _ = try indexOf(recordID)
+        tweaksInFlight += 1
+        defer { tweaksInFlight -= 1 }
+        let package = try await TweakAnalyzer.analyze(source, into: tweaksFolder(recordID), origin: origin,
+                                                      runner: runner, now: now)
+        // Other calls may have run during the analysis.
+        guard let index = items.firstIndex(where: { $0.id == recordID }) else {
+            try? FileManager.default.removeItem(at: root.appendingPathComponent("apps/\(recordID.uuidString)"))
+            throw XSideError.recordNotFound
+        }
+        guard Self.isDirectory(tweakDirectory(recordID: recordID, id: package.id)) else {
+            throw TweakError.unreadable("the stored package is missing")
+        }
+        let pool = items[index].tweaks ?? []
+        if let existing = pool.first(where: { $0.id == package.id }) {
+            let previous = items
+            enable(existing.id, on: deviceIDs, at: index)
+            if items != previous { do { try save() } catch { items = previous; throw error } }
+            return (existing, nil)
+        }
+        if let old = pool.first(where: { $0.packageID == package.packageID }) {
+            offeredTweaks[recordID, default: []].insert(package.id)
+            return (package, old)
+        }
+        let previous = items
+        items[index].tweaks = pool + [package]
+        enable(package.id, on: deviceIDs, at: index)
+        do { try save() } catch { items = previous; throw error }
+        return (package, nil)
+    }
+
+    /// Puts `new` (stored by `addTweak`) in `old`'s place in the pool: same load position, and
+    /// every device that listed `old` lists `new` with the same `enabled` and `force`. The old
+    /// files stay until no device's last signing has them.
+    public func replaceTweak(_ old: String, with new: TweakPackage, recordID: UUID) throws {
+        let index = try indexOf(recordID)
+        var pool = items[index].tweaks ?? []
+        guard let position = pool.firstIndex(where: { $0.id == old }) else { throw XSideError.recordNotFound }
+        guard Self.isDirectory(tweakDirectory(recordID: recordID, id: new.id)) else {
+            throw TweakError.unreadable("the stored package is missing")
+        }
+        let previous = items
+        pool[position] = new
+        pool = pool.enumerated().filter { $0.offset == position || $0.element.id != new.id }.map(\.element)
+        items[index].tweaks = pool
+        func renamed(_ uses: [TweakUse]) -> [TweakUse] {
+            Self.ordered(uses.map { $0.id == old ? TweakUse(id: new.id, enabled: $0.enabled, force: $0.force) : $0 }, pool: pool)
+        }
+        for i in items[index].installations.indices {
+            if let uses = items[index].installations[i].tweaks { items[index].installations[i].tweaks = renamed(uses) }
+        }
+        if let pending = items[index].pendingTweakUses { items[index].pendingTweakUses = pending.mapValues(renamed) }
+        do { try save() } catch { items = previous; throw error }
+        offeredTweaks[recordID]?.remove(new.id)
+        collectUnusedTweaks(recordID: recordID)
+    }
+
+    /// Sets the tweaks chosen for one device, from its next signing on: ids not in the pool are
+    /// left out, each id is kept once, in the pool's load order. A device without an installation
+    /// keeps them in `pendingTweakUses`. Returns false when nothing changed.
+    @discardableResult
+    public func setTweaks(_ uses: [TweakUse], recordID: UUID, deviceID: String) throws -> Bool {
+        let index = try indexOf(recordID)
+        let wanted = Self.ordered(uses, pool: items[index].tweaks ?? [])
+        let previous = items
+        if let i = items[index].installations.firstIndex(where: { $0.deviceID == deviceID }) {
+            guard (items[index].installations[i].tweaks ?? []) != wanted else { return false }
+            items[index].installations[i].tweaks = wanted
+        } else {
+            guard (items[index].pendingTweakUses?[deviceID] ?? []) != wanted else { return false }
+            setPending(wanted, deviceID: deviceID, at: index)
+        }
+        do { try save() } catch { items = previous; throw error }
+        return true
+    }
+
+    /// Drops from the pool the tweaks no device lists, none is waiting for, and no device's last
+    /// signing included (asked or injected), with their files; also deletes the other unused
+    /// stored folders (a version replaced, a replacement offered before XSide was last started),
+    /// except while a tweak is being added. Best effort.
+    func collectUnusedTweaks(recordID: UUID) {
+        guard let index = items.firstIndex(where: { $0.id == recordID }) else { return }
+        let record = items[index]
+        var used = Set<String>()
+        for i in record.installations {
+            used.formUnion((i.tweaks ?? []).map(\.id))
+            used.formUnion(i.signedChoices?.tweaks ?? [])
+            for (id, result) in i.tweakResults ?? [:] { if case .injected = result { used.insert(id) } }
+        }
+        for uses in (record.pendingTweakUses ?? [:]).values { used.formUnion(uses.map(\.id)) }
+        let pool = record.tweaks ?? []
+        let dropped = Set(pool.map(\.id).filter { !used.contains($0) })
+        if !dropped.isEmpty {
+            let previous = items
+            items[index].tweaks = pool.filter { used.contains($0.id) }
+            do { try save() } catch {
+                items = previous
+                Self.logger.error("tweaks of \(recordID.uuidString): unused ones not dropped: \(error.localizedDescription)")
+                return
+            }
+        }
+        let keep = used.union((items[index].tweaks ?? []).map(\.id)).union(offeredTweaks[recordID] ?? [])
+        let folder = tweaksFolder(recordID)
+        let fm = FileManager.default
+        guard let names = try? fm.contentsOfDirectory(atPath: folder.path) else { return }
+        for name in names where Self.isTweakID(name) && !keep.contains(name) {
+            // An analysis may have just stored it, for a pool it isn't in yet.
+            guard dropped.contains(name) || tweaksInFlight == 0 else { continue }
+            try? fm.removeItem(at: folder.appendingPathComponent(name))
+        }
+    }
+
+    private func enable(_ id: String, on deviceIDs: [String], at index: Int) {
+        let pool = items[index].tweaks ?? []
+        func enabling(_ uses: [TweakUse]) -> [TweakUse] {
+            var uses = uses
+            if let u = uses.firstIndex(where: { $0.id == id }) { uses[u].enabled = true } else { uses.append(TweakUse(id: id)) }
+            return Self.ordered(uses, pool: pool)
+        }
+        for deviceID in Set(deviceIDs) {
+            if let i = items[index].installations.firstIndex(where: { $0.deviceID == deviceID }) {
+                items[index].installations[i].tweaks = enabling(items[index].installations[i].tweaks ?? [])
+            } else {
+                setPending(enabling(items[index].pendingTweakUses?[deviceID] ?? []), deviceID: deviceID, at: index)
+            }
+        }
+    }
+
+    private func setPending(_ uses: [TweakUse], deviceID: String, at index: Int) {
+        var pending = items[index].pendingTweakUses ?? [:]
+        pending[deviceID] = uses.isEmpty ? nil : uses
+        items[index].pendingTweakUses = pending.isEmpty ? nil : pending
+    }
+
+    /// Known ids only, each once (its first use), in the pool's order.
+    static func ordered(_ uses: [TweakUse], pool: [TweakPackage]) -> [TweakUse] {
+        var seen = Set<String>()
+        let first = uses.filter { seen.insert($0.id).inserted }
+        let position = Dictionary(pool.enumerated().map { ($0.element.id, $0.offset) }) { a, _ in a }
+        return first.filter { position[$0.id] != nil }.sorted { position[$0.id]! < position[$1.id]! }
+    }
+
+    /// `TweakPackage.id`'s form: 16 lowercase hex digits (never a path).
+    static func isTweakID(_ name: String) -> Bool {
+        name.utf8.count == 16 && name.utf8.allSatisfy { (0x30...0x39).contains($0) || (0x61...0x66).contains($0) }
+    }
+
+    static func isDirectory(_ url: URL) -> Bool {
+        var st = stat()
+        return lstat(url.path, &st) == 0 && st.st_mode & S_IFMT == S_IFDIR
+    }
+
+    static func modified(_ url: URL) -> Date? {
+        var st = stat()
+        guard lstat(url.path, &st) == 0 else { return nil }
+        return Date(timeIntervalSince1970: TimeInterval(st.st_mtimespec.tv_sec))
+    }
+
+    // MARK: Leftovers
+
+    /// Removes what a run XSide was killed in the middle of left behind, once it is an hour old
+    /// (so work in progress, of this XSide or of another one sharing the folder, is never
+    /// touched): `.incoming-*` and `.stale-*` in each app's tweak storage, `.incoming-*` in the
+    /// download cache, and, in the temporary folder, only XSide's own `deb-<UUID>`,
+    /// `bzip2-<UUID>` and `tweak-src-<UUID>.deb`.
+    static func sweepLeftovers(root: URL, temporaryDirectory: URL, now: Date = Date()) {
+        let fm = FileManager.default
+        let limit = now.addingTimeInterval(-leftoverAge)
+        func sweep(_ folder: URL, _ matches: (String) -> Bool) {
+            guard let names = try? fm.contentsOfDirectory(atPath: folder.path) else { return }
+            for name in names where matches(name) {
+                let url = folder.appendingPathComponent(name)
+                guard let date = modified(url), date < limit else { continue }
+                try? fm.removeItem(at: url)
+            }
+        }
+        let staging: (String) -> Bool = { $0.hasPrefix(".incoming-") || $0.hasPrefix(".stale-") }
+        let apps = root.appendingPathComponent("apps")
+        for app in (try? fm.contentsOfDirectory(atPath: apps.path)) ?? [] where UUID(uuidString: app) != nil {
+            sweep(apps.appendingPathComponent(app).appendingPathComponent("tweaks"), staging)
+        }
+        sweep(root.appendingPathComponent("downloads")) { $0.hasPrefix(".incoming-") }
+        // The temporary folder is shared and can be large: once per process is enough.
+        guard sweptTemporaryFolders.withLock({ $0.insert(temporaryDirectory.standardizedFileURL.path).inserted }) else { return }
+        sweep(temporaryDirectory) { name in
+            func uuid(_ prefix: String, _ suffix: String = "") -> Bool {
+                guard name.hasPrefix(prefix), name.hasSuffix(suffix), name.count > prefix.count + suffix.count else { return false }
+                return UUID(uuidString: String(name.dropFirst(prefix.count).dropLast(suffix.count))) != nil
+            }
+            return uuid("deb-") || uuid("bzip2-") || uuid("tweak-src-", ".deb")
+        }
+    }
+}
+
+// MARK: Download cache
+
+/// One `.deb` XSide downloaded (`downloads/index.json`).
+struct DownloadCacheEntry: Codable, Equatable, Sendable {
+    var sha256: String
+    var packageID: String
+    var version: String
+    var repo: String
+    var url: String
+    var downloadedAt: Date
+}
+
+extension AppLibrary {
+    static let maxDownloadIndexBytes = 4 * 1024 * 1024
+    static let maxDownloadEntries = 4096
+
+    private nonisolated var downloadsFolder: URL { root.appendingPathComponent("downloads") }
+    private nonisolated var downloadIndexURL: URL { root.appendingPathComponent("downloads/index.json") }
+    private nonisolated func downloadURL(_ sha256: String) -> URL { root.appendingPathComponent("downloads/\(sha256).deb") }
+
+    /// Keeps a downloaded `.deb` as `downloads/<sha256>.deb`, checking its bytes against
+    /// `sha256` first, and lists it in the index. Returns where it is.
+    public func storeDownload(_ file: URL, sha256: String, packageID: String, version: String,
+                              repo: String, url: String) throws -> URL {
+        let sha = sha256.lowercased()
+        guard Self.isSHA256(sha) else { throw TweakError.unreadable("invalid SHA-256") }
+        let fm = FileManager.default
+        try fm.createDirectory(at: downloadsFolder, withIntermediateDirectories: true)
+        let staging = downloadsFolder.appendingPathComponent(".incoming-\(UUID().uuidString)")
+        try fm.copyItem(at: file, to: staging)
+        do {
+            // The copy is what is checked (and kept): the source can't change in between.
+            guard Self.hashFile(staging, maxBytes: DebLimits.maxDebBytes) == sha else {
+                throw TweakError.unreadable("the download doesn't match its SHA-256")
+            }
+            let destination = downloadURL(sha)
+            if fm.fileExists(atPath: destination.path) {
+                _ = try fm.replaceItemAt(destination, withItemAt: staging)
+            } else {
+                try fm.moveItem(at: staging, to: destination)
+            }
+            var entries = readDownloadIndex().filter { $0.sha256 != sha }
+            entries.append(DownloadCacheEntry(sha256: sha, packageID: packageID, version: version, repo: repo,
+                                              url: url, downloadedAt: Date()))
+            try writeDownloadIndex(Array(entries.suffix(Self.maxDownloadEntries)))
+            return destination
+        } catch {
+            try? fm.removeItem(at: staging)
+            throw error
+        }
+    }
+
+    /// The cached `.deb` of `packageID` with the highest version that satisfies `satisfying`,
+    /// nil when none. Entries whose file is gone, or whose bytes no longer hash to their name,
+    /// are dropped (a damaged file is deleted).
+    public func cachedDownload(packageID: String, satisfying dependency: DebDependency) -> URL? {
+        let all = readDownloadIndex()
+        var entries = all.filter { Self.isSHA256($0.sha256) && Self.isRegularFile(downloadURL($0.sha256)) }
+        let candidates = entries.filter { $0.packageID == packageID && dependency.isSatisfied(by: $0.version) }
+            .sorted { DebVersion.compare($0.version, $1.version) == .orderedDescending }
+        var found: URL?
+        for entry in candidates {
+            let url = downloadURL(entry.sha256)
+            if Self.hashFile(url, maxBytes: DebLimits.maxDebBytes) == entry.sha256 { found = url; break }
+            Self.logger.error("download cache: \(entry.sha256).deb is damaged, dropped")
+            try? FileManager.default.removeItem(at: url)
+            entries.removeAll { $0.sha256 == entry.sha256 }
+        }
+        if entries != all { try? writeDownloadIndex(entries) }
+        return found
+    }
+
+    private func readDownloadIndex() -> [DownloadCacheEntry] {
+        var st = stat()
+        guard lstat(downloadIndexURL.path, &st) == 0, st.st_mode & S_IFMT == S_IFREG,
+              st.st_size <= Self.maxDownloadIndexBytes,
+              let data = try? Data(contentsOf: downloadIndexURL) else { return [] }
+        struct Lossy: Decodable {
+            let entry: DownloadCacheEntry?
+            init(from decoder: any Decoder) throws { entry = try? DownloadCacheEntry(from: decoder) }
+        }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let entries = (try? decoder.decode([Lossy].self, from: data))?.compactMap(\.entry) ?? []
+        return Array(entries.prefix(Self.maxDownloadEntries))
+    }
+
+    private func writeDownloadIndex(_ entries: [DownloadCacheEntry]) throws {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
+        let data = try encoder.encode(entries)
+        let fm = FileManager.default
+        try fm.createDirectory(at: downloadsFolder, withIntermediateDirectories: true)
+        let temp = downloadsFolder.appendingPathComponent(".incoming-\(UUID().uuidString)")
+        try data.write(to: temp)
+        do {
+            if fm.fileExists(atPath: downloadIndexURL.path) {
+                _ = try fm.replaceItemAt(downloadIndexURL, withItemAt: temp)
+            } else {
+                try fm.moveItem(at: temp, to: downloadIndexURL)
+            }
+        } catch {
+            try? fm.removeItem(at: temp)
+            throw error
+        }
+    }
+
+    static func isSHA256(_ s: String) -> Bool {
+        s.utf8.count == 64 && s.utf8.allSatisfy { (0x30...0x39).contains($0) || (0x61...0x66).contains($0) }
+    }
+
+    static func isRegularFile(_ url: URL) -> Bool {
+        var st = stat()
+        return lstat(url.path, &st) == 0 && st.st_mode & S_IFMT == S_IFREG
+    }
+
+    /// Lowercase hex SHA-256 of a regular file (links not followed), nil when unreadable or
+    /// larger than `maxBytes`.
+    static func hashFile(_ url: URL, maxBytes: Int) -> String? {
+        guard isRegularFile(url) else { return nil }
+        let fd = open(url.path, O_RDONLY | O_NOFOLLOW)
+        guard fd >= 0 else { return nil }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        var hasher = SHA256()
+        var total = 0
+        while true {
+            let chunk: Data?
+            do { chunk = try handle.read(upToCount: 1 << 20) } catch { return nil }
+            guard let chunk, !chunk.isEmpty else { break }
+            total += chunk.count
+            if total > maxBytes { return nil }
+            hasher.update(data: chunk)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 }
