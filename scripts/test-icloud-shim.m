@@ -5,7 +5,12 @@
 #import <Foundation/Foundation.h>
 #import <CloudKit/CloudKit.h>
 #import <objc/message.h>
+#import <objc/runtime.h>
 #import "XSICloudCore.h"
+
+@interface CKContainer (XSideTestPrivate)
+- (instancetype)_initWithContainerIdentifier:(NSString *)identifier;
+@end
 
 static int failures = 0;
 
@@ -47,6 +52,19 @@ static void testShim(void) {
     check([[CKContainer containerWithIdentifier:@"iCloud.other"].containerIdentifier isEqualToString:@"iCloud.other"],
           @"containerWithIdentifier keeps its identifier");
     check([CKContainer defaultContainer] == container, @"one stub per container");
+    if (class_getInstanceMethod([CKContainer class], @selector(_initWithContainerIdentifier:))) {
+        __weak id receiver = nil;
+        CKContainer *initialised = nil;
+        for (int i = 0; i < 3; i++) @autoreleasepool {
+            CKContainer *allocated = [CKContainer alloc];
+            receiver = allocated;
+            initialised = [allocated _initWithContainerIdentifier:@"iCloud.init"];
+        }
+        check([initialised.containerIdentifier isEqualToString:@"iCloud.init"], @"private init path: a stub");
+        check(receiver == nil, @"private init path: the allocated receiver is freed, not kept");
+    } else {
+        printf("skip private init path (not on this macOS)\n");
+    }
 
     __block CKAccountStatus status = CKAccountStatusAvailable;
     dispatch_semaphore_t s = dispatch_semaphore_create(0);

@@ -20,8 +20,11 @@
 //   setUbiquitous:... -> NO + error.
 //
 // It runs inside apps XSide doesn't know: every hook checks that the class and method exist and
-// does nothing otherwise; nothing here throws into the app. CloudKit is not linked: its hooks are
-// installed when CloudKit is (or gets) loaded. Logs: os_log, prefix "[XSiCloud]".
+// does nothing otherwise; nothing here throws into the app. CloudKit is linked weakly
+// (-weak_framework CloudKit): it is loaded and initialised before this library's constructor,
+// which installs every hook at once, even in an app that doesn't link CloudKit itself (Core Data
+// and SwiftData load it at runtime and start mirroring on their own queue right away).
+// Logs: os_log, prefix "[XSiCloud]".
 // The default container comes from the Info.plist file (XSideOriginalBundleID,
 // XSideICloudContainers, written by XSide at signing), not from NSBundle.
 
@@ -29,8 +32,7 @@
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <os/log.h>
-#import <mach-o/dyld.h>
-#import <dlfcn.h>
+#import <malloc/malloc.h>
 #import "XSICloudCore.h"
 
 #define XLOG(fmt, ...) os_log(xsiLog(), "[XSiCloud] " fmt, ##__VA_ARGS__)
@@ -50,8 +52,15 @@ static NSError *xsiNotAuthenticated(void) {
     }];
 }
 
+// One serial queue, off main, like CloudKit's own callback delivery: completion handlers never
+// run concurrently with each other.
 static dispatch_queue_t xsiCallbackQueue(void) {
-    return dispatch_get_global_queue(QOS_CLASS_UTILITY, 0);
+    static dispatch_queue_t queue; static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        queue = dispatch_queue_create("io.github.xside.icloud.callbacks",
+                                      dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_UTILITY, 0));
+    });
+    return queue;
 }
 
 /// The app's Info.plist, from the file (tweaks fake what NSBundle reports).
@@ -383,13 +392,33 @@ static id xsiStubDatabase(id container, NSInteger scope) {
 static id xsi_defaultContainer(id self, SEL _cmd) { return xsiStubContainer(nil); }
 static id xsi_containerWithIdentifier(id self, SEL _cmd, NSString *identifier) { return xsiStubContainer(identifier); }
 
+// What an uninitialised CKContainer receiver becomes once its init path returned a stub: a plain
+// NSObject, so the release ARC sends it frees it with NSObject's -dealloc (CloudKit's -dealloc
+// expects an initialised container).
+@interface XSiSpentReceiver : NSObject @end
+@implementation XSiSpentReceiver @end
+
+// The receivers that couldn't be turned into an XSiSpentReceiver: kept alive, once each.
+static NSHashTable *gKeptReceivers;
+
+static void xsiRetireReceiver(id receiver) {
+    if (!receiver) return;
+    Class container = objc_getClass("CKContainer");
+    void *raw = (__bridge void *)receiver;
+    // Only a fresh heap allocation of a CKContainer, never anything shared or of another kind.
+    if (container && [receiver isKindOfClass:container] && malloc_zone_from_ptr(raw)
+        && malloc_size(raw) >= class_getInstanceSize([XSiSpentReceiver class])) {
+        object_setClass(receiver, [XSiSpentReceiver class]);
+        return;
+    }
+    @synchronized (gKeptReceivers) { [gKeptReceivers addObject:receiver]; }
+}
+
 // The private init paths, as init-family methods so ARC consumes the receiver and returns +1.
-// The receiver (from CKContainer's allocator) is kept alive: CloudKit's -dealloc expects init.
-static NSMutableArray *gLeakedReceivers;
 @interface XSiInitTemplate : NSObject @end
 @implementation XSiInitTemplate
 static id xsiInitResult(id receiver, id containerIDOrIdentifier) {
-    @synchronized (gLeakedReceivers) { if (receiver) [gLeakedReceivers addObject:receiver]; }
+    xsiRetireReceiver(receiver);
     NSString *identifier = nil;
     if ([containerIDOrIdentifier isKindOfClass:[NSString class]]) identifier = containerIDOrIdentifier;
     else if ([containerIDOrIdentifier respondsToSelector:@selector(containerIdentifier)]) {
@@ -556,7 +585,7 @@ static void xsiInstallCloudKit(void) {
         if (!container || !database || !operation) return;
         done = YES;
         gContainers = [NSMutableDictionary new];
-        gLeakedReceivers = [NSMutableArray new];
+        gKeptReceivers = [NSHashTable hashTableWithOptions:NSPointerFunctionsStrongMemory | NSPointerFunctionsObjectPointerPersonality];
         gStubOperationQueue = [NSOperationQueue new];
         gStubOperationQueue.name = @"XSiCloud stub operations";
         gStubContainerClass = xsiMakeStubClass(container, [XSiStubContainerTemplate class], "XSiStubContainer");
@@ -584,13 +613,6 @@ static void xsiInstallCloudKit(void) {
     }
 }
 
-static void xsiImageAdded(const struct mach_header *mh, intptr_t slide) {
-    Dl_info info;
-    // Only CloudKit's own image; installation after dyld's lock is released.
-    if (dladdr(mh, &info) && info.dli_fname && strstr(info.dli_fname, "/CloudKit.framework/"))
-        dispatch_async(dispatch_get_main_queue(), ^{ xsiInstallCloudKit(); });
-}
-
 __attribute__((constructor)) static void xsiInit(void) {
     @autoreleasepool {
         @try {
@@ -607,9 +629,10 @@ __attribute__((constructor)) static void xsiInit(void) {
             xsiReplace(fm, @selector(URLForUbiquityContainerIdentifier:), (IMP)xsi_URLForUbiquityContainer);
             xsiReplace(fm, @selector(setUbiquitous:itemAtURL:destinationURL:error:), (IMP)xsi_setUbiquitous);
             XLOG("loaded (KVS local, ubiquity off)");
-            // Now if CloudKit is loaded (the app links it), else when it gets loaded.
-            if (objc_getClass("CKContainer")) xsiInstallCloudKit();
-            else _dyld_register_func_for_add_image(xsiImageAdded);
+            // CloudKit is already loaded (weakly linked by this library): hooks in place before any
+            // of the app's code runs. Nothing when CloudKit is missing.
+            xsiInstallCloudKit();
+            if (!objc_getClass("CKContainer")) XLOG("CloudKit not loaded: CloudKit hooks not installed");
         } @catch (NSException *e) {
             XLOG("not installed: %{public}@", e.reason);
         }

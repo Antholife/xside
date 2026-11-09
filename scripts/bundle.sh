@@ -59,9 +59,12 @@ if xcrun -sdk iphoneos --show-sdk-path >/dev/null 2>&1; then
     rm -rf "$WELCOME_GEN"
     # The "Simulate signed-out iCloud" library (App/ICloud), an install option of its own:
     # independent of the module above, added only to the installations that have the option.
-    # Foundation only: CloudKit is hooked when the app loads it.
-    xcrun -sdk iphoneos clang -dynamiclib -arch arm64 -mios-version-min=15.0 -fobjc-arc -O2 -Wall \
-        -I App/ICloud -framework Foundation \
+    # CloudKit linked weakly: loaded before the library's constructor, which hooks it at once, even
+    # in an app that doesn't link it (Core Data/SwiftData load it at runtime and use it right away).
+    # Same warnings as scripts/test-icloud-shim.sh.
+    xcrun -sdk iphoneos clang -dynamiclib -arch arm64 -mios-version-min=15.0 -fobjc-arc -O2 \
+        -Wall -Wextra -Werror -Wno-unused-parameter \
+        -I App/ICloud -framework Foundation -weak_framework CloudKit \
         -install_name @executable_path/Frameworks/XSideICloud.dylib \
         -o "$APP/Contents/Resources/XSideICloud.dylib" App/ICloud/*.m
 else

@@ -32,6 +32,15 @@ fi
 # The "Simulate signed-out iCloud" option adds this one: an app would go without it silently.
 ICLOUD="$APP/Contents/Resources/XSideICloud.dylib"
 [ -f "$ICLOUD" ] || { echo "No $ICLOUD (iOS SDK missing?): not releasing without it" >&2; exit 1; }
+# Both are injected into iOS apps: an arm64 iOS Mach-O each, nothing else (a wrong build would only
+# show on a device).
+for LIB in "$WELCOME" "$ICLOUD"; do
+    [ "$(lipo -archs "$LIB" 2>/dev/null)" = arm64 ] || { echo "$LIB is not an arm64-only library" >&2; exit 1; }
+    vtool -show-build "$LIB" 2>/dev/null | grep -qE 'platform IOS$' || { echo "$LIB is not built for iOS" >&2; exit 1; }
+done
+# CloudKit weakly linked: hooked before the app runs, even in an app that doesn't link it.
+otool -l "$ICLOUD" | grep -A2 LC_LOAD_WEAK_DYLIB | grep -q '/CloudKit.framework/CloudKit' \
+    || { echo "$ICLOUD doesn't link CloudKit weakly" >&2; exit 1; }
 ZIP="build/release/XSide-$TAG.zip"
 mkdir -p build/release
 rm -f "$ZIP"
