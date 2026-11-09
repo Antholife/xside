@@ -24,10 +24,28 @@ public struct CrashFrame: Equatable, Sendable, Codable {
     }
 }
 
-/// A process the memory pressure killed (a `JetsamEvent` report), and iOS's reason.
+/// A process the memory pressure killed (a `JetsamEvent` report), iOS's reason, and the states
+/// the process was in ("frontmost", "suspended", "daemon"…).
 public struct JetsamKill: Equatable, Sendable {
     public let name: String
     public let reason: String
+    public let states: [String]
+
+    public init(name: String, reason: String, states: [String] = []) {
+        self.name = name
+        self.reason = reason
+        self.states = states
+    }
+
+    /// Reasons that mean the process itself went over its own memory limit (not iOS freeing
+    /// memory for others: "vm-pageshortage", "fc-thrashing", "idle-exit"…).
+    static let ownLimitReasons: Set<String> = ["per-process-limit", "highwater", "memory-limit"]
+
+    /// The app, in front of the person, went over its memory limit: a real "out of memory" crash.
+    /// A suspended or background app evicted to free memory is routine iOS behaviour, not a crash.
+    public var isForegroundMemoryLimit: Bool {
+        Self.ownLimitReasons.contains(reason) && states.contains("frontmost")
+    }
 }
 
 /// What XSide reads of a crash log.
@@ -81,7 +99,7 @@ extension CrashLog {
             return target.executable != nil && processName == target.executable
         case .jetsam:
             guard let executable = target.executable else { return false }
-            return jetsamKills.contains { $0.name == executable }
+            return jetsamKills.contains { $0.name == executable && $0.isForegroundMemoryLimit }
         }
     }
 }
@@ -151,7 +169,7 @@ public enum CrashLogParser {
         // Every process is listed: only the killed ones (a reason) are kept.
         log.jetsamKills = (body["processes"] as? [Any] ?? []).compactMap { item in
             guard let p = item as? [String: Any], let name = string(p["name"]), let reason = string(p["reason"]) else { return nil }
-            return JetsamKill(name: name, reason: reason)
+            return JetsamKill(name: name, reason: reason, states: strings(p["states"]))
         }
         return log
     }
@@ -238,7 +256,7 @@ public struct CrashContext: Equatable, Sendable {
 
 /// The plain cause of a crash; the app words it (`crash.cause.<rawValue>.*`).
 public enum CrashCause: String, Codable, Sendable, CaseIterable {
-    case noSceneSupport, missingLibrary, missingSymbol, codeSignature, xsideModule, tweak, bundledLibrary
+    case noSceneSupport, missingLibrary, missingSymbol, jailbreakLibrary, codeSignature, xsideModule, tweak, bundledLibrary
     case iCloud, outOfMemory, launchTimeout, hang, other
 }
 
@@ -297,7 +315,7 @@ public enum CrashClassifier {
                                    .prefix(6).map(\.line))
         if log.kind == .jetsam {
             d.cause = .outOfMemory
-            d.subject = log.jetsamKills.first?.reason
+            d.subject = (log.jetsamKills.first(where: \.isForegroundMemoryLimit) ?? log.jetsamKills.first)?.reason
             return d
         }
         let frames = log.exceptionBacktrace + log.faultingFrames
@@ -350,10 +368,12 @@ public enum CrashClassifier {
 
     /// dyld refused to start the app: a library or a symbol it needs isn't there.
     private static func dyldProblem(_ log: CrashLog, texts: [String])
-        -> (cause: CrashCause, subject: String, library: String?, inApp: Bool)? {
+        -> (cause: CrashCause, subject: String?, library: String?, inApp: Bool?)? {
         let isDyld = log.terminationNamespace?.uppercased() == "DYLD"
         if let line = texts.first(where: { $0.contains("Library not loaded:") }) {
-            let path = after("Library not loaded:", in: line)
+            let path = after("Library not loaded:", in: line).components(separatedBy: " ").first ?? ""
+            // A tweak's hooking library (Substrate, ElleKit…): only jailbroken devices have it.
+            if isJailbreakPath(path) { return (.jailbreakLibrary, libraryName(path), nil, false) }
             return (.missingLibrary, libraryName(path), nil, CrashLogParser.isInAppBundle(path) || path.contains(".app/"))
         }
         if let line = texts.first(where: { $0.contains("Symbol not found:") }) {
@@ -363,12 +383,32 @@ public enum CrashClassifier {
                 .map { after("Expected in:", in: $0).components(separatedBy: " ").last ?? "" }
             let library = expected.map { ($0 as NSString).lastPathComponent }.flatMap { $0.isEmpty ? nil : $0 }
             let inApp = expected.map { CrashLogParser.isInAppBundle($0) || $0.contains(".app/") } ?? false
+            if let expected, isJailbreakPath(expected) {
+                return (.jailbreakLibrary, libraryName(expected), nil, false)
+            }
             return (.missingSymbol, symbol.isEmpty ? "?" : symbol, library, inApp)
         }
-        if isDyld, let indicator = log.terminationIndicator {
-            return (.missingLibrary, indicator, nil, false)
+        // dyld stopped it without naming what's missing ("Library missing" is the kind, not a
+        // name): a generic wording, nothing named.
+        if isDyld {
+            return (.missingLibrary, nil, nil, nil)
         }
         return nil
+    }
+
+    /// Where jailbreaks put tweaks' libraries (Substrate, Substitute, libhooker, ElleKit,
+    /// TweakInject, rootless `/var/jb`…). Stock iOS has its libraries only under /System and
+    /// /usr/lib, so any other absolute path (/Library/MobileSubstrate, /Library/Frameworks…) is a
+    /// jailbreak's too.
+    private static let jailbreakMarkers = ["/var/jb/", "cydiasubstrate", "mobilesubstrate", "libsubstrate", "substrate.dylib",
+                                           "libsubstitute", "ellekit", "tweakinject", "libhooker", "libblackjack"]
+
+    static func isJailbreakPath(_ path: String) -> Bool {
+        // The app's own files (@rpath…, its container) and iOS's are never the jailbreak's.
+        if CrashLogParser.isInAppBundle(path) || path.hasPrefix("/System/") || path.hasPrefix("/Developer/") { return false }
+        let lower = path.lowercased()
+        if jailbreakMarkers.contains(where: { lower.contains($0) }) { return true }
+        return path.hasPrefix("/") && !path.hasPrefix("/usr/lib/")
     }
 
     private static func after(_ marker: String, in line: String) -> String {

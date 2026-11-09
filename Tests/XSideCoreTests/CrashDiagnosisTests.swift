@@ -57,9 +57,11 @@ enum IPS {
         return join(header, body)
     }
 
-    static func jetsam(timestamp: String = "2026-11-09 10:00:00.00 +0100", processes: [[String: Any]]) -> Data {
+    static func jetsam(timestamp: String = "2026-11-09 10:00:00.00 +0100", processes: [[String: Any]],
+                       extra: [String: Any] = [:]) -> Data {
         join(["bug_type": "298", "timestamp": timestamp, "os_version": "iPhone OS 27.3"],
-             ["date": timestamp, "processes": processes, "crashReporterKey": String(repeating: "cd", count: 20)])
+             ["date": timestamp, "processes": processes, "crashReporterKey": String(repeating: "cd", count: 20)]
+                .merging(extra) { $1 })
     }
 
     static func join(_ header: [String: Any], _ body: [String: Any]) -> Data {
@@ -245,6 +247,50 @@ private func diagnose(_ data: Data, _ ctx: CrashContext = context) throws -> Cra
         #expect(d.inApp == false)
     }
 
+    /// A library only jailbroken devices have (a tweak's hooking library): never "update iOS".
+    @Test func jailbreakLibraries() throws {
+        let cases: [(String, String)] = [
+            ("/Library/Frameworks/CydiaSubstrate.framework/CydiaSubstrate", "CydiaSubstrate.framework"),
+            ("/Library/MobileSubstrate/DynamicLibraries/Foo.dylib", "Foo.dylib"),
+            ("/usr/lib/libsubstrate.dylib", "libsubstrate.dylib"),
+            ("/usr/lib/libellekit.dylib", "libellekit.dylib"),
+            ("/var/jb/usr/lib/libellekit.dylib", "libellekit.dylib"),
+            ("/var/jb/Library/Frameworks/CydiaSubstrate.framework/CydiaSubstrate", "CydiaSubstrate.framework"),
+            ("/usr/lib/TweakInject/Foo.dylib", "Foo.dylib"),
+            ("/usr/lib/libsubstitute.dylib", "libsubstitute.dylib"),
+            ("/usr/lib/libhooker.dylib", "libhooker.dylib"),
+            ("/Library/Frameworks/Cephei.framework/Cephei", "Cephei.framework"),
+        ]
+        for (path, name) in cases {
+            let d = try diagnose(IPS.crash(termination: ["namespace": "DYLD", "indicator": "Library missing",
+                                                         "details": ["Library not loaded: \(path)",
+                                                                     "Referenced from: <UUID> /x/Demo.app/Frameworks/uTweak.dylib"]],
+                                           frames: []))
+            #expect(d.cause == .jailbreakLibrary, "\(path)")
+            #expect(d.subject == name, "\(path)")
+        }
+        // A symbol expected in one: the same.
+        let symbol = try diagnose(IPS.crash(termination: ["namespace": "DYLD", "indicator": "Symbol missing",
+                                                          "details": ["Symbol not found: _MSHookFunction",
+                                                                      "Expected in: <UUID> /usr/lib/libsubstrate.dylib"]],
+                                            frames: []))
+        #expect(symbol.cause == .jailbreakLibrary)
+        #expect(symbol.subject == "libsubstrate.dylib")
+        // iOS's own /usr/lib stays iOS's.
+        let ios = try diagnose(IPS.crash(termination: ["namespace": "DYLD", "details": ["Library not loaded: /usr/lib/libswiftFoo.dylib"]],
+                                         frames: []))
+        #expect(ios.cause == .missingLibrary)
+        #expect(ios.inApp == false)
+    }
+
+    /// dyld stopped the app but says neither which library nor which symbol: nothing is named.
+    @Test func dyldWithoutDetails() throws {
+        let d = try diagnose(IPS.crash(termination: ["namespace": "DYLD", "code": 1, "indicator": "Library missing"], frames: []))
+        #expect(d.cause == .missingLibrary)
+        #expect(d.subject == nil)
+        #expect(d.inApp == nil)
+    }
+
     @Test func missingSymbol() throws {
         let d = try diagnose(IPS.crash(termination: ["namespace": "DYLD", "indicator": "Symbol missing",
                                                      "reasons": ["Symbol not found: _OBJC_CLASS_$_UIFancyView",
@@ -290,9 +336,31 @@ private func diagnose(_ data: Data, _ ctx: CrashContext = context) throws -> Cra
     }
 
     @Test func outOfMemory() throws {
-        let d = try diagnose(IPS.jetsam(processes: [["name": "Demo", "reason": "per-process-limit"]]))
+        let d = try diagnose(IPS.jetsam(processes: [["name": "Demo", "reason": "per-process-limit", "states": ["active", "frontmost"]]]))
         #expect(d.cause == .outOfMemory)
         #expect(d.subject == "per-process-limit")
+    }
+
+    /// Only a foreground app hitting its own memory limit is "out of memory"; a suspended or
+    /// background app iOS evicts to free memory is routine, not a crash (review Important 4).
+    @Test func onlyAForegroundLimitIsOutOfMemory() throws {
+        let since = Date(timeIntervalSince1970: 0)
+        let target = CrashTarget(signedBundleID: "com.example.demo.TEAM1", executable: "Demo")
+        func log(_ reason: String, _ states: [String]?) throws -> CrashLog {
+            var entry: [String: Any] = ["name": "Demo", "reason": reason]
+            if let states { entry["states"] = states }
+            return try #require(CrashLogParser.parse(IPS.jetsam(processes: [entry])))
+        }
+        #expect(try log("per-process-limit", ["active", "frontmost"]).matches(target, since: since))
+        #expect(try log("per-process-limit", ["suspended", "active", "frontmost"]).matches(target, since: since))
+        #expect(try log("highwater", ["frontmost"]).matches(target, since: since))
+        #expect(try log("per-process-limit", ["suspended"]).matches(target, since: since) == false)
+        #expect(try log("highwater", ["suspended"]).matches(target, since: since) == false)
+        for reason in ["vm-pageshortage", "fc-thrashing", "idle-exit", "vnode-limit", "zone-map-exhaustion", "jettisoned"] {
+            #expect(try log(reason, ["active", "frontmost"]).matches(target, since: since) == false, "\(reason)")
+        }
+        #expect(try log("per-process-limit", nil).matches(target, since: since) == false)
+        #expect(try log("per-process-limit", ["frontmost"]).jetsamKills.first?.states == ["frontmost"])
     }
 
     @Test func watchdogAtLaunch() throws {
@@ -402,7 +470,7 @@ private func diagnose(_ data: Data, _ ctx: CrashContext = context) throws -> Cra
         let noID = try #require(CrashLogParser.parse(IPS.crash(bundleID: nil)))
         #expect(noID.matches(target, since: since))
         #expect(!noID.matches(CrashTarget(signedBundleID: "com.example.demo.TEAM1", executable: nil), since: since))
-        let jetsam = try #require(CrashLogParser.parse(IPS.jetsam(processes: [["name": "Demo", "reason": "highwater"]])))
+        let jetsam = try #require(CrashLogParser.parse(IPS.jetsam(processes: [["name": "Demo", "reason": "highwater", "states": ["frontmost"]]])))
         #expect(jetsam.matches(target, since: since))
         #expect(!jetsam.matches(CrashTarget(signedBundleID: "x", executable: "Other"), since: since))
     }
@@ -517,17 +585,45 @@ private final class CrashDeviceRunner: CommandRunning, @unchecked Sendable {
             "Demo-2026-11-09-095800.ips": IPS.crash(timestamp: "2026-11-09 09:58:00.00 +0000"),
             "JetsamEvent-2026-11-09-095900.ips": IPS.jetsam(timestamp: "2026-11-09 09:59:00.00 +0000",
                                                             processes: [["name": "SecretApp", "reason": "vm-pageshortage"],
-                                                                        ["name": "Demo", "reason": "highwater"],
-                                                                        ["name": "OtherApp"]]),
+                                                                        ["name": "Demo", "reason": "highwater", "states": ["frontmost"]],
+                                                                        ["name": "OtherApp"]],
+                                                            extra: ["largestProcess": "SecretApp",
+                                                                    "memoryStatus": ["pageSize": 16384, "largestZone": "APFS",
+                                                                                     "largestProcess": "OtherApp",
+                                                                                     "nested": ["topProcess": "SecretApp", "pages": 3]]]),
         ])
         let root = try scratch()
         defer { try? FileManager.default.removeItem(at: root) }
         let found = try #require(try await CrashLogFetcher(runner: runner, scratchRoot: root).latest(target, deviceID: "DEV", since: since))
         #expect(found.log.kind == .jetsam)
         // Only the app's own entry: the event lists every process the person runs.
-        #expect(found.log.jetsamKills == [JetsamKill(name: "Demo", reason: "highwater")])
+        #expect(found.log.jetsamKills == [JetsamKill(name: "Demo", reason: "highwater", states: ["frontmost"])])
         #expect(found.text.contains("highwater"))
+        // Nor another process's name anywhere else (largestProcess, memoryStatus).
         #expect(!found.text.contains("SecretApp") && !found.text.contains("OtherApp"))
+        #expect(found.text.contains("pageSize") && found.text.contains("APFS"))
+    }
+
+    /// A suspended app iOS evicted to free memory, newer than a real crash: the crash is the answer.
+    @Test func aBackgroundEvictionNeverHidesACrash() async throws {
+        let runner = CrashDeviceRunner(listing: listing(["Demo-2026-11-09-095800.ips", "JetsamEvent-2026-11-09-095900.ips"]), files: [
+            "Demo-2026-11-09-095800.ips": IPS.crash(timestamp: "2026-11-09 09:58:00.00 +0000"),
+            "JetsamEvent-2026-11-09-095900.ips": IPS.jetsam(timestamp: "2026-11-09 09:59:00.00 +0000",
+                                                            processes: [["name": "Demo", "reason": "per-process-limit", "states": ["suspended"]]]),
+        ])
+        let root = try scratch()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let found = try #require(try await CrashLogFetcher(runner: runner, scratchRoot: root).latest(target, deviceID: "DEV", since: since))
+        #expect(found.log.kind == .crash)
+    }
+
+    /// The largest process is kept only when it is the app itself.
+    @Test func keepsTheLargestProcessOnlyWhenItIsTheApp() {
+        let text = String(decoding: IPS.jetsam(processes: [["name": "Demo", "reason": "per-process-limit", "states": ["frontmost"]]],
+                                               extra: ["largestProcess": "Demo"]), as: UTF8.self)
+        let log = CrashLogParser.parse(Data(text.utf8))!
+        let cut = CrashLogFetcher.jetsamOnly(.init(log: log, text: text, fileName: "J.ips"), executable: "Demo")
+        #expect(cut.text.contains("\"largestProcess\" : \"Demo\""))
     }
 
     @Test func nothingFound() async throws {

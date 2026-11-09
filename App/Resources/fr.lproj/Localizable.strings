@@ -827,6 +827,11 @@
 "crash.cause.missingLibrary.textSystem" = "%1$@ n'a pas pu démarrer : il lui faut %2$@, une partie d'iOS absente de cette version d'iOS.";
 "crash.cause.missingLibrary.adviceApp" = "Le fichier .ipa est sans doute incomplet ou modifié : prends une autre copie de l'app, ou retire le tweak qui en a besoin.";
 "crash.cause.missingLibrary.adviceSystem" = "L'app demande sans doute un iOS plus récent : mets l'appareil à jour, ou installe une version plus ancienne de l'app.";
+"crash.cause.missingLibrary.textUnnamed" = "%@ n'a pas pu démarrer : iOS n'a pas pu charger quelque chose dont elle a besoin (une bibliothèque ou une fonction), sans dire quoi.";
+"crash.cause.missingLibrary.adviceUnnamed" = "Prends une autre copie de l'app ; si elle contient des tweaks, essaie-la sans. Les détails techniques ci-dessous peuvent en dire plus.";
+"crash.cause.jailbreakLibrary.title" = "Un tweak a besoin d'une bibliothèque de jailbreak";
+"crash.cause.jailbreakLibrary.text" = "%1$@ n'a pas pu démarrer : un tweak qu'elle contient a besoin de %2$@, une bibliothèque que seuls les appareils jailbreakés ont, et l'app ne l'inclut pas.";
+"crash.cause.jailbreakLibrary.advice" = "Retire ce tweak de l'app, ou utilise une version du tweak faite pour les appareils non jailbreakés (qui apporte ce dont elle a besoin). Mettre iOS à jour n'y changera rien.";
 "crash.cause.missingSymbol.title" = "Il manque une fonction à l'app";
 "crash.cause.missingSymbol.text" = "%1$@ n'a pas pu démarrer : %2$@ est introuvable dans %3$@.";
 "crash.cause.codeSignature.title" = "Problème de signature";
@@ -842,10 +847,10 @@
 "crash.cause.bundledLibrary.text" = "%1$@ a planté dans %2$@, une bibliothèque livrée avec l'app (souvent un tweak déjà présent dans le fichier .ipa).";
 "crash.cause.bundledLibrary.advice" = "Essaie une autre copie de l'app, sans ce tweak ou avec une autre version de celui-ci.";
 "crash.cause.iCloud.title" = "L'app a planté en utilisant iCloud";
-"crash.cause.iCloud.text" = "%@ a planté dans iCloud (CloudKit). Avec un compte Apple gratuit, une app installée par XSide n'a pas accès à iCloud : c'est très probablement la cause.";
+"crash.cause.iCloud.text" = "%@ a planté dans iCloud (CloudKit). Les apps installées par XSide n'ont pas accès à iCloud (XSide ne le configure pas, et un compte Apple gratuit ne le permet pas du tout) : c'est très probablement la cause.";
 "crash.cause.iCloud.advice" = "XSide n'y peut rien : certaines apps exigent iCloud au lancement. Une autre version de l'app peut s'en passer.";
 "crash.cause.outOfMemory.title" = "L'app a manqué de mémoire";
-"crash.cause.outOfMemory.text" = "iOS a arrêté %@ parce qu'elle utilisait trop de mémoire.";
+"crash.cause.outOfMemory.text" = "iOS a arrêté %@ pendant qu'elle était ouverte, parce qu'elle dépassait la mémoire qu'iOS lui accorde.";
 "crash.cause.outOfMemory.advice" = "Ferme les autres apps et relance-la. Si ça recommence, l'app est peut-être trop lourde pour cet appareil.";
 "crash.cause.launchTimeout.title" = "L'app a mis trop de temps à démarrer";
 "crash.cause.launchTimeout.text" = "iOS a arrêté %@ : elle n'avait pas fini de démarrer dans le temps accordé.";

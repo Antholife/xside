@@ -20,9 +20,16 @@ struct CrashWording {
         case .noSceneSupport:
             explanation = f(base + ".text", app)
             advice = t(base + (d.duoCompatibilityOn ? ".adviceDuo" : ".advice"))
+        case .missingLibrary where d.subject == nil:
+            // dyld said only that something is missing, not what.
+            explanation = f(base + ".textUnnamed", app)
+            advice = t(base + ".adviceUnnamed")
         case .missingLibrary:
             explanation = f(base + (d.inApp == true ? ".textApp" : ".textSystem"), app, subject)
             advice = t(base + (d.inApp == true ? ".adviceApp" : ".adviceSystem"))
+        case .jailbreakLibrary:
+            explanation = f(base + ".text", app, subject)
+            advice = t(base + ".advice")
         case .missingSymbol:
             explanation = f(base + ".text", app, subject, d.library ?? t("crash.aLibrary"))
             advice = t("crash.cause.missingLibrary" + (d.inApp == true ? ".adviceApp" : ".adviceSystem"))

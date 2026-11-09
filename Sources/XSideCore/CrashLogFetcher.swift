@@ -168,13 +168,39 @@ public struct CrashLogFetcher: Sendable {
         if newline < data.endIndex,
            let body = try? JSONSerialization.jsonObject(with: Data(data[data.index(after: newline)...])) as? [String: Any] {
             var kept: [String: Any] = [:]
-            for key in ["build", "product", "date", "bug_type", "memoryStatus", "largestProcess"] { kept[key] = body[key] }
-            kept["processes"] = (body["processes"] as? [Any] ?? []).filter { ($0 as? [String: Any])?["name"] as? String == executable }
+            for key in ["build", "product", "date", "bug_type"] { kept[key] = body[key] }
+            let processes = body["processes"] as? [Any] ?? []
+            let others = Set(processes.compactMap { ($0 as? [String: Any])?["name"] as? String }).subtracting([executable])
+            // Another process's name is nobody's business: largestProcess only when it's the app.
+            if body["largestProcess"] as? String == executable { kept["largestProcess"] = executable }
+            if let memory = body["memoryStatus"] { kept["memoryStatus"] = withoutProcessNames(memory, others: others, executable: executable) }
+            kept["processes"] = processes.filter { ($0 as? [String: Any])?["name"] as? String == executable }
             if let json = try? JSONSerialization.data(withJSONObject: kept, options: [.prettyPrinted, .sortedKeys]) {
                 text += String(decoding: json, as: UTF8.self)
             }
         }
         return Found(log: log, text: text, fileName: found.fileName)
+    }
+
+    /// `value` (memoryStatus) without any process name but the app's: a string under a key that
+    /// names a process, or equal to another listed process's name, is dropped.
+    static func withoutProcessNames(_ value: Any, others: Set<String>, executable: String, key: String? = nil) -> Any? {
+        switch value {
+        case let dictionary as [String: Any]:
+            var out: [String: Any] = [:]
+            for (k, v) in dictionary {
+                if let kept = withoutProcessNames(v, others: others, executable: executable, key: k) { out[k] = kept }
+            }
+            return out
+        case let list as [Any]:
+            return list.compactMap { withoutProcessNames($0, others: others, executable: executable, key: key) }
+        case let text as String:
+            if text == executable { return text }
+            if others.contains(text) || key?.lowercased().contains("proc") == true { return nil }
+            return text
+        default:
+            return value
+        }
     }
 
     /// Whether the app (its main executable, not one of its extensions) runs on the device; nil

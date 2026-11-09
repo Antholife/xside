@@ -827,6 +827,11 @@
 "crash.cause.missingLibrary.textSystem" = "%1$@ couldn't start: it needs %2$@, a part of iOS this version of iOS doesn't have.";
 "crash.cause.missingLibrary.adviceApp" = "The .ipa is probably incomplete or modified: get another copy of the app, or remove the tweak that needs it.";
 "crash.cause.missingLibrary.adviceSystem" = "The app probably needs a newer iOS: update the device, or install an older version of the app.";
+"crash.cause.missingLibrary.textUnnamed" = "%@ couldn't start: iOS couldn't load something it needs (a library or a function), without saying what.";
+"crash.cause.missingLibrary.adviceUnnamed" = "Get another copy of the app; if it has tweaks, try it without them. The technical details below may say more.";
+"crash.cause.jailbreakLibrary.title" = "A tweak needs a jailbreak library";
+"crash.cause.jailbreakLibrary.text" = "%1$@ couldn't start: a tweak in it needs %2$@, a library that only jailbroken devices have, and the app doesn't include it.";
+"crash.cause.jailbreakLibrary.advice" = "Remove that tweak from the app, or use a version of the tweak made for non-jailbroken devices (one that brings what it needs). Updating iOS won't help.";
 "crash.cause.missingSymbol.title" = "The app is missing a function";
 "crash.cause.missingSymbol.text" = "%1$@ couldn't start: %2$@ isn't in %3$@.";
 "crash.cause.codeSignature.title" = "Signature problem";
@@ -842,10 +847,10 @@
 "crash.cause.bundledLibrary.text" = "%1$@ crashed in %2$@, a library that comes with the app (often a tweak already in the .ipa).";
 "crash.cause.bundledLibrary.advice" = "Try another copy of the app, without this tweak or with another version of it.";
 "crash.cause.iCloud.title" = "The app crashed using iCloud";
-"crash.cause.iCloud.text" = "%@ crashed in iCloud (CloudKit). With a free Apple Account, an app installed by XSide has no access to iCloud: that's very likely the cause.";
+"crash.cause.iCloud.text" = "%@ crashed in iCloud (CloudKit). Apps installed by XSide don't get access to iCloud (XSide doesn't set it up, and a free Apple Account can't have it at all): that's very likely the cause.";
 "crash.cause.iCloud.advice" = "Nothing XSide can change: some apps require iCloud at launch. Another version of the app may do without it.";
 "crash.cause.outOfMemory.title" = "The app ran out of memory";
-"crash.cause.outOfMemory.text" = "iOS stopped %@ because it used too much memory.";
+"crash.cause.outOfMemory.text" = "iOS stopped %@ while it was open because it went over the memory iOS allows it.";
 "crash.cause.outOfMemory.advice" = "Close the other apps and open it again. If it happens again, the app may be too heavy for this device.";
 "crash.cause.launchTimeout.title" = "The app took too long to start";
 "crash.cause.launchTimeout.text" = "iOS stopped %@: it hadn't finished starting in the time allowed.";
