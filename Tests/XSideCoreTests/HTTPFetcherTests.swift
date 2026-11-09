@@ -156,6 +156,31 @@ struct HTTPFetcherTests {
         }
     }
 
+    @Test func offOriginRedirectHopIsRefusedBeforeFollowing() async throws {
+        try await withTemporaryDirectory("http") { dir in
+            let h = host(), other = host()
+            StubURLProtocol.set("https://\(h)/Release", .redirect(to: "https://\(h)/moved", status: 301))
+            StubURLProtocol.set("https://\(h)/moved", .redirect(to: "https://\(other)/Release", status: 302))
+            StubURLProtocol.set("https://\(other)/Release", .body(status: 200, headers: [:], chunks: [Data("evil".utf8)]))
+            let out = dir.appendingPathComponent("r")
+            await #expect(throws: RepoError.notAllowlisted) {
+                try await fetcher.fetch(URL(string: "https://\(h)/Release")!, maxBytes: 10, to: out,
+                                        stayingOn: URL(string: "https://\(h)/")!)
+            }
+            #expect(StubURLProtocol.requests(host: other).isEmpty)
+            #expect(!FileManager.default.fileExists(atPath: out.path))
+            // Without the restriction (a .deb) the same hop is followed.
+            let final = try await fetcher.fetch(URL(string: "https://\(h)/Release")!, maxBytes: 10, to: out)
+            #expect(final.host == other)
+        }
+    }
+
+    @Test func loggedURLsDropQueryAndCredentials() {
+        let u = URL(string: "https://user:pw@objects.example/a/b.deb?X-Amz-Signature=secret&x=1#frag")!
+        #expect(RepoLog.display(u) == "https://objects.example/a/b.deb")
+        #expect(RepoLog.display(URL(string: "https://repo.chariz.com:8443/Release")!) == "https://repo.chariz.com:8443/Release")
+    }
+
     @Test func sessionIsEphemeralWithTimeouts() {
         let c = URLSessionFetcher.configuration(protocolClasses: nil)
         #expect(c.timeoutIntervalForRequest == 15)

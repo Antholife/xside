@@ -94,16 +94,28 @@ public struct RepoClient: Sendable {
         let releaseFile = scratch.appendingPathComponent("Release")
         try await fetchOnHost(releaseURL, of: repo, maxBytes: Self.maxReleaseBytes, to: releaseFile)
         let release = String(decoding: try Data(contentsOf: releaseFile), as: UTF8.self)
-        guard let entry = try Self.pickIndex(release) else {
+        let listed = Self.pickIndexes(release)
+        guard !listed.isEmpty else {
             log.error("\(repo.id): Release lists no Packages index with a SHA256 or SHA512 hash")
             throw RepoError.noIndex
         }
-        guard entry.size <= Self.maxIndexBytes else { throw RepoError.tooLarge }
 
-        // The index: checked against Release before anything reads it.
-        guard let indexURL = URL(string: entry.name, relativeTo: folder)?.absoluteURL else { throw RepoError.noIndex }
-        let indexFile = scratch.appendingPathComponent("index-" + entry.name)
-        try await fetchOnHost(indexURL, of: repo, maxBytes: entry.size, to: indexFile)
+        // The index: checked against Release before anything reads it. A listed name the server
+        // doesn't have (404) falls back to the next one.
+        var fetched: (entry: IndexEntry, file: URL)?
+        for (i, candidate) in listed.enumerated() {
+            guard candidate.size <= Self.maxIndexBytes else { throw RepoError.tooLarge }
+            guard let indexURL = URL(string: candidate.name, relativeTo: folder)?.absoluteURL else { throw RepoError.noIndex }
+            let file = scratch.appendingPathComponent("index-" + candidate.name)
+            do {
+                try await fetchOnHost(indexURL, of: repo, maxBytes: candidate.size, to: file)
+                fetched = (candidate, file)
+                break
+            } catch RepoError.httpStatus(404) where i < listed.count - 1 {
+                log.notice("\(repo.id): \(candidate.name) listed but missing (404), trying the next index")
+            }
+        }
+        guard let (entry, indexFile) = fetched else { throw RepoError.noIndex }
         let got = try Self.fileSize(indexFile)
         guard got == entry.size, try Self.hexDigest(of: indexFile, sha512: entry.sha512) == entry.hash else {
             log.error("\(repo.id): \(entry.name) hash check failed (\(got) bytes, Release says \(entry.size))")
@@ -122,18 +134,18 @@ public struct RepoClient: Sendable {
         do {
             stanzas = try DebControl.stanzas(String(decoding: try Data(contentsOf: plain), as: UTF8.self),
                                              maxStanzas: Self.maxIndexStanzas)
-        } catch is DebError {
-            throw RepoError.tooLarge
+        } catch let e as DebError {
+            throw e == .tooLarge ? RepoError.tooLarge : RepoError.noIndex
         }
         return try Self.choose(id, dependency, from: stanzas, repo: repo, order: order)
     }
 
     /// Release and the index stay on the allowlisted host, even through redirects.
     private func fetchOnHost(_ url: URL, of repo: TrustedRepo, maxBytes: Int, to file: URL) async throws {
-        let final = try await fetcher.fetch(url, maxBytes: maxBytes, to: file)
+        let final = try await fetcher.fetch(url, maxBytes: maxBytes, to: file, stayingOn: repo.base)
         guard Self.isUnder(final, repo.base) else {
             try? FileManager.default.removeItem(at: file)
-            log.error("\(repo.id): \(url.absoluteString) ended on \(final.absoluteString), off the trusted host")
+            log.error("\(repo.id): \(RepoLog.display(url)) ended on \(RepoLog.display(final)), off the trusted host")
             throw RepoError.notAllowlisted
         }
     }
@@ -145,10 +157,10 @@ public struct RepoClient: Sendable {
         let sha512: Bool
     }
 
-    /// The first of `indexNames` that Release lists with a SHA256 (else SHA512) hash. MD5 and SHA1
-    /// are never used.
-    static func pickIndex(_ release: String) throws -> IndexEntry? {
-        guard let fields = (try? DebControl.stanzas(release, maxStanzas: 8))?.first else { return nil }
+    /// The `indexNames` that Release lists with a SHA256 (else SHA512) hash, most wanted first.
+    /// MD5 and SHA1 are never used. An unreadable Release lists nothing.
+    static func pickIndexes(_ release: String) -> [IndexEntry] {
+        guard let fields = (try? DebControl.stanzas(release, maxStanzas: 8))?.first else { return [] }
         func entries(_ key: String, hexLength: Int) -> [String: (hash: String, size: Int)] {
             var out: [String: (String, Int)] = [:]
             for line in (fields[key] ?? "").split(separator: "\n") {
@@ -162,11 +174,11 @@ public struct RepoClient: Sendable {
             return out
         }
         let sha256 = entries("sha256", hexLength: 64), sha512 = entries("sha512", hexLength: 128)
-        for name in indexNames {
+        return indexNames.compactMap { name in
             if let e = sha256[name] { return IndexEntry(name: name, hash: e.hash, size: e.size, sha512: false) }
             if let e = sha512[name] { return IndexEntry(name: name, hash: e.hash, size: e.size, sha512: true) }
+            return nil
         }
-        return nil
     }
 
     static func compression(of name: String) -> CompressionKind {
@@ -179,15 +191,17 @@ public struct RepoClient: Sendable {
         }
     }
 
-    /// Among the stanzas for `id` (by `Package` or `Provides`) whose `Version` satisfies the
-    /// dependency and that carry a SHA256 and a size: the best architecture, then the highest version.
+    /// Among the stanzas whose `Package` is exactly `id`, an id the repo is trusted for, whose
+    /// `Version` satisfies the dependency and that carry a SHA256 and a size: the best architecture,
+    /// then the highest version. `Provides` is never used: on a multi-vendor repo any seller could
+    /// claim to provide an allowlisted id.
     static func choose(_ id: String, _ dependency: DebDependency, from stanzas: [[String: String]], repo: TrustedRepo,
                        order: [String]) throws -> (offer: RepoOffer, rank: Int) {
         var matched = false
         var best: (stanza: [String: String], package: String, version: String, arch: String, sha: String, size: Int, rank: Int)?
         for s in stanzas {
             guard let package = s["package"]?.lowercased(), DebControl.isValidPackageID(package) else { continue }
-            guard package == id || DebControl.parseProvides(s["provides"] ?? "").contains(id) else { continue }
+            guard package == id, repo.packages.contains(package) else { continue }
             matched = true
             guard let version = s["version"], !version.isEmpty, dependency.isSatisfied(by: version) else { continue }
             guard let arch = s["architecture"]?.lowercased(), let rank = order.firstIndex(of: arch) else { continue }
@@ -228,10 +242,7 @@ public struct RepoClient: Sendable {
         return url
     }
 
-    static func sameOrigin(_ a: URL, _ b: URL) -> Bool {
-        RedirectPolicy.isHTTPS(a) && RedirectPolicy.isHTTPS(b)
-            && a.host?.lowercased() == b.host?.lowercased() && a.port == b.port
-    }
+    static func sameOrigin(_ a: URL, _ b: URL) -> Bool { RedirectPolicy.sameOrigin(a, b) }
 
     static func isUnder(_ url: URL, _ base: URL) -> Bool {
         sameOrigin(url, base) && url.absoluteString.hasPrefix(base.absoluteString)
@@ -243,8 +254,9 @@ public struct RepoClient: Sendable {
     /// through redirects to another HTTPS host: the hash is what's trusted. On any failure nothing
     /// is left behind.
     public func download(_ offer: RepoOffer) async throws -> URL {
-        guard TrustedRepos.all.contains(offer.repo), Self.isUnder(offer.url, offer.repo.base) else {
-            log.error("download refused, not from a trusted repo: \(offer.url.absoluteString)")
+        guard TrustedRepos.all.contains(offer.repo), offer.repo.packages.contains(offer.packageID),
+              Self.isUnder(offer.url, offer.repo.base) else {
+            log.error("download refused, not a trusted repo and package: \(offer.packageID) \(RepoLog.display(offer.url))")
             throw RepoError.notAllowlisted
         }
         guard offer.size > 0, offer.size <= DebLimits.maxDebBytes else { throw RepoError.tooLarge }
@@ -260,20 +272,20 @@ public struct RepoClient: Sendable {
             let final = try await fetcher.fetch(offer.url, maxBytes: offer.size, to: partial)
             let got = try Self.fileSize(partial)
             guard got == offer.size else {
-                log.error("\(offer.url.absoluteString): \(got) bytes, the index says \(offer.size)")
+                log.error("\(RepoLog.display(offer.url)): \(got) bytes, the index says \(offer.size)")
                 throw RepoError.sizeMismatch
             }
             guard try Self.hexDigest(of: partial, sha512: false) == expected else {
-                log.error("\(offer.url.absoluteString): SHA256 check failed")
+                log.error("\(RepoLog.display(offer.url)): SHA256 check failed")
                 throw RepoError.hashMismatch
             }
             try? fm.removeItem(at: dest)
             try fm.moveItem(at: partial, to: dest)
-            log.notice("downloaded \(offer.packageID) \(offer.version) from \(final.absoluteString): \(got) bytes, SHA256 ok")
+            log.notice("downloaded \(offer.packageID) \(offer.version) from \(RepoLog.display(final)): \(got) bytes, SHA256 ok")
             return dest
         } catch {
             try? fm.removeItem(at: partial)
-            log.error("download of \(offer.url.absoluteString) failed: \(error)")
+            log.error("download of \(RepoLog.display(offer.url)) failed: \(error)")
             throw error
         }
     }

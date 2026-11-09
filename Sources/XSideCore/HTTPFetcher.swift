@@ -10,7 +10,25 @@ public enum RepoError: Error, Equatable {
 public protocol HTTPFetching: Sendable {
     /// Writes the body to `file` and returns the final URL after redirects. Past `maxBytes` (or a
     /// declared `Content-Length` over it) it stops with `RepoError.tooLarge`; on any throw `file` is gone.
-    func fetch(_ url: URL, maxBytes: Int, to file: URL) async throws -> URL
+    /// With `origin`, a redirect hop to another scheme, host or port is refused before it is
+    /// followed (`RepoError.notAllowlisted`).
+    func fetch(_ url: URL, maxBytes: Int, to file: URL, stayingOn origin: URL?) async throws -> URL
+}
+
+extension HTTPFetching {
+    /// Redirects may go to any HTTPS host (within `RedirectPolicy`).
+    public func fetch(_ url: URL, maxBytes: Int, to file: URL) async throws -> URL {
+        try await fetch(url, maxBytes: maxBytes, to: file, stayingOn: nil)
+    }
+}
+
+/// URLs as they appear in the log: no user info, query or fragment (CDN links carry signatures).
+enum RepoLog {
+    static func display(_ url: URL) -> String {
+        guard var c = URLComponents(url: url, resolvingAgainstBaseURL: true) else { return "<url>" }
+        c.user = nil; c.password = nil; c.query = nil; c.fragment = nil
+        return c.string ?? "<url>"
+    }
 }
 
 /// Redirects: `https` only (with a host), at most `maxRedirects` hops.
@@ -24,6 +42,11 @@ public enum RedirectPolicy {
 
     static func isHTTPS(_ url: URL) -> Bool {
         url.scheme?.lowercased() == "https" && !(url.host ?? "").isEmpty
+    }
+
+    /// Same scheme (https), host and port.
+    static func sameOrigin(_ a: URL, _ b: URL) -> Bool {
+        isHTTPS(a) && isHTTPS(b) && a.host?.lowercased() == b.host?.lowercased() && a.port == b.port
     }
 }
 
@@ -62,19 +85,19 @@ public struct URLSessionFetcher: HTTPFetching {
         return c
     }
 
-    public func fetch(_ url: URL, maxBytes: Int, to file: URL) async throws -> URL {
+    public func fetch(_ url: URL, maxBytes: Int, to file: URL, stayingOn origin: URL?) async throws -> URL {
         try? FileManager.default.removeItem(at: file)
         guard RedirectPolicy.isHTTPS(url) else {
-            log.error("refused (not https): \(url.absoluteString)")
+            log.error("refused (not https): \(RepoLog.display(url))")
             throw RepoError.notHTTPS
         }
         guard maxBytes >= 0 else { throw RepoError.tooLarge }
         try Task.checkCancellation()
-        log.info("GET \(url.absoluteString) (cap \(maxBytes) bytes)")
+        log.info("GET \(RepoLog.display(url)) (cap \(maxBytes) bytes)")
         var request = URLRequest(url: url)
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         request.httpShouldHandleCookies = false
-        let delegate = FetchDelegate(file: file, maxBytes: maxBytes)
+        let delegate = FetchDelegate(file: file, maxBytes: maxBytes, origin: origin)
         let session = URLSession(configuration: Self.configuration(protocolClasses: protocolClasses),
                                  delegate: delegate, delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
@@ -88,11 +111,11 @@ public struct URLSessionFetcher: HTTPFetching {
             } onCancel: {
                 task.cancel()
             }
-            log.info("got \(url.absoluteString): status \(delegate.status ?? 0), \(delegate.bytes) bytes, final \(final.absoluteString)")
+            log.info("got \(RepoLog.display(url)): status \(delegate.status ?? 0), \(delegate.bytes) bytes, final \(RepoLog.display(final))")
             return final
         } catch {
             try? FileManager.default.removeItem(at: file)
-            log.error("failed \(url.absoluteString): status \(delegate.status.map(String.init) ?? "-"), \(delegate.bytes) bytes, \(error)")
+            log.error("failed \(RepoLog.display(url)): status \(delegate.status.map(String.init) ?? "-"), \(delegate.bytes) bytes, \(error)")
             throw error
         }
     }
@@ -104,6 +127,7 @@ private final class FetchDelegate: NSObject, URLSessionDataDelegate, @unchecked 
     private let lock = NSLock()
     private let file: URL
     private let maxBytes: Int
+    private let origin: URL?
     private var handle: FileHandle?
     private var written = 0
     private var redirects = 0
@@ -111,9 +135,10 @@ private final class FetchDelegate: NSObject, URLSessionDataDelegate, @unchecked 
     private var _status: Int?
     private var continuation: CheckedContinuation<URL, Error>?
 
-    init(file: URL, maxBytes: Int) {
+    init(file: URL, maxBytes: Int, origin: URL?) {
         self.file = file
         self.maxBytes = maxBytes
+        self.origin = origin
     }
 
     var bytes: Int { lock.withLock { written } }
@@ -132,12 +157,18 @@ private final class FetchDelegate: NSObject, URLSessionDataDelegate, @unchecked 
         let count = lock.withLock { redirects += 1; return redirects }
         guard let next = request.url, RedirectPolicy.allows(next, count: count) else {
             let https = request.url.map(RedirectPolicy.isHTTPS) ?? false
-            Log("repo").error("redirect refused (\(https ? "too many" : "not https")): \(request.url?.absoluteString ?? "?")")
+            Log("repo").error("redirect refused (\(https ? "too many" : "not https")): \(request.url.map(RepoLog.display) ?? "?")")
             fail(https ? RepoError.tooManyRedirects : RepoError.notHTTPS, task)
             completionHandler(nil)
             return
         }
-        Log("repo").info("redirect \(count) (\(response.statusCode)) -> \(next.absoluteString)")
+        if let origin, !RedirectPolicy.sameOrigin(next, origin) {
+            Log("repo").error("redirect refused (off \(RepoLog.display(origin))): \(RepoLog.display(next))")
+            fail(RepoError.notAllowlisted, task)
+            completionHandler(nil)
+            return
+        }
+        Log("repo").info("redirect \(count) (\(response.statusCode)) -> \(RepoLog.display(next))")
         completionHandler(request)
     }
 

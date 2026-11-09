@@ -9,7 +9,7 @@ final class FakeFetcher: HTTPFetching, @unchecked Sendable {
     enum Route { case data(Data, final: URL?), failure(RepoError) }
     private let lock = NSLock()
     private var routes: [URL: Route] = [:]
-    private var _fetched: [(url: URL, maxBytes: Int)] = []
+    private var _fetched: [(url: URL, maxBytes: Int, origin: URL?)] = []
 
     func serve(_ url: String, _ data: Data, final: String? = nil) {
         lock.withLock { routes[URL(string: url)!] = .data(data, final: final.map { URL(string: $0)! }) }
@@ -17,9 +17,10 @@ final class FakeFetcher: HTTPFetching, @unchecked Sendable {
     func fail(_ url: String, _ error: RepoError) { lock.withLock { routes[URL(string: url)!] = .failure(error) } }
     var fetched: [URL] { lock.withLock { _fetched.map(\.url) } }
     func maxBytes(for url: String) -> Int? { lock.withLock { _fetched.last { $0.url.absoluteString == url }?.maxBytes } }
+    func origin(for url: String) -> URL?? { lock.withLock { _fetched.last { $0.url.absoluteString == url }.map(\.origin) } }
 
-    func fetch(_ url: URL, maxBytes: Int, to file: URL) async throws -> URL {
-        let route = lock.withLock { () -> Route? in _fetched.append((url, maxBytes)); return routes[url] }
+    func fetch(_ url: URL, maxBytes: Int, to file: URL, stayingOn origin: URL?) async throws -> URL {
+        let route = lock.withLock { () -> Route? in _fetched.append((url, maxBytes, origin)); return routes[url] }
         try? FileManager.default.removeItem(at: file)
         switch route {
         case nil: throw RepoError.httpStatus(404)
@@ -112,6 +113,9 @@ struct RepoClientTests {
             #expect(offer.repo.id == "chariz")
             #expect(offer.name == "Cephei")
             #expect(fetcher.maxBytes(for: Self.chariz + "Release") == 1024 * 1024)
+            // Release and the index may only redirect on the repo's host.
+            #expect(fetcher.origin(for: Self.chariz + "Release") == .some(URL(string: Self.chariz)!))
+            #expect(fetcher.origin(for: Self.chariz + "Packages") == .some(URL(string: Self.chariz)!))
             // Index work files are gone.
             #expect(Self.isEmpty(dir))
         }
@@ -138,13 +142,25 @@ struct RepoClientTests {
         }
     }
 
-    @Test func providesMatches() async throws {
+    /// The allowlist is per package: another vendor's package on the same (multi-vendor) repo that
+    /// says `Provides: ws.hbang.common` is never offered, even with a higher version.
+    @Test func providesIsNeverOffered() async throws {
         try await withTemporaryDirectory("repo") { dir in
             let fetcher = FakeFetcher()
-            var p = Pkg("2.1"); p.package = "ws.hbang.common.new"; p.provides = "ws.hbang.common (= 2.1), other"
+            var p = Pkg("99"); p.package = "com.anyone.x"; p.provides = "ws.hbang.common"
             Self.serveRepo(fetcher, [p])
-            let offer = try await client(fetcher, dir).offer(for: DebDependency(package: Self.cephei), preferredArchitecture: nil)
-            #expect(offer.packageID == "ws.hbang.common.new")
+            await #expect(throws: RepoError.notFound(Self.cephei)) {
+                try await client(fetcher, dir).offer(for: DebDependency(package: Self.cephei), preferredArchitecture: nil)
+            }
+            // Next to the real package, the real one wins.
+            let both = FakeFetcher()
+            Self.serveRepo(both, [p, Pkg("2.0")])
+            let offer = try await client(both, dir).offer(for: DebDependency(package: Self.cephei), preferredArchitecture: nil)
+            #expect(offer.packageID == Self.cephei && offer.version == "2.0")
+            // An allowlisted repo's package that isn't on its list is not looked up there.
+            await #expect(throws: RepoError.notAllowlisted) {
+                try await client(both, dir).offer(for: DebDependency(package: "com.anyone.x"), preferredArchitecture: nil)
+            }
         }
     }
 
@@ -190,6 +206,11 @@ struct RepoClientTests {
             let offer = RepoOffer(repo: evil, packageID: Self.cephei, name: "Cephei", version: "1", architecture: "iphoneos-arm64",
                                   url: URL(string: "https://evil.example/x.deb")!, size: 3, sha256: String(repeating: "0", count: 64))
             await #expect(throws: RepoError.notAllowlisted) { try await client(fetcher, dir).download(offer) }
+            // A trusted repo, but a package it isn't trusted for.
+            let chariz = TrustedRepos.offering(Self.cephei)[0]
+            let other = RepoOffer(repo: chariz, packageID: "com.anyone.x", name: "Cephei", version: "1", architecture: "iphoneos-arm64",
+                                  url: URL(string: Self.chariz + "debs/x.deb")!, size: 3, sha256: String(repeating: "0", count: 64))
+            await #expect(throws: RepoError.notAllowlisted) { try await client(fetcher, dir).download(other) }
             #expect(fetcher.fetched.isEmpty)
         }
     }
@@ -216,9 +237,14 @@ struct RepoClientTests {
             await #expect(throws: RepoError.indexHashMismatch) {
                 try await c.offer(for: DebDependency(package: Self.cephei), preferredArchitecture: nil)
             }
-            // A different size is refused too, before hashing.
+            // Shorter than Release says (within the cap): refused on the size, before hashing.
+            fetcher.serve(Self.chariz + "Packages", Self.index(Self.threeVersions).dropLast())
+            await #expect(throws: RepoError.indexHashMismatch) {
+                try await c.offer(for: DebDependency(package: Self.cephei), preferredArchitecture: nil)
+            }
+            // Longer: the cap (the Release size) stops it.
             fetcher.serve(Self.chariz + "Packages", Self.index(Self.threeVersions) + Data("\n".utf8))
-            await #expect(throws: RepoError.self) {
+            await #expect(throws: RepoError.tooLarge) {
                 try await c.offer(for: DebDependency(package: Self.cephei), preferredArchitecture: nil)
             }
             // The index is fetched with the Release size as its cap.
@@ -258,6 +284,7 @@ struct RepoClientTests {
             #expect(file.deletingLastPathComponent().standardizedFileURL == dir.standardizedFileURL)
             #expect(try Data(contentsOf: file) == Self.threeVersions[2].deb)
             #expect(fetcher.maxBytes(for: offer.url.absoluteString) == offer.size)
+            #expect(fetcher.origin(for: offer.url.absoluteString) == .some(nil))
             #expect(Self.entries(dir) == 1)
         }
     }
@@ -371,6 +398,44 @@ struct RepoClientTests {
             Self.serveRepo(fetcher, Self.threeVersions)
             fetcher.serve(Self.chariz + "Packages", Self.index(Self.threeVersions), final: "https://mirror.example/Packages")
             await #expect(throws: RepoError.notAllowlisted) {
+                try await client(fetcher, dir).offer(for: DebDependency(package: Self.cephei), preferredArchitecture: nil)
+            }
+            #expect(Self.isEmpty(dir))
+        }
+    }
+
+    @Test func missingIndexFallsBackToTheNextListed() async throws {
+        try await withTemporaryDirectory("repo") { dir in
+            let fetcher = FakeFetcher()
+            let idx = Self.index(Self.threeVersions)
+            // Release lists Packages.xz, but the server doesn't have it (404).
+            fetcher.serve(Self.chariz + "Release", Self.release([("Packages.xz", Data("xz".utf8)), ("Packages", idx)]))
+            fetcher.serve(Self.chariz + "Packages", idx)
+            let offer = try await client(fetcher, dir).offer(for: DebDependency(package: Self.cephei), preferredArchitecture: nil)
+            #expect(offer.version == "2.0")
+            #expect(fetcher.fetched.map(\.lastPathComponent) == ["Release", "Packages.xz", "Packages"])
+            // Another failure (not a 404) stops there.
+            fetcher.fail(Self.chariz + "Packages.xz", .httpStatus(500))
+            await #expect(throws: RepoError.httpStatus(500)) {
+                try await client(fetcher, dir).offer(for: DebDependency(package: Self.cephei), preferredArchitecture: nil)
+            }
+            // All listed indexes missing: the 404 is reported.
+            let none = FakeFetcher()
+            none.serve(Self.chariz + "Release", Self.release([("Packages", idx)]))
+            await #expect(throws: RepoError.httpStatus(404)) {
+                try await client(none, dir).offer(for: DebDependency(package: Self.cephei), preferredArchitecture: nil)
+            }
+        }
+    }
+
+    @Test func corruptVerifiedIndexIsNoIndex() async throws {
+        try await withTemporaryDirectory("repo") { dir in
+            // Hash-verified but not a gzip stream: unusable, not "too large".
+            let fetcher = FakeFetcher()
+            let junk = Data("not gzip at all".utf8)
+            fetcher.serve(Self.chariz + "Release", Self.release([("Packages.gz", junk)]))
+            fetcher.serve(Self.chariz + "Packages.gz", junk)
+            await #expect(throws: RepoError.noIndex) {
                 try await client(fetcher, dir).offer(for: DebDependency(package: Self.cephei), preferredArchitecture: nil)
             }
             #expect(Self.isEmpty(dir))
