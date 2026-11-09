@@ -81,12 +81,20 @@ package_json() {
         "$depends" "$files" "$binaries" > "$dir/package.json"
 }
 
-acknowledge() {   # <name> <tag> <commit> <repo> <licence file> [NOTICE]
+# The toolchain each output was built with (build/tweak-deps/build-info.txt, and in the Acknowledgements).
+TOOLCHAIN="$(xcodebuild -version | tr '\n' ' ' | sed 's/ *$//'); $(xcrun swiftc --version 2>/dev/null | grep -m1 "Swift version"); $(xcrun -sdk iphoneos clang --version | head -1); iPhoneOS SDK $(xcrun -sdk iphoneos --show-sdk-version)"
+echo "$TOOLCHAIN" > "$OUT/build-info.txt"
+echo "tweak dependencies built with: $TOOLCHAIN" >&2
+
+acknowledge() {   # <name> <tag> <commit> <repo> <licence file> <changes made by XSide> [NOTICE]
     {
         echo "$1 $2 (${3:0:7}) ${4%.git}"
         echo
+        echo "Changes made by XSide: $6"
+        echo "Built with: $TOOLCHAIN"
+        echo
         cat "$5"
-        [ -n "${6:-}" ] && [ -f "$6" ] && { echo; cat "$6"; }
+        [ -n "${7:-}" ] && [ -f "$7" ] && { echo; cat "$7"; }
         echo
     } >> "$OUT/Acknowledgements.txt"
 }
@@ -122,6 +130,9 @@ H
 # (SBSRelaunchActionOptions) come from Theos's headers, not from Cephei. Its file in main/ is replaced
 # by this one (XSide's own code): the same class and methods, doing nothing.
 cat > "$WORK/gen/HBRespringController.m" <<'M'
+// Modified by XSide: this file replaces Cephei's main/HBRespringController.m
+// (https://github.com/hbang/libcephei, Apache License 2.0) in XSide's build of Cephei.
+// Same class and methods; respring does nothing, since a sideloaded app can't restart SpringBoard.
 #import "HBRespringController.h"
 
 @implementation HBRespringController
@@ -181,9 +192,10 @@ mkdir -p "$PKG/$FW_REL"
 lipo -create "${SLICES[@]}" -output "$WORK/Cephei"
 # XSide signs it again at each install; ad-hoc until then (signed alone, before it is in a
 # .framework folder: no _CodeSignature folder in the package).
-codesign -s - --force "$WORK/Cephei" 2>/dev/null
+codesign -s - --force "$WORK/Cephei"
 cp "$WORK/Cephei" "$PKG/$FW_REL/Cephei"
 cp "$CEPHEI_SRC/main/Resources/Info.plist" "$PKG/$FW_REL/Info.plist"
 package_json "$PKG" "$CEPHEI_SRC/control"
-acknowledge Cephei "$CEPHEI_TAG" "$CEPHEI_COMMIT" "$CEPHEI_REPO" "$CEPHEI_SRC/LICENSE.md" "$CEPHEI_SRC/NOTICE"
+CEPHEI_CHANGES="built from main/ only (Cephei.framework; CepheiUI, CepheiPrefs and defaults omitted), in Cephei's embedded mode (CEPHEI_EMBEDDED=1), with clang/swiftc instead of Theos's makefiles; main/HBRespringController.m replaced by a no-op (a sideloaded app can't restart SpringBoard); Theos's private headers (version.h, LightMessaging, UIApplication+Private) replaced by minimal declarations; install name set for XSide's Frameworks/XSideTweaks/deps/ws.hbang.common/ folder."
+acknowledge Cephei "$CEPHEI_TAG" "$CEPHEI_COMMIT" "$CEPHEI_REPO" "$CEPHEI_SRC/LICENSE.md" "$CEPHEI_CHANGES" "$CEPHEI_SRC/NOTICE"
 echo "$OUT/TweakDependencies"

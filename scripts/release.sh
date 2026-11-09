@@ -113,9 +113,17 @@ for PKG in "$DEPS"/*; do
 done
 nm -gU "$DEPS/ws.hbang.common/Library/Frameworks/Cephei.framework/Cephei" 2>/dev/null | grep ' _OBJC_CLASS_$_HBPreferences$' >/dev/null \
     || { echo "Cephei has no HBPreferences class" >&2; exit 1; }
-grep -q "^Cephei $CEPHEI_TAG (${CEPHEI_COMMIT:0:7}) " "$APP/Contents/Resources/Acknowledgements.txt" 2>/dev/null \
-    && grep -q "Apache License" "$APP/Contents/Resources/Acknowledgements.txt" \
-    || { echo "Acknowledgements.txt has no Cephei section: not releasing without it" >&2; exit 1; }
+# Its section (from its heading to the next "<name> <tag> (<sha>) https://..." heading): Apache-2.0
+# §4(b) wants XSide's changes stated, and the licence must be in that section itself.
+CEPHEI_ACK="$(awk -v head="Cephei $CEPHEI_TAG (${CEPHEI_COMMIT:0:7}) " '
+    index($0, head) == 1 { on = 1; print; next }
+    on && /^[^ ]+ [^ ]+ \([0-9a-f]{7}\) https:\/\// { exit }
+    on { print }' "$APP/Contents/Resources/Acknowledgements.txt" 2>/dev/null)"
+[ -n "$CEPHEI_ACK" ] || { echo "Acknowledgements.txt has no Cephei section: not releasing without it" >&2; exit 1; }
+grep -q "^Changes made by XSide: .*HBRespringController.m replaced" <<<"$CEPHEI_ACK" \
+    || { echo "The Cephei section doesn't state XSide's changes (Apache-2.0 4(b))" >&2; exit 1; }
+grep -q "Version 2.0, January 2004" <<<"$CEPHEI_ACK" && grep -q "Apache License" <<<"$CEPHEI_ACK" \
+    || { echo "The Cephei section has no Apache-2.0 licence text" >&2; exit 1; }
 ZIP="build/release/XSide-$TAG.zip"
 mkdir -p build/release
 rm -f "$ZIP"
