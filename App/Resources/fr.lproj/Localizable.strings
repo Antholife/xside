@@ -812,6 +812,8 @@
 "crash.raw.show" = "Voir le rapport brut";
 "crash.raw.hide" = "Masquer le rapport brut";
 "crash.raw.note" = "Copie nettoyée : les identifiants de l'appareil et du compte et les chemins personnels sont masqués.";
+"crash.raw.showAll" = "Afficher les %ld lignes";
+"crash.notLooked" = "XSide n'a pas encore lu les rapports de plantage de cette app : clique sur Chercher à nouveau.";
 "crash.copy" = "Copier";
 "crash.again" = "Chercher à nouveau";
 "crash.report" = "Signaler un problème…";

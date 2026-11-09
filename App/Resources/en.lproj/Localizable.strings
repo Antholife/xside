@@ -812,6 +812,8 @@
 "crash.raw.show" = "Show the raw report";
 "crash.raw.hide" = "Hide the raw report";
 "crash.raw.note" = "Cleaned copy: device and account identifiers and personal paths are masked.";
+"crash.raw.showAll" = "Show all %ld lines";
+"crash.notLooked" = "XSide hasn't read this app's crash reports yet: click Look again.";
 "crash.copy" = "Copy";
 "crash.again" = "Look again";
 "crash.report" = "Report a Problem…";

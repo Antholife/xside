@@ -31,9 +31,20 @@ struct CrashFinding: Equatable {
     let diagnosis: CrashDiagnosis
     /// Sanitized and redacted: ready for the window and the report archive.
     let log: String
+    /// `log`'s lines, cut for display (split off the main actor; the window shows them lazily).
+    var lines: [String] = []
     let fileName: String
     /// Found by the check after an install (the panel's row says so), not asked for.
     let afterInstall: Bool
+
+    /// A very long line is cut for display (Copy gives it whole).
+    static let maxLineLength = 2_000
+
+    static func displayLines(_ log: String) -> [String] {
+        log.split(separator: "\n", omittingEmptySubsequences: false).map { line in
+            line.count > maxLineLength ? String(line.prefix(maxLineLength)) + " …" : String(line)
+        }
+    }
 }
 
 /// A device card and the apps installed on it. `device` is nil when the device is known only from
@@ -2166,6 +2177,7 @@ final class AppModel {
             flow.runs[i].duoOutcome = nil
             flow.runs[i].crash = nil
             flow.runs[i].checkingLaunch = false
+            flow.runs[i].attempt = UUID()
         }
         needsUnlock.remove(deviceID)
         // Looked up now: the device may have gone (or changed transport) during the earlier ones.
@@ -2456,7 +2468,17 @@ final class AppModel {
     static let launchGrace: Duration = .seconds(10)
 
     /// What XSide found about an installation's crashes (memory only: the device keeps the logs).
+    /// Only on-demand looks ("Why does it crash?", Look again, `xside crash`) show `.checking`
+    /// here; the quiet check after an install writes only a crash it found.
     private(set) var crashChecks: [JobKey: CrashCheck] = [:]
+    /// The newest on-demand look of each installation: an older one finishing late never
+    /// overwrites it (so its spinner always ends with its own answer).
+    private var crashLooks: [JobKey: UUID] = [:]
+    /// Crash files the check after an install found, by installation: whoever reads them later
+    /// keeps them marked as found after the install (the panel's line).
+    private var crashFilesAfterInstall: [JobKey: Set<String>] = [:]
+    /// The check after each installation's latest install (a new install cancels the older one).
+    private var launchWatches: [JobKey: Task<Void, Never>] = [:]
     /// The installation the crash window shows.
     var crashWindowKey: JobKey?
     /// Opens the crash window (set by the menu-bar label, which has `openWindow`).
@@ -2472,78 +2494,101 @@ final class AppModel {
         }
     }
 
-    /// Reads the device's newest crash of the installation since `since` (default: the last 24 h),
+    /// An on-demand look: reads the device's newest crash of the installation in the last 24 h,
     /// explains it and keeps the result for the panel, the window and the report. Any failure is
-    /// an answer, never an error thrown at the caller.
+    /// an answer, never an error thrown at the caller. The newest look's answer is the one kept.
     @discardableResult
-    func diagnoseCrash(_ key: JobKey, since: Date? = nil, afterInstall: Bool = false) async -> CrashCheck {
-        guard let record = records.first(where: { $0.id == key.recordID }),
-              let installation = record.installations.first(where: { $0.deviceID == key.deviceID }) else {
-            crashChecks[key] = .failed(L("crash.gone"))
-            return .failed(L("crash.gone"))
-        }
-        let since = since ?? Date().addingTimeInterval(-Self.crashLookback)
-        let previous = crashChecks[key]
+    func diagnoseCrash(_ key: JobKey) async -> CrashCheck {
+        let look = UUID()
+        crashLooks[key] = look
         crashChecks[key] = .checking
-        let target = CrashTarget(signedBundleID: installation.signedBundleID ?? record.signedBundleID,
-                                 executable: record.executable)
-        let fetcher = CrashLogFetcher(runner: runner)
-        let result: CrashCheck
-        do {
-            if let found = try await withKnownXcode({ try await fetcher.latest(target, deviceID: key.deviceID, since: since) }) {
-                let context = CrashContext(moduleName: Resigner.welcomeName,
-                                           duoCompatibilityOn: installation.duoCompatibility == true)
-                let diagnosis = CrashClassifier.classify(found.log, context: context)
-                let secrets = [installation.teamID, record.teamID, key.deviceID].compactMap { $0 }
-                let log = LogStore.shared.redact(CrashLogSanitizer.sanitize(found.text, secrets: secrets))
-                Self.logger.notice("crash of \(target.signedBundleID) on \(key.deviceID): \(diagnosis.summary)")
-                // The same crash the install check found stays that one (the panel keeps its line).
-                let wasAfterInstall = if case .found(let earlier)? = previous, earlier.fileName == found.fileName { earlier.afterInstall } else { false }
-                result = .found(CrashFinding(diagnosis: diagnosis, log: log, fileName: found.fileName,
-                                             afterInstall: afterInstall || wasAfterInstall))
-            } else {
-                Self.logger.notice("no crash of \(target.signedBundleID) on \(key.deviceID) since \(since.formatted(.iso8601))")
-                result = .none
-            }
-        } catch {
-            Self.logger.notice("crash logs of \(key.deviceID) unreadable: \(String(describing: error))")
-            result = .failed(localizedMessage(error))
+        let result = await readCrash(key, since: Date().addingTimeInterval(-Self.crashLookback))
+        if crashLooks[key] == look {
+            crashLooks[key] = nil
+            crashChecks[key] = result
         }
-        crashChecks[key] = result
         return result
     }
 
+    /// Reads the device's newest crash of the installation since `since` and explains it; touches
+    /// nothing the window shows. The log is cleaned off the main actor (it can be megabytes).
+    private func readCrash(_ key: JobKey, since: Date) async -> CrashCheck {
+        guard let record = records.first(where: { $0.id == key.recordID }),
+              let installation = record.installations.first(where: { $0.deviceID == key.deviceID }) else {
+            return .failed(L("crash.gone"))
+        }
+        let target = CrashTarget(signedBundleID: installation.signedBundleID ?? record.signedBundleID,
+                                 executable: record.executable)
+        let fetcher = CrashLogFetcher(runner: runner)
+        do {
+            guard let found = try await withKnownXcode({ try await fetcher.latest(target, deviceID: key.deviceID, since: since) }) else {
+                Self.logger.notice("no crash of \(target.signedBundleID) on \(key.deviceID) since \(since.formatted(.iso8601))")
+                return .none
+            }
+            let context = CrashContext(moduleName: Resigner.welcomeName,
+                                       duoCompatibilityOn: installation.duoCompatibility == true)
+            let diagnosis = CrashClassifier.classify(found.log, context: context)
+            let secrets = [installation.teamID, record.teamID, key.deviceID].compactMap { $0 }
+            let text = found.text
+            let (log, lines) = await Task.detached(priority: .userInitiated) {
+                let log = LogStore.shared.redact(CrashLogSanitizer.sanitize(text, secrets: secrets))
+                return (log, CrashFinding.displayLines(log))
+            }.value
+            Self.logger.notice("crash of \(target.signedBundleID) on \(key.deviceID): \(diagnosis.summary)")
+            let afterInstall = crashFilesAfterInstall[key]?.contains(found.fileName) == true
+            return .found(CrashFinding(diagnosis: diagnosis, log: log, lines: lines, fileName: found.fileName, afterInstall: afterInstall))
+        } catch {
+            Self.logger.notice("crash logs of \(key.deviceID) unreadable: \(String(describing: error))")
+            return .failed(localizedMessage(error))
+        }
+    }
+
     /// After an install that opened the app: once `launchGrace` has passed, an app no longer
-    /// running (or whose launch failed) has its crash logs read, and what they say goes to the
-    /// install window and the panel. Nothing found, or a device that can't tell: nothing is said.
-    /// Never holds up the install.
+    /// running (or whose launch failed) has its crash logs read, and a crash found goes to that
+    /// install's window (its own attempt only) and the panel. Nothing found, or a device that
+    /// can't tell: nothing is said, and whatever the window shows is left alone. Never holds up
+    /// the install.
     private func watchLaunch(_ key: JobKey, since: Date, launched: Bool, flow: InstallFlow) {
+        guard let attempt = flow.runs.first(where: { $0.deviceID == key.deviceID })?.attempt else { return }
         func setRun(_ change: (inout DeviceRun) -> Void) {
-            if let i = flow.runs.firstIndex(where: { $0.deviceID == key.deviceID }) { change(&flow.runs[i]) }
+            if let i = flow.runs.firstIndex(where: { $0.deviceID == key.deviceID && $0.attempt == attempt }) { change(&flow.runs[i]) }
         }
         setRun { $0.checkingLaunch = true }
-        Task { [weak self] in
-            try? await Task.sleep(for: Self.launchGrace)
-            guard let self else { return }
+        launchWatches[key]?.cancel()
+        launchWatches[key] = Task { [weak self] in
             defer { setRun { $0.checkingLaunch = false } }
+            try? await Task.sleep(for: Self.launchGrace)
+            guard let self, !Task.isCancelled else { return }
             if launched, let executable = records.first(where: { $0.id == key.recordID })?.executable {
                 let fetcher = CrashLogFetcher(runner: runner)
                 let running = await withKnownXcode { await fetcher.isRunning(executable: executable, deviceID: key.deviceID) }
                 Self.logger.notice("app running on \(key.deviceID) after launch: \(running.map(String.init) ?? "unknown")")
-                if running == true { return }
+                if running == true || Task.isCancelled { return }
             }
-            var result = await diagnoseCrash(key, since: since.addingTimeInterval(-5), afterInstall: true)
-            if case .none = result {
+            var result = await readCrash(key, since: since.addingTimeInterval(-5))
+            if case .none = result, !Task.isCancelled {
                 // ReportCrash may still be writing it.
                 try? await Task.sleep(for: .seconds(5))
-                result = await diagnoseCrash(key, since: since.addingTimeInterval(-5), afterInstall: true)
+                result = await readCrash(key, since: since.addingTimeInterval(-5))
             }
-            guard case .found(let finding) = result else {
-                crashChecks[key] = nil // nothing to say
-                return
-            }
+            guard !Task.isCancelled, case .found(var finding) = result else { return } // nothing to say
+            crashFilesAfterInstall[key, default: []].insert(finding.fileName)
+            finding = CrashFinding(diagnosis: finding.diagnosis, log: finding.log, lines: finding.lines, fileName: finding.fileName,
+                                   afterInstall: true)
             setRun { $0.crash = finding }
+            // The window: an on-demand look in progress gives its own answer (marked the same way
+            // when it's this crash); otherwise this crash replaces nothing newer.
+            if crashLooks[key] == nil, Self.isNewer(finding, than: crashChecks[key]) {
+                crashChecks[key] = .found(finding)
+            }
         }
+    }
+
+    /// `finding` is worth showing over `current`: nothing found yet, or an older crash.
+    private static func isNewer(_ finding: CrashFinding, than current: CrashCheck?) -> Bool {
+        guard case .found(let shown)? = current else { return true }
+        if shown.fileName == finding.fileName { return true }
+        return (finding.diagnosis.date ?? .distantPast) >= (shown.diagnosis.date ?? .distantPast)
     }
 
     /// The panel's line for an installation: its crash found after its last install, if any.

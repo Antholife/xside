@@ -49,6 +49,9 @@ private struct CrashView: View {
     let entry: AppEntry
     let check: CrashCheck?
     @State private var showRaw = false
+    @State private var showAllLines = false
+    /// Lines shown before "Show all": a 5 MB log would stall the window otherwise.
+    private static let firstLines = 1_500
     @Environment(\.dismissWindow) private var dismissWindow
 
     private var appName: String { entry.record.options.displayName ?? entry.record.displayName }
@@ -84,7 +87,11 @@ private struct CrashView: View {
 
     @ViewBuilder private var content: some View {
         switch check {
-        case .checking?, nil:
+        case nil:
+            // Never looked (or the look was for another window): no spinner that never ends.
+            Text(L("crash.notLooked")).font(.system(size: 12)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        case .checking?:
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
                 Text(L("crash.checking", deviceName)).foregroundStyle(.secondary)
@@ -140,14 +147,25 @@ private struct CrashView: View {
             }
             if showRaw {
                 Text(L("crash.raw.note")).font(.system(size: 11)).foregroundStyle(.secondary)
+                let lines = showAllLines ? finding.lines : Array(finding.lines.prefix(Self.firstLines))
                 ScrollView([.vertical, .horizontal]) {
-                    Text(finding.log)
-                        .font(.system(size: 10, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    // Lazy: only the lines on screen are laid out.
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(lines.indices, id: \.self) { n in
+                            Text(verbatim: lines[n].isEmpty ? " " : lines[n])
+                        }
+                    }
+                    .font(.system(size: 10, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(height: 220)
                 .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+                if !showAllLines, finding.lines.count > Self.firstLines {
+                    Button(L("crash.raw.showAll", finding.lines.count)) { showAllLines = true }
+                        .buttonStyle(.link)
+                        .font(.system(size: 11))
+                }
             }
         }
     }

@@ -236,6 +236,8 @@ struct DeviceRun: Identifiable, Equatable {
     var checkingLaunch = false
     /// The app crashed after the install, explained.
     var crash: CrashFinding?
+    /// This install attempt (a retry is a new one): the check after it writes only into its own.
+    var attempt = UUID()
 
     var id: String { deviceID }
 
