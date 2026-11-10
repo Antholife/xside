@@ -555,6 +555,57 @@ private func diagnose(_ data: Data, _ ctx: CrashContext = context) throws -> Cra
         #expect(d.cause == .iCloud)
     }
 
+    /// iOS kills an app that asks for private data without the text explaining why (namespace
+    /// TCC), as Boost 2 (SDK 8.3) did once the Duo option raised its SDK: the shape of that log.
+    static func tccKill(key: String = "NSAppleMusicUsageDescription") -> Data {
+        let text = "This app has crashed because it attempted to access privacy-sensitive data without a usage description.  "
+            + "The app's Info.plist must contain an \(key) key with a string value explaining to the user how the app uses this data."
+        return IPS.crash(exception: ["type": "EXC_CRASH", "signal": "SIGABRT", "codes": "0x0000000000000000, 0x0000000000000000"],
+                         termination: ["flags": 518, "code": 0, "namespace": "TCC", "indicator": text, "details": [text]],
+                         frames: [IPS.frame(IPS.objc, "__abort_with_payload"), IPS.frame(IPS.objc, "abort_with_payload_wrapper_internal"),
+                                  IPS.frame(IPS.uikit), IPS.frame(0), IPS.frame(0, "main")])
+    }
+
+    /// The key iOS named, in plain words, and whether a refresh fixes it: with the Duo option
+    /// (its SDK raise makes iOS ask) XSide adds the keys it knows at the next signing.
+    @Test func missingUsageDescription() throws {
+        let duo = CrashContext(moduleName: "XSideWelcome.dylib", duoCompatibilityOn: true)
+        let d = try diagnose(Self.tccKill(), duo)
+        #expect(d.cause == .missingUsageDescription)
+        #expect(d.subject == "NSAppleMusicUsageDescription")
+        #expect(d.usageTopic == "appleMusic")
+        #expect(d.xsideAddsUsageDescription)
+        #expect(CrashAction.suggested(for: d) == .refresh)
+        #expect(try diagnose(Self.tccKill(key: "NSCameraUsageDescription"), duo).usageTopic == "camera")
+        #expect(try diagnose(Self.tccKill(key: "NSPhotoLibraryAddUsageDescription"), duo).usageTopic == "photos")
+        // Without the option: nothing XSide did, nothing to refresh; it's reported.
+        let off = try diagnose(Self.tccKill())
+        #expect(off.cause == .missingUsageDescription)
+        #expect(CrashAction.suggested(for: off) == nil)
+        // A key XSide doesn't add: no refresh promised, even with the option.
+        let unknown = try diagnose(Self.tccKill(key: "NSFooBarUsageDescription"), duo)
+        #expect(unknown.subject == "NSFooBarUsageDescription")
+        #expect(unknown.usageTopic == nil)
+        #expect(!unknown.xsideAddsUsageDescription)
+        #expect(CrashAction.suggested(for: unknown) == nil)
+    }
+
+    /// A TCC kill without a readable key (or with junk where it should be) names none.
+    @Test func missingUsageDescriptionWithoutAKey() throws {
+        let plain = IPS.crash(termination: ["namespace": "TCC", "code": 0, "indicator": "privacy violation"])
+        let d = try diagnose(plain)
+        #expect(d.cause == .missingUsageDescription)
+        #expect(d.subject == nil)
+        let junk = IPS.crash(termination: ["namespace": "TCC", "indicator": "must contain an NS<script>UsageDescription key"])
+        #expect(try diagnose(junk).subject == nil)
+        let long = IPS.crash(termination: ["namespace": "tcc",
+                                           "indicator": "must contain an NS\(String(repeating: "A", count: 300))UsageDescription key"])
+        #expect(try diagnose(long).subject == nil)
+        // The text alone, under another namespace, isn't a TCC kill.
+        let elsewhere = IPS.crash(termination: ["namespace": "SIGNAL", "indicator": "must contain an NSCameraUsageDescription key"])
+        #expect(try diagnose(elsewhere).cause == .other)
+    }
+
     @Test func outOfMemory() throws {
         let d = try diagnose(IPS.jetsam(processes: [["name": "Demo", "reason": "per-process-limit", "states": ["active", "frontmost"]]]))
         #expect(d.cause == .outOfMemory)

@@ -51,6 +51,15 @@ struct CrashWording {
             let kind = what.isEmpty ? t("crash.unknownError") : what
             explanation = d.subject.map { f(base + ".text", app, kind, $0) } ?? f(base + ".textNoImage", app, kind)
             advice = t(base + ".advice")
+        case .missingUsageDescription:
+            // The key in plain words ("Apple Music…"), else what iOS named, else nothing.
+            if let key = d.subject {
+                let topic = d.usageTopic.map { t("crash.usage." + $0) } ?? t("crash.usage.unknown")
+                explanation = f(base + ".text", app, topic, key)
+            } else {
+                explanation = f(base + ".textUnnamed", app)
+            }
+            advice = t(base + (d.duoCompatibilityOn && d.xsideAddsUsageDescription ? ".adviceDuo" : ".advice"))
         case .iCloud:
             explanation = f(base + ".text", app)
             advice = t(base + (d.iCloudSignedOutOn == true ? ".adviceSignedOut" : ".adviceOption"))

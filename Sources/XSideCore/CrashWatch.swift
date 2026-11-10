@@ -69,6 +69,8 @@ public enum CrashAction: String, Codable, Sendable, CaseIterable {
         // Only the Duo option adds that module: going without it is the fix.
         case .duoLegacyModule, .duoAppLaunch: return .turnOffDuo
         case .codeSignature: return .refresh
+        // The Duo option adds the usage descriptions it knows at the next signing.
+        case .missingUsageDescription: return d.duoCompatibilityOn && d.xsideAddsUsageDescription ? .refresh : nil
         // Only that option adds the library: going without it is the fix.
         case .iCloudShim: return .turnOffICloudSignedOut
         case .iCloud: return d.iCloudSignedOutOn == true ? nil : .turnOnICloudSignedOut

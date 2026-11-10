@@ -327,6 +327,9 @@ public enum CrashCause: String, Codable, Sendable, CaseIterable {
     /// iOS killed the app for writing into its code (CODESIGNING, invalid page), and an injected
     /// tweak imports C function hooks: that tweak (`subject`, `tweakName`).
     case tweakCFunctionHook
+    /// iOS killed the app (namespace TCC) for asking for private data without the usage
+    /// description its Info.plist must have: the key iOS named (`subject`, nil when unreadable).
+    case missingUsageDescription
     case iCloud, outOfMemory, launchTimeout, hang, other
 }
 
@@ -366,6 +369,20 @@ public struct CrashDiagnosis: Codable, Equatable, Sendable {
         case .noSceneSupport, .missingLibrary, .missingSymbol, .jailbreakLibrary, .launchTimeout, .duoAppLaunch: return true
         default: return false
         }
+    }
+
+    /// missingUsageDescription: what the key is about, for the wording (`crash.usage.<topic>`):
+    /// "camera", "appleMusic"… nil: no key, or one XSide has no plain words for.
+    public var usageTopic: String? {
+        guard cause == .missingUsageDescription, let subject else { return nil }
+        return CrashClassifier.usageTopic(subject)
+    }
+
+    /// missingUsageDescription: the key is one the iPhone Duo option adds when the app links the
+    /// framework that leads to it (`DuoCompatibility.usageDescriptionsByFramework`).
+    public var xsideAddsUsageDescription: Bool {
+        guard cause == .missingUsageDescription, let subject else { return false }
+        return DuoCompatibility.usageDescriptionsByFramework.values.contains { $0.contains(subject) }
     }
 
     public init(cause: CrashCause, subject: String? = nil, library: String? = nil, inApp: Bool? = nil,
@@ -416,6 +433,13 @@ public enum CrashClassifier {
         if frames.contains(where: { $0.symbol?.contains("_UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption") == true })
             || texts.contains(where: { $0.contains("UIScene lifecycle") }) {
             d.cause = .noSceneSupport
+            return d
+        }
+        // iOS's privacy checks (TCC) killed it: a usage description is missing. The key comes
+        // from the device's text: kept only when it reads as one.
+        if log.terminationNamespace?.uppercased() == "TCC" {
+            d.cause = .missingUsageDescription
+            d.subject = texts.lazy.compactMap(usageDescriptionKey).first
             return d
         }
         if let missing = dyldProblem(log, texts: texts) {
@@ -493,6 +517,36 @@ public enum CrashClassifier {
         d.subject = stack.first(where: { $0.image != nil })?.image
         return d
     }
+
+    /// "…must contain an NSAppleMusicUsageDescription key…" → "NSAppleMusicUsageDescription":
+    /// letters only, a capital first, at most 80 before "UsageDescription".
+    static func usageDescriptionKey(_ text: String) -> String? {
+        for word in text.split(whereSeparator: { !$0.isLetter || !$0.isASCII }) where word.hasSuffix("UsageDescription") {
+            let stem = word.dropLast("UsageDescription".count)
+            guard (2...80).contains(stem.count), stem.first?.isUppercase == true else { continue }
+            return String(word)
+        }
+        return nil
+    }
+
+    /// The plain topic of a usage description key (`crash.usage.<topic>`).
+    static let usageTopics: [String: String] = [
+        "NSAppleMusicUsageDescription": "appleMusic", "NSCameraUsageDescription": "camera",
+        "NSMicrophoneUsageDescription": "microphone", "NSPhotoLibraryUsageDescription": "photos",
+        "NSPhotoLibraryAddUsageDescription": "photos", "NSSpeechRecognitionUsageDescription": "speech",
+        "NSSiriUsageDescription": "siri", "NSHealthShareUsageDescription": "health", "NSHealthUpdateUsageDescription": "health",
+        "NSFaceIDUsageDescription": "faceID", "NSLocationWhenInUseUsageDescription": "location",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "location", "NSLocationAlwaysUsageDescription": "location",
+        "NSLocationUsageDescription": "location", "NSContactsUsageDescription": "contacts",
+        "NSCalendarsUsageDescription": "calendars", "NSCalendarsFullAccessUsageDescription": "calendars",
+        "NSCalendarsWriteOnlyAccessUsageDescription": "calendars", "NSRemindersUsageDescription": "reminders",
+        "NSRemindersFullAccessUsageDescription": "reminders", "NSBluetoothAlwaysUsageDescription": "bluetooth",
+        "NSBluetoothPeripheralUsageDescription": "bluetooth", "NSMotionUsageDescription": "motion",
+        "NSLocalNetworkUsageDescription": "localNetwork", "NSUserTrackingUsageDescription": "tracking",
+        "NSHomeKitUsageDescription": "homeKit",
+    ]
+
+    static func usageTopic(_ key: String) -> String? { usageTopics[key] }
 
     /// Top frames of the crashing stack looked at for a shell command.
     static let shellFrames = 6
