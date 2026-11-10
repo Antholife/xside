@@ -26,10 +26,18 @@ public struct GitHubSource: Equatable, Hashable, Sendable {
 /// (package id and version), checked after download; no hash is published, and the confirmation
 /// says so. Never used for a package that isn't pinned here.
 public enum AuthorReleases {
-    /// Empty for now: no dependency XSide knows has a GitHub repo that publishes releases (AltList's
-    /// repo, opa334/AltList, has none, so it is « Où la trouver » + « Ajouter son .deb »). Add an
-    /// entry here, with a review, when one does; the mechanism and its tests stay.
-    public static let pinned: [String: GitHubSource] = [:]
+    /// Add an entry only with a review, after checking its licence and that its releases carry an
+    /// iphoneos-arm/arm64 `.deb` whose control `Package` is the id. XSide ships none of these
+    /// packages: the person downloads it, from its author.
+    /// - Alderis (ws.hbang.alderis, Apache-2.0, checked 2026-11-10): `.deb`s for both arches from
+    ///   1.2.1 (1.2.4, the newest tag, has no asset, so the latest release with one is offered).
+    ///   Also on Chariz, which is asked first: this is the fallback when Chariz fails or lacks
+    ///   the version (`DependencyDownloader.offer`).
+    /// Not here: AltList (opa334/AltList has no releases), libSandy, libroot (no releases), Orion
+    /// (zip only, on Chariz).
+    public static let pinned: [String: GitHubSource] = [
+        "ws.hbang.alderis": GitHubSource(owner: "hbang", repo: "Alderis"),
+    ]
 
     #if DEBUG
     /// Tests only: a mapping that exists for the duration of one task (`$testPinned.withValue`).

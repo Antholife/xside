@@ -5,8 +5,8 @@ import Testing
 /// « Télécharger » for a dependency only its author publishes, on GitHub: a pinned owner/repo per
 /// package id, the releases API, the right .deb asset, its size as the cap, then the .deb's own
 /// control checked. Everything goes through `FakeFetcher`, never the network.
-/// Runs each test with the test-only mapping AltList -> opa334/AltList: XSide itself pins nothing
-/// (that repo has no releases), but the mechanism is tested with this.
+/// Runs each test with the test-only mapping AltList -> opa334/AltList: XSide itself doesn't pin it
+/// (that repo has no releases), but the mechanism is tested with this (Alderis: AlderisPinTests).
 struct TestAuthorPinning: SuiteTrait, TestScoping {
     func provideScope(for test: Test, testCase: Test.Case?, performing function: @Sendable () async throws -> Void) async throws {
         try await AuthorReleases.$testPinned.withValue(
@@ -75,8 +75,8 @@ struct AuthorReleasesTests {
         #expect(AuthorReleases.source(id: "github:evil/AltList") == nil)
     }
 
-    @Test func xsideItselfPinsNoPackage() {
-        #expect(AuthorReleases.pinned.isEmpty)
+    @Test func xsideItselfPinsOnlyAlderis() {
+        #expect(Array(AuthorReleases.pinned.keys) == ["ws.hbang.alderis"])
         #expect(AuthorReleases.pinned["com.opa334.altlist"] == nil)
     }
 

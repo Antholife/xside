@@ -17,12 +17,13 @@ public struct TrustedRepo: Equatable, Sendable {
 /// (`Release.gpg` is not checked: macOS has no GPG).
 public enum TrustedRepos {
     public static let all: [TrustedRepo] = [
-        // Cephei's official repo (checked 2026-11-09: Release has SHA512 and MD5, no SHA256).
+        // Cephei's and Alderis's official repo (checked 2026-11-09: Release has SHA512 and MD5,
+        // no SHA256). For Alderis it is asked first, its author's GitHub releases being the fallback.
         TrustedRepo(id: "chariz", name: "Chariz", base: URL(string: "https://repo.chariz.com/")!, indexPath: "",
-                    packages: ["ws.hbang.common"]),
+                    packages: ["ws.hbang.common", "ws.hbang.alderis"]),
         // Not opa334.github.io (AltList's author's repo): checked 2026-11-09, its Release lists no
         // hash at all, so nothing it serves can be checked. (`AuthorReleases` is the other source,
-        // for a dependency pinned to its author's GitHub releases; none is pinned today.)
+        // for a dependency pinned to its author's GitHub releases.)
     ]
 
     public static func offering(_ packageID: String) -> [TrustedRepo] {

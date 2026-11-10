@@ -1,0 +1,52 @@
+[
+  {
+    "tag_name": "1.2.4",
+    "name": "1.2.4",
+    "draft": false,
+    "prerelease": false,
+    "html_url": "https://github.com/hbang/Alderis/releases/tag/1.2.4",
+    "assets": []
+  },
+  {
+    "tag_name": "1.2.3",
+    "name": "1.2.3",
+    "draft": false,
+    "prerelease": false,
+    "html_url": "https://github.com/hbang/Alderis/releases/tag/1.2.3",
+    "assets": [
+      {
+        "name": "ws.hbang.alderis_1.2.3_iphoneos-arm.deb",
+        "content_type": "application/x-debian-package",
+        "size": 372700,
+        "browser_download_url": "https://github.com/hbang/Alderis/releases/download/1.2.3/ws.hbang.alderis_1.2.3_iphoneos-arm.deb"
+      },
+      {
+        "name": "ws.hbang.alderis_1.2.3_iphoneos-arm64.deb",
+        "content_type": "application/x-debian-package",
+        "size": 290546,
+        "browser_download_url": "https://github.com/hbang/Alderis/releases/download/1.2.3/ws.hbang.alderis_1.2.3_iphoneos-arm64.deb"
+      }
+    ]
+  },
+  {
+    "tag_name": "1.2.2",
+    "name": "1.2.2",
+    "draft": false,
+    "prerelease": false,
+    "html_url": "https://github.com/hbang/Alderis/releases/tag/1.2.2",
+    "assets": [
+      {
+        "name": "ws.hbang.alderis_1.2.2_iphoneos-arm.deb",
+        "content_type": "application/x-debian-package",
+        "size": 372520,
+        "browser_download_url": "https://github.com/hbang/Alderis/releases/download/1.2.2/ws.hbang.alderis_1.2.2_iphoneos-arm.deb"
+      },
+      {
+        "name": "ws.hbang.alderis_1.2.2_iphoneos-arm64.deb",
+        "content_type": "application/x-debian-package",
+        "size": 290676,
+        "browser_download_url": "https://github.com/hbang/Alderis/releases/download/1.2.2/ws.hbang.alderis_1.2.2_iphoneos-arm64.deb"
+      }
+    ]
+  }
+]
