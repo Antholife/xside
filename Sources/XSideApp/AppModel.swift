@@ -2946,9 +2946,10 @@ final class AppModel {
             }
             let executables = Set(entries.compactMap(\.record.executable))
             guard !executables.isEmpty else { continue }
-            // Not saved for this alone (every 2 minutes): an older date after a restart only reads
-            // back a little further, and read files are skipped anyway.
-            let since = crashWatch.scanStarted(deviceID: id, now: now)
+            // Moved only once the look read everything new (mega review K1), and not saved for
+            // this alone (every 2 minutes): an older date after a restart only reads back a little
+            // further, and read files are skipped anyway.
+            let since = crashWatch.scanSince(deviceID: id, now: now)
             let seen = crashWatch.seenFiles(deviceID: id)
             crashScans.insert(id)
             crashSchedule.started(deviceID: id, now: now)
@@ -2958,11 +2959,13 @@ final class AppModel {
                 let fetcher = CrashLogFetcher(runner: runner)
                 let found: [CrashLogFetcher.Found]
                 do {
-                    found = try await withKnownXcode {
-                        try await fetcher.newCrashes(deviceID: id) {
-                            CrashLogListing.newCrashFiles($0, executables: executables, since: since, seen: seen)
+                    let look = try await withKnownXcode {
+                        try await fetcher.newCrashLook(deviceID: id) {
+                            CrashLogListing.pickNewCrashFiles($0, executables: executables, since: since, seen: seen)
                         }
                     }
+                    found = look.found
+                    crashWatch.scanSucceeded(deviceID: id, startedAt: now, complete: look.complete)
                 } catch {
                     crashSchedule.finished(deviceID: id, succeeded: false)
                     Self.logger.info("crash look on \(id) skipped (next in \(Int(crashSchedule.interval(deviceID: id, now: Date()))) s): \(String(describing: error))")

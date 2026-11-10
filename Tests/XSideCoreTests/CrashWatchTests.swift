@@ -134,12 +134,31 @@ import Foundation
 
     @Test func eachLookStartsWhereTheLastOneDid() {
         var w = CrashWatch()
-        let first = w.scanStarted(deviceID: device, now: t0)
+        let first = w.scanSince(deviceID: device, now: t0)
         #expect(first == t0.addingTimeInterval(-CrashWatch.firstLookback))
-        let r17 = w.scanStarted(deviceID: device, now: t0.addingTimeInterval(120))
+        w.scanSucceeded(deviceID: device, startedAt: t0, complete: true)
+        let r17 = w.scanSince(deviceID: device, now: t0.addingTimeInterval(120))
         #expect(r17 == t0)
-        let got1 = w.scanStarted(deviceID: "OTHER", now: t0)
+        let got1 = w.scanSince(deviceID: "OTHER", now: t0)
         #expect(got1 == t0.addingTimeInterval(-CrashWatch.firstLookback))
+    }
+
+    /// Mega review K1: a look that failed (the phone locked) or read only part of what was new
+    /// (the per-look cap) doesn't move the next look's start: nothing older is skipped.
+    @Test func aFailedOrCutLookKeepsWhereTheNextStarts() {
+        var w = CrashWatch()
+        w.scanSucceeded(deviceID: device, startedAt: t0, complete: true)
+        // A failed look between two good ones: nothing recorded, the next starts at t0 still.
+        #expect(w.scanSince(deviceID: device, now: t0.addingTimeInterval(120)) == t0)
+        #expect(w.scanSince(deviceID: device, now: t0.addingTimeInterval(240)) == t0)
+        // A look cut by the cap: the next one starts there again (read files are skipped anyway).
+        w.scanSucceeded(deviceID: device, startedAt: t0.addingTimeInterval(240), complete: false)
+        #expect(w.scanSince(deviceID: device, now: t0.addingTimeInterval(360)) == t0)
+        w.scanSucceeded(deviceID: device, startedAt: t0.addingTimeInterval(360), complete: true)
+        #expect(w.scanSince(deviceID: device, now: t0.addingTimeInterval(480)) == t0.addingTimeInterval(360))
+        // Never backwards (an older look finishing late).
+        w.scanSucceeded(deviceID: device, startedAt: t0.addingTimeInterval(100), complete: true)
+        #expect(w.scanSince(deviceID: device, now: t0.addingTimeInterval(480)) == t0.addingTimeInterval(360))
     }
 
     // MARK: Crashes while in use (the module's run marker, a dropped watch)
@@ -233,7 +252,7 @@ import Foundation
     @Test func forgettingAndPruning() {
         var w = CrashWatch()
         raise(&w, "Demo-1.ips", crashAt: t0.addingTimeInterval(60))
-        _ = w.scanStarted(deviceID: device, now: t0)
+        w.scanSucceeded(deviceID: device, startedAt: t0, complete: true)
         w.prune(keeping: [CrashWatch.key(recordID: record, deviceID: device)], now: t0.addingTimeInterval(CrashWatch.seenKeep + 100))
         #expect(w.flag(recordID: record, deviceID: device) != nil)
         #expect(!w.isSeen(fileName: "Demo-1.ips", deviceID: device))
@@ -242,7 +261,7 @@ import Foundation
         raise(&w, "Demo-2.ips", crashAt: t0.addingTimeInterval(60))
         w.forgetDevice(device)
         #expect(w.flags.isEmpty && !w.isSeen(fileName: "Demo-2.ips", deviceID: device))
-        let got9 = w.scanStarted(deviceID: device, now: t0)
+        let got9 = w.scanSince(deviceID: device, now: t0)
         #expect(got9 == t0.addingTimeInterval(-CrashWatch.firstLookback))
         // A reported run is forgotten with its installation: looked for again if reported again.
         let run = PreviousRun(ended: .crashed, since: t0)
@@ -259,7 +278,7 @@ import Foundation
         #expect(store.load() == CrashWatch()) // none yet
         var w = CrashWatch()
         raise(&w, "Demo-1.ips", crashAt: t0.addingTimeInterval(60))
-        _ = w.scanStarted(deviceID: device, now: t0)
+        w.scanSucceeded(deviceID: device, startedAt: t0, complete: true)
         try store.save(w)
         #expect(store.load() == w)
         try Data("not json".utf8).write(to: store.url)
@@ -307,6 +326,29 @@ import Foundation
         let few = CrashLogListing.newCrashFiles(entries, executables: ["Demo", "Other App"], since: since, seen: [], limit: 2)
         #expect(few.count == 2)
         #expect(CrashLogListing.newCrashFiles(entries, executables: [], since: since, seen: []).isEmpty)
+    }
+
+    /// Mega review K1: one app's crash loop doesn't hide another app's crash (each app's newest
+    /// first, then the newest), and the pick says when the cap left some unread.
+    @Test func aCrashLoopDoesntHideAnotherAppsCrash() {
+        var entries = [entry("Other App-2026-11-09-083000.ips", "2026-11-09T08:30:00Z")]
+        for minute in 10..<20 { entries.append(entry("Demo-2026-11-09-09\(minute)00.ips", "2026-11-09T09:\(minute):00Z")) }
+        let pick = CrashLogListing.pickNewCrashFiles(entries, executables: ["Demo", "Other App"], since: since, seen: [])
+        #expect(pick.files.count == CrashWatch.maxFilesPerScan)
+        #expect(pick.files.contains { $0.relativePath.hasPrefix("Other App-") })
+        #expect(pick.files.first?.relativePath == "Demo-2026-11-09-091900.ips") // newest first
+        #expect(!pick.complete)
+        let rest = CrashLogListing.pickNewCrashFiles(Array(entries.prefix(2)), executables: ["Demo", "Other App"], since: since, seen: [])
+        #expect(rest.complete && rest.files.count == 2)
+    }
+
+    /// Mega review K7: an executable whose name keeps no ASCII letter (all Chinese, emoji) is no
+    /// name at all: it never matches other processes' files.
+    @Test func aNameWithNoASCIIMatchesNothing() {
+        let entries = [entry("抖音-2026-11-09-090000.ips", "2026-11-09T09:00:00Z"),
+                       entry("Stranger-2026-11-09-091000.ips", "2026-11-09T09:10:00Z")]
+        #expect(CrashLogListing.newCrashFiles(entries, executables: ["微信"], since: since, seen: []).isEmpty)
+        #expect(CrashLogListing.candidates(entries, executable: "微信", since: since).crashes.isEmpty)
     }
 }
 

@@ -115,12 +115,20 @@ public struct CrashWatch: Codable, Equatable, Sendable {
 
     // MARK: The quiet look
 
-    /// Starts a look at the device's crash logs: returns the date files must be newer than (the
-    /// last look, or `firstLookback` ago for the first one).
-    public mutating func scanStarted(deviceID: String, now: Date) -> Date {
-        let since = lastScan[deviceID].map { min($0, now) } ?? now.addingTimeInterval(-Self.firstLookback)
-        lastScan[deviceID] = now
-        return since
+    /// The date a look at the device's crash logs starting now reads files from: the start of the
+    /// last complete look, or `firstLookback` ago for the first one. Read only (mega review K1): a
+    /// look that fails moves nothing, so the next one reads what it missed.
+    public func scanSince(deviceID: String, now: Date) -> Date {
+        lastScan[deviceID].map { min($0, now) } ?? now.addingTimeInterval(-Self.firstLookback)
+    }
+
+    /// A look started at `startedAt` listed the device's logs. `complete`: it read everything new
+    /// it found (the per-look cap left none, and every file it picked was read); only then does the
+    /// next look start from `startedAt`. Otherwise it starts where this one did, and the files read
+    /// are skipped (`seen`), so the older ones still come.
+    public mutating func scanSucceeded(deviceID: String, startedAt: Date, complete: Bool) {
+        guard complete else { return }
+        lastScan[deviceID] = max(lastScan[deviceID] ?? startedAt, startedAt)
     }
 
     /// The crash file was read (by any look): never read nor announced again.
@@ -281,15 +289,33 @@ extension CrashLogListing {
     /// apps on the device), dated since `since`, not read before, newest first, `limit` at most.
     public static func newCrashFiles(_ entries: [CrashLogEntry], executables: Set<String>, since: Date,
                                      seen: Set<String>, limit: Int = CrashWatch.maxFilesPerScan) -> [CrashLogEntry] {
-        let names = Set(executables.map(normalized))
-        let picked = entries.filter { entry in
+        pickNewCrashFiles(entries, executables: executables, since: since, seen: seen, limit: limit).files
+    }
+
+    /// `newCrashFiles`, and whether they are all of them (`complete`: the cap left none unread).
+    /// Each app's newest file comes first, then the newest of the rest (mega review K1: one app's
+    /// crash loop doesn't hide another's crash); the picks are newest first.
+    public static func pickNewCrashFiles(_ entries: [CrashLogEntry], executables: Set<String>, since: Date,
+                                         seen: Set<String>, limit: Int = CrashWatch.maxFilesPerScan)
+        -> (files: [CrashLogEntry], complete: Bool) {
+        // A name that keeps nothing once normalized names no process (mega review K7).
+        let names = Set(executables.map(normalized)).subtracting([""])
+        let candidates = entries.filter { entry in
             guard !entry.relativePath.hasPrefix("ProxiedDevice-"),
                   let size = entry.size, size >= 0, size <= CrashLogParser.maxBytes,
                   let modified = entry.modified, modified >= since.addingTimeInterval(-slack),
                   let part = entry.processPart, part != "JetsamEvent", names.contains(normalized(part)) else { return false }
             return !seen.contains((entry.relativePath as NSString).lastPathComponent)
+        }.sorted { ($0.modified ?? .distantPast) > ($1.modified ?? .distantPast) }
+        let cap = max(0, limit)
+        var picked: [CrashLogEntry] = []
+        var apps = Set<String>()
+        for entry in candidates where picked.count < cap {
+            if apps.insert(normalized(entry.processPart ?? "")).inserted { picked.append(entry) }
         }
-        return Array(picked.sorted { ($0.modified ?? .distantPast) > ($1.modified ?? .distantPast) }.prefix(limit))
+        for entry in candidates where picked.count < cap && !picked.contains(entry) { picked.append(entry) }
+        let files = picked.sorted { ($0.modified ?? .distantPast) > ($1.modified ?? .distantPast) }
+        return (files, files.count == candidates.count)
     }
 }
 

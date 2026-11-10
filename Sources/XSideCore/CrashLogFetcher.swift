@@ -67,7 +67,8 @@ public enum CrashLogListing {
         }
         let crashes = recent.filter { entry in
             guard let part = entry.processPart, part != "JetsamEvent" else { return false }
-            if let executable { return normalized(part) == normalized(executable) }
+            // A name that keeps nothing once normalized names no process (mega review K7).
+            if let executable { return !normalized(executable).isEmpty && normalized(part) == normalized(executable) }
             return !part.contains(".") && !systemPrefixes.contains { part.hasPrefix($0) }
         }
         let jetsam = executable == nil ? [] : recent.filter { $0.processPart == "JetsamEvent" }
@@ -134,17 +135,25 @@ public struct CrashLogFetcher: Sendable {
     /// read is returned, raw (not sanitized yet); the temporary folder is gone before returning.
     /// Throws when the list can't be read.
     public func newCrashes(deviceID: String, pick: @Sendable ([CrashLogEntry]) -> [CrashLogEntry]) async throws -> [Found] {
+        try await newCrashLook(deviceID: deviceID) { (pick($0), true) }.found
+    }
+
+    /// `newCrashes`, with whether the look picked everything new (mega review K1: `pick` says if
+    /// its picks are all the new files). A pick that couldn't be copied doesn't count: retried at
+    /// every look, a file the device won't give would hold the next looks' start back forever.
+    public func newCrashLook(deviceID: String, pick: @Sendable ([CrashLogEntry]) -> (files: [CrashLogEntry], complete: Bool))
+        async throws -> (found: [Found], complete: Bool) {
         let fm = FileManager.default
         let folder = scratchRoot.appendingPathComponent("xside-crash-\(UUID().uuidString)", isDirectory: true)
         try fm.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: folder) }
         let picked = pick(try await list(deviceID: deviceID, in: folder))
         var found: [Found] = []
-        for (n, entry) in picked.enumerated() {
+        for (n, entry) in picked.files.enumerated() {
             try Task.checkCancellation()
             if let log = await read(entry, deviceID: deviceID, into: folder.appendingPathComponent("\(n).ips")) { found.append(log) }
         }
-        return found
+        return (found, picked.complete)
     }
 
     /// The device's crash-log files, as `devicectl device info files` lists them (its JSON is
