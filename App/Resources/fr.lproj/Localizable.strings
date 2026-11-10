@@ -573,7 +573,7 @@
 "whatsNew.110.status.title" = "Où en est chaque changement";
 "whatsNew.110.status.text" = "Appareil par appareil, XSide dit simplement où on en est : app ouverte (les changements arrivent en direct), changements à la prochaine ouverture, ce qui est en attente (nommé), puis « a bien reçu tes réglages ». Il ne prétend jamais qu'un réglage est actif avant.";
 "whatsNew.110.panes.title" = "Réglages réorganisés";
-"whatsNew.110.panes.text" = "Onze pages : Général, Rafraîchissement, Installation, Module XSide dans les apps (les valeurs par défaut des nouvelles installations), Mes apps, Notifications, Xcode et signature, Mises à jour, Signalement et journaux, Créer & contribuer, À propos.";
+"whatsNew.110.panes.text" = "Douze pages : Général, Rafraîchissement, Installation, Module XSide dans les apps (les valeurs par défaut des nouvelles installations), Mes apps, Tweaks, Notifications, Xcode et signature, Mises à jour, Signalement et journaux, Créer & contribuer, À propos.";
 "whatsNew.110.switch.title" = "Un nouvel interrupteur";
 "whatsNew.110.switch.text" = "Les interrupteurs d'XSide prennent le dégradé de la marque, et répondent au clavier (anneau de focus, Espace).";
 "whatsNew.110.inject.title" = "« Injection du module XSide »";
@@ -720,7 +720,7 @@
 "settings.pane.install" = "Installation";
 "settings.pane.inApp" = "Module XSide dans les apps";
 "settings.reviewOptions" = "Revoir les options à chaque installation";
-"settings.reviewOptions.note" = "Activé : une app déjà installée passe aussi par les trois étapes. Désactivé : pour une app déjà installée, la première étape liste toutes les options appliquées, avec « Modifier », puis Installer. Une nouvelle app passe toujours par les trois étapes.";
+"settings.reviewOptions.note" = "Activé : une app déjà installée passe aussi par les quatre étapes. Désactivé : pour une app déjà installée, la première étape liste toutes les options appliquées, avec « Modifier », puis Installer. Une nouvelle app passe toujours par les quatre étapes.";
 "settings.firewall" = "Connexions entrantes";
 "settings.firewall.note" = "Si macOS demande d'autoriser XSide à accepter les connexions entrantes, accepte : c'est comme ça que les apps joignent XSide pour « Rafraîchir » et leurs réglages.";
 "settings.inApp.defaults" = "Pour les nouvelles installations";
@@ -1170,7 +1170,7 @@
 "whatsNew.120.request.title" = "Demander un correctif";
 "whatsNew.120.request.text" = "Le bouton Demander un correctif de la fenêtre du plantage ouvre une demande GitHub déjà remplie avec le diagnostic (cause, bibliothèque, versions d'iOS et de XSide, correctifs et tweaks activés), sans rien de personnel. Réglages > Créer & contribuer a une carte pour une demande de ton cru.";
 "whatsNew.120.pending.title" = "Les changements qui attendent, annoncés";
-"whatsNew.120.pending.text" = "Dans Réglages > Mes apps, une option qui ne s'applique qu'à la prochaine signature de l'app (module XSide, compatibilité iPhone Duo, iCloud déconnecté) affiche Changement en attente dessous, avec un bouton Rafraîchir maintenant, jusqu'à ce qu'un rafraîchissement l'applique.";
+"whatsNew.120.pending.text" = "Dans Réglages > Mes apps, le détail d'une app tient en trois onglets (Module XSide, Correctifs, Tweaks), chacun avec un badge pour ce qui attend ou reste à régler. Sous l'en-tête, une seule barre : N changements en attente, lesquels, et Rafraîchir maintenant. Chaque option ou tweak en attente porte un petit badge « en attente ». Dès qu'un rafraîchissement de l'app démarre (d'ici, du panneau, d'une notification ou du calendrier), la barre le suit : son étape, puis Changements appliqués, ou pourquoi il a échoué, avec Réessayer.";
 "whatsNew.120.rowMenu.title" = "Rafraîchir maintenant a changé de place";
 "whatsNew.120.rowMenu.text" = "La ligne d'une app dans le panneau n'affiche plus de bouton de rafraîchissement au survol : Rafraîchir maintenant est dans son menu … et son menu clic droit.";
 

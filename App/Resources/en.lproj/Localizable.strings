@@ -556,8 +556,8 @@
 "whatsNew.110.pause.text" = "Turn off \"Automatic refresh\" in an app's iOS Settings to stop refreshing it. The panel says it was paused from the iPhone, the iPad or the Mac.";
 "whatsNew.110.network.title" = "Patient with the Mac";
 "whatsNew.110.network.text" = "The first time, iOS asks to allow the local network, and macOS may ask to allow incoming connections for XSide (explained in the app). The iPhone waits and retries up to 20 seconds instead of giving up.";
-"whatsNew.110.onLaunch.title" = "Refresh at next opening";
-"whatsNew.110.onLaunch.text" = "In an app's iOS Settings, \"Refresh at next launch\" asks XSide for a refresh the next time you open the app, without opening it first.";
+"whatsNew.110.onLaunch.title" = "Refresh at next launch";
+"whatsNew.110.onLaunch.text" = "In an app's iOS Settings, \"Refresh at next launch\" asks XSide for a refresh the next time you open the app.";
 "whatsNew.110.steps.title" = "An install window in steps";
 "whatsNew.110.steps.text" = "Devices, Install, Tweaks, XSide module in the app: Next and Back, clickable steps, and Install only at the last one.";
 "whatsNew.110.review.title" = "Review the options each time, or not";
@@ -573,7 +573,7 @@
 "whatsNew.110.status.title" = "Where each change stands";
 "whatsNew.110.status.text" = "Per device, XSide says plainly where things stand: app open (changes arrive live), changes at the next opening, what is pending (by name), then \"received your settings\". It never claims a setting is active before that.";
 "whatsNew.110.panes.title" = "Settings, reorganized";
-"whatsNew.110.panes.text" = "Eleven pages: General, Refreshing, Installing, XSide module in the apps (defaults for new installs), My apps, Notifications, Xcode and signing, Updates, Reports & Logs, Build & contribute, About.";
+"whatsNew.110.panes.text" = "Twelve pages: General, Refreshing, Installing, XSide module in the apps (defaults for new installs), My apps, Tweaks, Notifications, Xcode and signing, Updates, Reports & Logs, Build & contribute, About.";
 "whatsNew.110.switch.title" = "A new switch";
 "whatsNew.110.switch.text" = "XSide's switches now use the brand gradient, and respond to the keyboard (focus ring, Space).";
 "whatsNew.110.inject.title" = "\"Injecting the XSide module\"";
@@ -720,7 +720,7 @@
 "settings.pane.install" = "Installing";
 "settings.pane.inApp" = "XSide module in the apps";
 "settings.reviewOptions" = "Review the options at each install";
-"settings.reviewOptions.note" = "On: an app already installed goes through the three steps too. Off: for an app already installed, the first step lists every option that will apply, with “Edit”, then Install. A new app always goes through the three steps.";
+"settings.reviewOptions.note" = "On: an app already installed goes through the four steps too. Off: for an app already installed, the first step lists every option that will apply, with “Edit”, then Install. A new app always goes through the four steps.";
 "settings.firewall" = "Incoming connections";
 "settings.firewall.note" = "If macOS asks whether XSide may accept incoming connections, allow it: that's how the apps reach XSide for “Refresh” and their settings.";
 "settings.inApp.defaults" = "For new installs";
@@ -1170,7 +1170,7 @@
 "whatsNew.120.request.title" = "Request a fix";
 "whatsNew.120.request.text" = "The crash window's Request a fix button opens a GitHub request already filled in with the diagnosis (cause, library, iOS and XSide versions, the fixes and tweaks that were on), with nothing personal in it. Settings > Build & contribute has a card for a request of your own.";
 "whatsNew.120.pending.title" = "Changes that wait, said";
-"whatsNew.120.pending.text" = "In Settings > My apps, an option that only applies when the app is signed again (XSide module, iPhone Duo compatibility, signed-out iCloud) says Change pending under it, with a Refresh now button, until a refresh applies it.";
+"whatsNew.120.pending.text" = "In Settings > My apps, an app's detail comes in three tabs (XSide module, Fixes, Tweaks), each with a badge for what is pending or to settle. Under the header, one bar: N pending changes, which ones, and Refresh now. Each pending option or tweak has a small \"pending\" badge. Once a refresh of the app starts (from here, the panel, a notification or the schedule), the bar follows it: its step, then Changes applied, or why it failed, with Try again.";
 "whatsNew.120.rowMenu.title" = "Refresh now moved";
 "whatsNew.120.rowMenu.text" = "An app's row in the panel no longer shows a refresh button when you hover it: Refresh now is in its … menu, and its right-click menu.";
 
