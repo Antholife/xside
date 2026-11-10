@@ -194,6 +194,13 @@ public struct CrashWatch: Codable, Equatable, Sendable {
     /// A crash a little before the run's start is still the run's (clocks, file dates).
     public static let runSlack: TimeInterval = 60
 
+    /// How the fast look (`AppModel.lookForCrashNow`) raises what it finds for a run that began at
+    /// `since`: during use, a crash of that run; otherwise the look that checks a crash fix, whose
+    /// crash is the relaunch's, at launch (mega review K6, re-review N2).
+    public static func fastLookRaise(since: Date, duringUse: Bool) -> (inUseSince: Date?, atLaunch: Bool) {
+        duringUse ? (since, false) : (nil, true)
+    }
+
     /// What a check-in's `previousRun` asks of the Mac.
     public enum RunReport: Equatable, Sendable {
         /// Nothing to do (already looked at for that run, or nothing to clear).

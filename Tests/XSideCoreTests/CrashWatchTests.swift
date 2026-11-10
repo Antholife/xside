@@ -192,6 +192,20 @@ import Foundation
         #expect(CrashFlag(fileName: "x", diagnosis: diagnosis(at: nil), raisedAt: t0).moment == .stopped)
     }
 
+    /// Re-review N2: the fast look in use raises a crash of that run; the one that checks a crash
+    /// fix raises the relaunch's crash as one « au lancement », not just « stopped ».
+    @Test func theLookAfterACrashFixSaysAtLaunch() {
+        let since = t0.addingTimeInterval(100)
+        let inUse = CrashWatch.fastLookRaise(since: since, duringUse: true)
+        #expect(inUse.inUseSince == since && !inUse.atLaunch)
+        let afterFix = CrashWatch.fastLookRaise(since: since, duringUse: false)
+        #expect(afterFix.inUseSince == nil && afterFix.atLaunch)
+        var w = CrashWatch()
+        w.raise(recordID: record, deviceID: device, fileName: "Demo-1.ips", diagnosis: diagnosis(at: t0.addingTimeInterval(120)),
+                installedAt: t0, now: t0.addingTimeInterval(150), inUseSince: afterFix.inUseSince, atLaunch: afterFix.atLaunch)
+        #expect(w.flag(recordID: record, deviceID: device)?.moment == .atLaunch)
+    }
+
     @Test func eachLookStartsWhereTheLastOneDid() {
         var w = CrashWatch()
         let first = w.scanSince(deviceID: device, now: t0)

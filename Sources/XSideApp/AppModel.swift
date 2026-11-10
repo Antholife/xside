@@ -2927,7 +2927,8 @@ final class AppModel {
                     // The crash a fix answered, or one dismissed: not this run's, look again.
                     if crashWatch.isSettled(recordID: key.recordID, deviceID: key.deviceID, fileName: finding.fileName) { continue }
                     Self.logger.notice("crash found at once (\(reason)) on \(key.deviceID): \(finding.diagnosis.summary)")
-                    crashFound(finding, key: key, inUseSince: duringUse ? inUseSince : nil)
+                    let run = CrashWatch.fastLookRaise(since: inUseSince, duringUse: duringUse)
+                    crashFound(finding, key: key, inUseSince: run.inUseSince, atLaunch: run.atLaunch)
                     break
                 }
                 if case .failed = result { break }
