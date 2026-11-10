@@ -100,6 +100,9 @@ public struct CrashWatch: Codable, Equatable, Sendable {
     public static let seenKeep: TimeInterval = 14 * 86_400
     /// A crash a little before the install's date is still the install's (clocks, file dates).
     public static let installSlack: TimeInterval = 120
+    /// Looks that picked a file and couldn't read it (the copy failed, or it isn't a crash log)
+    /// before it counts as read (re-review N3: unread picks filled every look's cap).
+    public static let maxReadFailures = 3
 
     public private(set) var flags: [String: CrashFlag] = [:]
     /// Crash files already read, by device (file name → when).
@@ -120,6 +123,14 @@ public struct CrashWatch: Codable, Equatable, Sendable {
     /// (cleared by a launch, then read again by the look that launch asks for) comes back without
     /// a second notification (mega review K2). Optional: older files have none.
     private var announced: [String: [String: Date]]?
+    /// Picked files a look couldn't read, by device (file name → how many looks, and the last).
+    /// Optional: older files have none.
+    private var readFailures: [String: [String: ReadFailure]]?
+
+    private struct ReadFailure: Codable, Equatable, Sendable {
+        var count: Int
+        var last: Date
+    }
 
     public init() {}
 
@@ -152,6 +163,24 @@ public struct CrashWatch: Codable, Equatable, Sendable {
 
     public mutating func markSeen(fileName: String, deviceID: String, at date: Date) {
         seen[deviceID, default: [:]][fileName] = date
+        readFailures?[deviceID]?[fileName] = nil
+        if readFailures?[deviceID]?.isEmpty == true { readFailures?[deviceID] = nil }
+    }
+
+    /// A look picked the file and couldn't read it. At the `maxReadFailures`th look it counts as
+    /// read (never picked again, so the looks after it complete): true then.
+    @discardableResult
+    public mutating func readFailed(fileName: String, deviceID: String, at date: Date) -> Bool {
+        var failures = readFailures ?? [:]
+        let count = (failures[deviceID]?[fileName]?.count ?? 0) + 1
+        guard count < Self.maxReadFailures else {
+            readFailures = failures
+            markSeen(fileName: fileName, deviceID: deviceID, at: date)
+            return true
+        }
+        failures[deviceID, default: [:]][fileName] = ReadFailure(count: count, last: date)
+        readFailures = failures
+        return false
     }
 
     /// The crash files already read on the device.
@@ -303,6 +332,7 @@ public struct CrashWatch: Codable, Equatable, Sendable {
         answered = answered?.filter { !$0.key.hasSuffix(suffix) }
         announced = announced?.filter { !$0.key.hasSuffix(suffix) }
         seen[deviceID] = nil
+        readFailures?[deviceID] = nil
         lastScan[deviceID] = nil
     }
 
@@ -316,6 +346,9 @@ public struct CrashWatch: Codable, Equatable, Sendable {
         }
         if let a = announced {
             announced = a.mapValues { $0.filter { now.timeIntervalSince($0.value) < Self.seenKeep } }.filter { !$0.value.isEmpty }
+        }
+        if let f = readFailures {
+            readFailures = f.mapValues { $0.filter { now.timeIntervalSince($0.value.last) < Self.seenKeep } }.filter { !$0.value.isEmpty }
         }
         guard let keys else { return }
         flags = flags.filter { keys.contains($0.key) }

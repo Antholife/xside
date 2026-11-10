@@ -430,6 +430,48 @@ import Foundation
         #expect(rest.complete && rest.files.count == 2)
     }
 
+    /// Re-review N3: picks the device won't give (the copy fails, or the file isn't a crash log)
+    /// were never marked read: three of them filled every look's cap, so the look never completed
+    /// and the next look's start never moved. After `maxReadFailures` failed looks a file counts
+    /// as read, and the others come.
+    @Test func anUnreadablePickCountsAsReadAfterAFewLooks() {
+        var entries: [CrashLogEntry] = []
+        for minute in 10..<14 { entries.append(entry("Demo-2026-11-09-09\(minute)00.ips", "2026-11-09T09:\(minute):00Z")) }
+        let bad = ["Demo-2026-11-09-091300.ips", "Demo-2026-11-09-091200.ips", "Demo-2026-11-09-091100.ips"]
+        var w = CrashWatch()
+        let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+        for look in 1...CrashWatch.maxReadFailures {
+            let pick = CrashLogListing.pickNewCrashFiles(entries, executables: ["Demo"], since: since, seen: w.seenFiles(deviceID: "DEV"))
+            #expect(pick.files.map { $0.relativePath } == bad && !pick.complete, "look \(look)")
+            for name in bad {
+                let gaveUp = w.readFailed(fileName: name, deviceID: "DEV", at: t0.addingTimeInterval(Double(look)))
+                #expect(gaveUp == (look == CrashWatch.maxReadFailures))
+            }
+        }
+        for name in bad { #expect(w.isSeen(fileName: name, deviceID: "DEV")) }
+        let next = CrashLogListing.pickNewCrashFiles(entries, executables: ["Demo"], since: since, seen: w.seenFiles(deviceID: "DEV"))
+        #expect(next.files.map { $0.relativePath } == ["Demo-2026-11-09-091000.ips"] && next.complete)
+        // A file read in the end starts over: a later failure (another device's file of the same
+        // name never happens; a file read then dropped by the prune) counts from one again.
+        var v = CrashWatch()
+        let once = v.readFailed(fileName: "X.ips", deviceID: "DEV", at: t0)
+        #expect(!once)
+        v.markSeen(fileName: "X.ips", deviceID: "DEV", at: t0)
+        v.prune(keeping: nil, now: t0.addingTimeInterval(CrashWatch.seenKeep + 1))
+        #expect(!v.isSeen(fileName: "X.ips", deviceID: "DEV"))
+        let again1 = v.readFailed(fileName: "X.ips", deviceID: "DEV", at: t0.addingTimeInterval(CrashWatch.seenKeep + 2))
+        let again2 = v.readFailed(fileName: "X.ips", deviceID: "DEV", at: t0.addingTimeInterval(CrashWatch.seenKeep + 3))
+        #expect(!again1 && !again2)
+        #expect(!v.isSeen(fileName: "X.ips", deviceID: "DEV"))
+        // Failures long past are forgotten by the prune too.
+        var u = CrashWatch()
+        u.readFailed(fileName: "Y.ips", deviceID: "DEV", at: t0)
+        u.readFailed(fileName: "Y.ips", deviceID: "DEV", at: t0)
+        u.prune(keeping: nil, now: t0.addingTimeInterval(CrashWatch.seenKeep + 1))
+        let afterPrune = u.readFailed(fileName: "Y.ips", deviceID: "DEV", at: t0.addingTimeInterval(CrashWatch.seenKeep + 2))
+        #expect(!afterPrune)
+    }
+
     /// Mega review K7: an executable whose name keeps no ASCII letter (all Chinese, emoji) is no
     /// name at all: it never matches other processes' files.
     @Test func aNameWithNoASCIIMatchesNothing() {

@@ -976,6 +976,24 @@ private final class CrashDeviceRunner: CommandRunning, @unchecked Sendable {
         #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
     }
 
+    /// Re-review N3: the quiet look says which of its picks it couldn't read (copy failed, or not
+    /// a crash log), so they can be given up after a few looks.
+    @Test func theQuietLookNamesThePicksItCouldntRead() async throws {
+        let runner = CrashDeviceRunner(listing: listing(["Demo-2026-11-09-095800.ips", "Demo-2026-11-09-095700.ips",
+                                                         "Demo-2026-11-09-095600.ips"]), files: [
+            "Demo-2026-11-09-095800.ips": IPS.crash(timestamp: "2026-11-09 09:58:00.00 +0000"),
+            "Demo-2026-11-09-095600.ips": Data("not a crash log".utf8),
+        ]) // 095700: the copy fails
+        let root = try scratch()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let look = try await CrashLogFetcher(runner: runner, scratchRoot: root).newCrashLook(deviceID: "DEV") { entries in
+            CrashLogListing.pickNewCrashFiles(entries, executables: ["Demo"], since: since, seen: [])
+        }
+        #expect(look.found.map(\.fileName) == ["Demo-2026-11-09-095800.ips"])
+        #expect(Set(look.unread) == ["Demo-2026-11-09-095700.ips", "Demo-2026-11-09-095600.ips"])
+        #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
+    }
+
     @Test func nothingFound() async throws {
         let runner = CrashDeviceRunner(listing: listing(["Demo-2026-11-09-095800.ips"]), files: [:]) // the copy fails
         let root = try scratch()

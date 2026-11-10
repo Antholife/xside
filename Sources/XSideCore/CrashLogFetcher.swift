@@ -139,21 +139,24 @@ public struct CrashLogFetcher: Sendable {
     }
 
     /// `newCrashes`, with whether the look picked everything new (mega review K1: `pick` says if
-    /// its picks are all the new files). A pick that couldn't be copied doesn't count: retried at
-    /// every look, a file the device won't give would hold the next looks' start back forever.
+    /// its picks are all the new files), and the names of the picks it couldn't read (`unread`:
+    /// the copy failed, or not a crash log), which `CrashWatch.readFailed` gives up on after a few
+    /// looks (re-review N3): retried forever, they would fill every look's cap.
     public func newCrashLook(deviceID: String, pick: @Sendable ([CrashLogEntry]) -> (files: [CrashLogEntry], complete: Bool))
-        async throws -> (found: [Found], complete: Bool) {
+        async throws -> (found: [Found], unread: [String], complete: Bool) {
         let fm = FileManager.default
         let folder = scratchRoot.appendingPathComponent("xside-crash-\(UUID().uuidString)", isDirectory: true)
         try fm.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: folder) }
         let picked = pick(try await list(deviceID: deviceID, in: folder))
         var found: [Found] = []
+        var unread: [String] = []
         for (n, entry) in picked.files.enumerated() {
             try Task.checkCancellation()
             if let log = await read(entry, deviceID: deviceID, into: folder.appendingPathComponent("\(n).ips")) { found.append(log) }
+            else { unread.append((entry.relativePath as NSString).lastPathComponent) }
         }
-        return (found, picked.complete)
+        return (found, unread, picked.complete)
     }
 
     /// The device's crash-log files, as `devicectl device info files` lists them (its JSON is

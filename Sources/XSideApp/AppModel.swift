@@ -2977,6 +2977,7 @@ final class AppModel {
                 defer { crashScans.remove(id) }
                 let fetcher = CrashLogFetcher(runner: runner)
                 let found: [CrashLogFetcher.Found]
+                let unread: [String]
                 do {
                     let look = try await withKnownXcode {
                         try await fetcher.newCrashLook(deviceID: id) {
@@ -2984,6 +2985,7 @@ final class AppModel {
                         }
                     }
                     found = look.found
+                    unread = look.unread
                     crashWatch.scanSucceeded(deviceID: id, startedAt: now, complete: look.complete)
                 } catch {
                     crashSchedule.finished(deviceID: id, succeeded: false)
@@ -2991,6 +2993,12 @@ final class AppModel {
                     return
                 }
                 crashSchedule.finished(deviceID: id, succeeded: true)
+                // A pick it couldn't read, again: after a few looks it counts as read (re-review N3).
+                for name in unread {
+                    if changeCrashWatch({ $0.readFailed(fileName: name, deviceID: id, at: Date()) }) {
+                        Self.logger.notice("crash look on \(id): \(name) unreadable after \(CrashWatch.maxReadFailures) looks, skipped from now on")
+                    }
+                }
                 var raised: Set<JobKey> = []
                 for file in found {
                     changeCrashWatch { $0.markSeen(fileName: file.fileName, deviceID: id, at: Date()) }
