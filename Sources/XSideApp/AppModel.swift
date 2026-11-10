@@ -2939,7 +2939,10 @@ final class AppModel {
         let now = Date()
         var keys: Set<String> = []
         for record in records { for i in record.installations { keys.insert(CrashWatch.key(recordID: record.id, deviceID: i.deviceID)) } }
-        changeCrashWatch { $0.prune(keeping: keys, now: now) } // saved only when something went
+        // Only the installations of a library read in full count (mega review K5): before it is
+        // read, or with a load issue, "not there" isn't known to be true.
+        let known = hasLoadedRecords && library.loadIssue == nil ? keys : nil
+        changeCrashWatch { $0.prune(keeping: known, now: now) } // saved only when something went
         for device in devices where device.isAvailable && device.isPaired {
             let id = device.id
             let busy = isDeviceBusy(id) || crashScans.contains(id) || crashFastLooks.contains { $0.deviceID == id }

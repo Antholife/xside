@@ -300,22 +300,23 @@ public struct CrashWatch: Codable, Equatable, Sendable {
     }
 
     /// Drops read files older than `seenKeep`, and flags and dismissals of installations no longer
-    /// in `keys` (`key(recordID:deviceID:)`).
-    public mutating func prune(keeping keys: Set<String>, now: Date) {
+    /// in `keys` (`key(recordID:deviceID:)`). `keys` nil: the library isn't known in full (not read
+    /// yet, or read with an issue), so no installation's state goes (mega review K5).
+    public mutating func prune(keeping keys: Set<String>?, now: Date) {
         for device in seen.keys {
             seen[device] = seen[device]?.filter { now.timeIntervalSince($0.value) < Self.seenKeep }
             if seen[device]?.isEmpty == true { seen[device] = nil }
         }
+        if let a = announced {
+            announced = a.mapValues { $0.filter { now.timeIntervalSince($0.value) < Self.seenKeep } }.filter { !$0.value.isEmpty }
+        }
+        guard let keys else { return }
         flags = flags.filter { keys.contains($0.key) }
         dismissed = dismissed.filter { keys.contains($0.key) }
         lastLaunch = lastLaunch.filter { keys.contains($0.key) }
         if let runs = reportedRuns { reportedRuns = runs.filter { keys.contains($0.key) } }
         if let a = answered { answered = a.filter { keys.contains($0.key) } }
-        if let a = announced {
-            announced = a.filter { keys.contains($0.key) }
-                .mapValues { $0.filter { now.timeIntervalSince($0.value) < Self.seenKeep } }
-                .filter { !$0.value.isEmpty }
-        }
+        if let a = announced { announced = a.filter { keys.contains($0.key) } }
     }
 }
 

@@ -331,6 +331,20 @@ import Foundation
         #expect(got10 == .lookForCrash(since: t0))
     }
 
+    /// Mega review K5: before the library is read, or when it couldn't be read in full, the
+    /// installations XSide knows aren't all of them: nothing of theirs goes, only old read files.
+    @Test func anUnknownLibraryPrunesNoInstallation() {
+        var w = CrashWatch()
+        raise(&w, "Demo-1.ips", crashAt: t0.addingTimeInterval(60))
+        raise(&w, "Demo-2.ips", crashAt: t0.addingTimeInterval(120))
+        w.dismiss(recordID: record, deviceID: device)
+        raise(&w, "Demo-3.ips", crashAt: t0.addingTimeInterval(180))
+        w.prune(keeping: nil, now: t0.addingTimeInterval(CrashWatch.seenKeep + 1000))
+        #expect(w.flag(recordID: record, deviceID: device)?.fileName == "Demo-3.ips")
+        #expect(w.isSettled(recordID: record, deviceID: device, fileName: "Demo-2.ips"))
+        #expect(!w.isSeen(fileName: "Demo-1.ips", deviceID: device))
+    }
+
     @Test func survivesASaveAndOldFiles() throws {
         let folder = TestTemp.root.appendingPathComponent("crash-watch-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: folder) }
