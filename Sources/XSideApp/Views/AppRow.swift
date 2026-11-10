@@ -233,7 +233,8 @@ struct AppRow: View {
     private func subtitle(validity: Validity, now: Date) -> String {
         if isUninstalling { return L("popover.app.uninstalling") }
         if let step { return percent.map { "\(step.rowText) \(percentText($0))" } ?? step.rowText }
-        if isPaused, let end = entry.installation.pausedUntil, end > now {
+        // A pause of a while names its end, unless the app expired meanwhile (mega review U11).
+        if isPaused, let end = entry.installation.pausedUntil, end > now, !validity.isExpired {
             return L("popover.app.pausedUntil", end.formatted(.dateTime.weekday(.abbreviated).hour().minute().locale(appLocale)))
         }
         if looksPaused {
