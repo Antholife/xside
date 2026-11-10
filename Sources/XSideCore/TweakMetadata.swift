@@ -47,6 +47,35 @@ public enum ControlLimits {
     public static let maxVersionLength = 64
 }
 
+/// A tweak's `Description`, as its card shows it (written by its author, shown as is).
+public enum TweakDescription {
+    public static let maxLength = 1000
+
+    /// Plain text: the lines kept (dpkg's ` .` lines are blank lines), anything else
+    /// non-printable dropped, blank lines at both ends removed, at most `maxLength` characters.
+    /// nil when nothing is left.
+    public static func clean(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        var lines: [String] = []
+        for piece in raw.split(separator: "\n", omittingEmptySubsequences: false) {
+            var kept = String.UnicodeScalarView()
+            for u in piece.unicodeScalars {
+                if u == "\t" { kept.append(" "); continue }
+                switch u.properties.generalCategory {
+                case .control, .format, .lineSeparator, .paragraphSeparator, .surrogate, .privateUse, .unassigned: continue
+                default: kept.append(u)
+                }
+            }
+            let line = String(kept).trimmingCharacters(in: .whitespaces)
+            lines.append(line == "." ? "" : line)
+        }
+        while lines.first?.isEmpty == true { lines.removeFirst() }
+        while lines.last?.isEmpty == true { lines.removeLast() }
+        let text = String(lines.joined(separator: "\n").prefix(maxLength)).trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
+    }
+}
+
 /// The fields of a `.deb` control file (or of one stanza of a repo `Packages` file) that XSide uses.
 public struct DebControl: Codable, Equatable, Sendable {
     public var package: String
@@ -58,9 +87,13 @@ public struct DebControl: Codable, Equatable, Sendable {
     /// AND of ORs: each inner array is one group of alternatives.
     public var depends: [[DebDependency]]
     public var provides: [String]
+    /// The `Description`, its lines kept (`TweakDescription.clean`); nil when there is none.
+    public var summary: String?
 
     public init(package: String, name: String? = nil, version: String? = nil, author: String? = nil,
-                architecture: String? = nil, depends: [[DebDependency]] = [], provides: [String] = []) {
+                architecture: String? = nil, depends: [[DebDependency]] = [], provides: [String] = [],
+                summary: String? = nil) {
+        self.summary = summary
         self.package = package
         self.name = name
         self.version = version
@@ -104,7 +137,8 @@ public struct DebControl: Codable, Equatable, Sendable {
         return DebControl(package: package, name: line("name", max: ControlLimits.maxNameLength), version: version,
                           author: author, architecture: nonEmpty("architecture"),
                           depends: try parseDepends(fields["depends"] ?? ""),
-                          provides: parseProvides(fields["provides"] ?? ""))
+                          provides: parseProvides(fields["provides"] ?? ""),
+                          summary: TweakDescription.clean(fields["description"]))
     }
 
     private static func line(from v: String, max: Int) -> String? {

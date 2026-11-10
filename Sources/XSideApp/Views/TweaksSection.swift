@@ -341,6 +341,9 @@ struct TweakCard: View {
                         .fixedSize()
                     }
                 }
+                if let about = package.shownSummary {
+                    TweakDescriptionText(text: about).padding(.top, 1)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if item.group == .ready || (item.group == .toSettle && worksSomewhere && rows.count > 1) {
@@ -611,6 +614,64 @@ private struct NestedDependencyLine: View {
             let name = s.deviceID.map { DeviceShortName.short(deviceNames[$0] ?? $0) } ?? ""
             return ((ok(s.status) ? "✓ " : "✕ ") + name, ok(s.status))
         }
+    }
+}
+
+/// A tweak's `.deb` `Description`, in grey under « version · author »: two lines at most, then
+/// « Afficher plus » / « Afficher moins » when it is longer; the whole text on hover.
+struct TweakDescriptionText: View {
+    let text: String
+    @State private var expanded = false
+    @State private var clampedHeight: CGFloat = 0
+    @State private var fullHeight: CGFloat = 0
+
+    private var isLonger: Bool { fullHeight > clampedHeight + 1 }
+
+    private func label(_ limit: Int?) -> some View {
+        Text(text)
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .lineLimit(limit)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            label(expanded ? nil : 2)
+                .background(alignment: .topLeading) {
+                    // Both heights at the card's width: « Afficher plus » only when it is cut.
+                    ZStack(alignment: .topLeading) {
+                        label(2).background(GeometryReader { g in Color.clear.preference(key: ClampedHeight.self, value: g.size.height) })
+                        label(nil).background(GeometryReader { g in Color.clear.preference(key: FullHeight.self, value: g.size.height) })
+                    }
+                    .hidden()
+                    .accessibilityHidden(true)
+                }
+                .onPreferenceChange(ClampedHeight.self) { clampedHeight = $0 }
+                .onPreferenceChange(FullHeight.self) { fullHeight = $0 }
+                .help(text)
+                .textSelection(.enabled)
+            if isLonger || expanded {
+                Button(L(expanded ? "tweaks.description.less" : "tweaks.description.more")) {
+                    withAnimation(.smooth(duration: 0.18)) { expanded.toggle() }
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.violet)
+                .fixedSize()
+            }
+        }
+    }
+
+    private struct ClampedHeight: PreferenceKey {
+        static let defaultValue: CGFloat = 0
+        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+    }
+
+    private struct FullHeight: PreferenceKey {
+        static let defaultValue: CGFloat = 0
+        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
     }
 }
 

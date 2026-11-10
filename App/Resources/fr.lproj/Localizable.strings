@@ -1142,6 +1142,8 @@
 "tweaks.dep.remove.help" = "Retirer la dépendance (XSide dit avant si un tweak en a encore besoin)";
 "tweaks.seeChanges" = "voir les changements";
 "tweaks.hideChanges" = "masquer les changements";
+"tweaks.description.more" = "Afficher plus";
+"tweaks.description.less" = "Afficher moins";
 "tweaks.meta.asIs" = "compatible tel quel";
 "tweaks.problem.missingOne" = "Il manque une dépendance";
 "tweaks.problem.missingMany" = "Il manque %ld dépendances";

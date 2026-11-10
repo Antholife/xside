@@ -391,9 +391,10 @@ enum SnapshotRenderer {
             let altlistNeed = DebDependency(package: "com.opa334.altlist", relation: ">=", version: "1.0")
             let app = legacyApp.originalBundleID
             flow.tweaks = [
-                draft(Self.tweak(1, "YouPiP", version: "1.8.6", author: "PoomSmart", bundles: [app]),
+                draft(Self.tweak(1, "YouPiP", version: "1.8.6", author: "PoomSmart", bundles: [app], summary: "Enables native Picture-in-Picture for YouTube videos, including on devices and iOS versions where YouTube turns it off. Adds a PiP button to the video overlay, supports background playback with PiP, and works with the mini player.\n\nSettings are in YouTube's settings under YouPiP."),
                       on: both, [iPhone: .compatible, iPad: .compatible]),
                 draft(Self.tweak(2, "uYouPlus", version: "3.0.5", author: "MiRO92", bundles: [app], notes: [.settingsNotConverted],
+                                 summary: "Tweaks and enhancements for YouTube.",
                                  depends: [[altlistNeed]], cFunctionHooks: ["MSHookFunction"]),
                       on: [iPhone], [iPhone: converted, iPad: converted]),
                 draft(Self.tweak(3, "AltList", version: "1.0.4", author: "opa334", bundles: nil, entry: false,
@@ -422,7 +423,7 @@ enum SnapshotRenderer {
         /// A made-up tweak: one entry (or, `entry: false`, a library) for `bundles` (nil: a
         /// dropped .dylib, made for this app).
         static func tweak(_ n: Int, _ name: String, version: String, author: String?, bundles: [String]?,
-                          notes: [TweakNote] = [], entry: Bool = true, depends: [[DebDependency]] = [],
+                          notes: [TweakNote] = [], summary: String? = nil, entry: Bool = true, depends: [[DebDependency]] = [],
                           packageID: String? = nil, origin: TweakOrigin = .added, cFunctionHooks: [String] = []) -> TweakPackage {
             let file = (entry ? "Library/MobileSubstrate/DynamicLibraries/" : "usr/lib/") + name.replacingOccurrences(of: " ", with: "") + ".dylib"
             let binary = TweakBinary(path: file, isEntry: entry, filter: bundles.map { TweakFilter(bundles: $0) },
@@ -431,7 +432,7 @@ enum SnapshotRenderer {
                                      imageName: (file as NSString).lastPathComponent, cFunctionHooks: cFunctionHooks)
             return TweakPackage(id: String(format: "5a5a%012lx", n), kind: .deb, origin: origin,
                                 packageID: packageID ?? "com.example.tweak\(n)", name: name, version: version, author: author,
-                                depends: depends, files: [file], binaries: [binary], notes: notes,
+                                depends: depends, files: [file], binaries: [binary], notes: notes, summary: summary,
                                 addedAt: Date(timeIntervalSince1970: 1_800_000_000))
         }
 
@@ -472,10 +473,12 @@ enum SnapshotRenderer {
                                                                   iCloudSignedOut: false)
             // The iPhone's tweaks (Settings > Mes apps): one in the app, one forced that had no room,
             // a library no enabled tweak used, and one added since (pending).
-            let ok = Self.tweak(11, "Return YouTube Dislike", version: "1.11", author: "Lillie", bundles: [video.originalBundleID])
+            let ok = Self.tweak(11, "Return YouTube Dislike", version: "1.11", author: "Lillie", bundles: [video.originalBundleID],
+                                summary: "Shows dislikes again on YouTube videos.")
             let other = Self.tweak(12, "Shorts Remover", version: "2.0", author: nil, bundles: ["com.google.ios.youtube"])
             let lib = Self.tweak(13, "Alderis", version: "1.2", author: "hbang", bundles: nil, entry: false)
-            let added = Self.tweak(14, "YouPiP", version: "1.8", author: "PoomSmart", bundles: [video.originalBundleID])
+            let added = Self.tweak(14, "YouPiP", version: "1.8", author: "PoomSmart", bundles: [video.originalBundleID],
+                                   summary: "Enables native Picture-in-Picture for YouTube videos, including on devices and iOS versions where YouTube turns it off. Adds a PiP button to the video overlay, supports background playback with PiP, and works with the mini player.\n\nSettings are in YouTube's settings under YouPiP.")
             // « À régler »: AltList missing; « Pas compatibles »: SpringBoard only.
             let needs = Self.tweak(15, "YTLite", version: "5.0", author: "dayanch96", bundles: [video.originalBundleID],
                                    depends: [[DebDependency(package: "com.opa334.altlist", relation: ">=", version: "1.0")]])

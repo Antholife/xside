@@ -103,12 +103,16 @@ public struct DownloadUsage: Equatable, Sendable, Identifiable {
 
     /// Each app × device whose list has it, by device then app: the uninstall sheet's lines.
     public var installations: [DownloadInstallation] = []
+    /// Its `Description` (from a tweak stored from it), shown on hover over its name.
+    public var summary: String?
 
     public var id: String { sha256 }
     public var isUsed: Bool { !apps.isEmpty }
 
     public init(sha256: String, packageID: String, version: String, repo: String, repoName: String, size: Int64,
-                downloadedAt: Date, apps: [String], users: [DownloadUser] = [], installations: [DownloadInstallation] = []) {
+                downloadedAt: Date, apps: [String], users: [DownloadUser] = [], installations: [DownloadInstallation] = [],
+                summary: String? = nil) {
+        self.summary = summary
         self.installations = installations
         self.sha256 = sha256
         self.packageID = packageID

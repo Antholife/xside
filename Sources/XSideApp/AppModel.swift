@@ -423,6 +423,8 @@ final class AppModel {
         refreshDevices()
         await probeEnvironment()
         startChannel()
+        // Tweaks stored before XSide kept their description: filled once from the kept download.
+        if await library.fillMissingTweakSummaries(runner: runner) > 0 { await reloadRecords() }
     }
 
     // MARK: Welcome journey

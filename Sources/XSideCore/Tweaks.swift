@@ -83,6 +83,9 @@ public struct TweakPackage: Codable, Equatable, Sendable, Identifiable {
     public var binaries: [TweakBinary]
     public var notes: [TweakNote]
     public var addedAt: Date
+    /// A `.deb`'s `Description` (`TweakDescription.clean`): "" when it has none, nil when not
+    /// known (a dropped `.dylib`, or stored before XSide kept it). Show `shownSummary`.
+    public var summary: String?
 
     public var entries: [TweakBinary] { binaries.filter(\.isEntry) }
     /// A `.deb` with nothing to load by itself: signed in only when an enabled tweak relies on it.
@@ -91,7 +94,8 @@ public struct TweakPackage: Codable, Equatable, Sendable, Identifiable {
     public init(id: String, kind: TweakKind, origin: TweakOrigin, packageID: String, provides: [String] = [],
                 name: String, version: String? = nil, author: String? = nil, architecture: String? = nil,
                 depends: [[DebDependency]] = [], files: [String] = [], binaries: [TweakBinary] = [],
-                notes: [TweakNote] = [], addedAt: Date) {
+                notes: [TweakNote] = [], summary: String? = nil, addedAt: Date) {
+        self.summary = summary
         self.id = id
         self.kind = kind
         self.origin = origin
@@ -110,6 +114,12 @@ public struct TweakPackage: Codable, Equatable, Sendable, Identifiable {
 }
 
 extension TweakPackage {
+    /// What its card shows under « version · author »: nil when there is nothing to show.
+    public var shownSummary: String? {
+        guard let s = summary?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else { return nil }
+        return s
+    }
+
     /// The C function hooks its binaries import, sorted (none known for an older analysis).
     public var cFunctionHooks: [String] {
         Array(Set(binaries.flatMap { $0.cFunctionHooks ?? [] })).sorted()

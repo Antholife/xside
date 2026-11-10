@@ -1142,6 +1142,8 @@
 "tweaks.dep.remove.help" = "Remove the dependency (XSide tells you first if a tweak still needs it)";
 "tweaks.seeChanges" = "see the changes";
 "tweaks.hideChanges" = "hide the changes";
+"tweaks.description.more" = "Show more";
+"tweaks.description.less" = "Show less";
 "tweaks.meta.asIs" = "works as is";
 "tweaks.problem.missingOne" = "A dependency is missing";
 "tweaks.problem.missingMany" = "%ld dependencies are missing";

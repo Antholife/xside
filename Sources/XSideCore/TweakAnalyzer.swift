@@ -176,7 +176,7 @@ public enum TweakAnalyzer {
                             author: control.author, architecture: control.architecture, depends: control.depends,
                             files: files.sorted(), binaries: binaries,
                             notes: [TweakNote.settingsNotConverted, .filesIgnored, .linksSkipped].filter(notes.contains),
-                            addedAt: now)
+                            summary: control.summary ?? "", addedAt: now)
     }
 
     // MARK: dropped .dylib

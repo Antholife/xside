@@ -102,7 +102,7 @@ struct DownloadedDependenciesTable: View {
                 Divider()
                 cells([
                     AnyView(Text(DependencyNames.display(u.packageID)).font(.system(size: 12, weight: .medium))
-                        .lineLimit(2).help(u.packageID)),
+                        .lineLimit(2).help(u.summary.map { $0 + "\n\n" + u.packageID } ?? u.packageID)),
                     AnyView(Text(u.version).font(.system(size: 12)).lineLimit(1)),
                     AnyView(Text(u.repoName).font(.system(size: 12)).lineLimit(1)),
                     AnyView(Text(Self.size(u.size)).font(.system(size: 12)).monospacedDigit().lineLimit(1)),

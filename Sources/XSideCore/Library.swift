@@ -1477,6 +1477,55 @@ extension AppLibrary {
     private nonisolated var downloadIndexURL: URL { root.appendingPathComponent("downloads/index.json") }
     private nonisolated func downloadURL(_ sha256: String) -> URL { root.appendingPathComponent("downloads/\(sha256).deb") }
 
+    /// Tweaks stored before XSide kept their `Description` (`summary` nil) get it once, from
+    /// their kept download (`downloads/<sha256>.deb`, the same bytes they were stored from): ""
+    /// when it has none, so it isn't read again. A dropped `.deb` or a download no longer kept
+    /// stays without one. A read that fails is tried again at the next launch. Returns how many
+    /// were filled.
+    @discardableResult
+    public func fillMissingTweakSummaries(runner: CommandRunning) async -> Int {
+        var wanted: [String: String] = [:]  // sha256 → package id
+        for record in items {
+            for p in record.tweaks ?? [] where p.kind == .deb && p.summary == nil {
+                guard case .downloaded(_, _, let raw) = p.origin else { continue }
+                let sha = raw.lowercased()
+                guard Self.isSHA256(sha), Self.isRegularFile(downloadURL(sha)) else { continue }
+                wanted[sha] = p.packageID
+            }
+        }
+        guard !wanted.isEmpty else { return 0 }
+        var found: [String: String] = [:]
+        for (sha, packageID) in wanted.sorted(by: { $0.key < $1.key }) {
+            do {
+                let control = try DebControl.parse(try await DebReader.control(of: downloadURL(sha), runner: runner))
+                guard control.package == packageID else { continue }
+                found[sha] = control.summary ?? ""
+            } catch {
+                Self.logger.error("tweak description: \(sha).deb unreadable: \(String(describing: error))")
+            }
+        }
+        // Applied to the records as they are now (they may have changed during the reads).
+        let previous = items
+        var filled = 0
+        for r in items.indices {
+            guard var pool = items[r].tweaks else { continue }
+            for i in pool.indices where pool[i].kind == .deb && pool[i].summary == nil {
+                guard case .downloaded(_, _, let raw) = pool[i].origin, let s = found[raw.lowercased()],
+                      wanted[raw.lowercased()] == pool[i].packageID else { continue }
+                pool[i].summary = s
+                filled += 1
+            }
+            items[r].tweaks = pool
+        }
+        guard filled > 0 else { return 0 }
+        do { try save() } catch {
+            items = previous
+            Self.logger.error("tweak description: saving failed: \(String(describing: error))")
+            return 0
+        }
+        return filled
+    }
+
     /// Keeps a downloaded `.deb` as `downloads/<sha256>.deb`, checking its bytes against
     /// `sha256` first, and lists it in the index. Returns where it is.
     /// `hold`: also held (`holdDownload`) in the same step, so no cleanup can come in between.
@@ -1566,6 +1615,12 @@ extension AppLibrary {
         var users: [String: Set<String>] = [:]
         var detail: [String: [DownloadUser]] = [:]
         var installations: [String: [DownloadInstallation]] = [:]
+        var summaries: [String: String] = [:]
+        for record in items {
+            for p in record.tweaks ?? [] {
+                if case .downloaded(_, _, let raw) = p.origin, let s = p.shownSummary { summaries[raw.lowercased()] = s }
+            }
+        }
         for record in items {
             let pool = record.tweaks ?? []
             let lists = Self.deviceLists(record)
@@ -1604,7 +1659,8 @@ extension AppLibrary {
                                  repoName: DependencySources.name(forRepoID: e.repo),
                                  size: stamp.size, downloadedAt: e.downloadedAt, apps: (users[sha] ?? []).sorted(),
                                  users: (detail[sha] ?? []).sorted { $0.app < $1.app },
-                                 installations: (installations[sha] ?? []).sorted { ($0.deviceID, $0.app) < ($1.deviceID, $1.app) })
+                                 installations: (installations[sha] ?? []).sorted { ($0.deviceID, $0.app) < ($1.deviceID, $1.app) },
+                                 summary: summaries[sha])
         }
         .sorted {
             $0.packageID != $1.packageID ? $0.packageID < $1.packageID
