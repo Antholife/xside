@@ -163,8 +163,11 @@ final class AppModel {
     /// (device round 3, R3-2): done (shown a few seconds), or failed with its reason (until the
     /// next run). Cleared when a new run starts (`claim`).
     var refreshResults: [JobKey: RefreshResult] = [:]
-    /// What the last add of a dependency did (by package id, a green line under its row).
+    /// What the last add of a dependency did (by package id, a green line under its row); shown
+    /// through `liveDependencyNotices`, while what it says still holds.
     var dependencyNotices: [String: String] = [:]
+    /// What each of those lines is about: where it was asked, the tweak and the copy added.
+    var dependencyNoticeSubjects: [String: (target: DependencyTarget, subject: DependencyNoticeSubject)] = [:]
     var dependenciesBeingAdded: Set<String> = []
     var dependencyProgress: [String: String] = [:]
     /// The card whose button started a dependency's last action (by package id: the tweak id): its

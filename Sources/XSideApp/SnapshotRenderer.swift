@@ -353,7 +353,7 @@ enum SnapshotRenderer {
                 TweakDraft(package: p, directory: URL(fileURLWithPath: "/tmp/\(p.id)"), enabledDevices: on, force: force,
                            verdicts: verdicts, forcedVerdicts: forced, seenDevices: both)
             }
-            let converted = TweakVerdict.converted([.hookingLibrary, .jailbreakPaths, .dependencyAdded("Cephei")])
+            let converted = TweakVerdict.converted([.hookingLibrary, .jailbreakPaths, .dependencyAdded("Cephei 2.0")])
             let altlistNeed = DebDependency(package: "com.opa334.altlist", relation: ">=", version: "1.0")
             let app = legacyApp.originalBundleID
             flow.tweaks = [

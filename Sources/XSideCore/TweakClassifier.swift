@@ -504,7 +504,11 @@ public enum TweakClassifier {
     }
 
     private static func displayName(_ p: TweakPackage) -> String {
-        knownName(p.packageID) ?? p.provides.lazy.compactMap { knownName($0) }.first ?? p.name
+        let name = knownName(p.packageID) ?? p.provides.lazy.compactMap { knownName($0) }.first ?? p.name
+        // XSide's own copy says which version it embeds (its package.json, from
+        // scripts/tweak-deps.env): « Cephei 2.0 · fournie par XSide » (retest, G2).
+        guard p.origin == .embedded, let v = p.version, !v.isEmpty, v.utf8.count <= 32 else { return name }
+        return name + " " + v
     }
 
     private static func idMatches(_ p: TweakPackage, _ dep: DebDependency) -> Bool {

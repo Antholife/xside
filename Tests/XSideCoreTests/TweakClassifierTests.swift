@@ -224,7 +224,7 @@ struct TweakClassifierTests {
     @Test func cepheiEmbedded() {
         let p = package([entry(linked: [Self.cephei])], depends: [dep("ws.hbang.common", ">=", "1.17")])
         let c = context(embedded: [embeddedCephei()])
-        #expect(verdict(p, c) == .converted([.dependencyAdded("Cephei")]))
+        #expect(verdict(p, c) == .converted([.dependencyAdded("Cephei 2.0")]))
         #expect(TweakClassifier.providers(p, c) == [embeddedCephei()])
         #expect(TweakClassifier.resolution(p, c) == [
             Self.cephei: "@executable_path/Frameworks/XSideTweaks/deps/ws.hbang.common/Library/Frameworks/Cephei.framework/Cephei",
@@ -234,7 +234,7 @@ struct TweakClassifierTests {
     @Test func rootlessRpathCepheiUsesTheEmbeddedCopy() {
         let p = package([entry(linked: ["@rpath/Cephei.framework/Cephei"])], depends: [dep("ws.hbang.common")])
         let c = context(embedded: [embeddedCephei()])
-        #expect(verdict(p, c) == .converted([.dependencyAdded("Cephei")]))
+        #expect(verdict(p, c) == .converted([.dependencyAdded("Cephei 2.0")]))
         #expect(TweakClassifier.resolution(p, c)["@rpath/Cephei.framework/Cephei"]
                 == "@executable_path/Frameworks/XSideTweaks/deps/ws.hbang.common/Library/Frameworks/Cephei.framework/Cephei")
     }
@@ -263,7 +263,7 @@ struct TweakClassifierTests {
         #expect(TweakClassifier.providers(p, c).isEmpty)
 
         let newer = package([entry(linked: [Self.cephei])], depends: [dep("ws.hbang.common", ">=", "1.18")])
-        #expect(verdict(newer, c) == .converted([.dependencyAdded("Cephei")]))
+        #expect(verdict(newer, c) == .converted([.dependencyAdded("Cephei 2.0")]))
         #expect(TweakClassifier.resolution(newer, c)[Self.cephei]
                 == "@executable_path/Frameworks/XSideTweaks/deps/ws.hbang.common/Library/Frameworks/Cephei.framework/Cephei")
         #expect(TweakClassifier.providers(newer, c) == [embedded])
@@ -303,8 +303,8 @@ struct TweakClassifierTests {
         let p = package([entry()], depends: [[DebDependency(package: "com.rpetrich.rocketbootstrap"),
                                                DebDependency(package: "ws.hbang.common")]])
         let c = context(embedded: [embeddedCephei()])
-        #expect(verdict(p, c) == .converted([.dependencyAdded("Cephei")]))
-        #expect(TweakClassifier.dependencies(p, c).map(\.1) == [.providedByXSide("Cephei")])
+        #expect(verdict(p, c) == .converted([.dependencyAdded("Cephei 2.0")]))
+        #expect(TweakClassifier.dependencies(p, c).map(\.1) == [.providedByXSide("Cephei 2.0")])
         // None satisfied: the first alternative's problem.
         #expect(verdict(p) == .incompatible(.needsJailbreak("RocketBootstrap")))
     }
@@ -322,7 +322,7 @@ struct TweakClassifierTests {
                                               dep("com.foo.bar", ">=", "2"), dep("com.rpetrich.rocketbootstrap")])
         let list = TweakClassifier.dependencies(p, context(embedded: [embeddedCephei()]))
         #expect(list.map(\.0.package) == ["mobilesubstrate", "ws.hbang.common", "com.foo.bar", "com.rpetrich.rocketbootstrap"])
-        #expect(list.map(\.1) == [.notNeeded, .providedByXSide("Cephei"),
+        #expect(list.map(\.1) == [.notNeeded, .providedByXSide("Cephei 2.0"),
                                   .missing(DebDependency(package: "com.foo.bar", relation: ">=", version: "2")),
                                   .jailbreakOnly("RocketBootstrap")])
     }
@@ -408,7 +408,7 @@ struct TweakClassifierTests {
         let p = package([entry(linked: [Self.substrate, Self.cephei], mentions: true),
                          entry("Second", linked: [Self.substrate])],
                         depends: [dep("ws.hbang.common")])
-        #expect(verdict(p, context(embedded: [embeddedCephei()])) == .converted([.dependencyAdded("Cephei"), .hookingLibrary, .jailbreakPaths]))
+        #expect(verdict(p, context(embedded: [embeddedCephei()])) == .converted([.dependencyAdded("Cephei 2.0"), .hookingLibrary, .jailbreakPaths]))
     }
 
     @Test func theFirstProblemWins() {
@@ -521,7 +521,7 @@ struct TweakClassifierTests {
         // A real alternative that is satisfied still wins.
         let ok = package([entry()], depends: [[DebDependency(package: "com.rpetrich.rocketbootstrap"),
                                                 DebDependency(package: "ws.hbang.common")]])
-        #expect(verdict(ok, context(embedded: [embeddedCephei()])) == .converted([.dependencyAdded("Cephei")]))
+        #expect(verdict(ok, context(embedded: [embeddedCephei()])) == .converted([.dependencyAdded("Cephei 2.0")]))
     }
 
     @Test func dependenciesNeverOfferAJailbreakOnlyPackage() {
@@ -771,7 +771,7 @@ extension TweakClassifierTests {
     @Test func withoutTheDownloadedCopyXSidesCepheiServes() {
         let user = cepheiUser()
         let c = context(others: [needsCepheiOld()], embedded: [embeddedCephei()])
-        #expect(verdict(user, c) == .converted([.dependencyAdded("Cephei")]))
+        #expect(verdict(user, c) == .converted([.dependencyAdded("Cephei 2.0")]))
         #expect(TweakClassifier.providers(user, c).map(\.id) == ["ws.hbang.common"])
     }
 
@@ -781,12 +781,12 @@ extension TweakClassifierTests {
         let new = package([entry("NeedsNew", linked: [Self.cephei])], id: "1111111111111111", packageID: "com.example.new",
                           name: "Needs New", depends: [dep("ws.hbang.common", ">=", "2.0")])
         let old = needsCepheiOld(), c117 = downloadedCephei117()
-        let problem = TweakProblem.dependencyConflict("Cephei", ["≥ 2.0", "< 2.0"])
+        let problem = TweakProblem.dependencyConflict("Cephei 2.0", ["≥ 2.0", "< 2.0"]) // XSide's copy, named with its version
         #expect(verdict(new, context(others: [old, c117], embedded: [embeddedCephei()])) == .incompatible(problem))
         #expect(verdict(old, context(others: [new, c117], embedded: [embeddedCephei()]))
                 == .incompatible(.dependencyConflict("Cephei", ["< 2.0", "≥ 2.0"])))
         #expect(!TweakVerdict.incompatible(problem).canOverride)
         // Off on that device (not in `others`): no conflict.
-        #expect(verdict(new, context(others: [c117], embedded: [embeddedCephei()])) == .converted([.dependencyAdded("Cephei")]))
+        #expect(verdict(new, context(others: [c117], embedded: [embeddedCephei()])) == .converted([.dependencyAdded("Cephei 2.0")]))
     }
 }

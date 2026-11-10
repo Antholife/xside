@@ -288,3 +288,22 @@ extension DependencyRows {
         return candidates.filter { !kept.contains($0.id) }
     }
 }
+
+/// What a dependency's green result line (« Cephei 1.17.1 ajoutée… », « à jour ») is about: the
+/// tweak whose card asked, and the copy it added (nil: nothing added). The line goes once that no
+/// longer holds: the tweak removed, or the copy gone from the pool (retest, G1).
+public struct DependencyNoticeSubject: Hashable, Sendable {
+    public let tweakID: String
+    public let packageID: String?
+
+    public init(tweakID: String, packageID: String?) {
+        self.tweakID = tweakID
+        self.packageID = packageID
+    }
+
+    /// `present`: the package ids there now (the install window's tweaks, or the app's pool
+    /// packages some device lists).
+    public func holds(present: Set<String>) -> Bool {
+        present.contains(tweakID) && (packageID.map(present.contains) ?? true)
+    }
+}

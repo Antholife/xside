@@ -561,7 +561,7 @@ extension AppModel {
     func addDependencyDeb(_ urls: [URL], for dependency: DebDependency, target: DependencyTarget) async {
         guard let url = urls.first else { return }
         dependencyLineOwners[dependency.package] = target.tweakID
-        await addingDependency(dependency) {
+        await addingDependency(dependency, target: target) {
             self.dependencyProgress[dependency.package] = L("tweaks.adding", url.lastPathComponent)
             return try await self.addDependency(url, origin: .added, for: dependency, target: target)
         }
@@ -573,7 +573,7 @@ extension AppModel {
     func downloadDependency(_ dependency: DebDependency, for tweak: TweakPackage, target: DependencyTarget) async {
         let repoName = DependencySources.name(for: dependency.package)
         dependencyLineOwners[dependency.package] = target.tweakID
-        await addingDependency(dependency) {
+        await addingDependency(dependency, target: target) {
             let work = self.libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent(UUID().uuidString)
             defer { try? FileManager.default.removeItem(at: work) }
             let downloader = DependencyDownloader(library: self.library,
@@ -603,17 +603,21 @@ extension AppModel {
     /// How one add of a dependency ended: always logged, and shown under its row (green when
     /// added, orange when not; nothing when the person cancelled).
     enum DependencyOutcome {
-        case added(String)
+        /// `package`: the copy it added there (nil: nothing added, e.g. « à jour »).
+        case added(String, package: String? = nil)
         case problem(String)
         case cancelled(String)
     }
 
     /// Runs one add for a dependency's row: its spinner, then its green or orange line.
-    private func addingDependency(_ dependency: DebDependency, _ work: @escaping () async throws -> DependencyOutcome) async {
+    /// `updating`: « Mettre à jour » on the dependency's own card, whose id the new copy replaces.
+    private func addingDependency(_ dependency: DebDependency, target: DependencyTarget, updating: Bool = false,
+                                  _ work: @escaping () async throws -> DependencyOutcome) async {
         let key = dependency.package
         guard !dependenciesBeingAdded.contains(key) else { return }
         dependencyErrors[key] = nil
         dependencyNotices[key] = nil
+        dependencyNoticeSubjects[key] = nil
         dependenciesBeingAdded.insert(key)
         defer {
             dependenciesBeingAdded.remove(key)
@@ -621,9 +625,11 @@ extension AppModel {
         }
         do {
             switch try await work() {
-            case .added(let notice):
+            case .added(let notice, let package):
                 Self.logger.notice("dependency \(key) added: \(notice)")
                 dependencyNotices[key] = notice
+                let about = updating ? package ?? target.tweakID : target.tweakID
+                dependencyNoticeSubjects[key] = (target, DependencyNoticeSubject(tweakID: about, packageID: package))
             case .problem(let problem):
                 Self.logger.notice("dependency \(key) not added: \(problem)")
                 dependencyErrors[key] = problem
@@ -727,7 +733,7 @@ extension AppModel {
             if let i = flow.tweaks.firstIndex(where: { $0.id == tweakID }) { flow.tweaks[i].enabledDevices.formUnion(plan.tweakTurnedOn) }
             refreshTweakVerdicts(flow)
             return .added(addedNotice(package, on: flow.deviceIDs.filter(devices.contains), tweak: tweak.package,
-                                      turnedOn: !plan.tweakTurnedOn.isEmpty, fromKeptCopy: fromKeptCopy))
+                                      turnedOn: !plan.tweakTurnedOn.isEmpty, fromKeptCopy: fromKeptCopy), package: package.id)
         case .entry(let key, let tweakID):
             // Checked from a scratch copy first: a wrong one never enters the app's pool.
             let scratch = libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent(UUID().uuidString)
@@ -763,7 +769,7 @@ extension AppModel {
                 turnedOn = true
             }
             return .added(addedNotice(package, on: listing.filter(plan.dependencyOn.contains), tweak: tweak, turnedOn: turnedOn,
-                                      fromKeptCopy: fromKeptCopy))
+                                      fromKeptCopy: fromKeptCopy), package: package.id)
         }
     }
 
@@ -810,7 +816,7 @@ extension AppModel {
             ?? DebDependency(package: package.packageID)
         let repoName = DependencySources.name(for: package.packageID)
         dependencyLineOwners[dependency.package] = package.id
-        await addingDependency(dependency) {
+        await addingDependency(dependency, target: target, updating: true) {
             let work = self.libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent(UUID().uuidString)
             defer { try? FileManager.default.removeItem(at: work) }
             let downloader = DependencyDownloader(library: self.library,
@@ -835,7 +841,7 @@ extension AppModel {
             // Placed like the version it replaces (the card's own id as the « tweak »).
             let outcome = try await self.addDependency(fetched.file, origin: fetched.origin, for: dependency,
                                                        target: target, askReplace: false)
-            if case .added = outcome { return .added(L("deps.updated", package.name, source.version)) }
+            if case .added(_, let added) = outcome { return .added(L("deps.updated", package.name, source.version), package: added) }
             return outcome
         }
     }
@@ -870,6 +876,24 @@ extension AppModel {
         alert.addButton(withTitle: L("tweaks.remove"))
         alert.addButton(withTitle: L("install.cancel"))
         return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    /// The green result lines that still hold (retest, G1): one whose tweak was removed, or whose
+    /// copy left the pool (or the install window), is no longer shown.
+    var liveDependencyNotices: [String: String] {
+        dependencyNotices.filter { key, _ in
+            guard let (target, subject) = dependencyNoticeSubjects[key] else { return true }
+            let present: Set<String>
+            switch target {
+            case .draft:
+                present = Set(install?.tweaks.map(\.id) ?? [])
+            case .entry(let job, _):
+                guard let record = records.first(where: { $0.id == job.recordID }) else { return false }
+                let listed = Set(tweakLists(record).values.flatMap { $0.map(\.id) })
+                present = Set((record.tweaks ?? []).map(\.id)).intersection(listed)
+            }
+            return subject.holds(present: present)
+        }
     }
 
     func deviceName(_ id: String) -> String {

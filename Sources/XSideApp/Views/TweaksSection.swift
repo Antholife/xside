@@ -763,7 +763,7 @@ extension AppModel {
     /// A card's dependencies, with this model's lines and actions.
     func dependencyState(_ target: DependencyTarget, rows: [DependencyRow], names: [String: String],
                          elsewhere: [String: String] = [:]) -> TweakDependencyState {
-        TweakDependencyState(rows: rows, deviceNames: names, errors: dependencyErrors, notices: dependencyNotices,
+        TweakDependencyState(rows: rows, deviceNames: names, errors: dependencyErrors, notices: liveDependencyNotices,
                              progress: dependencyProgress, beingAdded: dependenciesBeingAdded, elsewhere: elsewhere,
                              addDeb: { dep, urls in Task { await self.addDependencyDeb(urls, for: dep, target: target) } },
                              download: { dep in
@@ -792,7 +792,7 @@ extension AppModel {
 
     /// Its own lines (« Mettre à jour »).
     var ownDependencyState: TweakDependencyState {
-        TweakDependencyState(rows: [], errors: dependencyErrors, notices: dependencyNotices,
+        TweakDependencyState(rows: [], errors: dependencyErrors, notices: liveDependencyNotices,
                              progress: dependencyProgress, beingAdded: dependenciesBeingAdded)
     }
 }

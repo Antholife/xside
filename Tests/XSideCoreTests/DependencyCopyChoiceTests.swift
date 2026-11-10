@@ -43,13 +43,26 @@ struct DependencyCopyChoiceTests {
 
     @Test func aDownloadedCopyServesOnlyWhileXSidesCannot() {
         // toto alone: XSide's 2.0.
-        #expect(Self.status(Self.toto, []) == .providedByXSide("Cephei"))
+        #expect(Self.status(Self.toto, []) == .providedByXSide("Cephei 2.0"))
         // tata added (< 2.0) with the downloaded 1.17.1: one copy for both, the download.
         #expect(Self.status(Self.toto, [Self.tata, Self.downloaded]) == .addedByYou("Cephei"))
         #expect(Self.status(Self.tata, [Self.toto, Self.downloaded]) == .addedByYou("Cephei"))
         // tata removed, the download still there: toto is back on XSide's copy.
-        #expect(Self.status(Self.toto, [Self.downloaded]) == .providedByXSide("Cephei"))
+        #expect(Self.status(Self.toto, [Self.downloaded]) == .providedByXSide("Cephei 2.0"))
         #expect(TweakClassifier.verdict(Self.toto, Self.context([Self.downloaded])) != .incompatible(.missingDependency("Cephei")))
+    }
+
+    /// Retest, G2: XSide's copy is named with the version it embeds (from its package.json).
+    @Test func xSidesCopyIsNamedWithItsVersion() {
+        let c = TweakClassifier.classify(Self.toto, Self.context([]))
+        #expect(c.verdict == .converted([.dependencyAdded("Cephei 2.0")]) || {
+            if case .converted(let list) = c.verdict { return list.contains(.dependencyAdded("Cephei 2.0")) }
+            return false
+        }())
+        // The conflict names the copy that was picked: XSide's, with its version.
+        let toto2 = Self.tweak("00000000000000t3", "Toto", needs: Self.atLeast2)
+        #expect(TweakClassifier.verdict(toto2, Self.context([Self.tata, Self.downloaded]))
+                == .incompatible(.dependencyConflict("Cephei 2.0", ["≥ 2.0", "< 2.0"])))
     }
 
     @Test func aDebThePersonAddedStillWins() {
@@ -84,5 +97,19 @@ struct DependencyCopyChoiceTests {
                                  name: "Plain", files: D.tweak(depends: []).files, binaries: D.tweak(depends: []).binaries,
                                  addedAt: Date(timeIntervalSince1970: 0))
         #expect(DependencyRows.copiesFreedByRemoving(plain, listed: [Self.tata, Self.downloaded], context: Self.context([])).isEmpty)
+    }
+}
+
+/// Retest, G1: a dependency's green result line says what was added for which tweak; it goes
+/// once that no longer holds (the tweak removed, or the copy gone from the pool).
+struct DependencyNoticeTests {
+    @Test func aResultHoldsWhileTheTweakAndTheCopyAreThere() {
+        let notice = DependencyNoticeSubject(tweakID: "tweak", packageID: "copy")
+        #expect(notice.holds(present: ["tweak", "copy", "other"]))
+        #expect(!notice.holds(present: ["copy"]))   // the tweak was removed
+        #expect(!notice.holds(present: ["tweak"]))  // the copy left the pool
+        // « à jour » names no copy: only the card it was asked on counts.
+        #expect(DependencyNoticeSubject(tweakID: "dep", packageID: nil).holds(present: ["dep"]))
+        #expect(!DependencyNoticeSubject(tweakID: "dep", packageID: nil).holds(present: []))
     }
 }
