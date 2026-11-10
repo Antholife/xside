@@ -331,9 +331,11 @@ private struct AppSettingsContent: View {
         }
     }
 
-    /// Room for the pending bar when it shows.
+    /// Room for the pending bar when it shows. While uninstalling the bar is forced away (the
+    /// header shows « Désinstallation… » instead), so it takes no room.
     private var barHeight: CGFloat {
-        pending.isEmpty && (model.jobs[entry.id] == nil || isUninstalling) && model.refreshResults[entry.id] == nil ? 0 : 72
+        if isUninstalling { return 0 }
+        return pending.isEmpty && model.jobs[entry.id] == nil && model.refreshResults[entry.id] == nil ? 0 : 72
     }
 
     // MARK: Tabs
