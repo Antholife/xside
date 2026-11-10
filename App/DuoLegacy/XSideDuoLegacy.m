@@ -29,6 +29,8 @@
 //    UIAccelerometer ("no longer available": now fed by CoreMotion, same values in g, to the delegate's
 //    accelerometer:didAccelerate:). Boost 2 needed both. UIAlertView too ("no longer available" on
 //    init): a stand-in with the same API and delegate calls shows a UIAlertController on the scene.
+//    UIActionSheet likewise: an action-sheet UIAlertController, a popover on a wide screen pointed
+//    where the show call says (bookkeeping in XSActionSheetCore.m).
 //  - UIScreen.mainScreen is the scene's screen once it connects: on the Duo it otherwise stays the
 //    outer screen while the app shows on the inner one (Boost 2 sized itself to it: a small picture).
 //    Off the main thread, the last screen the main thread saw (UIKit is read on the main one only).
@@ -54,6 +56,7 @@
 #import <CoreMotion/CoreMotion.h>
 #import <os/lock.h>
 #import "XSLaunchHoldCore.h"
+#import "XSActionSheetCore.h"
 
 #define XSLOG(fmt, ...) os_log(OS_LOG_DEFAULT, "[XSDuoLegacy] " fmt, ##__VA_ARGS__)
 
@@ -497,6 +500,218 @@ static void XSAlertViewInstall(Class c) {
     XSLOG("UIAlertView: stand-in installed");
 }
 
+#pragma mark - UIActionSheet, turned off with UIAlertView
+
+// The same way as UIAlertView: UIActionSheet's methods are replaced by a stand-in with the same
+// API and delegate calls that shows a UIAlertController with the action-sheet style on the scene:
+// title, buttons in index order (cancel and destructive with their styles). On a wide screen
+// (iPad, the Duo's inner screen) iOS shows it as a popover, pointed where the show call says.
+// The index bookkeeping is XSActionSheetCore.m (tested on the Mac).
+@interface XSSheetState : NSObject
+@property (nonatomic, copy) NSString *title;
+@property (nonatomic, weak) id delegate;
+@property (nonatomic) NSInteger style;            // UIActionSheetStyle: kept, not shown
+@property (nonatomic, strong) XSSheetButtons *buttons;
+@property (nonatomic, strong) UIAlertController *shown;
+@property (nonatomic, strong) id popoverDelegate; // the popover holds its delegate weakly
+@end
+@implementation XSSheetState
+@end
+
+static const void *XSSheetKey = &XSSheetKey;
+static NSMutableSet *gSheetsShown;                // kept alive while on screen, like UIActionSheet did
+
+static XSSheetState *XSSheet(id self) {
+    XSSheetState *s = objc_getAssociatedObject(self, XSSheetKey);
+    if (!s) {
+        s = [XSSheetState new];
+        s.buttons = [XSSheetButtons new];
+        objc_setAssociatedObject(self, XSSheetKey, s, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    return s;
+}
+
+static void XSSheetTell(id sheet, NSString *selName, NSInteger index, BOOL withIndex) {
+    id d = XSSheet(sheet).delegate;
+    SEL sel = NSSelectorFromString(selName);
+    if (![d respondsToSelector:sel]) return;
+    if (withIndex) ((void (*)(id, SEL, id, NSInteger))objc_msgSend)(d, sel, sheet, index);
+    else ((void (*)(id, SEL, id))objc_msgSend)(d, sel, sheet);
+}
+
+// Once per showing, whatever ends it (a button, the app's dismiss call, a tap outside the popover).
+static void XSSheetFinish(id sheet, NSInteger index) {
+    XSSheetState *s = XSSheet(sheet);
+    if (![s.buttons finish]) return;
+    XSSheetTell(sheet, @"actionSheet:willDismissWithButtonIndex:", index, YES);
+    s.shown = nil;
+    s.popoverDelegate = nil;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        XSSheetTell(sheet, @"actionSheet:didDismissWithButtonIndex:", index, YES);
+        [gSheetsShown removeObject:sheet];
+    });
+}
+
+// The popover went away without a button (a tap outside it): UIActionSheet told
+// actionSheetCancel: when the delegate has it, and otherwise acted as a click on the cancel button.
+@interface XSSheetPopoverDelegate : NSObject <UIPopoverPresentationControllerDelegate>
+@property (nonatomic, weak) id sheet;
+@end
+@implementation XSSheetPopoverDelegate
+- (void)presentationControllerDidDismiss:(UIPresentationController *)presentationController {
+    id sheet = self.sheet;
+    if (!sheet || !XSSheet(sheet).buttons.showing) return;
+    NSInteger cancel = XSSheet(sheet).buttons.cancelIndex;
+    if ([XSSheet(sheet).delegate respondsToSelector:@selector(actionSheetCancel:)]) XSSheetTell(sheet, @"actionSheetCancel:", 0, NO);
+    else XSSheetTell(sheet, @"actionSheet:clickedButtonAtIndex:", cancel, YES);
+    XSSheetFinish(sheet, cancel);
+}
+@end
+
+static id h_sheetInitWithFrame(id self, SEL _cmd, CGRect frame) {
+    IMP viewInit = class_getMethodImplementation(UIView.class, @selector(initWithFrame:));
+    self = ((id (*)(id, SEL, CGRect))viewInit)(self, @selector(initWithFrame:), frame);
+    if (self) XSSheet(self);
+    return self;
+}
+static id h_sheetInit(id self, SEL _cmd) { return h_sheetInitWithFrame(self, @selector(initWithFrame:), CGRectZero); }
+
+// Declared variadic like UIActionSheet's: callers pass otherButtonTitles... as variadic arguments.
+static id h_sheetInitWithTitle(id self, SEL _cmd, NSString *title, id delegate, NSString *cancel, NSString *destructive,
+                               NSString *other, ...) {
+    self = h_sheetInitWithFrame(self, @selector(initWithFrame:), CGRectZero);
+    if (!self) return nil;
+    XSSheetState *s = XSSheet(self);
+    s.title = title; s.delegate = delegate;
+    NSMutableArray<NSString *> *others = [NSMutableArray array];
+    if (other) {
+        [others addObject:other];
+        va_list ap;
+        va_start(ap, other);
+        NSString *more;
+        while ((more = va_arg(ap, NSString *))) [others addObject:more];
+        va_end(ap);
+    }
+    [s.buttons setUpWithCancel:cancel destructive:destructive others:others];
+    return self;
+}
+
+static NSString *h_sheetTitle(id self, SEL _cmd) { return XSSheet(self).title; }
+static void h_sheetSetTitle(id self, SEL _cmd, NSString *v) { XSSheet(self).title = v; }
+static id h_sheetDelegate(id self, SEL _cmd) { return XSSheet(self).delegate; }
+static void h_sheetSetDelegate(id self, SEL _cmd, id v) { XSSheet(self).delegate = v; }
+static NSInteger h_sheetStyle(id self, SEL _cmd) { return XSSheet(self).style; }
+static void h_sheetSetStyle(id self, SEL _cmd, NSInteger v) { XSSheet(self).style = v; }
+static NSInteger h_sheetAddButton(id self, SEL _cmd, NSString *title) { return [XSSheet(self).buttons add:title]; }
+static NSInteger h_sheetNumberOfButtons(id self, SEL _cmd) { return XSSheet(self).buttons.count; }
+static NSString *h_sheetButtonTitle(id self, SEL _cmd, NSInteger i) { return [XSSheet(self).buttons titleAt:i]; }
+static NSInteger h_sheetCancelIndex(id self, SEL _cmd) { return XSSheet(self).buttons.cancelIndex; }
+static void h_sheetSetCancelIndex(id self, SEL _cmd, NSInteger i) { XSSheet(self).buttons.cancelIndex = i; }
+static NSInteger h_sheetDestructiveIndex(id self, SEL _cmd) { return XSSheet(self).buttons.destructiveIndex; }
+static void h_sheetSetDestructiveIndex(id self, SEL _cmd, NSInteger i) { XSSheet(self).buttons.destructiveIndex = i; }
+static NSInteger h_sheetFirstOther(id self, SEL _cmd) { return XSSheet(self).buttons.firstOtherIndex; }
+static BOOL h_sheetVisible(id self, SEL _cmd) { return XSSheet(self).shown != nil; }
+
+static UIViewController *XSTopControllerOf(UIWindow *win) {
+    UIViewController *vc = win.rootViewController;
+    while (vc.presentedViewController && !vc.presentedViewController.isBeingDismissed) vc = vc.presentedViewController;
+    return vc;
+}
+
+// `view`: where the show call put it (nil: the scene's key window); `item`: showFromBarButtonItem:.
+static void XSSheetPresent(id self, XSSheetShow how, UIView *view, CGRect rect, UIBarButtonItem *item) {
+    XSSheetState *s = XSSheet(self);
+    if (s.shown) return;
+    UIViewController *top = (view.window ? XSTopControllerOf(view.window) : nil) ?: XSTopController();
+    if (!top) { XSLOG("action sheet: nowhere to show it"); return; }
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:s.title.length ? s.title : nil message:nil
+                                                         preferredStyle:UIAlertControllerStyleActionSheet];
+    __weak id weakSelf = self;
+    XSSheetButtons *buttons = s.buttons;
+    [buttons.titles enumerateObjectsUsingBlock:^(NSString *title, NSUInteger i, BOOL *stop) {
+        XSSheetButtonKind kind = [buttons kindAt:(NSInteger)i];
+        UIAlertActionStyle style = kind == XSSheetButtonCancel ? UIAlertActionStyleCancel
+            : kind == XSSheetButtonDestructive ? UIAlertActionStyleDestructive : UIAlertActionStyleDefault;
+        [ac addAction:[UIAlertAction actionWithTitle:title style:style handler:^(UIAlertAction *a) {
+            id sheet = weakSelf;
+            if (!sheet || !XSSheet(sheet).buttons.showing) return;
+            XSSheetTell(sheet, @"actionSheet:clickedButtonAtIndex:", (NSInteger)i, YES);
+            XSSheetFinish(sheet, (NSInteger)i);
+        }]];
+    }];
+    UIPopoverPresentationController *pop = ac.popoverPresentationController;
+    if (pop) {
+        if (item) {
+            pop.barButtonItem = item;
+        } else {
+            UIView *source = view ?: top.view;
+            BOOL arrows = YES;
+            pop.sourceView = source;
+            pop.sourceRect = XSSheetSourceRect(how, source.bounds, rect, &arrows);
+            pop.permittedArrowDirections = arrows ? UIPopoverArrowDirectionAny : 0;
+        }
+        XSSheetPopoverDelegate *pd = [XSSheetPopoverDelegate new];
+        pd.sheet = self;
+        s.popoverDelegate = pd;
+        pop.delegate = pd;
+    }
+    if (buttons.count == 0) XSLOG("action sheet: shown without buttons");
+    if (!gSheetsShown) gSheetsShown = [NSMutableSet set];
+    [gSheetsShown addObject:self];
+    s.shown = ac;
+    [buttons didShow];
+    XSSheetTell(self, @"willPresentActionSheet:", 0, NO);
+    [top presentViewController:ac animated:YES completion:^{
+        id sheet = weakSelf;
+        if (sheet) XSSheetTell(sheet, @"didPresentActionSheet:", 0, NO);
+    }];
+    XSLOG("action sheet shown (UIActionSheet stand-in, %ld buttons, %{public}s)", (long)buttons.count,
+          item ? "bar button" : how == XSSheetShowFromRect ? "rect" : how == XSSheetShowFromBar ? "bar" : "view");
+}
+
+static void h_sheetShowInView(id self, SEL _cmd, UIView *view) { XSSheetPresent(self, XSSheetShowInView, view, CGRectZero, nil); }
+static void h_sheetShowFromRect(id self, SEL _cmd, CGRect rect, UIView *view, BOOL animated) {
+    XSSheetPresent(self, XSSheetShowFromRect, view, rect, nil);
+}
+static void h_sheetShowFromItem(id self, SEL _cmd, UIBarButtonItem *item, BOOL animated) {
+    XSSheetPresent(self, XSSheetShowInView, nil, CGRectZero, [item isKindOfClass:UIBarButtonItem.class] ? item : nil);
+}
+static void h_sheetShowFromBar(id self, SEL _cmd, UIView *bar) { XSSheetPresent(self, XSSheetShowFromBar, bar, CGRectZero, nil); }
+
+static void h_sheetDismiss(id self, SEL _cmd, NSInteger index, BOOL animated) {
+    UIAlertController *ac = XSSheet(self).shown;
+    if (!ac) return;
+    XSSheetFinish(self, index);
+    [ac.presentingViewController dismissViewControllerAnimated:animated completion:nil];
+}
+
+static void XSActionSheetInstall(Class c) {
+    struct { const char *sel; IMP imp; const char *types; } m[] = {
+        {"init", (IMP)h_sheetInit, "@@:"},
+        {"initWithFrame:", (IMP)h_sheetInitWithFrame, "@@:{CGRect={CGPoint=dd}{CGSize=dd}}"},
+        {"initWithTitle:delegate:cancelButtonTitle:destructiveButtonTitle:otherButtonTitles:", (IMP)h_sheetInitWithTitle, "@@:@@@@@"},
+        {"title", (IMP)h_sheetTitle, "@@:"}, {"setTitle:", (IMP)h_sheetSetTitle, "v@:@"},
+        {"delegate", (IMP)h_sheetDelegate, "@@:"}, {"setDelegate:", (IMP)h_sheetSetDelegate, "v@:@"},
+        {"actionSheetStyle", (IMP)h_sheetStyle, "q@:"}, {"setActionSheetStyle:", (IMP)h_sheetSetStyle, "v@:q"},
+        {"addButtonWithTitle:", (IMP)h_sheetAddButton, "q@:@"},
+        {"numberOfButtons", (IMP)h_sheetNumberOfButtons, "q@:"},
+        {"buttonTitleAtIndex:", (IMP)h_sheetButtonTitle, "@@:q"},
+        {"cancelButtonIndex", (IMP)h_sheetCancelIndex, "q@:"}, {"setCancelButtonIndex:", (IMP)h_sheetSetCancelIndex, "v@:q"},
+        {"destructiveButtonIndex", (IMP)h_sheetDestructiveIndex, "q@:"},
+        {"setDestructiveButtonIndex:", (IMP)h_sheetSetDestructiveIndex, "v@:q"},
+        {"firstOtherButtonIndex", (IMP)h_sheetFirstOther, "q@:"},
+        {"isVisible", (IMP)h_sheetVisible, "B@:"}, {"visible", (IMP)h_sheetVisible, "B@:"},
+        {"showInView:", (IMP)h_sheetShowInView, "v@:@"},
+        {"showFromRect:inView:animated:", (IMP)h_sheetShowFromRect, "v@:{CGRect={CGPoint=dd}{CGSize=dd}}@B"},
+        {"showFromBarButtonItem:animated:", (IMP)h_sheetShowFromItem, "v@:@B"},
+        {"showFromTabBar:", (IMP)h_sheetShowFromBar, "v@:@"},
+        {"showFromToolbar:", (IMP)h_sheetShowFromBar, "v@:@"},
+        {"dismissWithClickedButtonIndex:animated:", (IMP)h_sheetDismiss, "v@:qB"},
+    };
+    for (size_t i = 0; i < sizeof m / sizeof m[0]; i++) class_replaceMethod(c, sel_registerName(m[i].sel), m[i].imp, m[i].types);
+    XSLOG("UIActionSheet: stand-in installed");
+}
+
 #pragma mark - Legacy lifecycle forwarding without duplicates
 
 typedef NS_ENUM(NSInteger, XSEvent) { XSDidBecomeActive, XSWillResignActive, XSDidEnterBackground, XSWillEnterForeground, XSEventCount };
@@ -889,6 +1104,8 @@ __attribute__((constructor)) static void XSDuoLegacyInit(void) {
             }
             Class alertView = NSClassFromString(@"UIAlertView");
             if (alertView) XSAlertViewInstall(alertView);
+            Class actionSheet = NSClassFromString(@"UIActionSheet");
+            if (actionSheet) XSActionSheetInstall(actionSheet);
             gActive = YES;
             XSLOG("loaded");
         } @catch (NSException *e) {
