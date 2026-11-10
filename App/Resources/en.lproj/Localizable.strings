@@ -800,7 +800,7 @@
 "fixes.request.crashHelp" = "Opens a form on GitHub with the diagnosis, without personal data (no app identifier, no device name).";
 "fixes.request.prompt" = "Describe what happens (what you do, what the app does or doesn't do):";
 "fixes.request.button" = "Request a fix";
-"fixes.request.text" = "No fix for your case? Describe the symptom: XSide can inject targeted fixes (one app) or global ones (an iOS service, like iCloud).";
+"fixes.request.text" = "No fix for your case? Describe the symptom: XSide can inject targeted fixes (one app) or global ones (an iOS service, like iCloud). A tweak can also fix a problem of one app: a .deb or .dylib you add at install, which XSide injects into it.";
 "fixes.caption" = "XSide changes the app so it works better on your device or with a free account.";
 "fixes.legacy32.title" = "32-bit code removal (armv7)";
 "fixes.legacy32.badge" = "Automatic";

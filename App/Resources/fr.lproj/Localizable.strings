@@ -800,7 +800,7 @@
 "fixes.request.crashHelp" = "Ouvre un formulaire sur GitHub avec le diagnostic, sans données personnelles (ni identifiant d'app, ni nom d'appareil).";
 "fixes.request.prompt" = "Décris ce qui se passe (ce que tu fais, ce que l'app fait ou ne fait pas) :";
 "fixes.request.button" = "Demander un correctif";
-"fixes.request.text" = "Pas de correctif pour ton cas ? Décris le symptôme : XSide peut injecter des correctifs ciblés (une app) ou globaux (un service iOS, comme iCloud).";
+"fixes.request.text" = "Pas de correctif pour ton cas ? Décris le symptôme : XSide peut injecter des correctifs ciblés (une app) ou globaux (un service iOS, comme iCloud). Un tweak peut aussi corriger un problème propre à une app : un .deb ou un .dylib que tu ajoutes à l'installation, et qu'XSide y injecte.";
 "fixes.caption" = "XSide modifie l'app pour qu'elle marche mieux sur ton appareil ou avec un compte gratuit.";
 "fixes.legacy32.title" = "Retrait du code 32 bits (armv7)";
 "fixes.legacy32.badge" = "Automatique";
