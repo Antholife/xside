@@ -1209,6 +1209,17 @@ extension AppLibrary {
         return held
     }
 
+    /// `setTweaks` with the device's list as stored now, changed by `change` (mega review U4):
+    /// quick changes one after another each start from the last one's result, so none is lost.
+    @discardableResult
+    public func changeTweaks(recordID: UUID, deviceID: String, _ change: @Sendable (inout [TweakUse]) -> Void) throws -> Bool {
+        let record = items[try indexOf(recordID)]
+        var uses = record.installations.first { $0.deviceID == deviceID }.map { $0.tweaks ?? [] }
+            ?? record.pendingTweakUses?[deviceID] ?? []
+        change(&uses)
+        return try setTweaks(uses, recordID: recordID, deviceID: deviceID)
+    }
+
     /// Sets the tweaks chosen for one device, from its next signing on: ids not in the pool are
     /// left out, each id is kept once, in the pool's load order. A device without an installation
     /// keeps them in `pendingTweakUses`. Returns false when nothing changed.

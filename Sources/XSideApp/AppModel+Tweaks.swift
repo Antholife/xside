@@ -415,12 +415,13 @@ extension AppModel {
         await changeTweaks(current) { uses in uses.removeAll { $0.id == id || freed.contains($0.id) } }
     }
 
-    private func changeTweaks(_ entry: AppEntry, _ change: (inout [TweakUse]) -> Void) async {
-        var uses = entry.installation.tweaks ?? []
-        change(&uses)
+    /// The change is made on the list the library holds when its turn comes (mega review U4):
+    /// two quick toggles, or one behind an alert, don't undo each other.
+    private func changeTweaks(_ entry: AppEntry, _ change: @escaping @Sendable (inout [TweakUse]) -> Void) async {
         do {
-            let changed = try await library.setTweaks(uses, recordID: entry.record.id, deviceID: entry.installation.deviceID)
+            let changed = try await library.changeTweaks(recordID: entry.record.id, deviceID: entry.installation.deviceID, change)
             await reloadRecords()
+            let uses = currentEntry(entry.id)?.installation.tweaks ?? []
             // What the « Changement en attente » line will say (device round 2, item 10).
             let pending = currentEntry(entry.id)?.installation.signedChoices.map { _ in
                 currentEntry(entry.id)!.installation.pendingSigningChanges(wantsWithoutXSideFeatures: false).contains(.tweaks)

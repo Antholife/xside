@@ -534,6 +534,29 @@ struct LibraryTweakTests {
                                         recordID: rec.id, deviceID: "B") == false)
     }
 
+    /// Mega review U4: two quick changes on one device each start from the list as stored, so
+    /// neither undoes the other; a device without an installation changes its pending list.
+    @Test func changeTweaksStartsFromTheStoredList() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let (lib, rec) = try await library(tmp, devices: ["A"])
+        let one = try await lib.addTweak(try tweakDylib(in: tmp, "One.dylib"), recordID: rec.id, deviceIDs: ["A", "C"],
+                                         runner: ProcessRunner(), now: tweakNow).package
+        let two = try await lib.addTweak(try tweakDylib(in: tmp, "Two.dylib"), recordID: rec.id, deviceIDs: ["A", "C"],
+                                         runner: ProcessRunner(), now: tweakNow).package
+        async let first = lib.changeTweaks(recordID: rec.id, deviceID: "A") { uses in
+            if let i = uses.firstIndex(where: { $0.id == one.id }) { uses[i].enabled = false }
+        }
+        async let second = lib.changeTweaks(recordID: rec.id, deviceID: "A") { uses in
+            if let i = uses.firstIndex(where: { $0.id == two.id }) { uses[i].enabled = false }
+        }
+        let (a, b) = try await (first, second)
+        #expect(a && b)
+        #expect(try await uses(lib, "A") == [TweakUse(id: one.id, enabled: false), TweakUse(id: two.id, enabled: false)])
+        #expect(try await lib.changeTweaks(recordID: rec.id, deviceID: "C") { $0.removeAll { $0.id == one.id } })
+        #expect(await lib.records().first?.pendingTweakUses?["C"] == [TweakUse(id: two.id, enabled: true)])
+        #expect(try await lib.changeTweaks(recordID: rec.id, deviceID: "A") { _ in } == false)
+    }
+
     @Test func aNewerVersionOfTheSamePackageIsOfferedNotApplied() async throws {
         let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
         let (lib, rec) = try await library(tmp, devices: ["A", "B"])
