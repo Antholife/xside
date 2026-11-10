@@ -585,16 +585,29 @@ extension AppModel {
             } catch {
                 throw DependencyFailure(text: Self.downloadErrorText(error, dependency: dependency, repoName: repoName))
             }
-            guard self.confirmDownload(source, dependency: dependency) else { return .cancelled("download not confirmed") }
-            self.dependencyProgress[dependency.package] = Self.downloadingText(source)
-            let fetched: (file: URL, origin: TweakOrigin)
+            // The kept copy (or the stored download) is held until it is added or given up.
+            var fetchedOrigin: TweakOrigin?
+            let result: Result<DependencyOutcome, any Error>
             do {
-                fetched = try await downloader.fetch(source)
+                guard self.confirmDownload(source, dependency: dependency) else {
+                    await downloader.release(source)
+                    return .cancelled("download not confirmed")
+                }
+                self.dependencyProgress[dependency.package] = Self.downloadingText(source)
+                let fetched: (file: URL, origin: TweakOrigin)
+                do {
+                    fetched = try await downloader.fetch(source)
+                } catch {
+                    throw DependencyFailure(text: Self.downloadErrorText(error, dependency: dependency, repoName: source.repoName))
+                }
+                fetchedOrigin = fetched.origin
+                result = .success(try await self.addDependency(fetched.file, origin: fetched.origin, for: dependency,
+                                                               target: target, fromKeptCopy: source.isCached))
             } catch {
-                throw DependencyFailure(text: Self.downloadErrorText(error, dependency: dependency, repoName: source.repoName))
+                result = .failure(error)
             }
-            return try await self.addDependency(fetched.file, origin: fetched.origin, for: dependency, target: target,
-                                                fromKeptCopy: source.isCached)
+            await downloader.release(source, fetched: fetchedOrigin)
+            return try result.get()
         }
     }
 
@@ -838,9 +851,17 @@ extension AppModel {
             } catch {
                 throw DependencyFailure(text: Self.downloadErrorText(error, dependency: dependency, repoName: repoName))
             }
-            // Placed like the version it replaces (the card's own id as the « tweak »).
-            let outcome = try await self.addDependency(fetched.file, origin: fetched.origin, for: dependency,
-                                                       target: target, askReplace: false)
+            // Placed like the version it replaces (the card's own id as the « tweak »). The stored
+            // download is held until then.
+            let result: Result<DependencyOutcome, any Error>
+            do {
+                result = .success(try await self.addDependency(fetched.file, origin: fetched.origin, for: dependency,
+                                                               target: target, askReplace: false))
+            } catch {
+                result = .failure(error)
+            }
+            await downloader.release(source, fetched: fetched.origin)
+            let outcome = try result.get()
             if case .added(_, let added) = outcome { return .added(L("deps.updated", package.name, source.version), package: added) }
             return outcome
         }

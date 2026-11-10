@@ -98,6 +98,38 @@ struct DependencyDirectoryTests {
         RepoClientTests.serveRepo(fetcher, [RepoClientTests.Pkg(version, deb: deb)])
     }
 
+    /// A kept download is held from `prepare`/`fetch` until the caller releases it: a cleanup in
+    /// between (an app or a device removed while the confirmation is up) never deletes it.
+    @Test func aDownloadIsHeldUntilReleased() async throws {
+        try await withTemporaryDirectory("deps") { dir in
+            let fetcher = FakeFetcher()
+            let deb = Data("cephei deb".utf8)
+            Self.serveCephei(fetcher, version: "1.0.5", deb: deb)
+            let lib = AppLibrary(root: dir.appendingPathComponent("lib"))
+            let downloader = DependencyDownloader(library: lib, client: RepoClient(fetcher: fetcher, runner: FakeRunner(),
+                                                                                   workDir: dir.appendingPathComponent("work")))
+            let dep = DebDependency(package: Self.cephei)
+            let source = try await downloader.prepare(dep, preferredArchitecture: nil)
+            let got = try await downloader.fetch(source)
+            #expect(await lib.removeUnusedDownloads().count == 0)
+            #expect(FileManager.default.fileExists(atPath: got.file.path))
+            await downloader.release(source, fetched: got.origin)
+            #expect(await lib.removeUnusedDownloads().count == 1)
+
+            // A kept copy reused: held from `prepare`, twice is counted twice.
+            let again = try await downloader.prepare(dep, preferredArchitecture: nil)
+            await downloader.release(again, fetched: try await downloader.fetch(again).origin)
+            let first = try await downloader.prepare(dep, preferredArchitecture: nil)
+            guard case .cached = first else { Issue.record("expected the cache"); return }
+            let second = try await downloader.prepare(dep, preferredArchitecture: nil)
+            #expect(await lib.removeUnusedDownloads().count == 0)
+            await downloader.release(first)
+            #expect(await lib.removeUnusedDownloads().count == 0)
+            await downloader.release(second)
+            #expect(await lib.removeUnusedDownloads().count == 1)
+        }
+    }
+
     @Test func aDownloadIsStoredThenReusedWithoutNetwork() async throws {
         try await withTemporaryDirectory("deps") { dir in
             let fetcher = FakeFetcher()

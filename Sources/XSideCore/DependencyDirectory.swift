@@ -280,8 +280,9 @@ public struct DependencyDownloader: Sendable {
         let trusted = DependencySources.trustedIDs(for: id)
         // A kept copy only from a source trusted for this package now; any other is dropped.
         for _ in 0..<AppLibrary.maxDownloadEntries {
-            guard let kept = await library.cachedDownloadEntry(packageID: id, satisfying: dependency) else { break }
+            guard let kept = await library.cachedDownloadEntry(packageID: id, satisfying: dependency, hold: true) else { break }
             if trusted.contains(kept.repo) { return .cached(kept) }
+            await library.releaseDownload(sha256: kept.sha256)
             await library.removeDownload(sha256: kept.sha256)
         }
         return try await offer(dependency, preferredArchitecture: preferredArchitecture)
@@ -307,7 +308,18 @@ public struct DependencyDownloader: Sendable {
         }
     }
 
-    /// The kept `.deb` and the origin to store its package with.
+    /// Lets go of what `prepare` (a kept copy) or `fetch` (a stored download, `fetched`) held, once
+    /// the caller has added it or given up. Every `prepare` gets one call.
+    public func release(_ source: DependencySource, fetched: TweakOrigin? = nil) async {
+        if case .cached(let c) = source {
+            await library.releaseDownload(sha256: c.sha256)
+        } else if case .downloaded(_, _, let sha)? = fetched {
+            await library.releaseDownload(sha256: sha)
+        }
+    }
+
+    /// The kept `.deb` and the origin to store its package with. Held for a stored download:
+    /// see `release`.
     public func fetch(_ source: DependencySource) async throws -> (file: URL, origin: TweakOrigin) {
         switch source {
         case .cached(let c):
@@ -317,14 +329,14 @@ public struct DependencyDownloader: Sendable {
             defer { try? FileManager.default.removeItem(at: file) }
             let kept = try await library.storeDownload(file, sha256: offer.sha256, packageID: offer.packageID,
                                                        version: offer.version, repo: offer.repo.id,
-                                                       url: offer.url.absoluteString)
+                                                       url: offer.url.absoluteString, hold: true)
             return (kept, .downloaded(repo: offer.repo.id, url: offer.url.absoluteString, sha256: offer.sha256.lowercased()))
         case .authorRelease(let offer):
             let got = try await client.authorReleases.download(offer, for: offer.dependency)
             defer { try? FileManager.default.removeItem(at: got.file) }
             let kept = try await library.storeDownload(got.file, sha256: got.sha256, packageID: offer.packageID,
                                                        version: got.version, repo: offer.source.id,
-                                                       url: offer.url.absoluteString)
+                                                       url: offer.url.absoluteString, hold: true)
             return (kept, .downloaded(repo: offer.source.id, url: offer.url.absoluteString, sha256: got.sha256))
         }
     }

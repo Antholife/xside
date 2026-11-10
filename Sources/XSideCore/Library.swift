@@ -391,6 +391,9 @@ public actor AppLibrary {
     private var tweaksInFlight = 0
     /// Versions `addTweak` stored and offered as a replacement, not confirmed yet (by record).
     private var offeredTweaks: [UUID: Set<String>] = [:]
+    /// Kept downloads (by SHA-256, with a count) a « Télécharger » holds between finding or storing
+    /// one and adding it (the confirmation is up meanwhile): never collected while held.
+    var heldDownloads: [String: Int] = [:]
     /// Tweak ids running jobs hold (by record, with a count): never collected meanwhile.
     private var reservedTweaks: [UUID: [String: Int]] = [:]
     /// Downloads whose bytes were checked, with the size and date they had then.
@@ -1444,8 +1447,9 @@ extension AppLibrary {
 
     /// Keeps a downloaded `.deb` as `downloads/<sha256>.deb`, checking its bytes against
     /// `sha256` first, and lists it in the index. Returns where it is.
+    /// `hold`: also held (`holdDownload`) in the same step, so no cleanup can come in between.
     public func storeDownload(_ file: URL, sha256: String, packageID: String, version: String,
-                              repo: String, url: String, now: Date = Date()) throws -> URL {
+                              repo: String, url: String, now: Date = Date(), hold: Bool = false) throws -> URL {
         let sha = sha256.lowercased()
         guard Self.isSHA256(sha) else { throw TweakError.unreadable("invalid SHA-256") }
         let fm = FileManager.default
@@ -1468,6 +1472,7 @@ extension AppLibrary {
                                               url: url, downloadedAt: now))
             try writeDownloadIndex(Array(entries.suffix(Self.maxDownloadEntries)))
             verifiedDownloads[sha] = Self.stamp(destination)
+            if hold { holdDownload(sha256: sha) }
             return destination
         } catch {
             try? fm.removeItem(at: staging)
@@ -1483,7 +1488,9 @@ extension AppLibrary {
     }
 
     /// `cachedDownload`, with where the file came from (for its origin and the confirmation).
-    public func cachedDownloadEntry(packageID: String, satisfying dependency: DebDependency) -> CachedDownload? {
+    /// `hold`: the copy found is also held (`holdDownload`) in the same step.
+    public func cachedDownloadEntry(packageID: String, satisfying dependency: DebDependency,
+                                    hold: Bool = false) -> CachedDownload? {
         let all = readDownloadIndex()
         var entries = all.filter { Self.isSHA256($0.sha256) && Self.isRegularFile(downloadURL($0.sha256)) }
         let candidates = entries.filter { $0.packageID == packageID && dependency.isSatisfied(by: $0.version) }
@@ -1506,7 +1513,19 @@ extension AppLibrary {
             entries.removeAll { $0.sha256 == entry.sha256 }
         }
         if entries != all { try? writeDownloadIndex(entries) }
+        if hold, let found { holdDownload(sha256: found.sha256) }
         return found
+    }
+
+    /// Keeps a kept download from being collected until as many `releaseDownload` calls.
+    public func holdDownload(sha256: String) {
+        heldDownloads[sha256.lowercased(), default: 0] += 1
+    }
+
+    public func releaseDownload(sha256: String) {
+        let sha = sha256.lowercased()
+        guard let n = heldDownloads[sha] else { return }
+        heldDownloads[sha] = n > 1 ? n - 1 : nil
     }
 
     /// Every kept download whose file is there, with its size and the apps whose pool uses it
@@ -1617,7 +1636,7 @@ extension AppLibrary {
             let ids = Set((r.tweaks ?? []).filter(fromIt).map(\.id))
             return !ids.isEmpty && Self.deviceLists(r).values.contains { $0.contains { ids.contains($0.id) } }
         }
-        guard !stillListed, tweaksInFlight == 0, Self.isRegularFile(downloadURL(sha)) else { return false }
+        guard !stillListed, tweaksInFlight == 0, heldDownloads[sha] == nil, Self.isRegularFile(downloadURL(sha)) else { return false }
         removeDownload(sha256: sha)
         Self.logger.notice("download cache: \(sha).deb deleted, no installation uses it any more")
         return true
@@ -1637,7 +1656,7 @@ extension AppLibrary {
             }.map(\.id))
             return !ids.isEmpty && Self.deviceLists(r).values.contains { $0.contains { ids.contains($0.id) } }
         }
-        guard !used else { return false }
+        guard !used, heldDownloads[sha] == nil else { return false }
         removeDownload(sha256: sha)
         return true
     }
