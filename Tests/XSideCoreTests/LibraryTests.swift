@@ -298,6 +298,25 @@ private func libraryRoot(state: Data, in tmp: URL) throws -> URL {
 }
 
 struct LibraryResilienceTests {
+    /// One entry XSide can't read (written by a newer XSide, or damaged) costs only that entry:
+    /// the rest of the list is kept, so the next save doesn't wipe it.
+    @Test func anUnreadableTweakEntryCostsOnlyItself() throws {
+        let json = """
+        {"deviceID": "A", "installedAt": 0, "expiresAt": 0,
+         "tweaks": [{"id": "good", "enabled": true}, {"id": 3, "enabled": "no"}],
+         "tweakResults": {"good": {"injected": {"converted": false}}, "newer": {"somethingNew": {}}},
+         "injectedTweaks": [{"id": "good", "name": "G", "packageID": "g", "imageNames": ["g.dylib"]},
+                            {"id": "newer", "name": "N", "packageID": "n", "imageNames": ["n.dylib"], "conversions": ["somethingNew"]}],
+         "signedChoices": {"withoutXSideFeatures": false, "duoCompatibility": false, "iCloudSignedOut": false,
+                           "tweaks": ["good", "newer"]}}
+        """
+        let i = try JSONDecoder().decode(Installation.self, from: Data(json.utf8))
+        #expect(i.tweaks == [TweakUse(id: "good", enabled: true)])
+        #expect(i.tweakResults == ["good": .injected(converted: false)])
+        #expect(i.injectedTweaks?.map(\.id) == ["good"])
+        #expect(i.signedChoices?.tweaks == ["good", "newer"])
+    }
+
     @Test func decodesStateWrittenBeforeNewKeys() async throws {
         let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
         let root = try libraryRoot(state: Data(contentsOf: fixtures.appendingPathComponent("state-v1.json")), in: tmp)

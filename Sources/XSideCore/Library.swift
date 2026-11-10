@@ -252,12 +252,21 @@ public struct Installation: Codable, Equatable, Sendable {
         duoLegacyModule = try? c.decodeIfPresent(Bool.self, forKey: .duoLegacyModule)
         withoutXSideFeaturesHere = try? c.decodeIfPresent(Bool.self, forKey: .withoutXSideFeaturesHere)
         signedChoices = try? c.decodeIfPresent(SigningChoices.self, forKey: .signedChoices)
-        tweaks = try? c.decodeIfPresent([TweakUse].self, forKey: .tweaks)
-        tweakResults = try? c.decodeIfPresent([String: TweakResult].self, forKey: .tweakResults)
+        // One entry at a time: one XSide can't read (a newer XSide's, or damaged) costs only itself,
+        // not the whole list at the next save.
+        tweaks = (try? c.decodeIfPresent([Lossy<TweakUse>].self, forKey: .tweaks))?.compactMap(\.value)
+        tweakResults = (try? c.decodeIfPresent([String: Lossy<TweakResult>].self, forKey: .tweakResults))?
+            .compactMapValues(\.value)
         embeddedDependencies = try? c.decodeIfPresent([String].self, forKey: .embeddedDependencies)
-        injectedTweaks = try? c.decodeIfPresent([InjectedTweak].self, forKey: .injectedTweaks)
+        injectedTweaks = (try? c.decodeIfPresent([Lossy<InjectedTweak>].self, forKey: .injectedTweaks))?.compactMap(\.value)
         tweakSupportImages = try? c.decodeIfPresent([String].self, forKey: .tweakSupportImages)
     }
+}
+
+/// Decodes to nil instead of throwing: for lists read one entry at a time.
+struct Lossy<T: Decodable>: Decodable {
+    let value: T?
+    init(from decoder: any Decoder) throws { value = try? T(from: decoder) }
 }
 
 public struct AppRecord: Codable, Identifiable, Equatable, Sendable {
