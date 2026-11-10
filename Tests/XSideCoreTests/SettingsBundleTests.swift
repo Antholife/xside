@@ -146,6 +146,11 @@ struct SettingsBundleTests {
         #expect(!FileManager.default.fileExists(atPath: elsewhere.appendingPathComponent("Root.plist").path))
     }
 
+    static let refreshFooterEN = "Refreshes the app the next time you open it, with nothing to do on your Mac: "
+        + "XSide just needs to be open on your Mac, with this device on the same Wi-Fi or plugged in with USB."
+    static let refreshFooterFR = "Rafraîchit l'app la prochaine fois que tu l'ouvres, sans rien faire sur ton Mac : "
+        + "il suffit qu'XSide soit ouvert sur ton Mac et que cet appareil soit sur le même Wi-Fi ou branché en USB."
+
     private func xsideSection(language: String = "en") -> SettingsSection {
         SettingsSection.xside(validUntil: "12 nov.", refreshedOn: "5 nov.", version: "1.2", installedOn: "1 nov.",
                               inApp: InAppSettings.defaults(reminder: false, at: Date(timeIntervalSince1970: 0)),
@@ -171,7 +176,8 @@ struct SettingsBundleTests {
         #expect(try specifiers(app)[1]["Title"] as? String == "Réglages XSide")
         let rows = try childItems(app)
         #expect(rows.first { $0["Key"] as? String == "io.github.xside.settings.validUntil" }?["Title"] as? String == "Valable jusqu'au")
-        #expect((rows[0]["FooterText"] as? String)?.hasPrefix("✦ Installée avec XSide") == true)
+        #expect(rows[0]["FooterText"] as? String == Self.refreshFooterFR)
+        #expect((rows[2]["FooterText"] as? String)?.hasPrefix("✦ Installée avec XSide") == true)
         #expect(lprojs(app.appendingPathComponent("Settings.bundle")).isEmpty)
         #expect(lprojs(app).isEmpty)
         let en = try makeApp()
@@ -185,12 +191,21 @@ struct SettingsBundleTests {
         let items = try childItems(app)
         let p = "io.github.xside.settings."
         func item(_ key: String) throws -> [String: Any] { try #require(items.first { $0["Key"] as? String == p + key }) }
-        #expect(items.count == 14)
-        // First, the one action iOS Settings can offer: a switch the app turns back off at launch.
+        #expect(items.count == 15)
+        // First, the one action iOS Settings can offer: a switch the app turns back off at launch,
+        // alone in its group, whose footer says what it does.
+        #expect(items[0]["Type"] as? String == "PSGroupSpecifier")
+        #expect(items[0]["Key"] as? String == p + "section")
+        #expect(items[0]["FooterText"] as? String == Self.refreshFooterEN)
         #expect(items[1]["Key"] as? String == p + "refreshOnLaunch")
         #expect(items[1]["Type"] as? String == "PSToggleSwitchSpecifier")
         #expect(items[1]["DefaultValue"] as? Bool == false)
-        #expect(items.dropFirst(2).prefix(6).allSatisfy { $0["Type"] as? String == "PSTitleValueSpecifier" })
+        // Then the rest, in their own group, under XSide's footer.
+        #expect(items[2]["Type"] as? String == "PSGroupSpecifier")
+        #expect(items[2]["Key"] as? String == p + "section.status")
+        #expect(items[2]["Title"] == nil)
+        #expect((items[2]["FooterText"] as? String)?.hasPrefix("✦ Installed with XSide") == true)
+        #expect(items.dropFirst(3).prefix(6).allSatisfy { $0["Type"] as? String == "PSTitleValueSpecifier" })
         #expect(try item("connection")["DefaultValue"] as? String == "—")
         #expect(try item("version")["DefaultValue"] as? String == "1.2")
         for key in ["showValidity", "alertLate", "refreshCard", "reminder", "autoRefresh"] {
@@ -223,6 +238,9 @@ struct SettingsBundleTests {
         #expect(fr["Refresh at next launch"] == "Rafraîchir à la prochaine ouverture")
         #expect(en["Refresh at next launch"] == "Refresh at next launch")
         #expect(fr["Last refresh"] == "Dernier rafraîchissement")
+        // The switch's footer, in both languages.
+        #expect(fr[Self.refreshFooterEN] == Self.refreshFooterFR)
+        #expect(en[Self.refreshFooterEN] == Self.refreshFooterEN)
         let footer = try #require(fr.keys.first { $0.hasPrefix("✦ Installed with XSide") })
         #expect(fr[footer]?.hasPrefix("✦ Installée avec XSide\n• Rafraîchie automatiquement depuis ton Mac\n• ") == true)
         // Mega review minor 8: the same footer is written for an iPad, so it names neither.
@@ -316,7 +334,7 @@ struct SettingsBundleTests {
         #expect(throws: (any Error).self) { try SettingsBundle.add(xsideSection(), to: linkedRoot) }
     }
 
-    // MARK: - Tweaks (« Tweaks › N » and its page)
+    // MARK: - Tweaks (« Tweaks · N » and its page)
 
     private var pane: TweaksPane {
         TweaksPane.make([PhoneTweak(name: "XSPivotFix", version: "1.0", author: "Anthony", summary: "Puts the tab back.",
@@ -330,18 +348,25 @@ struct SettingsBundleTests {
         return try #require(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
     }
 
-    /// After « Réglages XSide », a row « Tweaks · N » opening a page with one group per tweak: its
-    /// name as title, a « Version » row, the description as footer.
-    @Test func tweaksRowOpensItsOwnPage() throws {
+    /// With XSide's module: the app's page keeps only « Réglages XSide »; XSide's page ends with a
+    /// group « Tweaks » and a row « Tweaks · N » opening a page with one group per tweak: its name
+    /// as title, a « Version » row, the description as footer.
+    @Test func tweaksRowIsInsideXSidesPage() throws {
         let app = try makeApp()
         try SettingsBundle.add(xsideSection(language: "fr"), tweaks: pane, to: app)
         let items = try specifiers(app)
-        #expect(items.count == 3)
+        #expect(items.count == 2)
         #expect(items[1]["Key"] as? String == "io.github.xside.settings.pane")
-        #expect(items[2]["Type"] as? String == "PSChildPaneSpecifier")
-        #expect(items[2]["Title"] as? String == "Tweaks · 2")
-        #expect(items[2]["File"] as? String == "XSideTweaks")
-        #expect(items[2]["Key"] as? String == "io.github.xside.settings.tweaks")
+        let child = try childItems(app)
+        #expect(child.count == 17)
+        #expect(child[15]["Type"] as? String == "PSGroupSpecifier")
+        #expect(child[15]["Title"] as? String == "Tweaks")
+        #expect(child[15]["Key"] as? String == "io.github.xside.settings.tweaks.group")
+        #expect(child[16]["Type"] as? String == "PSChildPaneSpecifier")
+        #expect(child[16]["Title"] as? String == "Tweaks · 2")
+        #expect(child[16]["File"] as? String == "XSideTweaks")
+        #expect(child[16]["Key"] as? String == "io.github.xside.settings.tweaks")
+        #expect(Set(child.compactMap { $0["Key"] as? String }).count == child.count)
         let page = try tweaksPage(app)
         #expect(page["Title"] as? String == "Tweaks")
         #expect(page["StringsTable"] as? String == "XSide")
@@ -358,8 +383,46 @@ struct SettingsBundleTests {
         #expect(rows[2]["FooterText"] == nil)
         #expect(rows[3]["DefaultValue"] as? String == "—")
         #expect(Set(rows.compactMap { $0["Key"] as? String }).count == 4)
-        // XSide's page is untouched by it.
-        #expect(try childItems(app).count == 14)
+    }
+
+    /// An app signed with the earlier layout (« Tweaks · N » on the app's own page, after
+    /// « Réglages XSide ») loses that row when signed again; its own items stay.
+    @Test func resigningDropsTheEarlierRootTweaksRow() throws {
+        let app = try makeApp()
+        let bundle = app.appendingPathComponent("Settings.bundle")
+        try FileManager.default.createDirectory(at: bundle, withIntermediateDirectories: true)
+        let earlier: [String: Any] = ["StringsTable": "XSide", "PreferenceSpecifiers": [
+            ["Type": "PSToggleSwitchSpecifier", "Title": "Mine", "Key": "mine", "DefaultValue": true],
+            ["Type": "PSGroupSpecifier", "Key": "io.github.xside.settings.group"],
+            ["Type": "PSChildPaneSpecifier", "Title": "Réglages XSide", "File": "XSide",
+             "Key": "io.github.xside.settings.pane", "id": "io.github.xside.settings.pane"],
+            ["Type": "PSChildPaneSpecifier", "Title": "Tweaks · 2", "File": "XSideTweaks",
+             "Key": "io.github.xside.settings.tweaks", "id": "io.github.xside.settings.tweaks"]]]
+        try PropertyListSerialization.data(fromPropertyList: earlier, format: .xml, options: 0)
+            .write(to: bundle.appendingPathComponent("Root.plist"))
+        try SettingsBundle.add(xsideSection(), tweaks: pane, to: app)
+        #expect(try specifiers(app).map { $0["Key"] as? String }
+                == ["mine", "io.github.xside.settings.group", "io.github.xside.settings.pane"])
+        #expect(try childItems(app).last?["Key"] as? String == "io.github.xside.settings.tweaks")
+    }
+
+    /// Switching between the two layouts: each signing leaves only its own.
+    @Test func switchingLayoutsLeavesOnlyTheCurrentOne() throws {
+        let app = try makeApp()
+        try SettingsBundle.add(nil, tweaks: pane, to: app)
+        try SettingsBundle.add(xsideSection(), tweaks: pane, to: app)
+        #expect(try specifiers(app).map { $0["Key"] as? String }
+                == ["io.github.xside.settings.group", "io.github.xside.settings.pane"])
+        #expect(try childItems(app).filter { $0["Key"] as? String == "io.github.xside.settings.tweaks" }.count == 1)
+        try SettingsBundle.add(nil, tweaks: pane, to: app)
+        #expect(try specifiers(app).map { $0["Key"] as? String }
+                == ["io.github.xside.settings.group", "io.github.xside.settings.tweaks"])
+        #expect(!FileManager.default.fileExists(atPath: app.appendingPathComponent("Settings.bundle/XSide.plist").path))
+        // Tweaks gone, module kept: XSide's page without its « Tweaks » group.
+        try SettingsBundle.add(xsideSection(), tweaks: pane, to: app)
+        try SettingsBundle.add(xsideSection(), tweaks: nil, to: app)
+        #expect(try childItems(app).count == 15)
+        #expect(!FileManager.default.fileExists(atPath: app.appendingPathComponent("Settings.bundle/XSideTweaks.plist").path))
     }
 
     /// Without XSide's module (its features off): the tweaks row alone, no « Réglages XSide ».

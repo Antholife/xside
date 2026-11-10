@@ -13,6 +13,9 @@ public struct SettingsSection: Sendable {
         case toggle(titleKey: String, key: String, defaultValue: Bool)
         /// `titleKeys` are shown, `values` are stored (same order).
         case choice(titleKey: String, key: String, titleKeys: [String], values: [String], defaultValue: String)
+        /// Starts another group (untitled) on XSide's page, `footerKey` under its rows; the rows
+        /// before it stay in the group above, under the section's own footer.
+        case group(key: String, footerKey: String?)
     }
 
     public let titleKey: String
@@ -43,6 +46,8 @@ public struct SettingsSection: Sendable {
             case let .choice(titleKey, key, titleKeys, values, defaultValue):
                 return .choice(titleKey: text(titleKey), key: key, titleKeys: titleKeys.map(text), values: values,
                                defaultValue: defaultValue)
+            case let .group(key, footerKey):
+                return .group(key: key, footerKey: footerKey.map(text))
             }
         }
         var plain: [String: [String: String]] = [:]
@@ -54,7 +59,8 @@ public struct SettingsSection: Sendable {
 }
 
 /// Writes a `SettingsSection` into the app's Settings.bundle: one row "Réglages XSide" on the app's
-/// page (`Root.plist`), opening XSide's own page (`XSide.plist`) that holds the section.
+/// page (`Root.plist`), opening XSide's own page (`XSide.plist`) that holds the section and, at its
+/// end, « Tweaks · N ».
 public enum SettingsBundle {
     /// Every item XSide adds carries a key with this prefix, so a re-sign replaces them. The
     /// dylib reads and writes the app's defaults under `keyPrefix + row key`.
@@ -84,9 +90,11 @@ public enum SettingsBundle {
     /// texts merged into each `<lang>.lproj`, the app's entries kept), else of a table of XSide's,
     /// `XSide`; XSide's page uses the same table. Throws on a page it can't read, or on links (a
     /// link could make it write outside the app).
-    /// `tweaks`: a second row, « Tweaks · N », after XSide's, opening a page of its own; without
-    /// `section` (no XSide module in the app) the row is alone. Either missing: its row and page go.
-    /// Both missing: nothing is written.
+    /// `tweaks`: a row « Tweaks · N » opening a page of its own, in a group « Tweaks » at the end of
+    /// XSide's page; without `section` (no XSide module in the app, so no XSide page) the row is
+    /// on the app's page instead, alone. Either missing: its row and page go. Both missing: nothing
+    /// is written. XSide's items on the app's page are all replaced, so a re-sign drops the row
+    /// from whichever place an earlier signing put it.
     public static func add(_ section: SettingsSection?, tweaks: TweaksPane? = nil, to app: URL) throws {
         guard section != nil || tweaks != nil else { return }
         let fm = FileManager.default
@@ -124,10 +132,12 @@ public enum SettingsBundle {
                           "Key": keyPrefix + "pane", "id": keyPrefix + "pane"])
         }
         // Read-only and static: nothing on the phone needs to run for it (XSide's module or not).
-        if let tweaks {
-            items.append(["Type": "PSChildPaneSpecifier", "Title": tweaks.rowTitle, "File": tweaksFile,
-                          "Key": keyPrefix + "tweaks", "id": keyPrefix + "tweaks"])
+        // A child pane inside XSide's page when there is one, else on the app's page.
+        let tweaksRow: [String: Any]? = tweaks.map {
+            ["Type": "PSChildPaneSpecifier", "Title": $0.rowTitle, "File": tweaksFile,
+             "Key": keyPrefix + "tweaks", "id": keyPrefix + "tweaks"]
         }
+        if section == nil, let tweaksRow { items.append(tweaksRow) }
 
         // XSide's page: the section, its footer under the rows.
         var group: [String: Any] = ["Type": "PSGroupSpecifier", "Key": keyPrefix + "section"]
@@ -144,7 +154,15 @@ public enum SettingsBundle {
             case let .choice(titleKey, key, titleKeys, values, defaultValue):
                 rows.append(["Type": "PSMultiValueSpecifier", "Title": titleKey, "Key": keyPrefix + key,
                              "Titles": titleKeys, "Values": values, "DefaultValue": defaultValue])
+            case let .group(key, footerKey):
+                var group: [String: Any] = ["Type": "PSGroupSpecifier", "Key": keyPrefix + key]
+                if let footerKey { group["FooterText"] = footerKey }
+                rows.append(group)
             }
+        }
+        if section != nil, let tweaksRow {
+            rows.append(["Type": "PSGroupSpecifier", "Title": "Tweaks", "Key": keyPrefix + "tweaks.group"])
+            rows.append(tweaksRow)
         }
         // The page's own table; with none named iOS reads "Root", so XSide's keys go there when the
         // app ships a Root.strings; only an app with no strings at all gets XSide's table.

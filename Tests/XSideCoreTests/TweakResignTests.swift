@@ -923,8 +923,8 @@ struct TweakResignTests {
         return try #require(page["PreferenceSpecifiers"] as? [[String: Any]])
     }
 
-    /// With XSide's module: the payload lists what went in (and what is off here), and the app's
-    /// page gets « Tweaks · N » next to « Réglages XSide ».
+    /// With XSide's module: the payload lists what went in (and what is off here), and XSide's
+    /// page (« Réglages XSide ») ends with « Tweaks · N »; the app's page keeps only XSide's row.
     @Test func theIPhoneListsTheTweaksWithTheModule() async throws {
         var f = try await TweakFixture()
         f.settings = true
@@ -943,9 +943,11 @@ struct TweakResignTests {
         #expect(tweaks[1]["converted"] as? Bool == false && tweaks[1]["off"] as? Bool == false)
         #expect(tweaks[2]["off"] as? Bool == true && tweaks[2]["version"] as? String == "2.0")
         let root = try settingsItems(app)
-        #expect(root.map { $0["Key"] as? String } == ["io.github.xside.settings.group", "io.github.xside.settings.pane",
-                                                      "io.github.xside.settings.tweaks"])
-        #expect(root[2]["Title"] as? String == "Tweaks · 2")
+        #expect(root.map { $0["Key"] as? String } == ["io.github.xside.settings.group", "io.github.xside.settings.pane"])
+        let pane = try settingsItems(app, "XSide")
+        #expect(pane.suffix(2).map { $0["Key"] as? String } == ["io.github.xside.settings.tweaks.group",
+                                                                "io.github.xside.settings.tweaks"])
+        #expect(pane.last?["Title"] as? String == "Tweaks · 2")
         let page = try settingsItems(app, "XSideTweaks")
         #expect(page.compactMap { $0["Type"] as? String == "PSGroupSpecifier" ? $0["Title"] as? String : nil }
                 == ["Alpha · converted", "Beta"])

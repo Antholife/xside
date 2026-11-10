@@ -8,6 +8,7 @@ extension SettingsSection {
     /// defaults. Row keys, read and written by the dylib in the app's defaults under
     /// `io.github.xside.settings.<key>`:
     /// refreshOnLaunch (boolean action: the dylib turns it back off and refreshes at launch);
+    /// (then a new group, `section.status`, under XSide's footer)
     /// validUntil, refreshedOn, version, installedOn, connection, lastRefresh (read-only text);
     /// showValidity, alertLate, refreshCard, reminder (booleans; "Messages XSide" is derived from
     /// them, see `InAppSettings.derivedLevel`),
@@ -26,7 +27,9 @@ extension SettingsSection {
         let rows: [Row] = [
             // An action, not a setting (iOS Settings can't run one): the app turns it back off at
             // its next launch and asks XSide for a refresh. Never synced with the Mac.
+            // Alone in the first group, its footer saying what it does (Anthony found it ambiguous).
             .toggle(titleKey: title("refreshOnLaunch"), key: "refreshOnLaunch", defaultValue: false),
+            .group(key: "section.status", footerKey: p + "footer"),
             .value(titleKey: title("validUntil"), key: "validUntil", defaultValue: validUntil),
             .value(titleKey: title("refreshedOn"), key: "refreshedOn", defaultValue: refreshedOn),
             .value(titleKey: title("version"), key: "version", defaultValue: version),
@@ -40,7 +43,7 @@ extension SettingsSection {
             .toggle(titleKey: title("autoRefresh"), key: "autoRefresh", defaultValue: s.autoRefresh.value),
             choice("language", ["automatic", "fr", "en"], s.language.value.rawValue),
         ]
-        return SettingsSection(titleKey: title("group"), footerKey: p + "footer", rows: rows, strings: texts)
+        return SettingsSection(titleKey: title("group"), footerKey: p + "footer.refreshOnLaunch", rows: rows, strings: texts)
             .plainText(in: language)
     }
 
@@ -54,6 +57,10 @@ extension SettingsSection {
             ("title.validUntil", "Valable jusqu'au"), ("title.refreshedOn", "Rafraîchie le"),
             ("title.version", "Version"), ("title.installedOn", "Installée le"),
             ("title.refreshOnLaunch", "Rafraîchir à la prochaine ouverture"),
+            // Asked at the next launch or return to the app (XSTakeRefreshOnLaunch), the Mac
+            // accepts on its own. "cet appareil": the same page is written for an iPad.
+            ("footer.refreshOnLaunch", "Rafraîchit l'app la prochaine fois que tu l'ouvres, sans rien faire sur ton Mac : "
+                + "il suffit qu'XSide soit ouvert sur ton Mac et que cet appareil soit sur le même Wi-Fi ou branché en USB."),
             ("title.connection", "Connexion au Mac"), ("title.lastRefresh", "Dernier rafraîchissement"),
             ("title.showValidity", "Afficher la validité à l'ouverture"),
             ("title.alertLate", "Alerter si pas rafraîchie"),
@@ -75,6 +82,8 @@ extension SettingsSection {
             ("title.validUntil", "Valid until"), ("title.refreshedOn", "Last refreshed"),
             ("title.version", "Version"), ("title.installedOn", "Installed on"),
             ("title.refreshOnLaunch", "Refresh at next launch"),
+            ("footer.refreshOnLaunch", "Refreshes the app the next time you open it, with nothing to do on your Mac: "
+                + "XSide just needs to be open on your Mac, with this device on the same Wi-Fi or plugged in with USB."),
             ("title.connection", "Connection to the Mac"), ("title.lastRefresh", "Last refresh"),
             ("title.showValidity", "Show validity when opening"),
             ("title.alertLate", "Alert if not refreshed"),
