@@ -148,6 +148,21 @@ import Foundation
         #expect(on == .paused(false, by: .device))
     }
 
+    /// Mega review C1: the pause is stamped with when the phone asked (never later than now), not
+    /// when the Mac read it, so a late request can't win a merge it would have lost.
+    @Test func setAutoRefreshIsStampedWithTheRequestTime() {
+        let (early, _) = ChannelHandler.handle(.setAutoRefresh(false), installation: installation(), now: now,
+                                               reminder: true, requestedAt: now.addingTimeInterval(-30))
+        guard case let .settings(s, _, _) = early else { Issue.record("no settings"); return }
+        #expect(s.autoRefresh == Field(value: false, changedAt: now.addingTimeInterval(-30), changedBy: .device))
+        let (ahead, _) = ChannelHandler.handle(.setAutoRefresh(false), installation: installation(), now: now,
+                                               reminder: true, requestedAt: now.addingTimeInterval(90))
+        guard case let .settings(a, _, _) = ahead else { Issue.record("no settings"); return }
+        #expect(a.autoRefresh.changedAt == now)
+        #expect(ChannelHandler.requestDate(timestampMillis: 1_799_999_970_000, now: now) == now.addingTimeInterval(-30))
+        #expect(ChannelHandler.requestDate(timestampMillis: 1_800_000_090_000, now: now) == now)
+    }
+
     /// A phone can't make the Mac re-sign its app in a loop: counted from its own last request only.
     @Test func phoneRefreshesAreLimitedByThePhonesOwnRequests() {
         // XSide's own bookkeeping (an unreachable attempt 2 min ago) doesn't block the phone.
@@ -205,6 +220,18 @@ import Foundation
         let good = try line(nonce: "c")
         #expect(ChannelHandler.receive(line: good, now: now, nonces: &nonces, secret: lookup) != .rejected)
         #expect(ChannelHandler.receive(line: good, now: now, nonces: &nonces, secret: lookup) == .rejected)
+    }
+
+    /// Mega review C1: the replay caches live in memory, so after XSide restarts a request sealed
+    /// before it started (still inside the 120 s window) is refused rather than run a second time.
+    @Test func requestsSealedBeforeTheChannelStartedAreRejected() throws {
+        var nonces = ChannelNonces(notBefore: now)
+        let before = try line(.setAutoRefresh(false), at: now.addingTimeInterval(-30), nonce: "old")
+        #expect(ChannelHandler.receive(line: before, now: now.addingTimeInterval(5), nonces: &nonces, secret: lookup) == .rejected)
+        #expect(nonces.count(for: installationID) == 0)
+        let after = try line(.setAutoRefresh(false), at: now.addingTimeInterval(1), nonce: "new")
+        #expect(ChannelHandler.receive(line: after, now: now.addingTimeInterval(5), nonces: &nonces, secret: lookup)
+                == .request(installationID: installationID, nonce: "new", .setAutoRefresh(false)))
     }
 
     /// Final review minor 9: the window's edges (120 s either way, inclusive), past and future.
@@ -363,6 +390,21 @@ import Foundation
         #expect(i?.refreshPaused == false && i?.pausedBy == nil)
         #expect(i?.inApp?.autoRefresh == Field(value: true, changedAt: now.addingTimeInterval(1), changedBy: .mac))
         #expect(i?.lastMacEdit == now.addingTimeInterval(1))
+    }
+
+    /// Mega review C8: the phone pausing an app the Mac paused for a while makes it the phone's
+    /// pause, until resumed: the Mac's end no longer resumes it.
+    @Test func aPhonePauseOverATimedMacPauseBecomesThePhones() async throws {
+        let (lib, rec, tmp) = try await library(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let end = now.addingTimeInterval(2 * 3600)
+        #expect(try await lib.setRefreshPaused(true, recordID: rec.id, deviceID: "a", by: .mac, at: now, until: end))
+        #expect(try await lib.setRefreshPaused(true, recordID: rec.id, deviceID: "a", by: .device, at: now.addingTimeInterval(5)))
+        let i = await stored(lib, rec.id)
+        #expect(i?.refreshPaused == true && i?.pausedBy == .device && i?.pausedUntil == nil)
+        #expect(i?.inApp?.autoRefresh == Field(value: false, changedAt: now.addingTimeInterval(5), changedBy: .device))
+        #expect(try await lib.resumeEndedPauses(at: end.addingTimeInterval(1)).isEmpty)
+        // The same choice again changes nothing.
+        #expect(try await lib.setRefreshPaused(true, recordID: rec.id, deviceID: "a", by: .device, at: now.addingTimeInterval(9)) == false)
     }
 
     /// Device feedback 3, E5: a pause of one app for a while (2 h, a day): paused like "Arrêter de

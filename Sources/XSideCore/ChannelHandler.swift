@@ -42,6 +42,9 @@ public enum ChannelHandler {
         }
         // The lookup comes first: no cache is ever created for an id XSide doesn't know.
         guard let key = secret(envelope.installationID) else { return .rejected }
+        // Sealed before this channel started: its nonce may be in the caches of a previous run,
+        // which are gone (mega review C1), so it can't be told from a replay.
+        if let start = nonces.notBeforeMillis, envelope.timestamp < start { return .rejected }
         let opened = nonces.withCache(for: envelope.installationID) { envelope.open(secret: key, now: now, seen: &$0) }
         guard let request = opened else { return .rejected }
         return .request(installationID: envelope.installationID, nonce: envelope.nonce, request)
@@ -70,8 +73,10 @@ public enum ChannelHandler {
     /// can't start, and sends the outcome (`refreshed` / `failed`) as a second line once it ends.
     /// `reminder`: the Mac's global "Reminder on the device" setting, to seed an installation saved
     /// without settings.
+    /// `requestedAt`: when the phone sealed the request (`requestDate`), which stamps a pause or
+    /// resume from the phone (mega review C1); nil, `now`.
     public static func handle(_ request: ChannelRequest, installation: Installation, now: Date,
-                              reminder: Bool) -> (reply: ChannelReply, update: InstallationUpdate) {
+                              reminder: Bool, requestedAt: Date? = nil) -> (reply: ChannelReply, update: InstallationUpdate) {
         switch request {
         case let .checkIn(settings, lastRefresh, _, _, _), let .watch(settings, lastRefresh, _, _, _):
             // A watch is a check-in first (its first line is this reply); the connection then stays open.
@@ -98,10 +103,17 @@ public enum ChannelHandler {
             // Only meaningful on a watch (read there, never answered); on its own connection: nothing.
             return (.accepted, .none)
         case let .setAutoRefresh(on):
-            let current = installation.seededInApp(reminder: reminder, at: now)
-            let updated = current.setting(\.autoRefresh, to: on, at: now, by: .device)
+            let stamp = min(requestedAt ?? now, now)
+            let current = installation.seededInApp(reminder: reminder, at: stamp)
+            let updated = current.setting(\.autoRefresh, to: on, at: stamp, by: .device)
             return (.settings(updated), .paused(!on, by: .device))
         }
+    }
+
+    /// When the phone sealed a request (its envelope's timestamp, already inside the window), never
+    /// later than `now`.
+    public static func requestDate(timestampMillis: Int64, now: Date) -> Date {
+        min(Date(timeIntervalSince1970: TimeInterval(timestampMillis) / 1000), now)
     }
 
     /// When the installation's pause ends by itself, as the phone is told (review D–G, minor 7):
@@ -146,8 +158,15 @@ public enum ChannelHandler {
 public struct ChannelNonces: Sendable {
     private var caches: [String: NonceCache] = [:]
     private let capacity: Int
+    /// Requests sealed before this (epoch ms) are refused: the channel's start (mega review C1).
+    let notBeforeMillis: Int64?
 
-    public init(capacityPerInstallation: Int = 512) { capacity = capacityPerInstallation }
+    /// `notBefore`: when this run's channel started (the caches don't outlive it, so an older
+    /// request may be a replay of one the previous run accepted); nil, no such limit.
+    public init(capacityPerInstallation: Int = 512, notBefore: Date? = nil) {
+        capacity = capacityPerInstallation
+        notBeforeMillis = notBefore.flatMap(channelMillis)
+    }
 
     public func count(for installationID: String) -> Int { caches[installationID]?.count ?? 0 }
 

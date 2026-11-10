@@ -1176,7 +1176,9 @@ final class AppModel {
 
     @ObservationIgnored private var channelServer: ChannelServer?
     /// Nonces of the requests accepted lately, so none can be replayed (one cache per installation).
-    @ObservationIgnored private var channelNonces = ChannelNonces()
+    /// Requests sealed before this run started are refused (mega review C1: the caches of the
+    /// previous run are gone, so they could be replays).
+    @ObservationIgnored private var channelNonces = ChannelNonces(notBefore: Date())
     /// The last authenticated request from each installation in this run (check-ins that change
     /// nothing aren't written to the library): says when the app is open on its device right now
     /// (device feedback 3, E3).
@@ -1398,8 +1400,10 @@ final class AppModel {
                 Self.channelLogger.error("channel: reply not sealed: \(String(describing: error))")
             }
         }
+        let requestedAt = ChannelHandler.requestDate(timestampMillis: envelope.timestamp, now: now)
         let (answer, update) = ChannelHandler.handle(request, installation: found.installation, now: now,
-                                                     reminder: Self.setting(Self.deviceReminderKey))
+                                                     reminder: Self.setting(Self.deviceReminderKey),
+                                                     requestedAt: requestedAt)
         Self.channelLogger.notice("channel: \(Self.describe(request)) from \(job.deviceID) for \(found.recordID)")
         switch update {
         case .none:
@@ -1428,7 +1432,8 @@ final class AppModel {
             await reply(answer) // the phone's view is right either way
         case let .paused(paused, by):
             do {
-                if try await library.setRefreshPaused(paused, recordID: job.recordID, deviceID: job.deviceID, by: by, at: now) {
+                if try await library.setRefreshPaused(paused, recordID: job.recordID, deviceID: job.deviceID, by: by,
+                                                      at: requestedAt) {
                     await reloadRecords()
                     pauseChanged(job, paused: paused)
                 }

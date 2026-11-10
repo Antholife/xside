@@ -702,8 +702,13 @@ public actor AppLibrary {
                                  by origin: ChangeOrigin = .mac, at date: Date = Date(),
                                  until: Date? = nil) throws -> Bool {
         let index = try indexOf(recordID)
-        guard let i = items[index].installations.firstIndex(where: { $0.deviceID == deviceID }),
-              items[index].installations[i].refreshPaused != paused else { return false }
+        guard let i = items[index].installations.firstIndex(where: { $0.deviceID == deviceID }) else { return false }
+        let current = items[index].installations[i]
+        // Already paused by the Mac (maybe for a while) and the phone pauses too: it becomes the
+        // phone's pause, until resumed, so the Mac's end no longer resumes it (mega review C8).
+        let phoneTakesOver = paused && origin == .device && current.refreshPaused
+            && (current.pausedBy != .device || current.pausedUntil != nil)
+        guard current.refreshPaused != paused || phoneTakesOver else { return false }
         let previous = items
         Self.applyPause(paused, by: origin, at: date, to: &items[index].installations[i])
         items[index].installations[i].pausedUntil = paused ? until : nil
