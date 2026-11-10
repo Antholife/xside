@@ -264,6 +264,21 @@ struct IPAContentTests {
         }
     }
 
+    /// A loose dylib signed by the app's own team is still listed when it shows a warning sign:
+    /// a team-id match from the IPA's own signature isn't proof of origin (a repackager re-signs
+    /// the payload), so a disguised dylib can't hide behind it (security review of T2-1/T2-2).
+    @Test func aSameTeamLooseDylibWithASignIsAnAddition() throws {
+        try withTempDir { dir in
+            let main = ContentMachO.build(loads: [L(name: "@executable_path/libswiftARKit.dylib")],
+                                          team: "TEAM111111", filetype: 2)
+            let payload = ContentMachO.build(strings: ["https://discord.com/api/webhooks/9/z"], team: "TEAM111111")
+            let app = try makeApp(dir, main: main, files: ["libswiftARKit.dylib": payload])
+            let additions = scan(app).additions
+            #expect(additions.map(\.name) == ["libswiftARKit.dylib"])
+            #expect(additions.first?.signs == [.discordWebhook])
+        }
+    }
+
     @Test func knownTweakFrameworksAreAdditionsWhateverTheirTeam() throws {
         try withTempDir { dir in
             let names = ["Cephei", "Orion", "ElleKit"]
@@ -347,6 +362,9 @@ struct IPAContentTests {
     /// that merely links to hastebin.com isn't flagged (review 2, T2-3).
     @Test func hastebinIsASignOnlyWithAPastePath() throws {
         #expect(try signs(ContentMachO.build(strings: ["https://hastebin.com/raw/abc"], signed: false)) == [.pasteSite])
+        // An upload/API path (how data is exfiltrated to a paste site) fires too, not only /raw.
+        #expect(try signs(ContentMachO.build(strings: ["https://hastebin.com/documents"], signed: false)) == [.pasteSite])
+        #expect(try signs(ContentMachO.build(strings: ["https://pastebin.com/api/api_post.php"], signed: false)) == [.pasteSite])
         #expect(try signs(ContentMachO.build(strings: ["see hastebin.com for details"], signed: false)).isEmpty)
     }
 

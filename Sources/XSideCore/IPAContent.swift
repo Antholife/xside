@@ -233,22 +233,15 @@ public enum IPAContentScanner {
             let looseDylib = folder == nil && file.lowercased().hasSuffix(".dylib")
             let team = IPAInspector.codeSigningTeamID(data)
             let otherTeam = mainTeam != nil && team != mainTeam
-            let isAddition: Bool
-            if library != nil || otherTeam {
-                isAddition = true
-            } else if looseDylib {
-                // On an unsigned/ad-hoc IPA (mainTeam nil) a name proves nothing: list every loose
-                // dylib, libswift* included — a payload can't hide behind a Swift-runtime name, and
-                // additions never block (T2-1). On a signed IPA this branch means team == mainTeam
-                // (a foreign team was already an addition above): the app's own, a real Swift
-                // runtime or a plain bundled lib, so not an addition (T2-1 keeps the runtime out,
-                // T2-2 demotes the rest).
-                isAddition = mainTeam == nil
-            } else {
-                isAddition = false
-            }
+            // A tweak library, or a library signed by another team than the app, is an addition.
+            // An unsigned/ad-hoc IPA (mainTeam nil) has no origin to trust, so every loose dylib is
+            // listed (libswift* included — a name proves nothing). A loose dylib signed by the app's
+            // own team could still be a disguised payload (a repackager re-signs it), so it isn't
+            // trusted on its team alone: it is scanned, and promoted to an addition only if it shows
+            // a warning sign. Additions never block, so listing one costs nothing.
+            let definite = library != nil || otherTeam || (looseDylib && mainTeam == nil)
             let short = folder.map { String($0.dropLast(".framework".count)) } ?? baseName(file)
-            guard isAddition, found.count < maxAdditions else { names[node.relative] = short; continue }
+            guard definite || looseDylib, found.count < maxAdditions else { names[node.relative] = short; continue }
 
             let budget = min(maxScanBytes, max(0, maxTotalScanBytes - scanned))
             let text = data.prefix(budget)
@@ -256,6 +249,10 @@ public enum IPAContentScanner {
             let imports = MachOImports.importedSymbols(in: data, wanted: wantedImports)
             let kind: IPAAddition.Kind = library != nil ? .tweakLibrary
                 : (hooks(data, text: text, imports: imports) ? .tweak : .unknown)
+            let itsSigns = signs(text: text, imports: imports, kind: kind)
+            // A same-team loose dylib with nothing suspicious is a plain bundled library, not an addition.
+            guard definite || !itsSigns.isEmpty else { names[node.relative] = short; continue }
+
             let metadata = self.metadata(node.url, folder: folder, root: root)
             let name = library ?? metadata
                 ?? (folder != nil || kind == .tweak ? short : file)
@@ -264,7 +261,7 @@ public enum IPAContentScanner {
                 ?? Int64(data.count)
             found.append(IPAAddition(name: name, path: node.relative, size: size, load: node.load,
                                      loadedBy: node.loader, kind: kind, hasMetadata: metadata != nil,
-                                     signs: signs(text: text, imports: imports, kind: kind)))
+                                     signs: itsSigns))
         }
         for i in found.indices {
             if let loader = found[i].loadedBy { found[i].loadedBy = names[loader] ?? loader }
@@ -455,8 +452,9 @@ public enum IPAContentScanner {
         var found: [WarningSign] = []
         if contains(text, "discord.com/api/webhooks") || contains(text, "discordapp.com/api/webhooks") { found.append(.discordWebhook) }
         if contains(text, "api.telegram.org/bot") { found.append(.telegramBot) }
-        // A paste site in a raw/paste path form, not a bare domain mention (a tweak may just link to it).
-        if contains(text, "pastebin.com/raw") || contains(text, "hastebin.com/raw") || contains(text, "hastebin.skyra.pw/raw") { found.append(.pasteSite) }
+        // A URL to a paste site (any path: /raw to read, /documents or /api to upload), by its
+        // scheme-prefixed host, so a bare word in prose (a tweak linking to it) doesn't fire.
+        if contains(text, "://pastebin.com") || contains(text, "://hastebin.com") || contains(text, "://hastebin.skyra.pw") { found.append(.pasteSite) }
         // A host under ngrok (a public suffix list names ngrok.io alone, or as *.ngrok.io).
         if [".ngrok.io", ".ngrok-free.app", ".ngrok.app", ".ngrok-free.dev"].contains(where: { containsHost(text, $0) })
             || contains(text, "webhook.site/") || contains(text, "requestbin.net/") || contains(text, "requestbin.com/") {
