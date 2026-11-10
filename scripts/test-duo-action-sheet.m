@@ -49,6 +49,24 @@ int main(void) {
         [d didShow];
         check([d finish], @"shown again: dismissed again");
 
+        // A present UIKit declines (P1): the sheet must not stay stuck "showing".
+        XSSheetButtons *e = [XSSheetButtons new];
+        [e didShow];
+        [e showDeclined];
+        check(!e.showing, @"a declined present leaves it not showing");
+        check(![e finish], @"nothing to finish: it never really showed");
+        [e didShow];
+        check([e finish] && !e.showing, @"shown for real after a decline: dismissed once");
+
+        // A sheet with no button can't be dismissed on iPhone, so it isn't presented (P2).
+        XSSheetButtons *f = [XSSheetButtons new];
+        check(!f.presentable, @"no button: not presentable");
+        [f add:@"OK"];
+        check(f.presentable, @"one button: presentable");
+        XSSheetButtons *g = [XSSheetButtons new];
+        [g setUpWithCancel:@"Cancel" destructive:nil others:@[]];
+        check(g.presentable, @"a lone cancel button: presentable");
+
         BOOL arrows = YES;
         CGRect r = XSSheetSourceRect(XSSheetShowInView, CGRectMake(0, 0, 400, 800), CGRectZero, &arrows);
         check(CGRectEqualToRect(r, CGRectMake(200, 400, 0, 0)) && !arrows, @"in a view: its centre, no arrow");

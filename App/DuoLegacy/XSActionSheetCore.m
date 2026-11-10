@@ -28,6 +28,7 @@
 
 - (NSArray<NSString *> *)titles { return [_titles copy]; }
 - (NSInteger)count { return (NSInteger)_titles.count; }
+- (BOOL)presentable { return _titles.count > 0; }
 
 - (NSInteger)firstOtherIndex {
     for (NSInteger i = 0; i < (NSInteger)_titles.count; i++) if ([self kindAt:i] == XSSheetButtonDefault) return i;
@@ -46,6 +47,8 @@
 }
 
 - (void)didShow { _showing = YES; }
+
+- (void)showDeclined { _showing = NO; }
 
 - (BOOL)finish {
     if (!_showing) return NO;

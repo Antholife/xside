@@ -22,6 +22,9 @@ typedef NS_ENUM(NSInteger, XSSheetButtonKind) {
 - (NSInteger)add:(nullable NSString *)title;
 @property (readonly) NSArray<NSString *> *titles;
 @property (readonly) NSInteger count;
+/// NO when there is no button: on iPhone an action sheet with none has nothing to dismiss it,
+/// so the stand-in doesn't show it (an app with no buttons gets nothing).
+@property (readonly) BOOL presentable;
 /// -1: none. Any value is kept, as UIActionSheet does; only an index in range counts.
 @property (nonatomic) NSInteger cancelIndex, destructiveIndex;
 /// The first button that is neither cancel nor destructive, -1 when there is none.
@@ -33,6 +36,10 @@ typedef NS_ENUM(NSInteger, XSSheetButtonKind) {
 /// The sheet is on screen (from `didShow` to the first `finish`).
 @property (readonly) BOOL showing;
 - (void)didShow;
+/// UIKit declined the present after `didShow` (it was already presenting, or the view was detached):
+/// undo it, as if the sheet never showed. No dismissal ran, so a later `didShow` shows and finishes
+/// normally. Distinct from `finish`, which is the one dismissal of a sheet that did show.
+- (void)showDeclined;
 /// YES the first time after `didShow`: the dismissal runs once whatever ends it (a button, the
 /// app's dismiss call, a tap outside the popover).
 - (BOOL)finish;

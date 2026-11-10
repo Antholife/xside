@@ -622,6 +622,9 @@ static UIViewController *XSTopControllerOf(UIWindow *win) {
 static void XSSheetPresent(id self, XSSheetShow how, UIView *view, CGRect rect, UIBarButtonItem *item) {
     XSSheetState *s = XSSheet(self);
     if (s.shown) return;
+    // A zero-button sheet is an undismissable overlay on iPhone (no cancel, no tap-outside on a
+    // compact sheet): don't show it, the same nothing an app with no buttons would get.
+    if (!s.buttons.presentable) { XSLOG("action sheet: no buttons, not shown"); return; }
     UIViewController *top = (view.window ? XSTopControllerOf(view.window) : nil) ?: XSTopController();
     if (!top) { XSLOG("action sheet: nowhere to show it"); return; }
     UIAlertController *ac = [UIAlertController alertControllerWithTitle:s.title.length ? s.title : nil message:nil
@@ -655,7 +658,6 @@ static void XSSheetPresent(id self, XSSheetShow how, UIView *view, CGRect rect, 
         s.popoverDelegate = pd;
         pop.delegate = pd;
     }
-    if (buttons.count == 0) XSLOG("action sheet: shown without buttons");
     if (!gSheetsShown) gSheetsShown = [NSMutableSet set];
     [gSheetsShown addObject:self];
     s.shown = ac;
@@ -665,6 +667,17 @@ static void XSSheetPresent(id self, XSSheetShow how, UIView *view, CGRect rect, 
         id sheet = weakSelf;
         if (sheet) XSSheetTell(sheet, @"didPresentActionSheet:", 0, NO);
     }];
+    // UIKit declined the present (it was already presenting, the view was detached): roll the
+    // bookkeeping back so the stand-in isn't stuck "shown" forever. presentingViewController is set
+    // synchronously when the present is accepted, nil when it isn't; the completion block never runs.
+    if (!ac.presentingViewController) {
+        [buttons showDeclined];
+        s.shown = nil;
+        s.popoverDelegate = nil;
+        [gSheetsShown removeObject:self];
+        XSLOG("action sheet: present declined, rolled back");
+        return;
+    }
     XSLOG("action sheet shown (UIActionSheet stand-in, %ld buttons, %{public}s)", (long)buttons.count,
           item ? "bar button" : how == XSSheetShowFromRect ? "rect" : how == XSSheetShowFromBar ? "bar" : "view");
 }
