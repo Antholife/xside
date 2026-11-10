@@ -360,6 +360,8 @@ extension AppModel {
     func openSettingsAddingTweaks(_ urls: [URL], entry: AppEntry) {
         settingsApp = entry.id
         settingsPane = .apps
+        // On its Tweaks tab, where the files show (not the last tab used, mega review U3).
+        UserDefaults.standard.set(AppSettingsTab.tweaks.rawValue, forKey: AppSettingsTab.storageKey)
         Task { await addTweaks(urls, for: entry) }
     }
 
