@@ -15,7 +15,11 @@
 //    apps size their window and views there from UIScreen.mainScreen / their window (games: Plague
 //    Inc., Geometry Dash), and before the scene connects iOS reports another size than the scene's,
 //    so their layout covered part of the screen. When no scene comes within XSLaunchDeferLimit
-//    seconds (a background launch), it runs then.
+//    seconds (a background launch), it runs then; at once for a launch whose options only a
+//    background launch carries (location, Bluetooth), and before any background entry
+//    point UIKit calls first (silent push, fetch, push token...).
+//  - a storyboard app: iOS loads the storyboard the manifest names into the scene delegate's
+//    window, handed to the app delegate when it has none (where it was without scenes).
 //  - until the scene connects, lists the windows the app made in UIApplication.windows (and the one
 //    it made key in keyWindow): iOS lists none before then, and old apps read windows[0] in
 //    didFinishLaunching (Plague Inc. crashed on it).
@@ -26,6 +30,7 @@
 //    init): a stand-in with the same API and delegate calls shows a UIAlertController on the scene.
 //  - UIScreen.mainScreen is the scene's screen once it connects: on the Duo it otherwise stays the
 //    outer screen while the app shows on the inner one (Boost 2 sized itself to it: a small picture).
+//    Off the main thread, the last screen the main thread saw (UIKit is read on the main one only).
 //  - on a screen other than iOS's main one (the Duo's inner screen), accelerometer x/y are turned a
 //    quarter to that screen's axes (the outer screen's are the sensor's).
 //  - forwards URL contexts -> application:openURL:options: (or the older forms), user activities ->
@@ -46,6 +51,7 @@
 #import <objc/message.h>
 #import <os/log.h>
 #import <CoreMotion/CoreMotion.h>
+#import <os/lock.h>
 
 #define XSLOG(fmt, ...) os_log(OS_LOG_DEFAULT, "[XSDuoLegacy] " fmt, ##__VA_ARGS__)
 
@@ -250,10 +256,31 @@ static void h_accelSetInterval(id self, SEL _cmd, NSTimeInterval interval) {
     if (gMotion) gMotion.accelerometerUpdateInterval = gAccelInterval;
 }
 
-// The scene's screen, once there is one.
+// The scene's screen, kept for the threads other than the main one: UIWindowScene.screen is read
+// on the main thread only (written in XSNoteSceneScreen, read under the lock).
+static os_unfair_lock gScreenLock = OS_UNFAIR_LOCK_INIT;
+static UIScreen *gSceneScreen;
+
+static UIScreen *XSNoteSceneScreen(void) {
+    UIScreen *screen = gScene.screen;
+    os_unfair_lock_lock(&gScreenLock);
+    gSceneScreen = screen;
+    os_unfair_lock_unlock(&gScreenLock);
+    return screen;
+}
+
+// The scene's screen, once there is one: on the main thread read from the scene as it is now,
+// elsewhere the last one seen there (mega review D6).
 static UIScreen *h_mainScreen(id self, SEL _cmd) {
     UIScreen *real = ((id (*)(id, SEL))oMainScreen)(self, _cmd);
-    UIScreen *scene = gScene.screen;
+    UIScreen *scene;
+    if (NSThread.isMainThread) {
+        scene = XSNoteSceneScreen();
+    } else {
+        os_unfair_lock_lock(&gScreenLock);
+        scene = gSceneScreen;
+        os_unfair_lock_unlock(&gScreenLock);
+    }
     return scene ?: real;
 }
 
@@ -544,14 +571,27 @@ static void XSRunDeferredLaunch(const char *why) {
     gLaunchOptions = nil;
 }
 
+// Launch options only a background launch carries (location, Bluetooth restoration): no scene is
+// coming, the app's launch runs at once (mega review D2). A remote notification can also be a tap
+// that opens the app: still deferred, its background callback runs the launch first
+// (XSWrapBackgroundEntries).
+static BOOL XSIsBackgroundLaunch(NSDictionary *options) {
+    if (![options isKindOfClass:NSDictionary.class]) return NO;
+    for (NSString *key in @[UIApplicationLaunchOptionsLocationKey, UIApplicationLaunchOptionsBluetoothCentralsKey,
+                            UIApplicationLaunchOptionsBluetoothPeripheralsKey])
+        if (options[key]) return YES;
+    return NO;
+}
+
 // No scene yet: wait for it. The app state can't tell a background launch apart here (without a
 // connected scene it reads as background either way), so a launch with no scene coming runs after
-// XSLaunchDeferLimit seconds instead.
+// XSLaunchDeferLimit seconds instead, or as soon as UIKit calls one of its background entry points.
 static BOOL XSShouldDefer(UIApplication *app) {
     return gActive && !gScene && !gLaunchRan;
 }
 static BOOL h_didFinishWithOptions(id self, SEL _cmd, UIApplication *app, NSDictionary *options) {
-    if (!XSShouldDefer(app)) { gLaunchRan = YES; return ((BOOL (*)(id, SEL, id, id))oDidFinishWithOptions)(self, _cmd, app, options); }
+    if (XSShouldDefer(app) && XSIsBackgroundLaunch(options)) XSLOG("background launch: didFinishLaunching not deferred");
+    if (!XSShouldDefer(app) || XSIsBackgroundLaunch(options)) { gLaunchRan = YES; return ((BOOL (*)(id, SEL, id, id))oDidFinishWithOptions)(self, _cmd, app, options); }
     gLaunchDeferred = YES;
     gLaunchOptions = options;
     XSLogGeometry("didFinishLaunching deferred");
@@ -569,6 +609,49 @@ static void h_didFinish(id self, SEL _cmd, UIApplication *app) {
     });
 }
 
+// The app delegate's entry points UIKit calls in the background, maybe before the scene (a silent
+// push, a background fetch, a URL session's events, the push token): the deferred launch runs
+// first, so the app is set up as it expects (mega review D2). All take objects and return nothing.
+static void XSWrapBackgroundEntries(Class c) {
+    const char *sels[] = {
+        "application:didReceiveRemoteNotification:fetchCompletionHandler:",
+        "application:didReceiveRemoteNotification:",
+        "application:performFetchWithCompletionHandler:",
+        "application:handleEventsForBackgroundURLSession:completionHandler:",
+        "application:didRegisterForRemoteNotificationsWithDeviceToken:",
+        "application:didFailToRegisterForRemoteNotificationsWithError:",
+        "application:didReceiveLocalNotification:",
+    };
+    for (size_t i = 0; i < sizeof sels / sizeof sels[0]; i++) {
+        SEL sel = sel_registerName(sels[i]);
+        Method m = class_getInstanceMethod(c, sel);
+        if (!m) continue;
+        const char *types = method_getTypeEncoding(m);
+        if (!types || types[0] != 'v') continue;   // not the shape expected: left alone
+        IMP orig = method_getImplementation(m);
+        NSUInteger args = method_getNumberOfArguments(m);   // self, _cmd and the objects
+        IMP wrap = nil;
+        if (args == 3) {
+            wrap = imp_implementationWithBlock(^(id me, id a) {
+                XSRunDeferredLaunch("background callback: didFinishLaunching now");
+                ((void (*)(id, SEL, id))orig)(me, sel, a);
+            });
+        } else if (args == 4) {
+            wrap = imp_implementationWithBlock(^(id me, id a, id b) {
+                XSRunDeferredLaunch("background callback: didFinishLaunching now");
+                ((void (*)(id, SEL, id, id))orig)(me, sel, a, b);
+            });
+        } else if (args == 5) {
+            wrap = imp_implementationWithBlock(^(id me, id a, id b, id c3) {
+                XSRunDeferredLaunch("background callback: didFinishLaunching now");
+                ((void (*)(id, SEL, id, id, id))orig)(me, sel, a, b, c3);
+            });
+        }
+        if (!wrap) continue;
+        if (!class_addMethod(c, sel, wrap, types)) method_setImplementation(m, wrap);
+    }
+}
+
 // The app delegate is set in UIApplicationMain, before UIKit calls its launch methods: wrap them then.
 static IMP oSetDelegate;
 static void h_setDelegate(UIApplication *self, SEL _cmd, id delegate) {
@@ -581,6 +664,7 @@ static void h_setDelegate(UIApplication *self, SEL _cmd, id delegate) {
             if (class_getInstanceMethod(c, withOptions)) XSHook(c, withOptions, (IMP)h_didFinishWithOptions, &oDidFinishWithOptions);
             else if (class_getInstanceMethod(c, @selector(applicationDidFinishLaunching:)))
                 XSHook(c, @selector(applicationDidFinishLaunching:), (IMP)h_didFinish, &oDidFinish);
+            XSWrapBackgroundEntries(c);
             XSLOG("launch deferred to the scene for %{public}s", class_getName(c));
         } @catch (NSException *e) {
             XSLOG("launch wrap failed: %{public}@", e.reason);
@@ -600,12 +684,31 @@ static void h_setDelegate(UIApplication *self, SEL _cmd, id delegate) {
 }
 
 - (UIWindow *)window { return _window ?: XSMainWindow(); }
-- (void)setWindow:(UIWindow *)window { _window = window; }
+
+// A storyboard app (the manifest names its UIMainStoryboardFile as the scene's): iOS loads the
+// storyboard into a window it gives the scene delegate, where the app delegate had it without
+// scenes. Handed over to the app delegate when it has none yet, before its deferred launch reads it.
+- (void)setWindow:(UIWindow *)window {
+    _window = window;
+    if (!gActive || !window) return;
+    @try {
+        id<UIApplicationDelegate> d = XSAppDelegate();
+        if ([d respondsToSelector:@selector(setWindow:)] && !XSMainWindow()) {
+            d.window = window;
+            XSLOG("storyboard window handed to the app delegate");
+        }
+    } @catch (NSException *e) {
+        XSLOG("window handover failed: %{public}@", e.reason);
+    }
+}
 
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)opts {
     if (![scene isKindOfClass:UIWindowScene.class]) return;
     UIWindowScene *ws = (UIWindowScene *)scene;
     gScene = ws;
+    XSNoteSceneScreen();
+    // The storyboard window iOS gave us (if any) is the app delegate's before its launch runs.
+    if (_window) [self setWindow:_window];
     // Outside XSide's @try: an exception from the app's own launch stays the app's, as without XSide.
     XSRunDeferredLaunch("scene connected: didFinishLaunching now");
     @try {
@@ -680,6 +783,7 @@ static void h_setDelegate(UIApplication *self, SEL _cmd, id delegate) {
 
 // Fold/unfold or a move between the Duo's screens: keep full-size windows matching the scene.
 - (void)xsRefit:(UIWindowScene *)ws oldSize:(CGSize)oldSize {
+    XSNoteSceneScreen();
     @try {
         UIWindow *main = XSMainWindow();
         for (UIWindow *w in ws.windows) XSFit(w, ws, oldSize, w == main);
