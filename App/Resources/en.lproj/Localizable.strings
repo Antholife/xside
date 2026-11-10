@@ -727,7 +727,7 @@
 "settings.inApp.footer" = "Each app then keeps its own settings: on the iPhone, or here in My apps.";
 "settings.withoutFeatures" = "Install apps without XSide features";
 "settings.withoutFeatures.note" = "Apps are installed as they came, with nothing from XSide inside, and XSide keeps refreshing them. Useful if an app refuses to launch because it detects a change. Applies at each app's next refresh.";
-"popover.app.xsideSettings" = "XSide Settings…";
+"popover.app.xsideSettings" = "XSide settings for %@…";
 "popover.pausedDevice.expired" = "Stopped from the device · expired";
 "popover.pausedDevice.expiresToday" = "Stopped from the device · expires today";
 "install.step.welcomeSkipped" = "XSide module: skipped (installed as is)";
@@ -1245,3 +1245,8 @@
 "appSettings.tab.toSettle" = "%ld to settle";
 "appSettings.row.pending" = "Pending changes: they apply at the app's next refresh";
 "fixes.learnMore" = "Learn more";
+
+/* Settings > Mes apps: why the app's actions (« ⋯ » and the bottom of « Module XSide ») are greyed */
+"appSettings.manage.blocked.uninstalling" = "The app is being uninstalled";
+"appSettings.manage.blocked.job" = "XSide is working on this app (a refresh, for instance): try again once it's done";
+"appSettings.manage.blocked.removingDevice" = "The device is being removed from XSide";

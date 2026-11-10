@@ -199,7 +199,7 @@ private struct PopoverContent: View {
                                    onRefresh: { model.refreshNow(entry.job) },
                                    onUninstall: { uninstall(entry, deviceName: group.name) },
                                    onStopRefreshing: { stopRefreshing(entry, deviceName: group.name) },
-                                   onPause: { until in Task { await model.stopRefreshing(entry, until: until) } },
+                                   onPause: { until in AppActions.pause(entry, until: until, model: model) },
                                    onResume: { resume(entry) },
                                    onRemoveFromList: { removeFromList(entry, deviceName: group.name) },
                                    onXSideSettings: {
@@ -249,47 +249,23 @@ private struct PopoverContent: View {
         }
     }
 
-    /// Confirmed first; on failure (device out of reach, devicectl error) the alert offers to stop
-    /// refreshing (pause) instead, unless it's already paused. The popover is closed by then.
+    /// The row's actions (`AppActions`), their alerts shown once the panel is closed.
     private func uninstall(_ entry: AppEntry, deviceName: String) {
-        let app = entry.record.options.displayName ?? entry.record.displayName
-        afterClosing {
-            guard AppRowAlerts.confirmUninstall(app: app, device: deviceName) else { return }
-            Task {
-                do {
-                    try await model.uninstall(entry)
-                } catch {
-                    // The popover may have been opened again meanwhile: closed again first.
-                    afterClosing {
-                        guard AppRowAlerts.uninstallFailed(app: app, device: deviceName, error: error,
-                                                           offerPause: !entry.installation.refreshPaused) else { return }
-                        Task { await model.stopRefreshing(entry) }
-                    }
-                }
-            }
-        }
+        AppActions.uninstall(entry, deviceName: deviceName, model: model, present: afterClosing)
     }
 
     private func stopRefreshing(_ entry: AppEntry, deviceName: String) {
-        let app = entry.record.options.displayName ?? entry.record.displayName
-        afterClosing {
-            guard AppRowAlerts.confirmStopRefreshing(app: app, device: deviceName) else { return }
-            Task { await model.stopRefreshing(entry) }
-        }
+        AppActions.stopRefreshing(entry, deviceName: deviceName, model: model, present: afterClosing)
     }
 
     /// No confirmation (undoing it is just stopping again), so the panel stays open: the row
     /// shows the refresh resumed (device feedback 2026-11-08: closing it read as a bug).
     private func resume(_ entry: AppEntry) {
-        Task { await model.resumeRefreshing(entry) }
+        AppActions.resume(entry, model: model)
     }
 
     private func removeFromList(_ entry: AppEntry, deviceName: String) {
-        let app = entry.record.options.displayName ?? entry.record.displayName
-        afterClosing {
-            guard AppRowAlerts.confirmRemoveFromList(app: app, device: deviceName) else { return }
-            Task { await model.removeFromList(entry) }
-        }
+        AppActions.removeFromList(entry, deviceName: deviceName, model: model, present: afterClosing)
     }
 }
 

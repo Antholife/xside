@@ -99,7 +99,8 @@ struct PendingChangesBar: View {
 
     var body: some View {
         let pending = model.pendingSigningChanges(entry)
-        let stage = model.jobs[entry.id]
+        // An uninstall claims the row too: the header says « Désinstallation… », not a refresh here.
+        let stage = model.uninstalling.contains(entry.id) ? nil : model.jobs[entry.id]
         let result = model.refreshResults[entry.id]
         let shown: Shown = stage != nil ? .running
             : result.map { if case .done = $0 { .done } else { .failed } } ?? (pending.isEmpty ? .none : .pending)

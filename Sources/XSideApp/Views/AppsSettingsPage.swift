@@ -329,7 +329,7 @@ private struct AppSettingsContent: View {
 
     /// Room for the pending bar when it shows.
     private var barHeight: CGFloat {
-        pending.isEmpty && model.jobs[entry.id] == nil && model.refreshResults[entry.id] == nil ? 0 : 72
+        pending.isEmpty && (model.jobs[entry.id] == nil || isUninstalling) && model.refreshResults[entry.id] == nil ? 0 : 72
     }
 
     // MARK: Tabs
@@ -423,6 +423,33 @@ private struct AppSettingsContent: View {
             .font(.system(size: 11))
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
+        manageZone
+    }
+
+    /// « Retirer de la liste » and « Désinstaller de … » (red), found without opening « ⋯ ».
+    private var manageZone: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Divider()
+            HStack(spacing: 8) {
+                Button(L("popover.app.removeFromList"), action: removeFromList)
+                    .disabled(!canManage)
+                Button(role: .destructive, action: uninstall) {
+                    if isUninstalling {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.mini)
+                            Text(L("popover.app.uninstalling"))
+                        }
+                    } else {
+                        Text(L("popover.app.uninstallFrom", deviceName))
+                            .foregroundStyle(canManage ? Color(nsColor: .systemRed) : .secondary)
+                    }
+                }
+                .disabled(!canManage)
+                Spacer(minLength: 0)
+            }
+            .help(blockedReason ?? "")
+        }
+        .padding(.top, 4)
     }
 
     // MARK: « Correctifs »
@@ -469,19 +496,111 @@ private struct AppSettingsContent: View {
         }
     }
 
+    // MARK: Actions (the panel row's, see `AppActions`)
+
+    private var canManage: Bool { model.canManage(entry) }
+    private var blockedReason: String? { model.manageBlockedReason(entry) }
+    private var isUninstalling: Bool { model.uninstalling.contains(entry.id) }
+
+    /// Once the app is gone from the list: the device's next app, or the page's own fallback
+    /// (another device's first app, or « aucune app »). Not when another app was picked meanwhile.
+    private var moveOn: @MainActor () -> Void {
+        let gone = entry.id
+        let ids = model.deviceGroups.first { $0.id == gone.deviceID }?.apps.map(\.id) ?? []
+        let next = AppManagement.selection(afterRemoving: gone, from: ids)
+        return { [model] in
+            if model.settingsApp == nil || model.settingsApp == gone { model.settingsApp = next }
+        }
+    }
+
+    private func uninstall() {
+        AppActions.uninstall(entry, deviceName: deviceName, model: model, present: AppActions.inWindow, done: moveOn)
+    }
+
+    private func removeFromList() {
+        AppActions.removeFromList(entry, deviceName: deviceName, model: model, present: AppActions.inWindow, done: moveOn)
+    }
+
+    private func stopRefreshing() {
+        AppActions.stopRefreshing(entry, deviceName: deviceName, model: model, present: AppActions.inWindow)
+    }
+
+    /// « ⋯ » in the header: the panel row's actions, greyed with the reason on hover while busy.
+    private var actionsButton: some View {
+        Menu {
+            ForEach(Array(AppManagement.menu(isPaused: entry.installation.refreshPaused).enumerated()), id: \.offset) { _, item in
+                menuItem(item)
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 30, height: 30)
+                .background(.white.opacity(0.22), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(blockedReason ?? L("popover.app.menu", appName))
+        .accessibilityLabel(L("popover.app.menu", appName))
+    }
+
+    @ViewBuilder private func menuItem(_ item: AppManagement.Item) -> some View {
+        switch item {
+        case .refresh:
+            Button(L("popover.refreshNow"), systemImage: "arrow.clockwise") { _ = model.refreshNow(entry.job) }
+                .disabled(!model.canRefresh(entry))
+                .help(blockedReason ?? model.refreshBlockedReason(entry) ?? "")
+        case .pause:
+            Menu {
+                AppPauseDurations(onPause: { AppActions.pause(entry, until: $0, model: model) },
+                                  onStopRefreshing: stopRefreshing)
+            } label: {
+                Label(L("popover.app.pause"), systemImage: "pause.circle")
+            }
+            .disabled(!canManage)
+            .help(blockedReason ?? "")
+        case .stop:
+            Button(L("popover.app.stopRefreshing"), systemImage: "stop.circle", action: stopRefreshing)
+                .disabled(!canManage)
+                .help(blockedReason ?? "")
+        case .resume:
+            Button(L("popover.app.resumeRefreshing"), systemImage: "play.circle") { AppActions.resume(entry, model: model) }
+                .disabled(!canManage)
+                .help(blockedReason ?? "")
+        case .separator:
+            Divider()
+        case .removeFromList:
+            Button(L("popover.app.removeFromList"), systemImage: "minus.circle", action: removeFromList)
+                .disabled(!canManage)
+                .help(blockedReason ?? "")
+        case .uninstall:
+            Button(isUninstalling ? L("popover.app.uninstalling") : L("popover.app.uninstallFrom", deviceName),
+                   systemImage: "trash", role: .destructive, action: uninstall)
+                .disabled(!canManage)
+                .help(blockedReason ?? "")
+        }
+    }
+
     private var header: some View {
         HStack(spacing: 12) {
-            AppIconView(icon: model.icons.image(for: entry.record), isPaused: entry.installation.refreshPaused, size: 40)
+            AppIconView(icon: model.icons.image(for: entry.record), isBusy: model.jobs[entry.id] != nil || isUninstalling,
+                        isPaused: entry.installation.refreshPaused, size: 40)
             VStack(alignment: .leading, spacing: 2) {
                 Text(appName)
                     .font(.system(size: 15, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                     .lineLimit(1)
-                Text(L("appSettings.subtitle", deviceName))
+                // « Désinstallation… » as on the panel's row while it runs.
+                Text(isUninstalling ? L("appSettings.subtitle", deviceName) + " · " + L("popover.app.uninstalling")
+                                    : L("appSettings.subtitle", deviceName))
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.white.opacity(0.85))
             }
             Spacer(minLength: 0)
+            actionsButton
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)

@@ -89,7 +89,7 @@ struct AppRow: View {
                              deviceName: deviceName, onRefresh: onRefresh, onUninstall: onUninstall,
                              onStopRefreshing: onStopRefreshing, onResume: onResume,
                              onRemoveFromList: onRemoveFromList))
-        .accessibilityAction(named: L("popover.app.xsideSettings"), onXSideSettings)
+        .accessibilityAction(named: L("popover.app.xsideSettings", appName), onXSideSettings)
         .accessibilityAction(named: L("popover.app.whyCrash"), onWhyCrash)
         .modifier(CrashDismissAction(hasCrash: crash != nil, onDismiss: onDismissCrash))
     }
@@ -97,7 +97,7 @@ struct AppRow: View {
     private var appName: String { entry.record.options.displayName ?? entry.record.displayName }
 
     @ViewBuilder private var actions: some View {
-        Button(L("popover.app.xsideSettings"), systemImage: "slider.horizontal.3", action: onXSideSettings)
+        Button(L("popover.app.xsideSettings", appName), systemImage: "slider.horizontal.3", action: onXSideSettings)
         Button(L("popover.app.whyCrash"), systemImage: "stethoscope", action: onWhyCrash)
         Divider()
         if isPaused {
@@ -118,9 +118,7 @@ struct AppRow: View {
                 .disabled(!canManage)
             // Like the panel's Pause, for this app alone (device feedback 3, E5).
             Menu {
-                Button(L("popover.app.pause.hours")) { onPause(Date().addingTimeInterval(2 * 3600)) }
-                Button(L("popover.app.pause.day")) { onPause(Date().addingTimeInterval(86_400)) }
-                Button(L("settings.pause.untilResumed"), action: onStopRefreshing)
+                AppPauseDurations(onPause: onPause, onStopRefreshing: onStopRefreshing)
             } label: {
                 Label(L("popover.app.pause"), systemImage: "pause.circle")
             }
