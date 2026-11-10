@@ -17,7 +17,8 @@
 //    so their layout covered part of the screen. When no scene comes within XSLaunchDeferLimit
 //    seconds (a background launch), it runs then; at once for a launch whose options only a
 //    background launch carries (location, Bluetooth), and before any background entry
-//    point UIKit calls first (silent push, fetch, push token...).
+//    point UIKit calls first (fetch, URL session, push token...). A notification callback (remote
+//    or local: maybe the tap that opens the app) is held instead and replayed once it ran.
 //  - a storyboard app: iOS loads the storyboard the manifest names into the scene delegate's
 //    window, handed to the app delegate when it has none (where it was without scenes).
 //  - until the scene connects, lists the windows the app made in UIApplication.windows (and the one
@@ -52,6 +53,7 @@
 #import <os/log.h>
 #import <CoreMotion/CoreMotion.h>
 #import <os/lock.h>
+#import "XSLaunchHoldCore.h"
 
 #define XSLOG(fmt, ...) os_log(OS_LOG_DEFAULT, "[XSDuoLegacy] " fmt, ##__VA_ARGS__)
 
@@ -559,8 +561,12 @@ static void XSLogGeometry(const char *when) {
           s ? NSStringFromCGRect(s.coordinateSpace.bounds) : @"none");
 }
 
-// Runs the app's launch method it skipped, once.
-static void XSRunDeferredLaunch(const char *why) {
+// The notification callbacks UIKit made while the launch waited for the scene (re-review N1).
+static XSLaunchHold *gHeldCalls;
+
+// Runs the app's launch method it skipped, once. Its held notification callbacks come after
+// (XSReplayHeldCalls): at once here, after the window is adopted on scene connect.
+static void XSRunDeferredLaunchOnly(const char *why) {
     if (!gLaunchDeferred || gLaunchRan) return;
     gLaunchRan = YES;
     XSLogGeometry(why);
@@ -571,9 +577,34 @@ static void XSRunDeferredLaunch(const char *why) {
     gLaunchOptions = nil;
 }
 
+// The notification callbacks held for the launch, in the order UIKit made them, once it ran.
+static void XSReplayHeldCalls(void) {
+    if (!gLaunchRan || !gHeldCalls) return;
+    XSLaunchHold *held = gHeldCalls;
+    gHeldCalls = nil;
+    if (held.count) XSLOG("replaying %lu notification callback(s) held for the launch", (unsigned long)held.count);
+    [held replay];
+}
+
+static void XSRunDeferredLaunch(const char *why) {
+    XSRunDeferredLaunchOnly(why);
+    XSReplayHeldCalls();
+}
+
+// A notification callback while the launch still waits for its scene: the person may have tapped
+// the notification to open the app, and the app's handler (and its launch, if it ran now) would
+// lay out at the size iOS reports before the scene. Held for after the launch; NO when it runs now.
+static BOOL XSHoldForLaunch(SEL sel, dispatch_block_t call) {
+    if (!gLaunchDeferred || gLaunchRan || !XSLaunchHoldWaits(sel_getName(sel))) return NO;
+    if (!gHeldCalls) gHeldCalls = [XSLaunchHold new];
+    if (![gHeldCalls hold:call]) return NO;
+    XSLOG("%{public}s held until the deferred launch", sel_getName(sel));
+    return YES;
+}
+
 // Launch options only a background launch carries (location, Bluetooth restoration): no scene is
 // coming, the app's launch runs at once (mega review D2). A remote notification can also be a tap
-// that opens the app: still deferred, its background callback runs the launch first
+// that opens the app: still deferred, its callback held for after the launch
 // (XSWrapBackgroundEntries).
 static BOOL XSIsBackgroundLaunch(NSDictionary *options) {
     if (![options isKindOfClass:NSDictionary.class]) return NO;
@@ -611,7 +642,10 @@ static void h_didFinish(id self, SEL _cmd, UIApplication *app) {
 
 // The app delegate's entry points UIKit calls in the background, maybe before the scene (a silent
 // push, a background fetch, a URL session's events, the push token): the deferred launch runs
-// first, so the app is set up as it expects (mega review D2). All take objects and return nothing.
+// first, so the app is set up as it expects (mega review D2). A notification (remote or local)
+// may instead be the tap that opens the app, its scene coming: held, with its arguments and
+// completion handler, and replayed once the launch ran, on scene connect or at the
+// XSLaunchDeferLimit fallback (re-review N1). All take objects and return nothing.
 static void XSWrapBackgroundEntries(Class c) {
     const char *sels[] = {
         "application:didReceiveRemoteNotification:fetchCompletionHandler:",
@@ -633,16 +667,22 @@ static void XSWrapBackgroundEntries(Class c) {
         IMP wrap = nil;
         if (args == 3) {
             wrap = imp_implementationWithBlock(^(id me, id a) {
+                id ka = XSLaunchHoldKeep(a);
+                if (XSHoldForLaunch(sel, ^{ ((void (*)(id, SEL, id))orig)(me, sel, ka); })) return;
                 XSRunDeferredLaunch("background callback: didFinishLaunching now");
                 ((void (*)(id, SEL, id))orig)(me, sel, a);
             });
         } else if (args == 4) {
             wrap = imp_implementationWithBlock(^(id me, id a, id b) {
+                id ka = XSLaunchHoldKeep(a), kb = XSLaunchHoldKeep(b);
+                if (XSHoldForLaunch(sel, ^{ ((void (*)(id, SEL, id, id))orig)(me, sel, ka, kb); })) return;
                 XSRunDeferredLaunch("background callback: didFinishLaunching now");
                 ((void (*)(id, SEL, id, id))orig)(me, sel, a, b);
             });
         } else if (args == 5) {
             wrap = imp_implementationWithBlock(^(id me, id a, id b, id c3) {
+                id ka = XSLaunchHoldKeep(a), kb = XSLaunchHoldKeep(b), kc = XSLaunchHoldKeep(c3);
+                if (XSHoldForLaunch(sel, ^{ ((void (*)(id, SEL, id, id, id))orig)(me, sel, ka, kb, kc); })) return;
                 XSRunDeferredLaunch("background callback: didFinishLaunching now");
                 ((void (*)(id, SEL, id, id, id))orig)(me, sel, a, b, c3);
             });
@@ -710,7 +750,7 @@ static void h_setDelegate(UIApplication *self, SEL _cmd, id delegate) {
     // The storyboard window iOS gave us (if any) is the app delegate's before its launch runs.
     if (_window) [self setWindow:_window];
     // Outside XSide's @try: an exception from the app's own launch stays the app's, as without XSide.
-    XSRunDeferredLaunch("scene connected: didFinishLaunching now");
+    XSRunDeferredLaunchOnly("scene connected: didFinishLaunching now");
     @try {
         XSWrapAppDelegate();
         UIWindow *main = XSMainWindow();
@@ -726,6 +766,10 @@ static void h_setDelegate(UIApplication *self, SEL _cmd, id delegate) {
     } @catch (NSException *e) {
         XSLOG("willConnect failed: %{public}@", e.reason);
     }
+    // The notification tapped to open the app, held for the launch: now its window is the scene's,
+    // as without scenes (UIKit called it after didFinishLaunching made the window visible). Outside
+    // the @try too: the app's handler is the app's.
+    XSReplayHeldCalls();
 
     NSSet<UIOpenURLContext *> *urls = opts.URLContexts;
     NSSet<NSUserActivity *> *acts = opts.userActivities;
