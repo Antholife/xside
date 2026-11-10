@@ -165,7 +165,7 @@ struct ICloudOptionsCard: View {
     }
 
     private func name(_ id: String) -> String {
-        model.devices.first { $0.id == id }?.name ?? L("popover.unknownDevice")
+        model.deviceName(id)
     }
 }
 

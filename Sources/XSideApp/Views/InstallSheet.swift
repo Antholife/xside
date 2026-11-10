@@ -580,7 +580,7 @@ private struct PreflightNotes: View {
     }
 
     private func name(_ deviceID: String) -> String {
-        model.devices.first { $0.id == deviceID }?.name ?? L("popover.unknownDevice")
+        model.deviceName(deviceID)
     }
 
     private var appName: String {

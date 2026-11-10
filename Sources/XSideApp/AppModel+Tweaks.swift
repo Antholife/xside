@@ -549,7 +549,7 @@ extension AppModel {
             contexts = dependencyDevices(record, tweakID: id, first: key.deviceID).map { ($0, entryContext(record, id, on: $0)) }
         }
         var names: [String: String] = [:]
-        for (id, _) in contexts { names[id] = devices.first { $0.id == id }?.name ?? L("popover.unknownDevice") }
+        for (id, _) in contexts { names[id] = deviceName(id) }
         return (package, DependencyRows.rows(package, contexts: contexts), names)
     }
 
@@ -800,7 +800,7 @@ extension AppModel {
     private func addedNotice(_ package: TweakPackage, on deviceIDs: [String], tweak: TweakPackage, turnedOn: Bool,
                              fromKeptCopy: Bool = false) -> String {
         let name = package.name + (package.version.map { " " + $0 } ?? "")
-        let names = deviceIDs.map { id in devices.first { $0.id == id }?.name ?? L("popover.unknownDevice") }
+        let names = deviceIDs.map(deviceName)
         var text = names.isEmpty ? L(fromKeptCopy ? "deps.added.kept.nowhere" : "deps.added.nowhere", name)
             : L(fromKeptCopy ? "deps.added.kept" : "deps.added", name, names.joined(separator: ", "))
         if turnedOn { text += " " + L("deps.added.tweakOn", tweak.name) }
@@ -926,8 +926,9 @@ extension AppModel {
         }
     }
 
+    /// A device listed now, else the name it had when last seen (mega review U6).
     func deviceName(_ id: String) -> String {
-        devices.first { $0.id == id }?.name ?? L("popover.unknownDevice")
+        devices.first { $0.id == id }?.name ?? cachedNames[id] ?? L("popover.unknownDevice")
     }
 
     // MARK: Settings > Mes apps > « Dépendances téléchargées »

@@ -66,7 +66,7 @@ struct InAppStep: View {
     private var lines: [DeviceSyncLine] {
         let record = model.records.first { $0.id == flow.existing?.id }
         return flow.deviceIDs.map { id in
-            DeviceSyncLine(deviceID: id, deviceName: model.devices.first { $0.id == id }?.name ?? L("popover.unknownDevice"),
+            DeviceSyncLine(deviceID: id, deviceName: model.deviceName(id),
                            installation: record?.installations.first { $0.deviceID == id },
                            lastSeen: record.flatMap { model.channelSeen[JobKey(recordID: $0.id, deviceID: id)] },
                            live: record.map { model.isLive(JobKey(recordID: $0.id, deviceID: id)) } ?? false,
@@ -166,7 +166,7 @@ struct InstallSummaryView: View {
     private func yesNo(_ on: Bool) -> String { L(on ? "install.summary.yes" : "install.summary.no") }
 
     private func deviceName(_ id: String) -> String {
-        model.devices.first { $0.id == id }?.name ?? L("popover.unknownDevice")
+        model.deviceName(id)
     }
 
     private func text(_ line: InstallSummary.Line) -> (String, String) {
