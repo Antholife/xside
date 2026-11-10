@@ -345,6 +345,10 @@ int main(int argc, const char *argv[]) {
             if (XSOpenReplyV2(hostileV2[i], secret, srNonce, NULL) != XSReplyInvalid) { allRefused = NO; fprintf(stderr, "hostile %lu\n", (unsigned long)i); }
         }
         check(allRefused, @"v2 reply: truncated, wrong IV length, tampered fields, other token, v1/v2 confusion refused");
+        // A float-encoded version (review 2, K2-2): the Swift side decodes "v" as Int, so 2.0 is not v2.
+        NSString *vFloat = [srLine stringByReplacingOccurrencesOfString:@"\"v\":2" withString:@"\"v\":2.0"];
+        check(XSOpenReplyV2([vFloat dataUsingEncoding:NSUTF8StringEncoding], secret, srNonce, NULL) == XSReplyInvalid,
+              @"v2 reply: a float-encoded v (2.0) refused");
         NSMutableData *huge = [NSMutableData dataWithLength:64 * 1024 + 1];
         memset(huge.mutableBytes, 'a', huge.length);
         check(XSOpenReplyV2(huge, secret, srNonce, NULL) == XSReplyInvalid, @"v2 reply: over 64 KB refused");

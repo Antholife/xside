@@ -247,10 +247,14 @@ NSData *XSSealRequestV2(NSDictionary *body, NSData *secret, int64_t millis, NSSt
     return XSSealRequestV2WithIV(body, secret, millis, nonce, [NSData dataWithBytes:random length:sizeof random]);
 }
 
-/// The integer 2 (not a Bool, not "2", not 2.5).
+/// The integer 2 (not a Bool, not a char, not a float/double like 2.0, not "2", not 2.5). The
+/// Swift side decodes "v" as Int, which rejects a non-integer; match it.
 static BOOL XSIsVersion2(id v) {
-    if (![v isKindOfClass:NSNumber.class] || strcmp([v objCType], @encode(BOOL)) == 0 || strcmp([v objCType], @encode(char)) == 0) return NO;
-    return [v doubleValue] == 2.0;
+    if (![v isKindOfClass:NSNumber.class]) return NO;
+    const char *type = [v objCType];
+    if (strcmp(type, @encode(BOOL)) == 0 || strcmp(type, @encode(char)) == 0) return NO;
+    if (strcmp(type, @encode(float)) == 0 || strcmp(type, @encode(double)) == 0) return NO;
+    return [v longLongValue] == 2;
 }
 
 XSReplyStatus XSOpenReplyV2(NSData *line, NSData *secret, NSString *nonce, NSDictionary **body) {
