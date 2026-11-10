@@ -1375,12 +1375,15 @@ public struct Resigner: Sendable {
 
     /// Every `.framework` / `.dylib` below the app (not the app itself), and every `.bundle` below
     /// `bundlesUnder` (a tweak's: signed as a bundle, after what it holds), deepest first, deduplicated.
+    /// A `.bundle` without an Info.plist (resources only, as many tweaks ship) can't be signed as a
+    /// bundle: its files are sealed with the app, its Mach-Os signed one by one (`signTweakFiles`).
     private func signTargets(in app: URL, bundlesUnder: URL? = nil) -> [URL] {
         var seen = Set<String>()
         let bundleRoot = bundlesUnder.map { $0.standardizedFileURL.path + "/" }
         let found = allFiles(under: app).filter {
             (["framework", "dylib"].contains($0.pathExtension)
-                || ($0.pathExtension == "bundle" && bundleRoot.map($0.standardizedFileURL.path.hasPrefix) == true))
+                || ($0.pathExtension == "bundle" && bundleRoot.map($0.standardizedFileURL.path.hasPrefix) == true
+                    && Self.isRegularFile($0.appendingPathComponent("Info.plist"))))
                 && !isSymlink($0)
         }.filter { seen.insert($0.standardizedFileURL.path).inserted }
         return found.sorted { $0.pathComponents.count > $1.pathComponents.count }

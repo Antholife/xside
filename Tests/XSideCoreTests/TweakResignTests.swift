@@ -764,6 +764,28 @@ struct TweakResignTests {
         #expect(calls.last == app.path)
     }
 
+    /// Many tweaks ship a resource-only `<Tweak>.bundle` (no Info.plist): codesign refuses to
+    /// sign one as a bundle, so it is left to the app's seal and the tweak still goes in.
+    @Test func aResourceOnlyBundleInATweakIsNotSignedAsABundle() async throws {
+        let binary = try realExecutable("duo-swift-arm64")
+        let fwInfo = try PropertyListSerialization.data(fromPropertyList: ["CFBundleExecutable": "X", "CFBundleIdentifier": "com.example.x"],
+                                                        format: .xml, options: 0)
+        var f = try await TweakFixture(executable: binary,
+                                       appFiles: ["Frameworks/X.framework/X": binary, "Frameworks/X.framework/Info.plist": fwInfo])
+        f.realSigning = true
+        let res = tweak(idA, name: "Res", binary: binary,
+                        extraFiles: ["Library/Application Support/Res.bundle/icon.png": Data("png".utf8),
+                                     "Library/Application Support/Res.bundle/en.lproj/Root.strings": Data("x".utf8)])
+        let reports = Reports()
+        let app = try await f.run([try f.item(res)], reports: reports)
+        let report = await reports.last
+        #expect(report?.results == [idA: .injected(converted: true)], "\(String(describing: report))")
+        let folder = app.appendingPathComponent(TweakLayout.folder + "/" + idA + "/Library/Application Support/Res.bundle")
+        #expect(!f.fake.calls.contains { $0.last == folder.path })
+        let whole = try await ProcessRunner().run("/usr/bin/codesign", ["--verify", "--deep", "--strict", app.path], cwd: nil)
+        #expect(whole.status == 0, "\(whole.stderr)")
+    }
+
     @Test func hostileIDsAndEmbeddedItemsAreRefused() async throws {
         let f = try await TweakFixture()
         let fine = tweak(idC, name: "Gamma")
