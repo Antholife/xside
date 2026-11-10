@@ -812,6 +812,7 @@
 "fixes.section" = "Compatibility fixes";
 "duo.confirm.messageModule" = "%@ will use all of the iPhone Duo's screens, inner and outer, in Duo mode. It was never made for iOS scenes: XSide adds a small module to adapt it. The display and some behaviors (links, quick actions) may be imperfect. Sometimes just relaunching the app is enough. You can remove the option at any time in Settings > My apps.";
 "duo.caption.moduleWarning" = "A small compatibility module is added to the app: it handles iOS scenes for it (its window, links, quick actions, going to the background). Remove the option if the app misbehaves.";
+"duo.caption.nibWarning" = "This app starts from an old interface file (nib): with the option, it may show black. If it does, turn the option off.";
 "duo.caption.module" = "The app will use all of the iPhone Duo's screens (inner and outer) in Duo mode. This app was never made for iOS scenes: XSide adds a small module to adapt it. The display and some behaviors (links, quick actions) may be imperfect. Sometimes just relaunching the app is enough.";
 "duo.status.alreadySupported" = "Already compatible: %@ already supports the iPhone Duo.";
 "duo.status.notADuo" = "Not recommended: this device isn't an iPhone Duo.";

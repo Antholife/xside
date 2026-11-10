@@ -34,9 +34,10 @@ private struct DuoFixture {
     let legacy: URL?
 
     init(executable: Data, plistExtras: [String: Any] = ["CFBundleName": "Demo", "DTPlatformVersion": "26.4"],
-         withLibrary: Bool = true, withICloud: Bool = false, withLegacy: Bool = true, vtoolFails: Bool = false) async throws {
+         withLibrary: Bool = true, withICloud: Bool = false, withLegacy: Bool = true, vtoolFails: Bool = false,
+         prepare: (URL) throws -> Void = { _ in }) async throws {
         let src = try tempDir("duo-src")
-        try FakeIPA.makeApp(at: src, extensions: [], executableData: executable, plistExtras: plistExtras)
+        try prepare(try FakeIPA.makeApp(at: src, extensions: [], executableData: executable, plistExtras: plistExtras))
         let out = try tempDir("duo-ipa")
         ipa = out.appendingPathComponent("Demo.ipa")
         let r = try await ProcessRunner().run("/usr/bin/ditto",
@@ -374,6 +375,39 @@ struct DuoResignTests {
         #expect(f.resigner.hasICloudSignedOut(app))
         #expect(f.resigner.hasXSideLibrary(app))
         #expect(MachOBuildInfo.sdkVersion(of: out) == "27.1")
+    }
+
+    /// Mega review S2/D1: a storyboard app without scenes gets the module, and its manifest names
+    /// the storyboard (iOS then loads it into the scene's window, which the module hands over).
+    @Test func aStoryboardAppsManifestNamesTheStoryboard() async throws {
+        let f = try await DuoFixture(executable: versionedMachO(buildVersion: (2, packed(15, 0), packed(26, 4))),
+                                     plistExtras: ["CFBundleName": "Demo", "UIMainStoryboardFile": "Main"])
+        let app = try await f.run(InstallOptions(duoCompatibility: true))
+        let info = try plist(app)
+        #expect(manifestDelegate(info) == "XSDuoSceneDelegate")
+        let configs = (info["UIApplicationSceneManifest"] as? [String: Any])?["UISceneConfigurations"] as? [String: Any]
+        #expect((configs?["UIWindowSceneSessionRoleApplication"] as? [[String: Any]])?.first?["UISceneStoryboardFile"] as? String == "Main")
+    }
+
+    /// Mega review S3: the usage texts the option adds are translated in the app's lprojs, with or
+    /// without XSide's module, and the app's own translations win.
+    @Test func addedUsageDescriptionsAreTranslatedInTheAppsLprojs() async throws {
+        let f = try await DuoFixture(executable: realExecutable("duo-objc-fat")) { app in
+            for lproj in ["fr.lproj", "en.lproj"] {
+                try FileManager.default.createDirectory(at: app.appendingPathComponent(lproj), withIntermediateDirectories: true)
+            }
+            try Data(#""NSCameraUsageDescription" = "Caméra de l'app";"#.utf8)
+                .write(to: app.appendingPathComponent("fr.lproj/InfoPlist.strings"))
+        }
+        let app = try await f.run(InstallOptions(withoutXSideFeatures: true, duoCompatibility: true))
+        func table(_ lproj: String) throws -> [String: String] {
+            try #require(try PropertyListSerialization.propertyList(
+                from: Data(contentsOf: app.appendingPathComponent("\(lproj)/InfoPlist.strings")), format: nil) as? [String: String])
+        }
+        #expect(try table("fr.lproj")["NSPhotoLibraryUsageDescription"] == DuoCompatibility.usageDescriptions["fr"])
+        #expect(try table("fr.lproj")["NSCameraUsageDescription"] == "Caméra de l'app")
+        #expect(try table("en.lproj")["NSPhotoLibraryAddUsageDescription"] == DuoCompatibility.usageDescriptions["en"])
+        #expect(try plist(app)["NSCameraUsageDescription"] as? String == DuoCompatibility.usageDescriptions["en"])
     }
 
     @Test func optionDecodesFromOldOptions() throws {

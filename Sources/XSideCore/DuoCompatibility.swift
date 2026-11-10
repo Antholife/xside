@@ -22,11 +22,37 @@ public struct DuoAppInfo: Codable, Equatable, Sendable {
     public var adoptsScenes: Bool
     /// The app's own scene delegate class (runtime name), found in its main executable.
     public var sceneDelegateClass: String?
+    /// The Info.plist names a main nib (`NSMainNibFile`, any device form) and no storyboard: the
+    /// app's window comes from MainWindow.nib, which nothing loads under scenes.
+    public var startsFromNib: Bool
 
-    public init(sdkVersion: String?, adoptsScenes: Bool, sceneDelegateClass: String?) {
+    public init(sdkVersion: String?, adoptsScenes: Bool, sceneDelegateClass: String?, startsFromNib: Bool = false) {
         self.sdkVersion = sdkVersion
         self.adoptsScenes = adoptsScenes
         self.sceneDelegateClass = sceneDelegateClass
+        self.startsFromNib = startsFromNib
+    }
+
+    /// The option may leave it black (mega review S2/D1, unverified on a device): an app with no
+    /// manifest of its own that starts from a nib. Still allowed, with a warning.
+    public var mayShowBlack: Bool { !adoptsScenes && startsFromNib }
+
+    private enum CodingKeys: String, CodingKey { case sdkVersion, adoptsScenes, sceneDelegateClass, startsFromNib }
+
+    /// Recorded by an older XSide: no `startsFromNib`, read as false.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        sdkVersion = try c.decodeIfPresent(String.self, forKey: .sdkVersion)
+        adoptsScenes = try c.decode(Bool.self, forKey: .adoptsScenes)
+        sceneDelegateClass = try c.decodeIfPresent(String.self, forKey: .sceneDelegateClass)
+        startsFromNib = try c.decodeIfPresent(Bool.self, forKey: .startsFromNib) ?? false
+    }
+
+    /// The device forms of an Info.plist key iOS reads ("", "~iphone", "~ipad").
+    static let deviceForms = ["", "~iphone", "~ipad"]
+
+    static func names(_ plist: [String: Any], _ key: String) -> Bool {
+        deviceForms.contains { (plist[key + $0] as? String).map { !$0.isEmpty } ?? false }
     }
 
     /// No scene manifest and no scene delegate of its own: the option then brings XSide's small
@@ -40,8 +66,10 @@ public struct DuoAppInfo: Codable, Equatable, Sendable {
             ?? (plist["DTPlatformVersion"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         let adopts = plist["UIApplicationSceneManifest"] is [String: Any]
         let needsClass = !adopts && !DuoCompatibility.supportsDuo(sdk: sdk)
+        let nib = names(plist, "NSMainNibFile") && !names(plist, "UIMainStoryboardFile")
         return DuoAppInfo(sdkVersion: sdk, adoptsScenes: adopts,
-                          sceneDelegateClass: needsClass ? ObjCClassScanner.sceneDelegateClass(in: executable) : nil)
+                          sceneDelegateClass: needsClass ? ObjCClassScanner.sceneDelegateClass(in: executable) : nil,
+                          startsFromNib: nib)
     }
 }
 
@@ -143,12 +171,24 @@ public enum DuoCompatibility {
         return isDuo ? .recommended : .notADuo
     }
 
-    /// The text of a usage description XSide adds (iOS shows it when the app asks for access).
-    public static let usageDescription = "The app asks for this access. (Text added by XSide: the app was made before iOS required one.)"
+    /// The text of a usage description XSide adds (iOS shows it when the app asks for access), by
+    /// language: the Info.plist gets the installation's, the app's lprojs both (mega review S3).
+    public static let usageDescriptions = [
+        "fr": "L'app demande cet accès. (Texte ajouté par XSide : l'app a été faite avant qu'iOS en exige un.)",
+        "en": "The app asks for this access. (Text added by XSide: the app was made before iOS required one.)",
+    ]
 
     /// The usage descriptions iOS requires, by the framework that leads to them (an app built
     /// with an old SDK may have none, and the SDK raise makes iOS kill it without them).
     static let usageDescriptionsByFramework: [String: [String]] = [
+        // UIImagePickerController (camera, the microphone of its videos, the library) and
+        // UIImageWriteToSavedPhotosAlbum need no other framework (mega review S4).
+        "UIKit": ["NSCameraUsageDescription", "NSMicrophoneUsageDescription",
+                  "NSPhotoLibraryUsageDescription", "NSPhotoLibraryAddUsageDescription"],
+        "Speech": ["NSSpeechRecognitionUsageDescription", "NSMicrophoneUsageDescription"],
+        "Intents": ["NSSiriUsageDescription"],
+        "HealthKit": ["NSHealthShareUsageDescription", "NSHealthUpdateUsageDescription"],
+        "LocalAuthentication": ["NSFaceIDUsageDescription"],
         "MediaPlayer": ["NSAppleMusicUsageDescription"],
         "Photos": ["NSPhotoLibraryUsageDescription", "NSPhotoLibraryAddUsageDescription"],
         "AssetsLibrary": ["NSPhotoLibraryUsageDescription", "NSPhotoLibraryAddUsageDescription"],
@@ -156,35 +196,53 @@ public enum DuoCompatibility {
         "CoreLocation": ["NSLocationWhenInUseUsageDescription", "NSLocationAlwaysAndWhenInUseUsageDescription"],
         "Contacts": ["NSContactsUsageDescription"],
         "AddressBook": ["NSContactsUsageDescription"],
-        "EventKit": ["NSCalendarsUsageDescription", "NSRemindersUsageDescription"],
+        // The full-access keys: with SDK 17 and later, iOS asks for them (also for the old request).
+        "EventKit": ["NSCalendarsUsageDescription", "NSRemindersUsageDescription", "NSCalendarsFullAccessUsageDescription",
+                     "NSCalendarsWriteOnlyAccessUsageDescription", "NSRemindersFullAccessUsageDescription"],
         "CoreBluetooth": ["NSBluetoothAlwaysUsageDescription"],
         "CoreMotion": ["NSMotionUsageDescription"],
     ]
 
     /// Declares SDK 27.1 and, when the app has no scene manifest, adds one with a single
-    /// application scene whose delegate is `sceneDelegateClass` (nothing when it's nil). An
-    /// existing manifest is kept as it is: the app already uses scenes. Adds the usage
-    /// descriptions the app lacks for the frameworks in `linkedLibraries` (its load commands).
+    /// application scene whose delegate is `sceneDelegateClass` (nothing when it's nil). It names the
+    /// app's storyboard (`UIMainStoryboardFile`) as the scene's: under scenes iOS loads it only from
+    /// there (mega review S2/D1). A storyboard given for one device form (`~iphone`, `~ipad`) gets a
+    /// manifest of that form, as iOS reads them. An existing manifest is kept as it is: the app
+    /// already uses scenes. Adds the usage descriptions the app lacks for the frameworks in
+    /// `linkedLibraries` (its load commands), in `language` ("fr" or "en"); returns them in both
+    /// languages for the app's `InfoPlist.strings` (language -> key -> text).
+    @discardableResult
     public static func applyInfoPlist(_ plist: inout [String: Any], sceneDelegateClass: String?,
-                                      linkedLibraries: [String] = []) {
+                                      linkedLibraries: [String] = [], language: String = "en") -> [String: [String: String]] {
         plist["DTPlatformVersion"] = sdk
         plist["DTSDKName"] = sdkName
+        var strings: [String: [String: String]] = [:]
+        let plain = usageDescriptions[language] ?? usageDescriptions["en"]!
         for library in linkedLibraries {
             let parts = library.split(separator: "/")
             guard let framework = parts.first(where: { $0.hasSuffix(".framework") })?.dropLast(".framework".count),
                   let keys = usageDescriptionsByFramework[String(framework)] else { continue }
-            for key in keys where plist[key] == nil { plist[key] = usageDescription }
+            for key in keys where plist[key] == nil {
+                plist[key] = plain
+                for (lang, text) in usageDescriptions { strings[lang, default: [:]][key] = text }
+            }
         }
-        guard plist["UIApplicationSceneManifest"] == nil, let sceneDelegateClass else { return }
-        plist["UIApplicationSceneManifest"] = [
-            "UIApplicationSupportsMultipleScenes": false,
-            "UISceneConfigurations": [
-                "UIWindowSceneSessionRoleApplication": [[
-                    "UISceneConfigurationName": "Default",
-                    "UISceneDelegateClassName": sceneDelegateClass,
-                ]],
-            ],
-        ] as [String: Any]
+        guard plist["UIApplicationSceneManifest"] == nil, let sceneDelegateClass else { return strings }
+        func manifest(storyboard: String?) -> [String: Any] {
+            var config: [String: Any] = ["UISceneConfigurationName": "Default", "UISceneDelegateClassName": sceneDelegateClass]
+            if let storyboard { config["UISceneStoryboardFile"] = storyboard }
+            return [
+                "UIApplicationSupportsMultipleScenes": false,
+                "UISceneConfigurations": ["UIWindowSceneSessionRoleApplication": [config]],
+            ]
+        }
+        for form in DuoAppInfo.deviceForms {
+            let storyboard = (plist["UIMainStoryboardFile" + form] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            let key = "UIApplicationSceneManifest" + form
+            guard plist[key] == nil, form.isEmpty || storyboard != nil else { continue }
+            plist[key] = manifest(storyboard: storyboard)
+        }
+        return strings
     }
 
     /// The `xcrun` arguments that give every slice SDK 27.1, keeping its minimum iOS. One call

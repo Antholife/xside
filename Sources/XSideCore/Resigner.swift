@@ -1258,13 +1258,15 @@ public struct Resigner: Sendable {
         if options.iPadFullScreen { plist["UIRequiresFullScreen"] = true }
         if options.proMotion { plist["CADisableMinimumFrameDurationOnPhone"] = true }
         if let min = options.minimumOSVersion { plist["MinimumOSVersion"] = min }
+        var duoStrings: [String: [String: String]] = [:]
         if let duo {
             // A plain file name only: the .ipa's own Info.plist says it.
             let executable = (plist["CFBundleExecutable"] as? String)
                 .flatMap { !$0.isEmpty && !$0.contains("/") && $0 != "." && $0 != ".." ? $0 : nil }
                 .map { app.appendingPathComponent($0) }
             let linked = executable.flatMap { try? MachOPatcher.linkedDylibs(in: $0) } ?? []
-            DuoCompatibility.applyInfoPlist(&plist, sceneDelegateClass: duo.sceneDelegate, linkedLibraries: linked)
+            duoStrings = DuoCompatibility.applyInfoPlist(&plist, sceneDelegateClass: duo.sceneDelegate,
+                                                         linkedLibraries: linked, language: language)
         }
         // Cleared first too (the .ipa may carry them); read by the signed-out iCloud library.
         ICloudSignedOut.clearInfoPlist(&plist)
@@ -1280,13 +1282,18 @@ public struct Resigner: Sendable {
         // Cleared first: an app signed by XSide before carries the previous payload.
         plist["XSideWelcome"] = nil
         if let payload { plist["XSideWelcome"] = payload.plist }
-        let strings = features ? InfoPlistAdditions.apply(to: &plist, language: language) : [:]
+        var strings = features ? InfoPlistAdditions.apply(to: &plist, language: language) : [:]
         if !features { InfoPlistAdditions.removeShortcuts(from: &plist) }
+        // The Duo option's usage texts, with or without XSide's module; the app's own translation
+        // of a key wins (mega review S3).
+        strings.merge(duoStrings) { $0.merging($1) { mine, _ in mine } }
+        let duoKeys = Set(duoStrings.values.flatMap(\.keys))
         try write(plist, format: format, to: url)
         // Never fails the install: untranslated texts are the worst outcome. Only the app's own
         // lprojs get them (no folder created: final review Important 2).
         if !strings.isEmpty {
-            LocalizedStrings.merge(strings, into: app, table: "InfoPlist", keepExisting: [InfoPlistAdditions.usageKey],
+            LocalizedStrings.merge(strings, into: app, table: "InfoPlist",
+                                   keepExisting: duoKeys.union([InfoPlistAdditions.usageKey]),
                                    developmentRegion: plist["CFBundleDevelopmentRegion"] as? String)
         }
         plainLocalizedBundleNames(app: app, executable: executable)

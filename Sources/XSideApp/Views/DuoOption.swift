@@ -17,6 +17,8 @@ struct DuoOptionRow: View {
     @Binding var isOn: Bool
     /// The app has no scene support of its own: the option adds XSide's compatibility module.
     var needsModule = false
+    /// The app starts from a nib (`DuoAppInfo.mayShowBlack`): it may show black with the option.
+    var mayShowBlack = false
     /// The last signing couldn't add it (Settings > Mes apps).
     var missing = false
     /// `isOn` is a choice already stored on an installation (Settings > Mes apps): it shows, and
@@ -76,6 +78,12 @@ struct DuoOptionRow: View {
                 }
                 if needsModule {
                     Label(L("duo.caption.moduleWarning"), systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color(nsColor: .systemOrange))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if mayShowBlack {
+                    Label(L("duo.caption.nibWarning"), systemImage: "exclamationmark.triangle.fill")
                         .font(.system(size: 11))
                         .foregroundStyle(Color(nsColor: .systemOrange))
                         .fixedSize(horizontal: false, vertical: true)
@@ -184,7 +192,8 @@ struct DuoOptionsCard: View {
                                  isOn: Binding(get: { flow.duoDevices.contains(id) }, set: { on in
                                      if on { flow.duoDevices.insert(id) } else { flow.duoDevices.remove(id) }
                                  }),
-                                 needsModule: flow.info?.duo?.needsLegacyModule == true)
+                                 needsModule: flow.info?.duo?.needsLegacyModule == true,
+                                 mayShowBlack: flow.info?.duo?.mayShowBlack == true)
                 }
             }
             .disabled(flow.isRunning)

@@ -462,6 +462,7 @@ private struct AppSettingsContent: View {
                              Task { await model.setDuoCompatibility(value, for: entry) }
                          }),
                          needsModule: entry.record.duo?.needsLegacyModule == true,
+                         mayShowBlack: entry.record.duo?.mayShowBlack == true,
                          missing: on && entry.installation.duoCompatibilityMissing == true,
                          storedChoice: true, pending: pending.contains(.duoCompatibility), foldsDetails: true)
             .disabled(!model.canManage(entry))

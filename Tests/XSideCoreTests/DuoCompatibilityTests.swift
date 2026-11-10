@@ -245,12 +245,106 @@ struct DuoCompatibilityTests {
             "/System/Library/Frameworks/CoreLocation.framework/CoreLocation",
             "/usr/lib/libz.1.dylib",
         ])
-        #expect(plist["NSAppleMusicUsageDescription"] as? String == DuoCompatibility.usageDescription)
-        #expect(plist["NSMicrophoneUsageDescription"] as? String == DuoCompatibility.usageDescription)
+        #expect(plist["NSAppleMusicUsageDescription"] as? String == DuoCompatibility.usageDescriptions["en"])
+        #expect(plist["NSMicrophoneUsageDescription"] as? String == DuoCompatibility.usageDescriptions["en"])
         #expect(plist["NSCameraUsageDescription"] as? String == "Own text")
-        #expect(plist["NSLocationWhenInUseUsageDescription"] as? String == DuoCompatibility.usageDescription)
+        #expect(plist["NSLocationWhenInUseUsageDescription"] as? String == DuoCompatibility.usageDescriptions["en"])
         #expect(plist["NSPhotoLibraryUsageDescription"] == nil)
         #expect(plist["NSContactsUsageDescription"] == nil)
+    }
+
+    /// Mega review S2/D1: a storyboard app gets a manifest without UISceneStoryboardFile, so
+    /// under scenes iOS loads no storyboard and the window stays nil (black). The new manifest
+    /// names the app's storyboard, per device form as the Info.plist has it.
+    @Test func aNewManifestNamesTheAppsStoryboard() throws {
+        func config(_ plist: [String: Any], _ key: String) throws -> [String: Any] {
+            let manifest = try #require(plist[key] as? [String: Any])
+            let configs = try #require(manifest["UISceneConfigurations"] as? [String: Any])
+            return try #require((configs["UIWindowSceneSessionRoleApplication"] as? [[String: Any]])?.first)
+        }
+        var plist: [String: Any] = ["UIMainStoryboardFile": "Main", "UIMainStoryboardFile~ipad": "Main_iPad"]
+        DuoCompatibility.applyInfoPlist(&plist, sceneDelegateClass: "XSDuoSceneDelegate")
+        #expect(try config(plist, "UIApplicationSceneManifest")["UISceneStoryboardFile"] as? String == "Main")
+        #expect(try config(plist, "UIApplicationSceneManifest")["UISceneDelegateClassName"] as? String == "XSDuoSceneDelegate")
+        #expect(try config(plist, "UIApplicationSceneManifest~ipad")["UISceneStoryboardFile"] as? String == "Main_iPad")
+        #expect(try config(plist, "UIApplicationSceneManifest~ipad")["UISceneDelegateClassName"] as? String == "XSDuoSceneDelegate")
+        #expect(plist["UIApplicationSceneManifest~iphone"] == nil)
+
+        // The app's own unused delegate gets it too; an iPhone-only form makes its own manifest.
+        var own: [String: Any] = ["UIMainStoryboardFile~iphone": "Phone"]
+        DuoCompatibility.applyInfoPlist(&own, sceneDelegateClass: "YTSceneDelegate")
+        #expect(try config(own, "UIApplicationSceneManifest")["UISceneStoryboardFile"] == nil)
+        #expect(try config(own, "UIApplicationSceneManifest~iphone")["UISceneStoryboardFile"] as? String == "Phone")
+        #expect(try config(own, "UIApplicationSceneManifest~iphone")["UISceneDelegateClassName"] as? String == "YTSceneDelegate")
+
+        // No storyboard: no storyboard key, no device forms; an empty name counts as none.
+        var none: [String: Any] = ["UIMainStoryboardFile": ""]
+        DuoCompatibility.applyInfoPlist(&none, sceneDelegateClass: "XSDuoSceneDelegate")
+        #expect(try config(none, "UIApplicationSceneManifest")["UISceneStoryboardFile"] == nil)
+        #expect(none["UIApplicationSceneManifest~ipad"] == nil)
+
+        // An app's own manifest (any form) is left alone.
+        var kept: [String: Any] = ["UIMainStoryboardFile~ipad": "Main_iPad",
+                                   "UIApplicationSceneManifest~ipad": ["UIApplicationSupportsMultipleScenes": true]]
+        DuoCompatibility.applyInfoPlist(&kept, sceneDelegateClass: "XSDuoSceneDelegate")
+        #expect((kept["UIApplicationSceneManifest~ipad"] as? [String: Any])?["UISceneConfigurations"] == nil)
+    }
+
+    /// The nib-only apps (NSMainNibFile, no storyboard): the module can't load MainWindow.nib under
+    /// scenes, so the option warns they may show black.
+    @Test func appInfoTellsANibOnlyApp() throws {
+        let exe = machO("duo-objc-fat")
+        #expect(DuoAppInfo.read(executable: exe, plist: ["NSMainNibFile": "MainWindow"]).startsFromNib)
+        #expect(DuoAppInfo.read(executable: exe, plist: ["NSMainNibFile~ipad": "MainWindow-iPad"]).startsFromNib)
+        #expect(!DuoAppInfo.read(executable: exe, plist: ["NSMainNibFile": "MainWindow", "UIMainStoryboardFile": "Main"]).startsFromNib)
+        #expect(!DuoAppInfo.read(executable: exe, plist: ["NSMainNibFile": ""]).startsFromNib)
+        #expect(!DuoAppInfo.read(executable: exe, plist: [:]).startsFromNib)
+        let nib = DuoAppInfo(sdkVersion: "26.4", adoptsScenes: false, sceneDelegateClass: nil, startsFromNib: true)
+        #expect(nib.mayShowBlack)
+        #expect(DuoCompatibility.optionState(isDuo: true, app: nib) == .recommended) // still allowed
+        #expect(!DuoAppInfo(sdkVersion: "26.4", adoptsScenes: true, sceneDelegateClass: nil, startsFromNib: true).mayShowBlack)
+        // Recorded by an older XSide: no such fact, read as false.
+        let old = try JSONDecoder().decode(DuoAppInfo.self, from: Data(#"{"adoptsScenes":false,"sdkVersion":"26.4"}"#.utf8))
+        #expect(!old.startsFromNib)
+        let round = try JSONDecoder().decode(DuoAppInfo.self, from: JSONEncoder().encode(nib))
+        #expect(round == nib)
+    }
+
+    /// Mega review S3: the added usage texts are in the installation's language in the Info.plist,
+    /// and in both languages for the app's lprojs (AGENTS rule 1).
+    @Test func addedUsageDescriptionsAreInBothLanguages() {
+        var plist: [String: Any] = ["NSCameraUsageDescription": "Own text"]
+        let strings = DuoCompatibility.applyInfoPlist(&plist, sceneDelegateClass: nil, linkedLibraries: [
+            "/System/Library/Frameworks/AVFoundation.framework/AVFoundation"], language: "fr")
+        #expect(plist["NSMicrophoneUsageDescription"] as? String == DuoCompatibility.usageDescriptions["fr"])
+        #expect(plist["NSCameraUsageDescription"] as? String == "Own text")
+        #expect(strings["fr"]?["NSMicrophoneUsageDescription"] == DuoCompatibility.usageDescriptions["fr"])
+        #expect(strings["en"]?["NSMicrophoneUsageDescription"] == DuoCompatibility.usageDescriptions["en"])
+        #expect(strings["fr"]?["NSCameraUsageDescription"] == nil) // the app's own: no translation added
+        #expect(DuoCompatibility.usageDescriptions["fr"] != DuoCompatibility.usageDescriptions["en"])
+        var english: [String: Any] = [:]
+        DuoCompatibility.applyInfoPlist(&english, sceneDelegateClass: nil, linkedLibraries: [
+            "/System/Library/Frameworks/AVFoundation.framework/AVFoundation"])
+        #expect(english["NSMicrophoneUsageDescription"] as? String == DuoCompatibility.usageDescriptions["en"])
+    }
+
+    /// Mega review S4: the other frameworks whose use iOS stops without a usage description.
+    @Test func moreFrameworksGetTheirUsageDescriptions() {
+        func added(_ framework: String) -> Set<String> {
+            var plist: [String: Any] = [:]
+            DuoCompatibility.applyInfoPlist(&plist, sceneDelegateClass: nil,
+                                            linkedLibraries: ["/System/Library/Frameworks/\(framework).framework/\(framework)"])
+            return Set(plist.keys.filter { $0.hasSuffix("UsageDescription") })
+        }
+        // UIImagePickerController (camera, its video's microphone, the library) and UIImageWriteToSavedPhotosAlbum.
+        #expect(added("UIKit") == ["NSCameraUsageDescription", "NSMicrophoneUsageDescription",
+                                   "NSPhotoLibraryUsageDescription", "NSPhotoLibraryAddUsageDescription"])
+        #expect(added("Speech") == ["NSSpeechRecognitionUsageDescription", "NSMicrophoneUsageDescription"])
+        #expect(added("Intents") == ["NSSiriUsageDescription"])
+        #expect(added("HealthKit") == ["NSHealthShareUsageDescription", "NSHealthUpdateUsageDescription"])
+        #expect(added("LocalAuthentication") == ["NSFaceIDUsageDescription"])
+        #expect(added("EventKit").isSuperset(of: ["NSCalendarsFullAccessUsageDescription", "NSRemindersFullAccessUsageDescription",
+                                                 "NSCalendarsUsageDescription", "NSRemindersUsageDescription"]))
     }
 
     // MARK: vtool
