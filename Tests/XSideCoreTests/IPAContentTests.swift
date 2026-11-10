@@ -365,6 +365,8 @@ struct IPAContentTests {
         // An upload/API path (how data is exfiltrated to a paste site) fires too, not only /raw.
         #expect(try signs(ContentMachO.build(strings: ["https://hastebin.com/documents"], signed: false)) == [.pasteSite])
         #expect(try signs(ContentMachO.build(strings: ["https://pastebin.com/api/api_post.php"], signed: false)) == [.pasteSite])
+        // A subdomain (www.) counts too.
+        #expect(try signs(ContentMachO.build(strings: ["https://www.pastebin.com/abc"], signed: false)) == [.pasteSite])
         #expect(try signs(ContentMachO.build(strings: ["see hastebin.com for details"], signed: false)).isEmpty)
     }
 

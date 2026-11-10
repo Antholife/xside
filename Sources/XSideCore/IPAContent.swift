@@ -452,9 +452,13 @@ public enum IPAContentScanner {
         var found: [WarningSign] = []
         if contains(text, "discord.com/api/webhooks") || contains(text, "discordapp.com/api/webhooks") { found.append(.discordWebhook) }
         if contains(text, "api.telegram.org/bot") { found.append(.telegramBot) }
-        // A URL to a paste site (any path: /raw to read, /documents or /api to upload), by its
-        // scheme-prefixed host, so a bare word in prose (a tweak linking to it) doesn't fire.
-        if contains(text, "://pastebin.com") || contains(text, "://hastebin.com") || contains(text, "://hastebin.skyra.pw") { found.append(.pasteSite) }
+        // A URL to a paste site (any path: /raw to read, /documents or /api to upload), by its host
+        // after a scheme or a subdomain dot (so www.pastebin.com counts) or the bare raw path, not a
+        // plain word in prose (a tweak linking to it).
+        let pasteSite = { (host: String) in
+            self.contains(text, "://" + host) || self.contains(text, "." + host) || self.contains(text, host + "/raw")
+        }
+        if pasteSite("pastebin.com") || pasteSite("hastebin.com") || pasteSite("hastebin.skyra.pw") { found.append(.pasteSite) }
         // A host under ngrok (a public suffix list names ngrok.io alone, or as *.ngrok.io).
         if [".ngrok.io", ".ngrok-free.app", ".ngrok.app", ".ngrok-free.dev"].contains(where: { containsHost(text, $0) })
             || contains(text, "webhook.site/") || contains(text, "requestbin.net/") || contains(text, "requestbin.com/") {
