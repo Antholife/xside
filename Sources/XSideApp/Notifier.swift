@@ -508,13 +508,19 @@ final class NotificationPermission {
     /// Shows the one-time system prompt (does nothing once the user has answered it).
     func request() async {
         guard let center else { return }
+        var refused = false
         do {
             let granted = try await center.requestAuthorization(options: [.alert, .sound])
             Self.logger.notice("notification authorization granted=\(granted)")
         } catch {
+            // macOS turned the request down without asking ("Notifications are not allowed for
+            // this application"): the button did nothing visible. It reads as "off", whose card
+            // opens System Settings (Anthony, debug build).
+            refused = true
             Self.logger.error("notification authorization failed: \(String(describing: error))")
         }
         await refresh()
+        if refused, state == .notDetermined { state = .denied }
     }
 
     func openSystemSettings() {
