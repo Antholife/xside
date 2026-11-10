@@ -842,6 +842,7 @@
 "icloud.details.limits" = "What it doesn't fix: nothing syncs with your other devices, and an app that requires an iCloud account to work usually launches, but may stay on its sign-in screen.";
 "icloud.caption.recommended" = "%@ uses iCloud, but apps installed by XSide don't get access to it: without this option it may crash.";
 "icloud.caption.notNeeded" = "Not needed: the app doesn't use iCloud.";
+"icloud.caption.paidTeam" = "%@ uses iCloud, and XSide keeps it with your paid team (not yet tried with a real paid team). This option is still there if the app crashes because of iCloud.";
 "icloud.caption.useful" = "Useful if the app crashes because of iCloud.";
 "icloud.missing" = "The last install couldn't add it: %@ was installed without it. The logs say why.";
 "icloud.missing.install" = "%1$@: signed-out iCloud couldn't be added, %2$@ was installed without it.";
@@ -853,11 +854,12 @@
 "progress.step.tweaks" = "Adding tweaks";
 "preflight.usesICloud" = "%@ uses iCloud, but apps installed by XSide don't get access to it: it may crash. The \"Simulate signed-out iCloud\" option (step ②) avoids that.";
 "preflight.usesICloud.someDevices" = "%@ uses iCloud, but apps installed by XSide don't get access to it: it may crash on the devices where \"Simulate signed-out iCloud\" (step ②) is off.";
+"preflight.iCloudKeptByPaidTeam" = "%@ uses iCloud: XSide keeps it with your paid team. This isn't yet tried with a real paid team; if the app crashes because of iCloud, \"Simulate signed-out iCloud\" (step ②) is still there.";
 "crash.cause.iCloud.adviceOption" = "Reinstall it with signed-out iCloud: it will believe no iCloud account is signed in, and its data will stay on the device.";
 "crash.cause.iCloud.adviceSignedOut" = "Signed-out iCloud is already on: the app uses iCloud in a way it doesn't cover yet. Another version of the app may do without it.";
 "crash.action.turnOnICloudSignedOut" = "Reinstall with signed-out iCloud";
 "whatsNew.120.icloud.title" = "Simulate signed-out iCloud";
-"whatsNew.120.icloud.text" = "An install option, per device: an app that uses iCloud often crashes, since apps installed by XSide don't get access to it. \"Simulate signed-out iCloud\" makes it believe no iCloud account is signed in instead of crashing: CloudKit, Core Data and SwiftData with iCloud, CKSyncEngine, settings synced through iCloud (kept on the device) and iCloud Drive (seen as unavailable). Data stays on the device, nothing syncs; an app that requires iCloud to work usually launches, but may stay on its sign-in screen. Recommended when the app declares iCloud, offered in one click when an app crashes in iCloud.";
+"whatsNew.120.icloud.text" = "An install option, per device: an app that uses iCloud often crashes, since with a free Apple Account apps installed by XSide don't get access to it (a paid team keeps it). \"Simulate signed-out iCloud\" makes it believe no iCloud account is signed in instead of crashing: CloudKit, Core Data and SwiftData with iCloud, CKSyncEngine, settings synced through iCloud (kept on the device) and iCloud Drive (seen as unavailable). Data stays on the device, nothing syncs; an app that requires iCloud to work usually launches, but may stay on its sign-in screen. Recommended when the app declares iCloud, offered in one click when an app crashes in iCloud.";
 
 /* Crash diagnosis */
 "crash.window" = "Crash diagnosis";
@@ -956,7 +958,8 @@
 "crash.usage.homeKit" = "the Home accessories";
 "crash.usage.unknown" = "private data";
 "crash.cause.iCloud.title" = "The app crashed using iCloud";
-"crash.cause.iCloud.text" = "%@ crashed in iCloud (CloudKit). Apps installed by XSide don't get access to iCloud (XSide doesn't set it up, and a free Apple Account can't have it at all): that's very likely the cause.";
+"crash.cause.iCloud.text" = "%@ crashed in iCloud (CloudKit). With a free Apple Account, apps installed by XSide don't get access to iCloud (it can't have it at all): that's very likely the cause.";
+"crash.cause.iCloud.textPaidTeam" = "%@ crashed in iCloud (CloudKit). XSide keeps the app's iCloud with your paid team, but this isn't yet tried with a real paid team: Xcode may not have set up its iCloud, or the app may look for its maker's own containers. That's very likely the cause.";
 "crash.cause.outOfMemory.title" = "The app ran out of memory";
 "crash.cause.outOfMemory.text" = "iOS stopped %@ while it was open because it went over the memory iOS allows it.";
 "crash.cause.outOfMemory.advice" = "Close the other apps and open it again. If it happens again, the app may be too heavy for this device.";

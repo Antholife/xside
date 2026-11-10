@@ -515,19 +515,19 @@ extension InstallPreflight.Warning {
     var followsInstallOptions: Bool {
         switch self {
         case .iOSTooOld, .noAppIDLeft, .lastAppID, .olderVersion: true
-        case .developerModeOff, .deviceFull, .notMadeForDuo, .usesICloud: false
+        case .developerModeOff, .deviceFull, .notMadeForDuo, .usesICloud, .iCloudKeptByPaidTeam: false
         }
     }
 }
 
 /// Before the install: what is likely to fail (Developer Mode off, old iOS, full device, no App ID left).
-private struct PreflightNotes: View {
+struct PreflightNotes: View {
     let warnings: [InstallPreflight.Warning]
     let model: AppModel
     let flow: InstallFlow
 
-    /// Only "last App ID" left: a note, not a warning.
-    private var isNoteOnly: Bool { warnings == [.lastAppID] }
+    /// Only facts left ("last App ID", a paid team keeping the app's iCloud): a note, not a warning.
+    private var isNoteOnly: Bool { warnings.allSatisfy { $0 == .lastAppID || $0 == .iCloudKeptByPaidTeam } }
 
     var body: some View {
         if !warnings.isEmpty {
@@ -577,6 +577,7 @@ private struct PreflightNotes: View {
         case .notMadeForDuo: "rectangle.split.2x1"
         case .olderVersion: "arrow.uturn.backward.circle"
         case .usesICloud: "icloud.slash"
+        case .iCloudKeptByPaidTeam: "icloud"
         }
     }
 
@@ -606,6 +607,7 @@ private struct PreflightNotes: View {
             L(possible ? "preflight.notMadeForDuo" : "preflight.notMadeForDuo.noOption", appName, name(id))
         case .olderVersion(let id, let installing, let installed): L("preflight.olderVersion", installing, installed, name(id))
         case .usesICloud(let optionOn): L(optionOn ? "preflight.usesICloud.someDevices" : "preflight.usesICloud", appName)
+        case .iCloudKeptByPaidTeam: L("preflight.iCloudKeptByPaidTeam", appName)
         }
     }
 }

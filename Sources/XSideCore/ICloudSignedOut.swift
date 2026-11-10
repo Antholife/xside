@@ -148,11 +148,15 @@ public enum ICloudSignedOut {
     }
 
     /// How the option shows for an app. Always usable, with any account: with a free team XSide
-    /// can give no app iCloud, so this is the only fix for an app that crashes in it (a paid team
-    /// keeps the app's iCloud, see `ICloudPaidTeam`).
+    /// can give no app iCloud, so this is the only fix for an app that crashes in it; a paid team
+    /// keeps the app's iCloud (`ICloudPaidTeam`), so there it is offered, not recommended.
     public enum OptionState: Equatable, Sendable {
-        /// The app's entitlements declare iCloud: highlighted, still off until turned on.
+        /// The app's entitlements declare iCloud and the team is free: highlighted, still off
+        /// until turned on.
         case recommended
+        /// The app's entitlements declare iCloud and the team is paid: XSide keeps its iCloud
+        /// (not yet tried with a real paid team). Offered, not highlighted.
+        case keptByPaidTeam
         /// The app links CloudKit but declares no iCloud: offered, "useful if it crashes because
         /// of iCloud", not highlighted.
         case useful
@@ -160,11 +164,15 @@ public enum ICloudSignedOut {
         case notNeeded
         /// What the app uses isn't known (imported by an older XSide): offered.
         case unknown
+
+        /// Highlighted (badge, tinted row).
+        public var isRecommended: Bool { self == .recommended }
     }
 
-    public static func optionState(app: ICloudAppInfo?) -> OptionState {
+    /// `paidTeam`: the signing team is a paid one (`SigningEnvironment.isPaidTeam`).
+    public static func optionState(app: ICloudAppInfo?, paidTeam: Bool = false) -> OptionState {
         guard let app else { return .unknown }
-        if app.declaresICloud { return .recommended }
+        if app.declaresICloud { return paidTeam ? .keptByPaidTeam : .recommended }
         return app.linksCloudKit ? .useful : .notNeeded
     }
 

@@ -553,6 +553,25 @@ private func diagnose(_ data: Data, _ ctx: CrashContext = context) throws -> Cra
         let d = try diagnose(IPS.crash(exception: ["type": "EXC_BREAKPOINT", "signal": "SIGTRAP"],
                                        frames: [IPS.frame(IPS.cloudKit), IPS.frame(IPS.cloudKit), IPS.frame(1), IPS.frame(0)]))
         #expect(d.cause == .iCloud)
+        #expect(d.paidTeam == nil)
+    }
+
+    /// Signed with a paid team, which keeps the app's iCloud (not yet tried with a real one): the
+    /// diagnosis says so, for its wording; the fix (signed-out iCloud) is still offered.
+    @Test func iCloudWithAPaidTeam() throws {
+        let paid = CrashContext(moduleName: "XSideWelcome.dylib", paidTeam: true)
+        let crash = IPS.crash(exception: ["type": "EXC_BREAKPOINT", "signal": "SIGTRAP"],
+                              frames: [IPS.frame(IPS.cloudKit), IPS.frame(1), IPS.frame(0)])
+        let d = try diagnose(crash, paid)
+        #expect(d.cause == .iCloud)
+        #expect(d.paidTeam == true)
+        #expect(CrashAction.suggested(for: d) == .turnOnICloudSignedOut)
+        #expect(try diagnose(crash, CrashContext(moduleName: "XSideWelcome.dylib", paidTeam: false)).paidTeam == nil)
+        // Not an iCloud crash: nothing said about the team.
+        #expect(try diagnose(IPS.crash(frames: [IPS.frame(0)]), paid).paidTeam == nil)
+        // Older crash files: no key.
+        let old = try JSONDecoder().decode(CrashDiagnosis.self, from: Data(#"{"cause":"iCloud","duoCompatibilityOn":false,"topFrames":[]}"#.utf8))
+        #expect(old.paidTeam == nil)
     }
 
     /// iOS kills an app that asks for private data without the text explaining why (namespace

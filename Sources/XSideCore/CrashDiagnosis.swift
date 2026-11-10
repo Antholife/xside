@@ -303,11 +303,15 @@ public struct CrashContext: Equatable, Sendable {
     public var duoCompatibilityOn: Bool
     /// The installation has "Simulate signed-out iCloud": an iCloud crash is then one it doesn't cover.
     public var iCloudSignedOutOn: Bool
+    /// The installation was signed with a paid team, which keeps the app's iCloud (`ICloudPaidTeam`).
+    public var paidTeam: Bool
     /// The injected tweaks' images (of `tweakNames`) whose binaries import C function hooks.
     public var cFunctionHookImages: Set<String> = []
 
     public init(moduleName: String, tweakNames: Set<String> = [], tweakIDs: Set<String> = [], tweakSupportNames: Set<String> = [],
-                tweakLabels: [String: String] = [:], duoCompatibilityOn: Bool = false, iCloudSignedOutOn: Bool = false) {
+                tweakLabels: [String: String] = [:], duoCompatibilityOn: Bool = false, iCloudSignedOutOn: Bool = false,
+                paidTeam: Bool = false) {
+        self.paidTeam = paidTeam
         self.tweakIDs = tweakIDs
         self.tweakSupportNames = tweakSupportNames
         self.tweakLabels = tweakLabels
@@ -345,6 +349,9 @@ public struct CrashDiagnosis: Codable, Equatable, Sendable {
     public var duoCompatibilityOn: Bool
     /// The installation had "Simulate signed-out iCloud" on (nil in older crash files: off).
     public var iCloudSignedOutOn: Bool?
+    /// iCloud: the app was signed with a paid team, which keeps its iCloud (nil: a free team, or
+    /// older crash files). Only its wording changes; the fix is the same.
+    public var paidTeam: Bool?
     /// tweak: its name for people ("Alpha 1.2"), when XSide knows it (nil in older crash files).
     public var tweakName: String?
     /// tweak/tweakSupport: it crashed running a shell command (`/var/jb/bin/sh`…), which an app
@@ -472,10 +479,12 @@ public enum CrashClassifier {
             return d
         }
         let stack = log.exceptionBacktrace.isEmpty ? log.faultingFrames : log.exceptionBacktrace
-        // A trap inside CloudKit itself: the app uses iCloud, which XSide doesn't give apps.
+        // A trap inside CloudKit itself: the app uses iCloud, which XSide can't give apps with a
+        // free team (a paid team keeps it, untried with a real one).
         if stack.first?.image == "CloudKit", log.exceptionType == "EXC_BREAKPOINT" || !log.exceptionBacktrace.isEmpty {
             d.cause = .iCloud
             d.iCloudSignedOutOn = context.iCloudSignedOutOn ? true : nil
+            d.paidTeam = context.paidTeam ? true : nil
             return d
         }
         // The app's own code stopped while its delegate finished launching, with the iPhone Duo

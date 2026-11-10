@@ -1818,6 +1818,7 @@ final class AppModel {
                     .notMadeForDuo(deviceID: first.deviceID, optionPossible: false),
                     .olderVersion(deviceID: first.deviceID, installing: "1.0", installed: "2.0"),
                     .usesICloud(optionOn: false),
+                    .iCloudKeptByPaidTeam,
                     .noAppIDLeft]
         }
         #endif
@@ -1826,7 +1827,7 @@ final class AppModel {
                                       needsNewAppID: needsNewAppID, appIDsRemaining: appIDsRemaining,
                                       sdkVersion: info.sdkVersion, appVersion: version.isEmpty ? info.version : version,
                                       duo: info.duo, icloud: info.icloud,
-                                      iCloudSignedOutDevices: flow.iCloudDevices,
+                                      iCloudSignedOutDevices: flow.iCloudDevices, paidTeam: isPaidTeam,
                                       duoLegacyModuleAvailable: Self.hasDuoLegacyModule)
     }
 
@@ -2503,9 +2504,24 @@ final class AppModel {
     }
 
     /// How "Simulate signed-out iCloud" shows for an app (`app`: what its .ipa uses of iCloud).
-    /// Usable with any account: XSide gives no app iCloud, not even with a paid team.
+    /// Usable with any account; recommended only with a free team (a paid one keeps the app's iCloud).
     func iCloudState(app: ICloudAppInfo?) -> ICloudSignedOut.OptionState {
-        ICloudSignedOut.optionState(app: app)
+        ICloudSignedOut.optionState(app: app, paidTeam: isPaidTeam)
+    }
+
+    /// The signing team is a paid one (Xcode says so): its apps keep their iCloud. The last
+    /// environment that probed OK; false when none did (as for a free team).
+    var isPaidTeam: Bool { currentSigningEnv?.isPaidTeam ?? false }
+
+    /// `teamID` is the signing team and it is a paid one.
+    func isPaidTeam(teamID: String) -> Bool {
+        guard let env = currentSigningEnv else { return false }
+        return env.isPaidTeam && env.teamID == teamID
+    }
+
+    private var currentSigningEnv: SigningEnvironment? {
+        if case .success(let env)? = environment { return env }
+        return lastGoodEnv
     }
 
     /// Settings > Mes apps (and a crash's fix): "Simulate signed-out iCloud" for one installation,
@@ -2794,7 +2810,9 @@ final class AppModel {
                                    // What the last signing applied: a patch that failed isn't in the app.
                                    duoCompatibilityOn: installation.hasDuoCompatibility,
                                    // Asked for but not added by the last signing: it's off in the app.
-                                   iCloudSignedOutOn: installation.hasICloudSignedOut)
+                                   iCloudSignedOutOn: installation.hasICloudSignedOut,
+                                   // Its last signing's team, when it's the paid one XSide signs with now.
+                                   paidTeam: isPaidTeam(teamID: installation.teamID ?? record.teamID))
         // The tweaks the last signing injected (even a version replaced since) and what supports them.
         // A tweak analysed before XSide looked for C function hooks: its stored file says.
         let library = self.library, recordID = record.id

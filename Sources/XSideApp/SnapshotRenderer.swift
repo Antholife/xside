@@ -4,7 +4,7 @@ import SwiftUI
 import XSideCore
 
 /// Debug-only: `XSIDE_SNAPSHOTS=<folder>` renders the panel, Settings > Mes apps and Créer &
-/// contribuer, the compatibility fixes in every state (`fixes-*`), the install window's step ② and
+/// contribuer, the compatibility fixes in every state (`fixes-*`), the iCloud notes for a free and a paid team (`icloud-team-*`), the install window's step ② and
 /// step ① summary with made-up apps on two devices (long names) to PNGs in that folder, in English and French, light and
 /// dark, then quits; nothing of the app starts. It runs only in a copy whose bundle id ends in
 /// ".snapshot", so its preferences are its own, and its library is a folder inside the output:
@@ -119,6 +119,20 @@ enum SnapshotRenderer {
                        dark: dark, to: out.appendingPathComponent("fixes-\(language)-\(scheme).png"))
                 // The install window's step ② and step ① summary for an app without scenes, both devices.
                 let flow = sample.flow()
+                // An app that declares iCloud: free team (preflight, crash) then paid team.
+                let freeICloud = CrashDiagnosis(cause: .iCloud, date: now, exceptionType: "EXC_BREAKPOINT", signal: "SIGTRAP")
+                var paidICloud = freeICloud; paidICloud.paidTeam = true
+                render(VStack(alignment: .leading, spacing: 10) {
+                    PreflightNotes(warnings: [.usesICloud(optionOn: false)], model: model, flow: flow)
+                    PreflightNotes(warnings: [.iCloudKeptByPaidTeam], model: model, flow: flow)
+                    PreflightNotes(warnings: [.iCloudKeptByPaidTeam, .lastAppID], model: model, flow: flow)
+                    ForEach(Array([freeICloud, paidICloud].enumerated()), id: \.offset) { _, d in
+                        CrashBanner(app: "Notes+", device: "iPhone", diagnosis: d, action: CrashAction.suggested(for: d),
+                                    onWhy: {}, onAction: { _ in })
+                    }
+                }
+                .padding(20).frame(width: InstallWindow.width).background(Color(nsColor: .windowBackgroundColor)),
+                       dark: dark, to: out.appendingPathComponent("icloud-team-\(language)-\(scheme).png"))
                 render(VStack(alignment: .leading, spacing: 14) {
                     InstallOptionsSection(model: model, flow: flow)
                     CompatibilityFixesSection {
@@ -282,6 +296,8 @@ enum SnapshotRenderer {
                 ICloudOptionRow(state: .useful, appName: "YouTube", deviceName: "useful", isOn: off)
                 Divider().padding(.leading, 48)
                 ICloudOptionRow(state: .notNeeded, appName: "Duolingo", deviceName: "notNeeded", isOn: off)
+                Divider().padding(.leading, 48)
+                ICloudOptionRow(state: .keptByPaidTeam, appName: "Notes+", deviceName: "keptByPaidTeam", isOn: off)
             }
             CompatibilityFixCard {
                 Legacy32InfoRow(appName: "Instagram", applied: true)

@@ -61,7 +61,8 @@ struct CrashWording {
             }
             advice = t(base + (d.duoCompatibilityOn && d.xsideAddsUsageDescription ? ".adviceDuo" : ".advice"))
         case .iCloud:
-            explanation = f(base + ".text", app)
+            // A paid team keeps the app's iCloud: why it may still crash there.
+            explanation = f(base + (d.paidTeam == true ? ".textPaidTeam" : ".text"), app)
             advice = t(base + (d.iCloudSignedOutOn == true ? ".adviceSignedOut" : ".adviceOption"))
         case .codeSignature, .xsideModule, .duoLegacyModule, .duoAppLaunch, .iCloudShim, .outOfMemory, .launchTimeout, .hang:
             explanation = f(base + ".text", app)

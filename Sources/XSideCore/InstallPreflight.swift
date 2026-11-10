@@ -51,22 +51,27 @@ public enum InstallPreflight {
         case notMadeForDuo(deviceID: String, optionPossible: Bool)
         /// An older version than the one on the device (the wrong file?).
         case olderVersion(deviceID: String, installing: String, installed: String)
-        /// The app's entitlements declare iCloud, which XSide doesn't give apps: it may crash. Said
-        /// once, unless "Simulate signed-out iCloud" is on for every device. `optionOn`: on for some
-        /// of them. Linking CloudKit alone says nothing (see `ICloudAppInfo`).
+        /// The app's entitlements declare iCloud, which XSide can't give apps with a free team: it
+        /// may crash. Said once, unless "Simulate signed-out iCloud" is on for every device.
+        /// `optionOn`: on for some of them. Linking CloudKit alone says nothing (see `ICloudAppInfo`).
         case usesICloud(optionOn: Bool)
+        /// The same app with a paid team: XSide keeps its iCloud (not yet tried with a real paid
+        /// team); the option stays available. Same condition as `usesICloud`.
+        case iCloudKeptByPaidTeam
     }
 
     /// `needsNewAppID`: the signed bundle id isn't registered yet (a first install, or a new id).
     /// `sdkVersion` / `appVersion`: the .ipa's build SDK and version (nil: not checked).
     /// `duo`: what the .ipa supports for the iPhone Duo option (nil: not known).
-    /// `icloud`: what the .ipa uses of iCloud (any account: XSide gives no app iCloud);
-    /// `iCloudSignedOutDevices`: the targets getting "Simulate signed-out iCloud".
+    /// `icloud`: what the .ipa uses of iCloud; `paidTeam`: the signing team is paid (it keeps the
+    /// app's iCloud; a free one can't); `iCloudSignedOutDevices`: the targets getting "Simulate
+    /// signed-out iCloud".
     /// `duoLegacyModuleAvailable`: this build has the Duo compatibility module (apps without scenes).
     public static func check(minimumOS: String?, targets: [Target], needsNewAppID: Bool,
                              appIDsRemaining: Int?, sdkVersion: String? = nil, appVersion: String? = nil,
                              duo: DuoAppInfo? = nil, icloud: ICloudAppInfo? = nil,
-                             iCloudSignedOutDevices: Set<String> = [], duoLegacyModuleAvailable: Bool = true) -> [Warning] {
+                             iCloudSignedOutDevices: Set<String> = [], paidTeam: Bool = false,
+                             duoLegacyModuleAvailable: Bool = true) -> [Warning] {
         var warnings: [Warning] = []
         for target in targets {
             if target.developerModeEnabled == false {
@@ -91,7 +96,7 @@ public enum InstallPreflight {
         let ready = targets.filter { $0.developerModeEnabled != false }.map(\.deviceID)
         if icloud?.declaresICloud == true, !ready.isEmpty {
             let on = ready.filter(iCloudSignedOutDevices.contains)
-            if on.count < ready.count { warnings.append(.usesICloud(optionOn: !on.isEmpty)) }
+            if on.count < ready.count { warnings.append(paidTeam ? .iCloudKeptByPaidTeam : .usesICloud(optionOn: !on.isEmpty)) }
         }
         if needsNewAppID, let left = appIDsRemaining {
             if left <= 0 { warnings.append(.noAppIDLeft) } else if left == 1 { warnings.append(.lastAppID) }

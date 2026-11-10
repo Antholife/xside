@@ -5,7 +5,8 @@ import XSideCore
 /// "Simulate signed-out iCloud" for one device: an install option of its own, with or without
 /// XSide's module (see `ICloudSignedOut`). Always shown and usable, with any account, always with
 /// its full explanation; how it stands for the app (`ICloudSignedOut.OptionState`) is one line
-/// above it: recommended for an app whose entitlements declare iCloud, "useful if it crashes
+/// above it: recommended for an app whose entitlements declare iCloud (free team), "XSide keeps
+/// its iCloud" for that app with a paid team (offered, not recommended), "useful if it crashes
 /// because of iCloud" for one that only links CloudKit, "not needed" for one that doesn't use it.
 struct ICloudOptionRow: View {
     let state: ICloudSignedOut.OptionState
@@ -33,7 +34,7 @@ struct ICloudOptionRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(L("icloud.option")).font(.system(size: 13))
-                    if state == .recommended {
+                    if state.isRecommended {
                         Text(L("icloud.recommended"))
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(.white)
@@ -83,7 +84,7 @@ struct ICloudOptionRow: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
-        .background(state == .recommended ? Theme.violet.opacity(0.10) : .clear,
+        .background(state.isRecommended ? Theme.violet.opacity(0.10) : .clear,
                     in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .accessibilityElement(children: .contain)
     }
@@ -99,6 +100,7 @@ struct ICloudOptionRow: View {
     private var status: (text: String, kind: FixStatusLine.Kind)? {
         switch state {
         case .recommended: (L("icloud.caption.recommended", appName), .recommended)
+        case .keptByPaidTeam: (L("icloud.caption.paidTeam", appName), .neutral)
         case .useful: (L("icloud.caption.useful"), .caution)
         case .notNeeded: (L("icloud.caption.notNeeded"), .caution)
         case .unknown: nil

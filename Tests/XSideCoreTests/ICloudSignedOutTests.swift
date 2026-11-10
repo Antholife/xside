@@ -166,14 +166,29 @@ struct ICloudDetectionTests {
         #expect(ICloudAppInfo.read(executable: plain, entitlements: [:]) == ICloudAppInfo(declaresICloud: false, services: [], ubiquityContainers: [], keyValueStore: false))
     }
 
-    /// Recommended only from the entitlements; an app that only links CloudKit (YouTube) is
-    /// offered neutrally. No account kind changes it (XSide gives no app iCloud).
+    /// Recommended only from the entitlements, with a free team (XSide can give its apps no
+    /// iCloud); an app that only links CloudKit (YouTube) is offered neutrally.
     @Test func optionStateMatrix() {
         #expect(ICloudSignedOut.optionState(app: ICloudAppInfo(declaresICloud: true)) == .recommended)
         #expect(ICloudSignedOut.optionState(app: ICloudAppInfo(declaresICloud: true, linksCloudKit: true)) == .recommended)
         #expect(ICloudSignedOut.optionState(app: ICloudAppInfo(declaresICloud: false, linksCloudKit: true)) == .useful)
         #expect(ICloudSignedOut.optionState(app: ICloudAppInfo(declaresICloud: false)) == .notNeeded)
         #expect(ICloudSignedOut.optionState(app: nil) == .unknown)
+        // Said free explicitly: the same.
+        #expect(ICloudSignedOut.optionState(app: ICloudAppInfo(declaresICloud: true), paidTeam: false) == .recommended)
+    }
+
+    /// A paid team keeps the app's iCloud: the option is no longer recommended for an app that
+    /// declares iCloud, but stays offered (it still can be turned on); the rest is as with a free team.
+    @Test func optionStateWithAPaidTeam() {
+        func state(_ app: ICloudAppInfo?) -> ICloudSignedOut.OptionState { ICloudSignedOut.optionState(app: app, paidTeam: true) }
+        #expect(state(ICloudAppInfo(declaresICloud: true)) == .keptByPaidTeam)
+        #expect(state(ICloudAppInfo(declaresICloud: true, linksCloudKit: true)) == .keptByPaidTeam)
+        #expect(state(ICloudAppInfo(declaresICloud: false, linksCloudKit: true)) == .useful)
+        #expect(state(ICloudAppInfo(declaresICloud: false)) == .notNeeded)
+        #expect(state(nil) == .unknown)
+        #expect(!ICloudSignedOut.OptionState.keptByPaidTeam.isRecommended)
+        #expect(ICloudSignedOut.OptionState.recommended.isRecommended)
     }
 
     /// A record written before the split (one `usesICloud` key, which counted linking CloudKit)
@@ -237,6 +252,25 @@ struct ICloudDetectionTests {
         #expect(check(ICloudAppInfo(declaresICloud: false, linksCloudKit: true)).isEmpty)
         #expect(check(ICloudAppInfo(declaresICloud: false)).isEmpty)
         #expect(check(nil).isEmpty)
+    }
+
+    /// A paid team: no "may crash" note, one that says XSide keeps the app's iCloud (untried with
+    /// a real paid team), unless the option is on for every device. A free team: as above.
+    @Test func preflightNoteWithAPaidTeam() {
+        let targets = [InstallPreflight.Target(deviceID: "a", osVersion: "27.3", otherApps: [], hasThisApp: false),
+                       InstallPreflight.Target(deviceID: "b", osVersion: "27.3", otherApps: [], hasThisApp: false)]
+        func check(_ icloud: ICloudAppInfo?, on: Set<String> = [], paid: Bool) -> [InstallPreflight.Warning] {
+            InstallPreflight.check(minimumOS: nil, targets: targets, needsNewAppID: false, appIDsRemaining: nil,
+                                   icloud: icloud, iCloudSignedOutDevices: on, paidTeam: paid)
+        }
+        let uses = ICloudAppInfo(declaresICloud: true)
+        #expect(check(uses, paid: true) == [.iCloudKeptByPaidTeam])
+        #expect(check(uses, on: ["a"], paid: true) == [.iCloudKeptByPaidTeam])
+        #expect(check(uses, on: ["a", "b"], paid: true).isEmpty)
+        #expect(check(ICloudAppInfo(declaresICloud: false, linksCloudKit: true), paid: true).isEmpty)
+        #expect(check(nil, paid: true).isEmpty)
+        #expect(check(uses, paid: false) == [.usesICloud(optionOn: false)])
+        #expect(check(uses, on: ["a"], paid: false) == [.usesICloud(optionOn: true)])
     }
 
     @Test func progressListHasTheStepOnlyWhenAsked() {
