@@ -952,6 +952,7 @@
 "popover.app.crashLine" = "S'est arrêtée au lancement : %@";
 "popover.app.crashLine.before" = "S'était arrêtée avant la dernière installation : %@";
 "popover.app.crashLine.inUse" = "S'est arrêtée pendant l'utilisation : %@";
+"popover.app.crashLine.stopped" = "S'est arrêtée : %@";
 "crash.seeWhy" = "Voir pourquoi";
 "crash.ignore" = "Ignorer";
 "crash.banner.title" = "%1$@ s'est arrêtée au lancement sur %2$@";
@@ -984,6 +985,7 @@
 "crash.scope.allDevices" = "Sur tous les appareils";
 "notification.crash.title" = "%@ s'est arrêtée au lancement";
 "notification.crash.inUse.title" = "%@ s'est arrêtée pendant l'utilisation";
+"notification.crash.stopped.title" = "%@ s'est arrêtée";
 "notification.crash.body" = "Sur %1$@ : %2$@. Clique pour voir pourquoi.";
 "settings.notifyCrash" = "Me prévenir quand une app plante";
 "settings.notifyCrash.note" = "XSide regarde tout de suite quand le module XSide ou sa connexion en direct signale qu'une app s'est arrêtée, et liste les rapports de plantage des appareils connectés toutes les 2 minutes (toutes les 15 secondes juste après une installation ou une ouverture d'app), puis dit pourquoi l'app s'est fermée.";

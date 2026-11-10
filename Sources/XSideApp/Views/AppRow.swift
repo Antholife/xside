@@ -264,12 +264,20 @@ private struct CrashRowBox: View {
 
     private var tint: Color { Color(nsColor: flag.supersededAt == nil ? .systemRed : .systemOrange) }
 
+    /// « au lancement » only when it was (mega review K3).
+    private static func lineKey(_ moment: CrashFlag.Moment) -> String {
+        switch moment {
+        case .inUse: "popover.app.crashLine.inUse"
+        case .atLaunch: "popover.app.crashLine"
+        case .stopped: "popover.app.crashLine.stopped"
+        }
+    }
+
     var body: some View {
         let cause = CrashWording(flag.diagnosis, app: appName).title
         VStack(alignment: .leading, spacing: 5) {
             Label {
-                Text(L(flag.supersededAt != nil ? "popover.app.crashLine.before"
-                       : flag.duringUse == true ? "popover.app.crashLine.inUse" : "popover.app.crashLine", cause))
+                Text(L(flag.supersededAt != nil ? "popover.app.crashLine.before" : Self.lineKey(flag.moment), cause))
                     .font(.system(size: 11, weight: .semibold))
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)

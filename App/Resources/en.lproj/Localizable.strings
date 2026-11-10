@@ -952,6 +952,7 @@
 "popover.app.crashLine" = "Stopped at launch: %@";
 "popover.app.crashLine.before" = "Had stopped before the last install: %@";
 "popover.app.crashLine.inUse" = "Stopped while in use: %@";
+"popover.app.crashLine.stopped" = "Stopped: %@";
 "crash.seeWhy" = "See why";
 "crash.ignore" = "Ignore";
 "crash.banner.title" = "%1$@ stopped at launch on %2$@";
@@ -984,6 +985,7 @@
 "crash.scope.allDevices" = "On all devices";
 "notification.crash.title" = "%@ stopped at launch";
 "notification.crash.inUse.title" = "%@ stopped while in use";
+"notification.crash.stopped.title" = "%@ stopped";
 "notification.crash.body" = "On %1$@: %2$@. Click to see why.";
 "settings.notifyCrash" = "Notify me when an app crashes";
 "settings.notifyCrash.note" = "XSide looks at once when the XSide module or its live connection says an app stopped, and lists the connected devices' crash reports every 2 minutes (every 15 seconds just after an install or an app opening), then says why the app closed.";

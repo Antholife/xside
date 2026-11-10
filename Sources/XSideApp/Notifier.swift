@@ -275,11 +275,16 @@ final class Notifier: NSObject {
 
     /// XSide found that an app stopped at launch (a crash it hadn't told about): the cause in a few
     /// words; a click opens the crash window on it. One per crash (the caller dedups by file).
-    /// `duringUse`: it stopped while in use, not at launch.
+    /// `moment`: when it stopped (« au lancement » only when it was, mega review K3).
     @discardableResult
-    func crashFound(appName: String, deviceName: String, cause: String, duringUse: Bool = false, job: RefreshJob) async -> Bool {
+    func crashFound(appName: String, deviceName: String, cause: String, moment: CrashFlag.Moment, job: RefreshJob) async -> Bool {
         let content = UNMutableNotificationContent()
-        content.title = L(duringUse ? "notification.crash.inUse.title" : "notification.crash.title", appName)
+        let title = switch moment {
+        case .inUse: "notification.crash.inUse.title"
+        case .atLaunch: "notification.crash.title"
+        case .stopped: "notification.crash.stopped.title"
+        }
+        content.title = L(title, appName)
         content.body = L("notification.crash.body", deviceName, cause)
         content.sound = .default
         content.categoryIdentifier = Self.crashCategory

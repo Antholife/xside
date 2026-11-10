@@ -15,14 +15,26 @@ public struct CrashFlag: Codable, Equatable, Sendable {
     /// that ends cleanly does (or Ignore, or a reinstall followed by a check finding nothing newer).
     /// Optional: older crash-watch.json files have none (nil is false).
     public var duringUse: Bool?
+    /// Found by the check after XSide opened the app: it stopped at launch. nil: found another
+    /// way (the quiet look reads crashes from any time), or older files.
+    public var atLaunch: Bool?
 
     public init(fileName: String, diagnosis: CrashDiagnosis, raisedAt: Date, supersededAt: Date? = nil,
-                duringUse: Bool? = nil) {
+                duringUse: Bool? = nil, atLaunch: Bool? = nil) {
         self.fileName = fileName
         self.diagnosis = diagnosis
         self.raisedAt = raisedAt
         self.supersededAt = supersededAt
         self.duringUse = duringUse
+        self.atLaunch = atLaunch
+    }
+
+    /// When it stopped, as the notice says it (mega review K3).
+    public enum Moment: Sendable { case atLaunch, inUse, stopped }
+
+    public var moment: Moment {
+        if duringUse == true { return .inUse }
+        return atLaunch == true || diagnosis.isLaunchCrash ? .atLaunch : .stopped
     }
 
     /// When the app crashed (the file's date when the log has none).
@@ -155,10 +167,10 @@ public struct CrashWatch: Codable, Equatable, Sendable {
     /// next launch, or the live connection opened then dropped): the crash must be of that run
     /// (not before it, give or take `runSlack`) instead of after the last time the app was seen
     /// running (which the next launch's check-in already moved past it), and the flag is
-    /// `duringUse`.
+    /// `duringUse`. `atLaunch`: found by the check after XSide opened the app.
     @discardableResult
     public mutating func raise(recordID: UUID, deviceID: String, fileName: String, diagnosis: CrashDiagnosis,
-                               installedAt: Date, now: Date, inUseSince: Date? = nil) -> Bool {
+                               installedAt: Date, now: Date, inUseSince: Date? = nil, atLaunch: Bool = false) -> Bool {
         markSeen(fileName: fileName, deviceID: deviceID, at: now)
         let key = Self.key(recordID: recordID, deviceID: deviceID)
         let date = diagnosis.date ?? now
@@ -171,7 +183,8 @@ public struct CrashWatch: Codable, Equatable, Sendable {
         }
         if let current = flags[key], current.fileName == fileName || current.crashDate > date { return false }
         flags[key] = CrashFlag(fileName: fileName, diagnosis: diagnosis, raisedAt: now,
-                               duringUse: inUseSince == nil ? nil : true)
+                               duringUse: inUseSince == nil ? nil : true,
+                               atLaunch: inUseSince == nil && atLaunch ? true : nil)
         if announced?[key]?[fileName] != nil { return false }
         announced = announced ?? [:]
         announced?[key, default: [:]][fileName] = now

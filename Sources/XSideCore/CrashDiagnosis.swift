@@ -353,6 +353,20 @@ public struct CrashDiagnosis: Codable, Equatable, Sendable {
     public var signal: String?
     public var termination: String?
     public var topFrames: [String]
+    /// The log shows it stopped while UIKit ran the app's launch (`CrashLog.duringLaunch`). nil:
+    /// not seen (or older crash files).
+    public var duringLaunch: Bool?
+
+    /// It stopped at launch: the log says so, or the cause only ever happens then (a missing
+    /// library or symbol, no scene support, the launch watchdog). What lets a notice say « au
+    /// lancement » (mega review K3).
+    public var isLaunchCrash: Bool {
+        if duringLaunch == true { return true }
+        switch cause {
+        case .noSceneSupport, .missingLibrary, .missingSymbol, .jailbreakLibrary, .launchTimeout, .duoAppLaunch: return true
+        default: return false
+        }
+    }
 
     public init(cause: CrashCause, subject: String? = nil, library: String? = nil, inApp: Bool? = nil,
                 duoCompatibilityOn: Bool = false, date: Date? = nil, appVersion: String? = nil,
@@ -390,6 +404,7 @@ public enum CrashClassifier {
                                    .joined(separator: ": ").nilIfEmpty,
                                topFrames: (log.exceptionBacktrace.isEmpty ? log.faultingFrames : log.exceptionBacktrace)
                                    .prefix(6).map(\.line))
+        if log.duringLaunch { d.duringLaunch = true }
         if log.kind == .jetsam {
             d.cause = .outOfMemory
             d.subject = (log.jetsamKills.first(where: \.isForegroundMemoryLimit) ?? log.jetsamKills.first)?.reason

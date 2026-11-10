@@ -2824,13 +2824,13 @@ final class AppModel {
     /// engine when it's new. True when the flag is new.
     /// `inUseSince`: it stopped a run in use that began then (see `CrashWatch.raise`).
     @discardableResult
-    private func crashFound(_ finding: CrashFinding, key: JobKey, inUseSince: Date? = nil) -> Bool {
+    private func crashFound(_ finding: CrashFinding, key: JobKey, inUseSince: Date? = nil, atLaunch: Bool = false) -> Bool {
         guard let installation = records.first(where: { $0.id == key.recordID })?
             .installations.first(where: { $0.deviceID == key.deviceID }) else { return false }
         let isNew = changeCrashWatch {
             $0.raise(recordID: key.recordID, deviceID: key.deviceID, fileName: finding.fileName,
                      diagnosis: finding.diagnosis, installedAt: installation.installedAt, now: Date(),
-                     inUseSince: inUseSince)
+                     inUseSince: inUseSince, atLaunch: atLaunch)
         }
         // The window: an on-demand look in progress gives its own answer; otherwise this crash
         // replaces nothing newer.
@@ -2879,7 +2879,7 @@ final class AppModel {
             switch result {
             case .found(let finding):
                 setRun { $0.crash = finding }
-                crashFound(finding, key: key)
+                crashFound(finding, key: key, atLaunch: true)
             case .none:
                 changeCrashWatch { $0.noNewCrash(recordID: key.recordID, deviceID: key.deviceID, checkedAt: Date()) }
             case .failed, .checking:

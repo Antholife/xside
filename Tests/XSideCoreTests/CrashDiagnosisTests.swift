@@ -396,6 +396,27 @@ private func diagnose(_ data: Data, _ ctx: CrashContext = context) throws -> Cra
         #expect(try diagnose(later, CrashContext(moduleName: "XSideWelcome.dylib", duoCompatibilityOn: true)).cause == .other)
     }
 
+    /// Mega review K3: the diagnosis says when the log shows the crash during launch (or the cause
+    /// can only be at launch), so the notice says « au lancement » only then.
+    @Test func aDiagnosisSaysWhenItWasAtLaunch() throws {
+        let launch = [IPS.frame(IPS.objc, "objc_exception_throw"), IPS.frame(0),
+                      IPS.frame(IPS.uikit, "-[UIApplication _handleDelegateCallbacksWithOptions:isSuspended:restoreState:]"),
+                      IPS.frame(IPS.uikit, "UIApplicationMain"), IPS.frame(0, "main")]
+        let atLaunch = try diagnose(IPS.crash(frames: [IPS.frame(IPS.objc, "__abort_with_payload")], lastException: launch),
+                                    CrashContext(moduleName: "XSideWelcome.dylib"))
+        #expect(atLaunch.isLaunchCrash)
+        let later = try diagnose(IPS.crash(frames: [IPS.frame(IPS.objc, "__abort_with_payload")],
+                                           lastException: [IPS.frame(IPS.objc, "objc_exception_throw"), IPS.frame(0),
+                                                           IPS.frame(IPS.uikit, "UIApplicationMain"), IPS.frame(0, "main")]),
+                                 CrashContext(moduleName: "XSideWelcome.dylib"))
+        #expect(!later.isLaunchCrash)
+        // Causes that only ever happen at launch.
+        for cause in [CrashCause.noSceneSupport, .missingLibrary, .missingSymbol, .jailbreakLibrary, .launchTimeout, .duoAppLaunch] {
+            #expect(CrashDiagnosis(cause: cause).isLaunchCrash)
+        }
+        #expect(!CrashDiagnosis(cause: .other).isLaunchCrash)
+    }
+
     /// A crash in "Simulate signed-out iCloud"'s library: XSide's, not the .ipa's (morning review
     /// I1), and the fix is reinstalling without the option.
     @Test func iCloudSignedOutLibrary() throws {

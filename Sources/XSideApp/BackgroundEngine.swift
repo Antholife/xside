@@ -540,7 +540,7 @@ final class BackgroundEngine {
             let delivery = await notifier.prepareDelivery()
             guard delivery.deliverable else { Self.logger.notice("\(what): not sent, \(delivery.reason)"); return }
             let posted = await notifier.crashFound(appName: appName, deviceName: device, cause: cause,
-                                                   duringUse: flag.duringUse == true,
+                                                   moment: flag.moment,
                                                    job: RefreshJob(recordID: key.recordID, deviceID: key.deviceID))
             Self.logger.notice("\(what): \(posted ? "sent" : "refused by macOS")")
         }

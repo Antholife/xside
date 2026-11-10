@@ -173,6 +173,25 @@ import Foundation
         #expect(w.isSettled(recordID: record, deviceID: device, fileName: "Demo-10.ips"))
     }
 
+    /// Mega review K3: what the notice says of when it stopped: in use, at launch (the check after
+    /// XSide opened it, or the log says so), or just « stopped » (the quiet look, any time).
+    @Test func aFlagSaysWhenTheAppStopped() {
+        var w = CrashWatch()
+        raise(&w, "Demo-1.ips", crashAt: t0.addingTimeInterval(60))
+        #expect(w.flag(recordID: record, deviceID: device)?.moment == .stopped)
+        w.raise(recordID: record, deviceID: device, fileName: "Demo-2.ips", diagnosis: diagnosis(at: t0.addingTimeInterval(120)),
+                installedAt: t0, now: t0.addingTimeInterval(150), atLaunch: true)
+        #expect(w.flag(recordID: record, deviceID: device)?.moment == .atLaunch)
+        w.raise(recordID: record, deviceID: device, fileName: "Demo-3.ips", diagnosis: diagnosis(.noSceneSupport, at: t0.addingTimeInterval(180)),
+                installedAt: t0, now: t0.addingTimeInterval(210))
+        #expect(w.flag(recordID: record, deviceID: device)?.moment == .atLaunch)
+        w.raise(recordID: record, deviceID: device, fileName: "Demo-4.ips", diagnosis: diagnosis(at: t0.addingTimeInterval(240)),
+                installedAt: t0, now: t0.addingTimeInterval(270), inUseSince: t0.addingTimeInterval(200))
+        #expect(w.flag(recordID: record, deviceID: device)?.moment == .inUse)
+        // Older files have no `atLaunch`: read as before.
+        #expect(CrashFlag(fileName: "x", diagnosis: diagnosis(at: nil), raisedAt: t0).moment == .stopped)
+    }
+
     @Test func eachLookStartsWhereTheLastOneDid() {
         var w = CrashWatch()
         let first = w.scanSince(deviceID: device, now: t0)
