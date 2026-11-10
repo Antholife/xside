@@ -338,6 +338,20 @@ private func diagnose(_ data: Data, _ ctx: CrashContext = context) throws -> Cra
         #expect(try diagnose(kill, ctx).subject == "Alpha.dylib")
     }
 
+    /// Mega review K4: a CODESIGNING kill that isn't a code-page fault (an expired or revoked
+    /// profile, another code 1/4…) is the signature, even with a C-hooking tweak injected: a
+    /// refresh is the fix, not disabling a tweak that may work.
+    @Test func aSignatureKillWithoutACodePageFaultIsNotTheTweaks() throws {
+        var ctx = CrashContext(moduleName: "XSideWelcome.dylib", tweakNames: ["Beta.dylib"], tweakIDs: ["bbbbbbbbbbbbbbbb"],
+                               tweakLabels: ["Beta.dylib": "Beta 2.0"])
+        ctx.cFunctionHookImages = ["Beta.dylib"]
+        let revoked = IPS.crash(exception: ["type": "EXC_CRASH", "signal": "SIGKILL"],
+                                termination: ["namespace": "CODESIGNING", "code": 1, "indicator": "Taskgated Invalid Signature"])
+        #expect(try diagnose(revoked, ctx).cause == .codeSignature)
+        let bare = IPS.crash(exception: ["type": "EXC_CRASH", "signal": "SIGKILL"], termination: ["namespace": "CODESIGNING", "code": 1])
+        #expect(try diagnose(bare, ctx).cause == .codeSignature)
+    }
+
     @Test func xsideModuleUnderAnException() throws {
         let d = try diagnose(IPS.crash(frames: [IPS.frame(IPS.objc, "__abort_with_payload")],
                                        lastException: [IPS.frame(IPS.coreFoundation, "__exceptionPreprocess"),

@@ -412,11 +412,13 @@ public enum CrashClassifier {
         }
         let namespace = log.terminationNamespace?.uppercased()
         let launchConstraint = texts.contains(where: { $0.localizedCaseInsensitiveContains("Launch Constraint Violation") })
-        if namespace == "CODESIGNING" || log.terminationIndicator?.localizedCaseInsensitiveContains("Invalid Page") == true
-            || launchConstraint {
-            // A C function hook patches the app's code: stock iOS kills it (seen on iOS 27.3).
+        let invalidPage = log.terminationIndicator?.localizedCaseInsensitiveContains("Invalid Page") == true
+        if namespace == "CODESIGNING" || invalidPage || launchConstraint {
+            // A C function hook patches the app's code: stock iOS kills it at the patched page
+            // (seen on iOS 27.3). Only that fault names the tweak; another signature kill (a
+            // profile expired or revoked) is the signature (mega review K4).
             let hooking = context.cFunctionHookImages.intersection(context.tweakNames).sorted()
-            if !launchConstraint, let image = hooking.first {
+            if !launchConstraint, invalidPage, let image = hooking.first {
                 d.cause = .tweakCFunctionHook
                 d.subject = image
                 d.tweakName = context.tweakLabels[image]
