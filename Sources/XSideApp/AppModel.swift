@@ -2114,7 +2114,7 @@ final class AppModel {
             }
         } catch {
             await reloadRecords()
-            if wasRefresh { refreshResults[key] = .failed(Self.refreshFailureText(error)) }
+            if wasRefresh { refreshResults[key] = .failed(Self.refreshFailureText(error, deviceName: deviceName(key.deviceID))) }
             onJobFinished?(job, error, automatic, wasRefresh)
             // Deleted from the device: the pipeline dropped the installation; its reminder and
             // notification state go too (after the notification above, which reads the record).

@@ -20,9 +20,11 @@ extension AppModel {
         }
     }
 
-    /// The failure's words: the panel row's for an `XSideError`, the generic message otherwise.
-    static func refreshFailureText(_ error: any Error) -> String {
-        (error as? XSideError).map { localizedRowError(key: $0.key) } ?? localizedMessage(error)
+    /// The failure's words: the panel row's for an `XSideError`, the generic message otherwise;
+    /// a device Xcode can't see is named, with what to do (device round 3, F1).
+    static func refreshFailureText(_ error: any Error, deviceName: String) -> String {
+        if error as? XSideError == .deviceUnavailable { return L("error.deviceUnavailable.named", deviceName) }
+        return (error as? XSideError).map { localizedRowError(key: $0.key) } ?? localizedMessage(error)
     }
 
     /// The signing-time options of this installation whose choice isn't in the installed copy yet,

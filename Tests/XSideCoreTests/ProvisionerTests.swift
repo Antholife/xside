@@ -200,6 +200,21 @@ private final class Box: @unchecked Sendable {
         #expect(Provisioner.mapError(locked) == .deviceLocked)
     }
 
+    /// Device round 3, F1: xcodebuild can't see the device (unplugged, locked, its tunnel down).
+    /// Not a profile problem: the device isn't reachable.
+    @Test func aDestinationXcodeCannotFindIsTheDeviceUnreachable() {
+        for output in [
+            "xcodebuild: error: Unable to find a destination matching the provided destination specifier:\n\t\t{ id:0000 }",
+            "xcodebuild: error: Unable to find a device matching the provided destination specifier:\n\t\t{ id:0000 }",
+            "xcodebuild: error: Timed out waiting for all destinations matching the provided destination specifier to become available",
+            "xcodebuild: error: Found no destinations for the scheme 'XSideTemplate' and action build.",
+        ] {
+            #expect(Provisioner.mapError(output) == .deviceUnavailable, "\(output)")
+        }
+        // A real profile error still is one.
+        #expect(Provisioner.mapError("error: No profiles for 'com.example' were found") == .provisioningFailed("No profiles for 'com.example' were found"))
+    }
+
     @Test func mapsKnownErrors() {
         #expect(Provisioner.mapError("error: No Accounts: Add a new account in Accounts settings.") == .xcodeNotSignedIn)
         #expect(Provisioner.mapError("""

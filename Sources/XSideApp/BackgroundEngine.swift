@@ -227,7 +227,7 @@ final class BackgroundEngine {
             Task {
                 guard await model.recordUnreachable(job, at: now) else { return }
                 let error = XSideError.deviceUnavailable
-                notifyFailure(job, errorKey: error.key, message: error.localizedMessage)
+                notifyFailure(job, errorKey: error.key, message: L("error.deviceUnavailable.named", deviceName(job.deviceID)))
             }
         }
     }
@@ -473,7 +473,8 @@ final class BackgroundEngine {
               !installation.refreshPaused else { return }
         let key = installation.lastErrorKey ?? (error as? XSideError)?.key ?? "unknown"
         Self.logger.notice("refresh failed \(job.recordID.uuidString): \(key)")
-        notifyFailure(job, errorKey: key, message: Self.backgroundMessage(error) ?? localizedRowError(key: key))
+        notifyFailure(job, errorKey: key, message: Self.backgroundMessage(error, deviceName: deviceName(job.deviceID))
+                      ?? localizedRowError(key: key))
     }
 
     /// A tool only the environment probe runs (`openssl`). A `security` failure counts only while
@@ -484,9 +485,11 @@ final class BackgroundEngine {
     }
 
     /// The error's message for a background job: a stopped tool is retried by XSide itself.
-    private static func backgroundMessage(_ error: any Error) -> String? {
+    private static func backgroundMessage(_ error: any Error, deviceName: String) -> String? {
         guard let error = error as? XSideError else { return nil }
         if case .timedOut(let tool) = error { return L("error.timedOut.auto", tool) }
+        // Xcode can't see it (unplugged, locked, its tunnel down): named, with what to do.
+        if error == .deviceUnavailable { return L("error.deviceUnavailable.named", deviceName) }
         return error.localizedMessage
     }
 

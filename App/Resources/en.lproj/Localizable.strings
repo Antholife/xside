@@ -117,6 +117,7 @@
 "error.noSigningIdentity" = "No signing certificate is available. Open Xcode > Settings > Apple Accounts and check your account.";
 "error.appIDLimitReached" = "The limit of 10 App IDs per week has been reached. Try again in a few days.";
 "error.deviceUnavailable" = "The device can't be found. Unlock it, plug it in with USB or join the same Wi-Fi network.";
+"error.deviceUnavailable.named" = "Xcode can't see %@: plug it in with USB or unlock it, then try again.";
 "error.deviceLocked" = "The device is locked. Unlock it and try again.";
 "error.developerModeDisabled" = "Developer Mode is off on this device. Turn it on in Settings > Privacy & Security > Developer Mode (the device restarts), then try again.";
 "error.appRemovedFromDevice" = "The app was deleted from this device: XSide stopped refreshing it there.";

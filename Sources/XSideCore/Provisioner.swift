@@ -145,6 +145,11 @@ public struct Provisioner: Sendable {
         if lower.contains("developer mode disabled") { return .developerModeDisabled }
         // Preparing a device for development (first time, or after an update) needs it unlocked.
         if lower.contains("needs to be unlocked") || lower.contains("please unlock the device") { return .deviceLocked }
+        // xcodebuild can't see the device (unplugged, locked, its tunnel down): not a profile
+        // problem (device round 3, F1).
+        if lower.contains("matching the provided destination specifier") || lower.contains("found no destinations for the scheme") {
+            return .deviceUnavailable
+        }
         let errors = errorLines(output)
         for line in errors {
             let l = line.lowercased()
