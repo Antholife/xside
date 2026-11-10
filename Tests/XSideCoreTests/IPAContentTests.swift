@@ -234,6 +234,36 @@ struct IPAContentTests {
         }
     }
 
+    /// On an unsigned/ad-hoc IPA (no team to trust) a loose dylib named after a Swift runtime
+    /// module proves nothing by its name: it is listed like any other loose dylib, and its warning
+    /// signs are computed (review 2, T2-1).
+    @Test func aFakeSwiftRuntimeLibInAnUnsignedIPAIsAnAddition() throws {
+        try withTempDir { dir in
+            let main = ContentMachO.build(loads: [L(name: "@executable_path/libswiftARKit.dylib")],
+                                          signed: false, filetype: 2)
+            let fake = ContentMachO.build(strings: ["https://discord.com/api/webhooks/1/abc"], signed: false)
+            let app = try makeApp(dir, main: main, files: ["libswiftARKit.dylib": fake])
+            let additions = scan(app).additions
+            #expect(additions.map(\.name) == ["libswiftARKit.dylib"])
+            #expect(additions.first?.signs == [.discordWebhook])
+        }
+    }
+
+    /// A loose dylib signed by the app's own team on a signed IPA is the app's own (a real Swift
+    /// runtime or a plain bundled lib): not an addition (review 2, T2-2).
+    @Test func aLooseDylibOfTheAppsOwnTeamIsNotAnAddition() throws {
+        try withTempDir { dir in
+            let main = ContentMachO.build(loads: [L(name: "@executable_path/libextra.dylib"),
+                                                  L(name: "@executable_path/libswiftARKit.dylib")],
+                                          team: "TEAM111111", filetype: 2)
+            let app = try makeApp(dir, main: main, files: [
+                "libextra.dylib": ContentMachO.build(team: "TEAM111111"),
+                "libswiftARKit.dylib": ContentMachO.build(team: "TEAM111111"),
+            ])
+            #expect(scan(app).additions.isEmpty)
+        }
+    }
+
     @Test func knownTweakFrameworksAreAdditionsWhateverTheirTeam() throws {
         try withTempDir { dir in
             let names = ["Cephei", "Orion", "ElleKit"]
@@ -311,6 +341,13 @@ struct IPAContentTests {
                                                        // a public suffix list
                                                        "ngrok.io", "*.ngrok.io", "webhook.site"],
                                              signed: false)).isEmpty)
+    }
+
+    /// A paste site is a sign only in a raw/paste path form, not a bare domain mention: a tweak
+    /// that merely links to hastebin.com isn't flagged (review 2, T2-3).
+    @Test func hastebinIsASignOnlyWithAPastePath() throws {
+        #expect(try signs(ContentMachO.build(strings: ["https://hastebin.com/raw/abc"], signed: false)) == [.pasteSite])
+        #expect(try signs(ContentMachO.build(strings: ["see hastebin.com for details"], signed: false)).isEmpty)
     }
 
     /// Reading the keychain, the pasteboard or cookies is common (a tweak keeping its settings):

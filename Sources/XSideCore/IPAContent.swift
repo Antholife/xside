@@ -237,7 +237,13 @@ public enum IPAContentScanner {
             if library != nil || otherTeam {
                 isAddition = true
             } else if looseDylib {
-                isAddition = !isSwiftRuntime(file)
+                // On an unsigned/ad-hoc IPA (mainTeam nil) a name proves nothing: list every loose
+                // dylib, libswift* included — a payload can't hide behind a Swift-runtime name, and
+                // additions never block (T2-1). On a signed IPA this branch means team == mainTeam
+                // (a foreign team was already an addition above): the app's own, a real Swift
+                // runtime or a plain bundled lib, so not an addition (T2-1 keeps the runtime out,
+                // T2-2 demotes the rest).
+                isAddition = mainTeam == nil
             } else {
                 isAddition = false
             }
@@ -357,26 +363,6 @@ public enum IPAContentScanner {
         file.lowercased().hasSuffix(".dylib") ? String(file.dropLast(".dylib".count)) : file
     }
 
-    /// Swift's own libraries an app embeds (`libswiftCore.dylib`…): not additions. A made-up name
-    /// (`libswiftIU.dylib`) is.
-    static func isSwiftRuntime(_ file: String) -> Bool {
-        guard file.hasPrefix("libswift"), file.hasSuffix(".dylib") else { return false }
-        let module = file.dropFirst("libswift".count).dropLast(".dylib".count)
-        return swiftModules.contains(String(module))
-    }
-
-    static let swiftModules: Set<String> = [
-        "Core", "_Concurrency", "_StringProcessing", "_RegexParser", "Foundation", "UIKit", "ObjectiveC", "Dispatch",
-        "Darwin", "CoreGraphics", "CoreFoundation", "os", "CoreImage", "Metal", "MetalKit", "QuartzCore", "AVFoundation",
-        "CoreMedia", "CoreAudio", "CoreLocation", "Contacts", "Photos", "SwiftOnoneSupport", "WebKit", "simd", "Network",
-        "CloudKit", "MapKit", "CoreData", "GLKit", "SceneKit", "SpriteKit", "Accelerate", "AssetsLibrary", "CallKit",
-        "CoreMotion", "Intents", "GameplayKit", "ARKit", "HomeKit", "MediaPlayer", "NaturalLanguage", "Vision",
-        "CoreML", "Combine", "XCTest", "Observation", "Synchronization", "Distributed", "CompatibilitySpan",
-        "Compatibility50", "Compatibility51", "Compatibility56", "CompatibilityConcurrency", "CompatibilityDynamicReplacements",
-        "CoreBluetooth", "CryptoTokenKit", "EventKit", "GameKit", "HealthKit", "MessageUI", "ModelIO", "Security",
-        "StoreKit", "UserNotifications", "CoreHaptics", "CoreNFC", "SafariServices", "AuthenticationServices", "Spatial",
-    ]
-
     /// Libraries tweaks use, by path inside the bundle (lowercased match): their name.
     static func tweakLibraryName(_ relative: String) -> String? {
         let lower = relative.lowercased()
@@ -469,7 +455,8 @@ public enum IPAContentScanner {
         var found: [WarningSign] = []
         if contains(text, "discord.com/api/webhooks") || contains(text, "discordapp.com/api/webhooks") { found.append(.discordWebhook) }
         if contains(text, "api.telegram.org/bot") { found.append(.telegramBot) }
-        if contains(text, "pastebin.com/raw") || contains(text, "hastebin.com") || contains(text, "hastebin.skyra") { found.append(.pasteSite) }
+        // A paste site in a raw/paste path form, not a bare domain mention (a tweak may just link to it).
+        if contains(text, "pastebin.com/raw") || contains(text, "hastebin.com/raw") || contains(text, "hastebin.skyra.pw/raw") { found.append(.pasteSite) }
         // A host under ngrok (a public suffix list names ngrok.io alone, or as *.ngrok.io).
         if [".ngrok.io", ".ngrok-free.app", ".ngrok.app", ".ngrok-free.dev"].contains(where: { containsHost(text, $0) })
             || contains(text, "webhook.site/") || contains(text, "requestbin.net/") || contains(text, "requestbin.com/") {
