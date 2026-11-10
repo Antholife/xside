@@ -5,28 +5,37 @@ public struct SigningEnvironment: Equatable, Sendable {
     public let identitySHA1: String
     public let identityName: String
     public let teamID: String
+    /// Xcode says `teamID` is a paid developer team (`EnvironmentProbe.isPaidTeam`): its apps keep
+    /// iCloud (`ICloudPaidTeam`). False when Xcode says it's free or doesn't say.
+    public let isPaidTeam: Bool
 
-    public init(developerDir: URL, identitySHA1: String, identityName: String, teamID: String) {
+    public init(developerDir: URL, identitySHA1: String, identityName: String, teamID: String, isPaidTeam: Bool = false) {
         self.developerDir = developerDir
         self.identitySHA1 = identitySHA1
         self.identityName = identityName
         self.teamID = teamID
+        self.isPaidTeam = isPaidTeam
     }
 }
 
 public struct EnvironmentProbe: Sendable {
+    private static let logger = Log("environment")
     private let runner: CommandRunning
     private let fileExists: @Sendable (String) -> Bool
     /// Xcode's saved accounts (`DVTDeveloperAccountManagerAppleIDLists`), nil when unreadable.
     /// An undocumented key: when it's missing or unreadable, the account check is skipped.
     private let xcodeAccounts: @Sendable () -> Any?
+    /// Xcode's teams (`savedXcodeTeams`), for whether the certificate's team is a paid one.
+    private let xcodeTeams: @Sendable () -> Any?
 
     public init(runner: CommandRunning,
                 fileExists: @escaping @Sendable (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
-                xcodeAccounts: @escaping @Sendable () -> Any? = EnvironmentProbe.savedXcodeAccounts) {
+                xcodeAccounts: @escaping @Sendable () -> Any? = EnvironmentProbe.savedXcodeAccounts,
+                xcodeTeams: @escaping @Sendable () -> Any? = EnvironmentProbe.savedXcodeTeams) {
         self.runner = runner
         self.fileExists = fileExists
         self.xcodeAccounts = xcodeAccounts
+        self.xcodeTeams = xcodeTeams
     }
 
     public static let savedXcodeAccounts: @Sendable () -> Any? = {
@@ -48,6 +57,16 @@ public struct EnvironmentProbe: Sendable {
         let all = byAccount.values.flatMap { $0 as? [[String: Any]] ?? [] }
         let free = all.first { $0["isFreeProvisioningTeam"] as? Bool == true }
         return (free ?? all.first)?["teamID"] as? String
+    }
+
+    /// Whether `teamID` is a paid developer team: Xcode lists it with `isFreeProvisioningTeam` =
+    /// false, and never as free. Anything else (not listed, the key missing or of another type,
+    /// unreadable preferences) is free: the behaviour stays a free account's.
+    public static func isPaidTeam(_ teams: Any?, teamID: String) -> Bool {
+        guard let byAccount = teams as? [String: Any] else { return false }
+        let entries = byAccount.values.flatMap { $0 as? [[String: Any]] ?? [] }.filter { $0["teamID"] as? String == teamID }
+        let flags = entries.map { $0["isFreeProvisioningTeam"] as? Bool }
+        return !flags.isEmpty && flags.allSatisfy { $0 == false }
     }
 
     /// The Apple ID e-mail in a certificate name: "Apple Development: me@icloud.com (AB12CD34EF)".
@@ -109,12 +128,15 @@ public struct EnvironmentProbe: Sendable {
             return .failure(.noSigningIdentity)
         }
         LogStore.shared.register(team, as: "team")
+        let paid = Self.isPaidTeam(xcodeTeams(), teamID: team)
+        Self.logger.notice("signing team: \(paid ? "paid (apps keep iCloud)" : "free or unknown (no iCloud)")")
 
         return .success(SigningEnvironment(
             developerDir: URL(fileURLWithPath: dirPath),
             identitySHA1: identity.sha1,
             identityName: identity.name,
-            teamID: team))
+            teamID: team,
+            isPaidTeam: paid))
     }
 
     /// The first "Apple Development" signing identity in the keychain. Also asked on its own when

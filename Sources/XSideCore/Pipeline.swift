@@ -6,6 +6,16 @@ import os
 public protocol Provisioning: Sendable {
     func profile(bundleID: String, env: SigningEnvironment,
                  deviceUDIDs: [String]) async throws -> (url: URL, profile: ProvisioningProfile)
+    /// `iCloud`: what a paid team asks for the app (see `ICloudPaidTeam`), nil otherwise.
+    func profile(bundleID: String, env: SigningEnvironment, deviceUDIDs: [String],
+                 iCloud: ICloudRequest?) async throws -> (url: URL, profile: ProvisioningProfile)
+}
+
+extension Provisioning {
+    public func profile(bundleID: String, env: SigningEnvironment, deviceUDIDs: [String],
+                        iCloud: ICloudRequest?) async throws -> (url: URL, profile: ProvisioningProfile) {
+        try await profile(bundleID: bundleID, env: env, deviceUDIDs: deviceUDIDs)
+    }
 }
 
 public protocol Resigning: Sendable {
@@ -432,9 +442,14 @@ public actor SideloadPipeline {
             let ipa = try resolve(record.ipaPath)
             let icon = try record.options.iconPath.flatMap { $0.isEmpty ? nil : try resolve($0) }
             try fm.createDirectory(at: workDir, withIntermediateDirectories: true)
+            let others = await library.records().filter { $0.id != recordID }
+                .reduce(into: Set<String>()) { ids, other in
+                    ids.insert(other.signedBundleID)
+                    for i in other.installations { if let id = i.signedBundleID { ids.insert(id) } }
+                }
 
             // Reported once the lock is held: a job queued behind another provisioning is still waiting.
-            let (current, provisioned) = try await provisioningLock.run { [provisioner, installer, library] in
+            let (current, provisioned, paidICloud) = try await provisioningLock.run { [provisioner, installer, library] in
                 try Task.checkCancellation()
                 let current: SigningEnvironment
                 do { current = try await environment() } catch { throw EnvironmentUnavailable(underlying: error) }
@@ -450,10 +465,18 @@ public actor SideloadPipeline {
                 }
                 await progress(.profile)
                 Self.logger.info("\(what): provisioning with \(current.developerDir.path)")
-                let provisioned = try await CommandEnvironment.withDeveloperDir(current.developerDir) {
-                    try await provisioner.profile(bundleID: bundleID, env: current, deviceUDIDs: [udid])
+                // A paid team keeps the app's iCloud; a free one (or one Xcode doesn't say) never asks.
+                let paidICloud = current.isPaidTeam
+                    ? ICloudPaidTeam.request(app: record.icloud, originalBundleID: record.originalBundleID,
+                                             bundleID: bundleID, teamID: current.teamID, otherBundleIDs: others)
+                    : nil
+                if current.isPaidTeam {
+                    Self.logger.notice("\(what): paid team, \(paidICloud.map { "iCloud asked: \($0.summary)" } ?? "no iCloud to keep")")
                 }
-                return (current, provisioned)
+                let provisioned = try await CommandEnvironment.withDeveloperDir(current.developerDir) {
+                    try await provisioner.profile(bundleID: bundleID, env: current, deviceUDIDs: [udid], iCloud: paidICloud)
+                }
+                return (current, provisioned, paidICloud)
             }
             env = current
             profileURL = provisioned.url
@@ -472,11 +495,6 @@ public actor SideloadPipeline {
             }
             await progress(.welcome)
             Self.logger.info("\(what): adding the welcome popup")
-            let others = await library.records().filter { $0.id != recordID }
-                .reduce(into: Set<String>()) { ids, other in
-                    ids.insert(other.signedBundleID)
-                    for i in other.installations { if let id = i.signedBundleID { ids.insert(id) } }
-                }
             let facts = signingFacts(recordID: recordID, deviceID: device.id, previous: previous, draft: draft,
                                      appVersion: record.options.version ?? record.version, at: now())
             var options = record.options
@@ -488,6 +506,7 @@ public actor SideloadPipeline {
             options.duoCompatibility = duoAsked
             let iCloudAsked = iCloud ?? (previous?.iCloudSignedOut == true)
             options.iCloudSignedOut = iCloudAsked
+            options.paidTeamICloud = paidICloud
             let iCloudSkip = ICloudSkipBox()
             // Per device too: this device's enabled tweaks only.
             options.tweaks = tweaks.job

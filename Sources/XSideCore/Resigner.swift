@@ -28,6 +28,10 @@ public struct InstallOptions: Codable, Equatable, Sendable {
     /// The tweaks to inject into this signing. Per device, like `duoCompatibility`: the pipeline
     /// sets it for each job (the app's options themselves leave it nil).
     public var tweaks: TweakJob?
+    /// The iCloud a paid team keeps for this signing (see `ICloudPaidTeam`). Per job: the pipeline
+    /// sets it when the signing team is paid and the app declares iCloud (the app's options
+    /// themselves leave it nil); nil signs without iCloud, as with a free team.
+    public var paidTeamICloud: ICloudRequest?
     public init(displayName: String? = nil, customBundleID: String? = nil, version: String? = nil,
                 iconPath: String? = nil, fileSharing: Bool = false, iPadFullScreen: Bool = false,
                 proMotion: Bool = false, minimumOSVersion: String? = nil, shareKeychain: Bool = false,
@@ -64,6 +68,7 @@ public struct InstallOptions: Codable, Equatable, Sendable {
         duoCompatibility = try c.decodeIfPresent(Bool.self, forKey: .duoCompatibility)
         iCloudSignedOut = try c.decodeIfPresent(Bool.self, forKey: .iCloudSignedOut)
         tweaks = (try? c.decodeIfPresent(TweakJob.self, forKey: .tweaks)) ?? nil
+        paidTeamICloud = (try? c.decodeIfPresent(ICloudRequest.self, forKey: .paidTeamICloud)) ?? nil
     }
 }
 
@@ -330,7 +335,8 @@ public struct Resigner: Sendable {
 
         let entitlements = workDir.appendingPathComponent("entitlements-\(UUID().uuidString).plist")
         try Self.signingEntitlements(profile: profile, bundleID: bundleID, original: originalEntitlements,
-                                     shareKeychain: options.shareKeychain, otherBundleIDs: otherBundleIDs)
+                                     shareKeychain: options.shareKeychain, otherBundleIDs: otherBundleIDs,
+                                     iCloud: options.paidTeamICloud)
             .write(to: entitlements)
 
         await onSigning()
@@ -1065,14 +1071,27 @@ public struct Resigner: Sendable {
     /// `original`: the entitlements the app was signed with. The keychain groups it declares are
     /// kept, moved to the new team (see `keychainGroups`), after `<TEAM>.<bundleID>`, only when
     /// `shareKeychain` is on.
+    /// iCloud keys never pass through from the profile: only what `iCloud` (a paid team's request)
+    /// asks and the profile grants (`ICloudPaidTeam.granted`), logged either way.
     public static func signingEntitlements(profile: ProvisioningProfile, bundleID: String,
                                            original: [String: Any]? = nil, shareKeychain: Bool = false,
-                                           otherBundleIDs: Set<String> = []) throws -> Data {
+                                           otherBundleIDs: Set<String> = [], iCloud: ICloudRequest? = nil) throws -> Data {
         let granted = (try? PropertyListSerialization.propertyList(from: profile.entitlements, format: nil))
             as? [String: Any] ?? [:]
         let appID = "\(profile.teamID).\(bundleID)"
         var result: [String: Any] = [:]
-        for (key, value) in granted where !containsWildcard(value) { result[key] = value }
+        for (key, value) in granted where !containsWildcard(value) && !ICloudPaidTeam.allKeys.contains(key) {
+            result[key] = value
+        }
+        if let iCloud {
+            let kept = ICloudPaidTeam.granted(iCloud, profile: granted)
+            result.merge(kept) { _, new in new }
+            if kept.isEmpty {
+                logger.notice("paid team: the profile grants none of the app's iCloud, signed without it (asked: \(iCloud.summary))")
+            } else {
+                logger.notice("paid team: iCloud kept (\(kept.keys.sorted().map { $0.replacingOccurrences(of: "com.apple.developer.", with: "") }.joined(separator: ", "))); asked: \(iCloud.summary)")
+            }
+        }
         result["application-identifier"] = appID
         result["com.apple.developer.team-identifier"] = profile.teamID
         result["get-task-allow"] = granted["get-task-allow"] as? Bool ?? true

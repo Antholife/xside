@@ -104,7 +104,8 @@ struct EnvironmentTests {
         r.stub("/usr/bin/xcode-select", result: ok("/Applications/Xcode.app/Contents/Developer\n"))
         r.stub("/usr/bin/security", result: ok(Self.list))
         r.stub("/bin/sh", firstArg: "-c", result: ok("subject=UID=X, CN=Apple Development: x (LL), OU=TEAM123456, O=Me, C=US\n"))
-        let result = await EnvironmentProbe(runner: r, fileExists: { _ in true }, xcodeAccounts: { Self.signedIn }).detect()
+        let result = await EnvironmentProbe(runner: r, fileExists: { _ in true }, xcodeAccounts: { Self.signedIn },
+                                            xcodeTeams: { nil }).detect()
         #expect(result == .success(SigningEnvironment(
             developerDir: URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer"),
             identitySHA1: Self.sha1,

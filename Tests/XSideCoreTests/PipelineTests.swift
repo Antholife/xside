@@ -34,6 +34,9 @@ private actor CallLog {
                                    profileURL: URL, profile: ProvisioningProfile)] = []
     private(set) var installs: [(app: URL, deviceID: String)] = []
     func provision(_ udids: [String]) { provisionUDIDs.append(udids) }
+    /// What each provisioning asked for a paid team's iCloud.
+    private(set) var provisionICloud: [ICloudRequest?] = []
+    func provisionICloud(_ r: ICloudRequest?) { provisionICloud.append(r) }
     func resign(_ ipa: URL, _ workDir: URL, _ bundleID: String, _ icon: URL?,
                 _ profileURL: URL, _ profile: ProvisioningProfile) {
         resignArgs.append((ipa, workDir, bundleID, icon, profileURL, profile))
@@ -60,6 +63,11 @@ private struct FakeProvisioner: Provisioning {
     var delay: Duration = .zero
     /// nil: `expiry` for the first call, one second later for each following call (a renewal).
     var expires: Date?
+    func profile(bundleID: String, env: SigningEnvironment, deviceUDIDs: [String],
+                 iCloud: ICloudRequest?) async throws -> (url: URL, profile: ProvisioningProfile) {
+        await log.provisionICloud(iCloud)
+        return try await profile(bundleID: bundleID, env: env, deviceUDIDs: deviceUDIDs)
+    }
     func profile(bundleID: String, env: SigningEnvironment,
                  deviceUDIDs: [String]) async throws -> (url: URL, profile: ProvisioningProfile) {
         await gauge?.enter()
@@ -1565,6 +1573,30 @@ extension PipelineChannelTests {
         let record = try await f.library.importIPA(src, info: info, teamID: "TEAM123456")
         #expect(record.duo == duo)
         #expect(AppLibrary.readRecords(root: f.library.root)?.first?.duo == duo)
+    }
+
+    // MARK: Paid team iCloud
+
+    /// A paid team asks for the app's iCloud at provisioning and signs with it; a free team never.
+    @Test func aPaidTeamKeepsTheAppsICloud() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let src = f.tmp.appendingPathComponent("icloud.ipa")
+        try Data("ipa".utf8).write(to: src)
+        let icloud = ICloudAppInfo(declaresICloud: true, containers: ["iCloud.com.example.demo"], services: ["CloudKit"],
+                                   ubiquityContainers: [], keyValueStore: true)
+        let info = AppInfo(bundleID: "com.example.demo", name: "Demo", version: "1.0", executable: "Demo", icloud: icloud)
+        let record = try await f.library.importIPA(src, info: info, teamID: "TEAM123456")
+        let paid = SigningEnvironment(developerDir: env.developerDir, identitySHA1: env.identitySHA1,
+                                      identityName: env.identityName, teamID: "TEAM123456", isPaidTeam: true)
+        _ = try await f.pipeline().install(recordID: record.id, device: device(), env: paid)
+        let expected = ICloudRequest(containers: ["iCloud.com.example.demo.TEAM123456"], services: ["CloudKit"],
+                                     ubiquityContainers: [], keyValueStore: "TEAM123456.com.example.demo.TEAM123456")
+        #expect(await f.log.provisionICloud == [expected])
+        #expect(await f.log.options.last?.paidTeamICloud == expected)
+        // Free team: nothing asked, nothing signed.
+        _ = try await f.pipeline().install(recordID: record.id, device: device("dev-2", udid: "UDID-2"), env: env)
+        #expect(await f.log.provisionICloud.last == .some(nil))
+        #expect(await f.log.options.last?.paidTeamICloud == nil)
     }
 }
 

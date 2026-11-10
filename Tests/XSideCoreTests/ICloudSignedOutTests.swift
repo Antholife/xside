@@ -154,15 +154,16 @@ struct ICloudDetectionTests {
         let ents: [String: Any] = ["com.apple.developer.icloud-container-identifiers": ["iCloud.com.vendor.app"]]
         let exe = try write(try iCloudMachO(dylibs: [(0xC, foundation)], entitlements: ents))
         let read = ICloudAppInfo.read(executable: exe, entitlements: IPAInspector.embeddedEntitlements(exe))
-        #expect(read == ICloudAppInfo(declaresICloud: true, containers: ["iCloud.com.vendor.app"]))
+        #expect(read == ICloudAppInfo(declaresICloud: true, containers: ["iCloud.com.vendor.app"], services: [], ubiquityContainers: [], keyValueStore: false))
         // Linking CloudKit is remembered apart: it doesn't mean the app uses iCloud.
         let linked = try write(try iCloudMachO(dylibs: [(0xC, cloudKit)]))
-        #expect(ICloudAppInfo.read(executable: linked, entitlements: nil) == ICloudAppInfo(declaresICloud: false, linksCloudKit: true))
+        #expect(ICloudAppInfo.read(executable: linked, entitlements: nil) == ICloudAppInfo(declaresICloud: false, linksCloudKit: true, services: [], ubiquityContainers: [], keyValueStore: false))
         let both = try write(try iCloudMachO(dylibs: [(0xC, cloudKit)], entitlements: ents))
         #expect(ICloudAppInfo.read(executable: both, entitlements: ents)
-                == ICloudAppInfo(declaresICloud: true, linksCloudKit: true, containers: ["iCloud.com.vendor.app"]))
+                == ICloudAppInfo(declaresICloud: true, linksCloudKit: true, containers: ["iCloud.com.vendor.app"],
+                                 services: [], ubiquityContainers: [], keyValueStore: false))
         let plain = try write(try iCloudMachO(dylibs: [(0xC, foundation)]))
-        #expect(ICloudAppInfo.read(executable: plain, entitlements: [:]) == ICloudAppInfo(declaresICloud: false))
+        #expect(ICloudAppInfo.read(executable: plain, entitlements: [:]) == ICloudAppInfo(declaresICloud: false, services: [], ubiquityContainers: [], keyValueStore: false))
     }
 
     /// Recommended only from the entitlements; an app that only links CloudKit (YouTube) is

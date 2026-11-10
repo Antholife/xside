@@ -25,6 +25,29 @@ public struct Provisioner: Sendable {
     /// profile inside `workDir` (the per-build directory is removed).
     public func profile(bundleID: String, env: SigningEnvironment,
                         deviceUDIDs: [String]) async throws -> (url: URL, profile: ProvisioningProfile) {
+        try await profile(bundleID: bundleID, env: env, deviceUDIDs: deviceUDIDs, iCloud: nil)
+    }
+
+    /// The same, the template asking for `iCloud` (a paid team, see `ICloudPaidTeam`): Xcode adds
+    /// the iCloud capability and the containers to the App ID. When Xcode refuses (a profile
+    /// error), the build is made again without iCloud: the app is then signed without it, as
+    /// with a free team, rather than not at all.
+    public func profile(bundleID: String, env: SigningEnvironment, deviceUDIDs: [String],
+                        iCloud: ICloudRequest?) async throws -> (url: URL, profile: ProvisioningProfile) {
+        guard let iCloud, !iCloud.templateEntitlements.isEmpty else {
+            return try await build(bundleID: bundleID, env: env, deviceUDIDs: deviceUDIDs, iCloud: nil)
+        }
+        Self.logger.notice("paid team: provisioning with iCloud (\(iCloud.summary))")
+        do {
+            return try await build(bundleID: bundleID, env: env, deviceUDIDs: deviceUDIDs, iCloud: iCloud)
+        } catch XSideError.provisioningFailed(let why) {
+            Self.logger.notice("paid team: Xcode refused iCloud (\(why)), provisioning again without it")
+            return try await build(bundleID: bundleID, env: env, deviceUDIDs: deviceUDIDs, iCloud: nil)
+        }
+    }
+
+    private func build(bundleID: String, env: SigningEnvironment, deviceUDIDs: [String],
+                       iCloud: ICloudRequest?) async throws -> (url: URL, profile: ProvisioningProfile) {
         guard let target = deviceUDIDs.first else { throw XSideError.provisioningFailed("no target device") }
         let fm = FileManager.default
         let buildDir = workDir.appendingPathComponent("build-\(UUID().uuidString)", isDirectory: true)
@@ -35,9 +58,16 @@ public struct Provisioner: Sendable {
         await purgeCachedProfiles(applicationIdentifier: "\(env.teamID).\(bundleID)", teamID: env.teamID)
 
         let derivedData = buildDir.appendingPathComponent("DerivedData", isDirectory: true)
+        var entitlements: URL?
+        if let iCloud {
+            let url = buildDir.appendingPathComponent("XSideTemplate.entitlements")
+            try PropertyListSerialization.data(fromPropertyList: iCloud.templateEntitlements, format: .xml, options: 0).write(to: url)
+            entitlements = url
+        }
         let args = Self.arguments(
             project: buildDir.appendingPathComponent("XSideTemplate.xcodeproj"),
-            derivedData: derivedData, bundleID: bundleID, teamID: env.teamID, deviceUDIDs: deviceUDIDs)
+            derivedData: derivedData, bundleID: bundleID, teamID: env.teamID, deviceUDIDs: deviceUDIDs,
+            entitlements: entitlements)
         let result = try await runner.run("/usr/bin/xcrun", args, cwd: buildDir, timeout: CommandTimeout.xcodebuild)
         guard result.status == 0 else {
             let combined = String(decoding: result.stdout, as: UTF8.self) + "\n" + result.stderr
@@ -122,15 +152,19 @@ public struct Provisioner: Sendable {
         }
     }
 
+    /// `entitlements`: the template target's entitlements file (`CODE_SIGN_ENTITLEMENTS`), only
+    /// for a paid team's iCloud.
     public static func arguments(project: URL, derivedData: URL, bundleID: String, teamID: String,
-                                 deviceUDIDs: [String]) -> [String] {
+                                 deviceUDIDs: [String], entitlements: URL? = nil) -> [String] {
         var args = ["xcodebuild", "-project", project.path, "-scheme", "XSideTemplate",
                     "-configuration", "Debug"]
         if let first = deviceUDIDs.first { args += ["-destination", "id=\(first)"] }
         args += ["-derivedDataPath", derivedData.path,
                  "-allowProvisioningUpdates", "-allowProvisioningDeviceRegistration",
                  "DEVELOPMENT_TEAM=\(teamID)", "PRODUCT_BUNDLE_IDENTIFIER=\(bundleID)",
-                 "CODE_SIGN_STYLE=Automatic", "build"]
+                 "CODE_SIGN_STYLE=Automatic"]
+        if let entitlements { args.append("CODE_SIGN_ENTITLEMENTS=\(entitlements.path)") }
+        args.append("build")
         return args
     }
 

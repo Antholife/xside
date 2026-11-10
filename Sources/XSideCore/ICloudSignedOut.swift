@@ -14,18 +14,32 @@ public struct ICloudAppInfo: Codable, Equatable, Sendable {
     /// The CloudKit containers its original entitlements declare (`iCloud.<id>`), checked and
     /// capped (see `ICloudSignedOut.containerIdentifiers`).
     public var containers: [String]
+    /// What a paid team needs to give the app iCloud (`ICloudPaidTeam`); nil in a record imported
+    /// before XSide read them. The iCloud services it declares (`CloudKit`, `CloudDocuments`), its
+    /// iCloud Drive containers (checked like `containers`), whether it has a key-value store.
+    public var services: [String]?
+    public var ubiquityContainers: [String]?
+    public var keyValueStore: Bool?
 
-    public init(declaresICloud: Bool, linksCloudKit: Bool = false, containers: [String] = []) {
+    public init(declaresICloud: Bool, linksCloudKit: Bool = false, containers: [String] = [],
+                services: [String]? = nil, ubiquityContainers: [String]? = nil, keyValueStore: Bool? = nil) {
         self.declaresICloud = declaresICloud
         self.linksCloudKit = linksCloudKit
         self.containers = containers
+        self.services = services
+        self.ubiquityContainers = ubiquityContainers
+        self.keyValueStore = keyValueStore
     }
 
     /// From the original entitlements (nil: unsigned or unreadable) and the main executable.
     public static func read(executable: URL, entitlements: [String: Any]?) -> ICloudAppInfo {
         ICloudAppInfo(declaresICloud: ICloudSignedOut.entitlementsUseICloud(entitlements),
                       linksCloudKit: ICloudSignedOut.linksCloudKit(executable),
-                      containers: ICloudSignedOut.containerIdentifiers(entitlements))
+                      containers: ICloudSignedOut.containerIdentifiers(entitlements),
+                      services: ICloudSignedOut.services(entitlements),
+                      ubiquityContainers: ICloudSignedOut.containerIdentifiers(
+                          entitlements, key: "com.apple.developer.ubiquity-container-identifiers"),
+                      keyValueStore: (entitlements?["com.apple.developer.ubiquity-kvstore-identifier"] as? String)?.isEmpty == false)
     }
 }
 
@@ -77,14 +91,30 @@ public enum ICloudSignedOut {
     /// The CloudKit containers of `com.apple.developer.icloud-container-identifiers`, in order,
     /// each once: only `iCloud.` identifiers of letters, digits, `.`, `-` and `_` (no wildcard nor
     /// build variable: the entitlements come from an untrusted .ipa), at most `maxContainers`.
-    public static func containerIdentifiers(_ entitlements: [String: Any]?) -> [String] {
-        guard let list = entitlements?["com.apple.developer.icloud-container-identifiers"] as? [Any] else { return [] }
+    public static func containerIdentifiers(_ entitlements: [String: Any]?,
+                                            key: String = "com.apple.developer.icloud-container-identifiers") -> [String] {
+        guard let list = entitlements?[key] as? [Any] else { return [] }
         var result: [String] = []
         for case let id as String in list where isValidContainer(id) && !result.contains(id) {
             result.append(id)
             if result.count == maxContainers { break }
         }
         return result
+    }
+
+    /// The iCloud services a paid team can grant.
+    public static let knownServices = ["CloudKit", "CloudDocuments"]
+
+    /// `com.apple.developer.icloud-services`: the known ones it lists, in `knownServices` order;
+    /// `"*"` is all of them. Anything else (another type, unknown names) is left out.
+    public static func services(_ entitlements: [String: Any]?) -> [String] {
+        switch entitlements?["com.apple.developer.icloud-services"] {
+        case let text as String: return text == "*" ? knownServices : knownServices.filter { $0 == text }
+        case let list as [Any]:
+            let names = Set(list.compactMap { $0 as? String })
+            return names.contains("*") ? knownServices : knownServices.filter(names.contains)
+        default: return []
+        }
     }
 
     static func isValidContainer(_ id: String) -> Bool {
@@ -117,8 +147,9 @@ public enum ICloudSignedOut {
         path.hasSuffix("/CloudKit.framework/CloudKit") || path.contains("/CloudKit.framework/Versions/")
     }
 
-    /// How the option shows for an app. Always usable, with any account: XSide gives no app
-    /// iCloud (not even with a paid team), so this is the only fix for an app that crashes in it.
+    /// How the option shows for an app. Always usable, with any account: with a free team XSide
+    /// can give no app iCloud, so this is the only fix for an app that crashes in it (a paid team
+    /// keeps the app's iCloud, see `ICloudPaidTeam`).
     public enum OptionState: Equatable, Sendable {
         /// The app's entitlements declare iCloud: highlighted, still off until turned on.
         case recommended
