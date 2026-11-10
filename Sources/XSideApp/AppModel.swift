@@ -2157,6 +2157,10 @@ final class AppModel {
 
     private func beginFlow(_ url: URL) {
         let flow = InstallFlow(ipa: url)
+        flow.onDevicesChanged = { [weak self, weak flow] in
+            guard let self, let flow, self.install === flow, !flow.isRunning else { return }
+            self.syncTweakDevices(flow)
+        }
         install = flow
         autoselectDevice()
         Task {
@@ -2249,7 +2253,9 @@ final class AppModel {
             flow.go(to: 1) // where the identifier field is
             return
         }
-        // A converted tweak on any device: asked first; Cancel stays on the step.
+        // Judged for exactly these devices (mega review U1), then a converted tweak on any of
+        // them is asked about first; Cancel stays on the step.
+        refreshTweakVerdicts(flow)
         guard confirmConvertedTweaks(convertedTweaks(in: flow, on: targets)) else { return }
         flow.runs = targets.map { id in DeviceRun(deviceID: id, name: devices.first { $0.id == id }?.name ?? id) }
         flow.runOptions = flow.draft.options

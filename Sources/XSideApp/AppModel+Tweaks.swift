@@ -54,11 +54,13 @@ extension AppModel {
         return lists
     }
 
-    /// A device checked since the tweaks were added gets its starting choice: an added tweak on
-    /// where it isn't ❌. Then every verdict again. Nothing to do when no device is new.
+    /// The verdicts on the devices checked now; then a device checked since the tweaks were added
+    /// gets its starting choice: an added tweak on where it isn't ❌. The verdicts are made again
+    /// even when no device is new (mega review U1: a device the app's list already had was left
+    /// unjudged, then turned off at Install).
     func syncTweakDevices(_ flow: InstallFlow) {
-        guard flow.tweaks.contains(where: { !Set(flow.deviceIDs).isSubset(of: $0.seenDevices) }) else { return }
         refreshTweakVerdicts(flow)
+        guard flow.tweaks.contains(where: { !Set(flow.deviceIDs).isSubset(of: $0.seenDevices) }) else { return }
         for i in flow.tweaks.indices {
             for id in flow.deviceIDs where !flow.tweaks[i].seenDevices.contains(id) {
                 flow.tweaks[i].seenDevices.insert(id)
@@ -227,8 +229,8 @@ extension AppModel {
     /// The tweaks that go in converted on any of `targets`, each once, with what changed.
     func convertedTweaks(in flow: InstallFlow, on targets: [String]) -> [(name: String, conversions: [TweakConversion])] {
         flow.tweaks.compactMap { draft in
-            for id in targets where draft.isEnabled(on: id) {
-                if case .converted(let list)? = draft.verdict(on: id) { return (draft.package.name, list) }
+            for id in targets {
+                if let list = draft.conversionsToConfirm(on: id) { return (draft.package.name, list) }
             }
             return nil
         }

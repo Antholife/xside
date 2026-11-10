@@ -27,7 +27,12 @@ final class InstallFlow {
     var existing: AppRecord?
     var phase: Phase = .inspecting
     /// Devices checked in the picker, in the order they were checked (the install order).
-    var deviceIDs: [String] = []
+    var deviceIDs: [String] = [] {
+        didSet { if deviceIDs != oldValue { onDevicesChanged?() } }
+    }
+    /// Set by `AppModel`: the tweaks' verdicts follow the selection wherever it changes (the
+    /// picker, the default, the summary; mega review U1).
+    @ObservationIgnored var onDevicesChanged: (() -> Void)?
     /// The user changed the selection: device list refreshes keep it instead of the default.
     var selectionEdited = false
     /// Last stage reported by the running install, to place a failure.
@@ -238,57 +243,6 @@ final class InstallFlow {
     func skipAllWifiChecks() {
         wifiQueue = []
         nextWifiCheck()
-    }
-}
-
-/// One tweak of step ③, with each selected device's choice and verdict.
-struct TweakDraft: Identifiable {
-    let package: TweakPackage
-    /// The package's stored folder: in the library for the app's own, in `tweakStaging` otherwise.
-    let directory: URL
-    /// Devices where its switch is on.
-    var enabledDevices: Set<String>
-    /// Devices where « Injecter quand même » is on.
-    var force: Set<String>
-    /// The verdict on each device, as is (`TweakClassifier.classify`).
-    var verdicts: [String: TweakVerdict]
-    /// …and with « Injecter quand même » (differs only for an overridable ❌).
-    var forcedVerdicts: [String: TweakVerdict] = [:]
-    /// Already in the app's pool (the library): nothing to hand over at Install.
-    var stored = false
-    /// The pool's package it replaces (another version of the same package id, confirmed).
-    var replacing: String?
-    /// Devices whose stored list has it (on or off): they keep it, off, when its switch is off.
-    var listedDevices: Set<String> = []
-    /// Devices it got a starting choice for; one checked later gets its own then.
-    var seenDevices: Set<String> = []
-    /// Devices whose last signing injected it: a ❌ from the check made here (without the app's
-    /// files or the SDK) doesn't switch it off there; the signing checks it again.
-    var injectedOn: Set<String> = []
-    /// Per device, the `Depends` package ids missing there (« Dépendances »), flagged on its row.
-    var missingDependencies: [String: [String]] = [:]
-
-    var id: String { package.id }
-
-    /// What applies on `deviceID`: the forced verdict when « Injecter quand même » is on there.
-    func verdict(on deviceID: String) -> TweakVerdict? {
-        let base = verdicts[deviceID]
-        guard force.contains(deviceID), base?.canOverride == true else { return base }
-        return forcedVerdicts[deviceID] ?? base
-    }
-
-    /// Goes in the app on `deviceID`: its switch on and not ❌ there.
-    func isEnabled(on deviceID: String) -> Bool {
-        guard enabledDevices.contains(deviceID), let v = verdict(on: deviceID) else { return false }
-        if case .incompatible = v { return injectedOn.contains(deviceID) }
-        return true
-    }
-
-    /// Its entry in `deviceID`'s list for the run: on, off (kept, for a device that had it), or none.
-    func use(on deviceID: String) -> TweakUse? {
-        let forced: Bool? = force.contains(deviceID) ? true : nil
-        if isEnabled(on: deviceID) { return TweakUse(id: id, enabled: true, force: forced) }
-        return listedDevices.contains(deviceID) ? TweakUse(id: id, enabled: false, force: forced) : nil
     }
 }
 
