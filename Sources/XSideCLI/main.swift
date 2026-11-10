@@ -39,17 +39,16 @@ let usage = """
       open                                 Open XSide
 
       <app> is a name or a bundle id, any case; part of it is fine when only one app matches.
+      <name> is a device's name or its id (xside devices lists both).
       Exit status: 0 done, 1 failed, 2 not known yet (XSide still working: see its panel).
+      Before the command:
       --debug     Talk to XSide-debug instead of XSide
       --version   Print the version
     """
 
-var arguments = Array(CommandLine.arguments.dropFirst())
-@MainActor func takeFlag(_ name: String) -> Bool {
-    guard let index = arguments.firstIndex(of: name) else { return false }
-    arguments.remove(at: index)
-    return true
-}
+/// `--debug` / `--version` only before the command word (mega review C10).
+let globalFlags = CLIGlobalFlags(Array(CommandLine.arguments.dropFirst()))
+let arguments = globalFlags.rest
 /// `--json` on a command that asks XSide (`xside crash --json`): stdout gets only JSON, even on
 /// failure; progress and notes go to stderr.
 nonisolated(unsafe) var jsonOutput = false
@@ -73,7 +72,7 @@ func progress(_ line: String) {
     }
 }
 
-let debug = takeFlag("--debug")
+let debug = globalFlags.debug
 #if DEBUG
 /// Debug builds only: talk to a stand-in (a test responder) instead of XSide; nothing is launched.
 let testBundleID = ProcessInfo.processInfo.environment["XSIDE_CLI_TEST_BUNDLE_ID"]
@@ -87,7 +86,7 @@ let libraryRoot = testBundleID != nil
     : FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent(LibraryLocation.folderName(bundleID: bundleID), isDirectory: true)
 
-if takeFlag("--version") {
+if globalFlags.version {
     let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
     print("xside \(version ?? CLIVersion.bundled ?? "dev")")
     exit(0)
@@ -122,6 +121,8 @@ var isAppRunning: Bool { !NSRunningApplication.runningApplications(withBundleIde
     struct Row: Encodable {
         let app: String, bundleID: String, device: String, deviceID: String
         let expires: Date, daysLeft: Int, nextRefresh: Date, paused: Bool, lastError: String?
+        /// This app's own pause ends by itself then (absent: not paused, or until resumed).
+        let pausedUntil: Date?
     }
     let rows: [Row] = records.flatMap { record in
         record.installations.map { i in
@@ -129,7 +130,8 @@ var isAppRunning: Bool { !NSRunningApplication.runningApplications(withBundleIde
                 device: names[i.deviceID] ?? i.deviceID, deviceID: i.deviceID, expires: i.expiresAt,
                 daysLeft: max(0, Int((i.expiresAt.timeIntervalSince(now) / 86_400).rounded(.up))),
                 nextRefresh: i.expiresAt.addingTimeInterval(-threshold),
-                paused: i.refreshPaused, lastError: i.lastErrorKey)
+                paused: i.refreshPaused, lastError: i.lastErrorKey,
+                pausedUntil: i.refreshPaused ? i.pausedUntil : nil)
         }
     }
     if json {
@@ -156,9 +158,8 @@ var isAppRunning: Bool { !NSRunningApplication.runningApplications(withBundleIde
                 line += "expired"
             } else {
                 line += "\(row.daysLeft) day\(row.daysLeft == 1 ? "" : "s") left"
-                line += row.paused ? " · paused"
-                    : pausedUntil != nil ? " · refreshes paused"
-                    : " · next refresh \(max(row.nextRefresh, now).formatted(date))"
+                line += CLIStatus.refreshNote(paused: row.paused, pausedUntil: row.pausedUntil, allPaused: pausedUntil != nil,
+                                              nextRefresh: row.nextRefresh, now: now, format: date)
             }
             if let error = row.lastError, !row.paused { line += " · last refresh failed (\(error))" }
             print(line)
@@ -322,7 +323,7 @@ var isAppRunning: Bool { !NSRunningApplication.runningApplications(withBundleIde
     if rows.isEmpty { print("No device known to XSide yet."); return }
     for row in rows {
         let count = row.apps.count == 1 ? "1 app" : "\(row.apps.count) apps"
-        print("\(row.name) · \(count)\(row.apps.isEmpty ? "" : ": " + row.apps.joined(separator: ", "))")
+        print("\(CLIMatch.deviceLabel(name: row.name, id: row.id)) · \(count)\(row.apps.isEmpty ? "" : ": " + row.apps.joined(separator: ", "))")
     }
 }
 
@@ -402,7 +403,9 @@ case .success(let invocation):
         let found = resolve(app, device)
         ask(.editSettings(recordID: found[0].recordID, deviceIDs: found.map(\.deviceID), changes: changes))
     case .refreshAll: ask(.refreshAll)
-    case .refresh(let app, let device): ask(.refresh(app: app, device: device))
+    case .refresh(let app, let device):
+        let found = resolve(app, device)
+        ask(.refreshApp(recordID: found[0].recordID, deviceIDs: found.map(\.deviceID)))
     case .pauseAll(let seconds): ask(.pause(seconds: seconds))
     case .resumeAll: ask(.resume)
     case .pauseApp(let app, let device, let seconds):

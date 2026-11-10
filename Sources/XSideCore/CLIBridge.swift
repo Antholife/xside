@@ -16,9 +16,9 @@ public enum CLIBridge {
     public enum Command: Equatable, Sendable {
         /// Every app that can be refreshed now.
         case refreshAll
-        /// Apps whose name or bundle id contains `app` (case-insensitive), on `device` if given
-        /// (name contains it, or its id).
-        case refresh(app: String, device: String?)
+        /// Those installations, found by the tool (`CLIMatch`, mega review C5: an exact name wins,
+        /// several devices is an error, as for the other commands).
+        case refreshApp(recordID: UUID, deviceIDs: [String])
         /// Pause automatic refreshes for `seconds`, or until resumed (nil).
         case pause(seconds: Int?)
         case resume
@@ -124,8 +124,7 @@ public enum CLIBridge {
         private var commandInfo: [String: String] {
             switch command {
             case .refreshAll: ["id": id, "command": "refresh-all"]
-            case .refresh(let app, let device):
-                ["id": id, "command": "refresh", "app": app].merging(device.map { ["device": $0] } ?? [:]) { $1 }
+            case .refreshApp(let record, let devices): Self.target("refresh-app", id, record, devices)
             case .pause(let seconds):
                 ["id": id, "command": "pause"].merging(seconds.map { ["seconds": String($0)] } ?? [:]) { $1 }
             case .resume: ["id": id, "command": "resume"]
@@ -158,9 +157,6 @@ public enum CLIBridge {
             guard let info = userInfo as? [String: String], let id = info["id"] else { return nil }
             switch info["command"] {
             case "refresh-all": self.init(id: id, key: info["key"], command: .refreshAll)
-            case "refresh":
-                guard let app = info["app"], !app.isEmpty else { return nil }
-                self.init(id: id, key: info["key"], command: .refresh(app: app, device: info["device"]))
             case "pause":
                 // Present but unreadable: refused, never read as "until resumed".
                 if let text = info["seconds"] {
@@ -171,7 +167,7 @@ public enum CLIBridge {
                 }
             case "resume": self.init(id: id, key: info["key"], command: .resume)
             case "report": self.init(id: id, key: info["key"], command: .report)
-            case "settings", "pause-app", "resume-app", "uninstall", "crash":
+            case "settings", "pause-app", "resume-app", "uninstall", "crash", "refresh-app":
                 guard let record = info["record"].flatMap(UUID.init(uuidString:)),
                       let devices = info["devices"]?.split(separator: "\n").map(String.init), !devices.isEmpty else { return nil }
                 switch info["command"] {
@@ -191,6 +187,7 @@ public enum CLIBridge {
                         self.init(id: id, key: info["key"], command: .pauseApp(recordID: record, deviceIDs: devices, seconds: nil))
                     }
                 case "resume-app": self.init(id: id, key: info["key"], command: .resumeApp(recordID: record, deviceIDs: devices))
+                case "refresh-app": self.init(id: id, key: info["key"], command: .refreshApp(recordID: record, deviceIDs: devices))
                 case "crash": self.init(id: id, key: info["key"], command: .crash(recordID: record, deviceIDs: devices, json: info["json"] == "1"))
                 default: self.init(id: id, key: info["key"], command: .uninstall(recordID: record, deviceIDs: devices))
                 }

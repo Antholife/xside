@@ -259,9 +259,53 @@ public enum CLIMatch {
         }
         if onDevice.count > 1 {
             return .failure(CLIUsageError("\"\(device)\" matches several devices: "
-                + onDevice.map(\.device).joined(separator: ", ") + ". Be more precise."))
+                + onDevice.map { deviceLabel(name: $0.device, id: $0.deviceID) }.joined(separator: ", ")
+                + ". Be more precise, or give its id (--device <id>)."))
         }
         return .success(onDevice)
+    }
+
+    /// "iPhone (00008110-…)": a device's name with its id, which tells apart two of the same name
+    /// (mega review C11); the id alone when it has no other name.
+    public static func deviceLabel(name: String, id: String) -> String {
+        name == id ? id : "\(name) (\(id))"
+    }
+}
+
+/// `--debug` and `--version`, read by the tool itself, only before the command word (mega review
+/// C10): after it, they are the command's own words, e.g. a `--device` value.
+public struct CLIGlobalFlags: Equatable, Sendable {
+    public var debug: Bool
+    public var version: Bool
+    /// The command and its arguments, for `CLIInvocation.parse`.
+    public var rest: [String]
+
+    public init(debug: Bool, version: Bool, rest: [String]) {
+        self.debug = debug
+        self.version = version
+        self.rest = rest
+    }
+
+    public init(_ arguments: [String]) {
+        var rest = arguments[...]
+        var debug = false, version = false
+        while let first = rest.first, first == "--debug" || first == "--version" {
+            if first == "--debug" { debug = true } else { version = true }
+            rest = rest.dropFirst()
+        }
+        self.init(debug: debug, version: version, rest: Array(rest))
+    }
+}
+
+/// `xside status`'s wording.
+public enum CLIStatus {
+    /// What follows an app's days left: its own pause (with its end, mega review C9), every
+    /// refresh paused, or its next refresh.
+    public static func refreshNote(paused: Bool, pausedUntil: Date?, allPaused: Bool, nextRefresh: Date, now: Date,
+                                   format: Date.FormatStyle) -> String {
+        if paused { return pausedUntil.map { " · paused until \($0.formatted(format))" } ?? " · paused" }
+        if allPaused { return " · refreshes paused" }
+        return " · next refresh \(max(nextRefresh, now).formatted(format))"
     }
 }
 

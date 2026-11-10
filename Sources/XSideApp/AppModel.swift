@@ -1907,27 +1907,12 @@ final class AppModel {
         case .refreshAll:
             targets = entries.filter { !$0.installation.refreshPaused }
             guard !targets.isEmpty else { return (false, "No app to refresh (none installed, or all paused).") }
-        case .refresh(let app, let device):
-            var matches = entries.filter {
-                appName($0).localizedCaseInsensitiveContains(app) || $0.record.originalBundleID.localizedCaseInsensitiveContains(app)
-            }
-            if let device {
-                matches = matches.filter { deviceName($0).localizedCaseInsensitiveContains(device) || $0.installation.deviceID == device }
-            }
-            guard !matches.isEmpty else {
-                // Not the list of installed apps: the answer is a distributed notification, which
-                // any program of the session can hear (`xside status` reads the list locally).
-                return (false, "No app matches \"\(app)\"\(device.map { " on \"\($0)\"" } ?? ""). See xside status.")
-            }
-            // Several different apps: say which, rather than guess.
-            let distinct = Set(matches.map(\.record.id))
-            if distinct.count > 1, !matches.contains(where: { appName($0).caseInsensitiveCompare(app) == .orderedSame }) {
-                return (false, "\"\(app)\" matches several apps: " + matches.map(describe).joined(separator: ", ") + ". Be more precise.")
-            }
-            let exact = matches.filter { appName($0).caseInsensitiveCompare(app) == .orderedSame }
-            targets = exact.isEmpty ? matches : exact
+        case .refreshApp(let record, let devices):
+            // Found by the tool (mega review C5); checked again, the library may have changed.
+            targets = entries.filter { $0.record.id == record && devices.contains($0.installation.deviceID) }
+            guard !targets.isEmpty else { return (false, "That app is no longer installed there (see xside apps).") }
             if let paused = targets.first(where: \.installation.refreshPaused), targets.count == 1 {
-                return (false, "\(describe(paused)) is paused: resume it from its … menu in XSide.")
+                return (false, "\(describe(paused)) is paused: resume it with xside resume, or from its … menu in XSide.")
             }
         }
         var started: [String] = [], queued: [String] = []

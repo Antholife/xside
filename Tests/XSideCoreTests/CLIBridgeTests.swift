@@ -6,7 +6,8 @@ struct CLIBridgeTests {
     @Test func pauseAndResumeTravel() {
         let id = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
         for command: CLIBridge.Command in [.pause(seconds: 3600), .pause(seconds: nil), .resume, .refreshAll,
-                                           .refresh(app: "yt", device: "Duo"),
+                                           // Mega review C5: found by the tool, like the others.
+                                           .refreshApp(recordID: id, deviceIDs: ["d1", "d2"]),
                                            // Device feedback 3, E7: aimed at installations the tool found.
                                            .editSettings(recordID: id, deviceIDs: ["d1", "d2"], changes: [.reminder(false), .language(.automatic), .level(.all)]),
                                            .pauseApp(recordID: id, deviceIDs: ["d1"], seconds: 7200),
@@ -41,6 +42,12 @@ struct CLIBridgeTests {
         #expect(CLIBridge.Request(userInfo: ["id": "1", "command": "uninstall", "record": "00000000-0000-0000-0000-000000000001", "devices": ""]) == nil)
         #expect(CLIBridge.Request(userInfo: ["id": "1", "command": "settings", "record": "00000000-0000-0000-0000-000000000001",
                                              "devices": "d1", "changes": "colour=red"]) == nil)
+    }
+
+    /// Mega review C5: the app's own loose matching of a name is gone; a refresh names installations.
+    @Test func aRefreshByNameIsNoLongerARequest() {
+        #expect(CLIBridge.Request(userInfo: ["id": "1", "command": "refresh", "app": "yt"]) == nil)
+        #expect(CLIBridge.Request(userInfo: ["id": "1", "command": "refresh-app", "record": "nope", "devices": "d1"]) == nil)
     }
 
     /// Review 1.0.6 #4: an unreadable duration is no request, never "until resumed".

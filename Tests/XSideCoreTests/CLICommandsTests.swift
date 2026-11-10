@@ -123,6 +123,50 @@ struct CLICommandsTests {
         guard case .failure(let device) = CLIMatch.find(app: "Delta", device: "ipad", in: candidates) else { Issue.record("found"); return }
         #expect(device.message.contains("ipad"))
     }
+
+    /// Mega review C11: two devices with the same name are told apart by their ids, which the
+    /// error gives (and `--device` takes).
+    @Test func devicesOfTheSameNameAreListedWithTheirIDs() throws {
+        let id = UUID()
+        let twins = [CLIMatch.Candidate(recordID: id, deviceID: "00008110-AAA", app: "Delta", bundleID: "d", device: "iPhone"),
+                     CLIMatch.Candidate(recordID: id, deviceID: "00008110-BBB", app: "Delta", bundleID: "d", device: "iPhone")]
+        guard case .failure(let e) = CLIMatch.find(app: "Delta", device: "iphone", in: twins) else { Issue.record("guessed"); return }
+        #expect(e.message.contains("iPhone (00008110-AAA)") && e.message.contains("iPhone (00008110-BBB)"))
+        #expect(e.message.contains("--device"))
+        #expect(try CLIMatch.find(app: "Delta", device: "00008110-BBB", in: twins).get().map(\.deviceID) == ["00008110-BBB"])
+        #expect(CLIMatch.deviceLabel(name: "iPhone", id: "00008110-AAA") == "iPhone (00008110-AAA)")
+        #expect(CLIMatch.deviceLabel(name: "00008110-AAA", id: "00008110-AAA") == "00008110-AAA")
+    }
+
+    // MARK: Global flags (mega review C10)
+
+    /// `--debug` and `--version` count only before the command word: after it, they are the
+    /// command's own words (a device named "--debug", an unexpected argument).
+    @Test func globalFlagsComeBeforeTheCommand() {
+        #expect(CLIGlobalFlags(["--debug", "status"]) == CLIGlobalFlags(debug: true, version: false, rest: ["status"]))
+        #expect(CLIGlobalFlags(["--version"]) == CLIGlobalFlags(debug: false, version: true, rest: []))
+        #expect(CLIGlobalFlags(["--debug", "--version"]) == CLIGlobalFlags(debug: true, version: true, rest: []))
+        #expect(CLIGlobalFlags(["refresh", "yt", "--device", "--debug"])
+                == CLIGlobalFlags(debug: false, version: false, rest: ["refresh", "yt", "--device", "--debug"]))
+        #expect(CLIGlobalFlags(["status", "--version"]) == CLIGlobalFlags(debug: false, version: false, rest: ["status", "--version"]))
+        guard case .failure = CLIInvocation.parse(CLIGlobalFlags(["status", "--debug"]).rest) else { Issue.record("flag dropped"); return }
+    }
+
+    // MARK: Status (mega review C9)
+
+    @Test func statusSaysWhenAnAppsPauseEnds() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let end = now.addingTimeInterval(7200)
+        let format = Date.FormatStyle(date: .abbreviated, time: .shortened)
+        #expect(CLIStatus.refreshNote(paused: true, pausedUntil: end, allPaused: false, nextRefresh: now, now: now, format: format)
+                == " · paused until \(end.formatted(format))")
+        #expect(CLIStatus.refreshNote(paused: true, pausedUntil: nil, allPaused: false, nextRefresh: now, now: now, format: format)
+                == " · paused")
+        #expect(CLIStatus.refreshNote(paused: false, pausedUntil: nil, allPaused: true, nextRefresh: now, now: now, format: format)
+                == " · refreshes paused")
+        #expect(CLIStatus.refreshNote(paused: false, pausedUntil: nil, allPaused: false, nextRefresh: end, now: now, format: format)
+                == " · next refresh \(end.formatted(format))")
+    }
 }
 
 /// `--json`: stdout holds one JSON document, whatever happens (review Important 2).
