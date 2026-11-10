@@ -87,6 +87,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let bundleID = Bundle.main.bundleIdentifier else { return }
         // A new key at each launch, which every request must carry (review D–G, minor 9). Without
         // one written, the tool can't be answered: logged, the rest of XSide goes on.
+        // Answers nobody read before XSide last quit go now, not at the next one written (re-review N5).
+        CLIBridge.ReplyFile.prune(in: model.libraryRoot, now: Date())
         let key: String
         do { key = try CLIBridge.Key.create(in: model.libraryRoot) } catch {
             Self.logger.error("command line key not written: \(String(describing: error))")

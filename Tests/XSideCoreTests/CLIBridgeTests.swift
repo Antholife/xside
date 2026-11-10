@@ -197,6 +197,23 @@ struct CLIBridgeReplyFileTests {
         #expect(CLIBridge.ReplyFile.take(plain, in: tmp) == plain)
     }
 
+    /// Re-review N5: answers nobody read go when XSide starts too, not only at the next write.
+    @Test func unreadRepliesGoAtLaunch() throws {
+        let tmp = try folder(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let old = try CLIBridge.ReplyFile.write(CLIBridge.Reply(id: UUID().uuidString, ok: true, message: "old"), in: tmp, now: Date())
+        let fresh = try CLIBridge.ReplyFile.write(CLIBridge.Reply(id: UUID().uuidString, ok: true, message: "new"), in: tmp, now: Date())
+        let oldFile = CLIBridge.ReplyFile.url(id: old.id, in: tmp)!, freshFile = CLIBridge.ReplyFile.url(id: fresh.id, in: tmp)!
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-CLIBridge.ReplyFile.lifetime - 60)],
+                                              ofItemAtPath: oldFile.path)
+        CLIBridge.ReplyFile.prune(in: tmp, now: Date())
+        #expect(!FileManager.default.fileExists(atPath: oldFile.path))
+        #expect(FileManager.default.fileExists(atPath: freshFile.path))
+        // No folder yet (no answer ever written): nothing happens, nothing is made.
+        let empty = try folder(); defer { try? FileManager.default.removeItem(at: empty) }
+        CLIBridge.ReplyFile.prune(in: empty, now: Date())
+        #expect(!FileManager.default.fileExists(atPath: empty.appendingPathComponent(CLIBridge.ReplyFile.folderName).path))
+    }
+
     @Test func onlyCrashAndReportGoToAFile() {
         let id = UUID()
         #expect(CLIBridge.ReplyFile.isFor(.crash(recordID: id, deviceIDs: ["d"], json: true)))

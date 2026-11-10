@@ -297,6 +297,12 @@ public enum CLIBridge {
             return Reply(id: reply.id, ok: (object["ok"] as? Bool) ?? false, message: message)
         }
 
+        /// Removes the unread answers older than `lifetime` from `library`'s folder: at every
+        /// write, and when XSide starts (re-review N5: a write may not come for a long time).
+        public static func prune(in library: URL, now: Date) {
+            prune(library.appendingPathComponent(folderName, isDirectory: true), now: now)
+        }
+
         private static func prune(_ folder: URL, now: Date) {
             let fm = FileManager.default
             guard let names = try? fm.contentsOfDirectory(atPath: folder.path) else { return }
