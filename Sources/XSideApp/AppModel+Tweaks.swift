@@ -490,6 +490,12 @@ enum TweakText {
         return L("tweaks.target", id)
     }
 
+    /// A `.deb` with nothing of its own to load, on its own card (no tweak here depends on it):
+    /// said before the signing leaves it out.
+    static func libraryOnly(_ package: TweakPackage, alone: Bool, enabled: Bool) -> String? {
+        alone && enabled && package.isLibraryOnly ? L("tweaks.libraryOnly") : nil
+    }
+
     /// What the last signing did with it (nil: nothing to say).
     static func result(_ r: TweakResult?, package: TweakPackage, enabled: Bool, signed: Bool, deviceName: String) -> String? {
         switch r {

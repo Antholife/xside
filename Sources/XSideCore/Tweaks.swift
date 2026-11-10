@@ -85,6 +85,8 @@ public struct TweakPackage: Codable, Equatable, Sendable, Identifiable {
     public var addedAt: Date
 
     public var entries: [TweakBinary] { binaries.filter(\.isEntry) }
+    /// A `.deb` with nothing to load by itself: signed in only when an enabled tweak relies on it.
+    public var isLibraryOnly: Bool { kind == .deb && !binaries.contains(where: \.isEntry) }
 
     public init(id: String, kind: TweakKind, origin: TweakOrigin, packageID: String, provides: [String] = [],
                 name: String, version: String? = nil, author: String? = nil, architecture: String? = nil,

@@ -834,7 +834,7 @@ struct InstallTweaksSection: View {
                 }, update: DependencySources.canDownload(d.package.packageID)
                     ? { Task { await model.updateDependency(d.package, target: depTarget) } } : nil)
             }
-            return TweakCardItem(package: draft.package, rows: rows(draft), group: model.draftGroup(draft, in: flow),
+            return TweakCardItem(package: draft.package, rows: rows(draft, alone: true), group: model.draftGroup(draft, in: flow),
                                  dependencies: found.map { model.dependencyState(target, rows: $0.rows, names: $0.deviceNames,
                                                                                  elsewhere: elsewhere[draft.id] ?? [:]) },
                                  nested: nested,
@@ -844,11 +844,13 @@ struct InstallTweaksSection: View {
         }
     }
 
-    private func rows(_ draft: TweakDraft) -> [TweakRow] {
+    /// `alone`: its own card (no tweak here depends on it).
+    private func rows(_ draft: TweakDraft, alone: Bool = false) -> [TweakRow] {
         flow.deviceIDs.map { id in
             TweakRow(deviceID: id, deviceName: model.deviceName(id),
                      verdict: draft.verdicts[id], forcedVerdict: draft.forcedVerdicts[id],
                      isOn: draft.enabledDevices.contains(id), isForced: draft.force.contains(id),
+                     result: TweakText.libraryOnly(draft.package, alone: alone, enabled: draft.enabledDevices.contains(id)),
                      signedAnyway: draft.injectedOn.contains(id),
                      missingHere: !(draft.missingDependencies[id] ?? []).isEmpty)
         }
@@ -892,7 +894,7 @@ struct InstalledTweaksSection: View {
                   let (package, use) = listed.first(where: { $0.0.id == item.package.id }) else { return nil }
             let target = DependencyTarget.entry(entry.id, tweakID: package.id)
             let found = model.dependencyRows(target)
-            let r = row(package, use: use)
+            let r = row(package, use: use, alone: true)
             let nested = order.filter { nestedUnder[$0.package.id] == package.id }.compactMap { dep -> NestedDependency? in
                 guard let (p, u) = listed.first(where: { $0.0.id == dep.package.id }) else { return nil }
                 let depTarget = DependencyTarget.entry(entry.id, tweakID: p.id)
@@ -914,7 +916,8 @@ struct InstalledTweaksSection: View {
         }
     }
 
-    private func row(_ package: TweakPackage, use: TweakUse) -> TweakRow {
+    /// `alone`: its own card (no tweak here depends on it).
+    private func row(_ package: TweakPackage, use: TweakUse, alone: Bool = false) -> TweakRow {
         let v = model.tweakVerdicts(package, for: entry)
         let signed = entry.installation.signedChoices?.tweaks?.contains(package.id) == true
         let removed = use.enabled ? nil : use.removedDependency
@@ -922,7 +925,8 @@ struct InstalledTweaksSection: View {
                         verdict: v.verdict, forcedVerdict: v.forced, isOn: use.enabled, isForced: use.force == true,
                         result: removed.map { L("tweaks.removedDependency", $0) }
                             ?? TweakText.result(entry.installation.tweakResults?[package.id], package: package,
-                                                enabled: use.enabled, signed: signed, deviceName: deviceName),
+                                                enabled: use.enabled, signed: signed, deviceName: deviceName)
+                            ?? TweakText.libraryOnly(package, alone: alone, enabled: use.enabled),
                         signedAnyway: {
                             if case .injected? = entry.installation.tweakResults?[package.id] { true } else { false }
                         }(),

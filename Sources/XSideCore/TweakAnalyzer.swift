@@ -151,8 +151,11 @@ public enum TweakAnalyzer {
             if let folder = entryFolders.first(where: { path.hasPrefix($0) }), !path.dropFirst(folder.count).contains("/") {
                 let base = fileName.hasSuffix(".dylib") ? String(fileName.dropLast(6)) : fileName
                 let plist = folder + base + ".plist"
-                if extracted.contains(plist), let data = readSmall(incoming.appendingPathComponent(plist), DebLimits.maxPlistBytes) {
-                    filter = TweakFilter.parse(data)    // nil when unreadable: then a library, not an entry
+                // A filter plist that can't be read (or is too big) still makes an entry: one that
+                // doesn't say where it loads (`noFilter`, overridable), never a silent library.
+                if extracted.contains(plist) {
+                    filter = readSmall(incoming.appendingPathComponent(plist), DebLimits.maxPlistBytes)
+                        .flatMap(TweakFilter.parse) ?? TweakFilter()
                 }
             }
             let inFramework = parts.dropLast().contains { $0.hasSuffix(".framework") }

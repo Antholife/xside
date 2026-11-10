@@ -1053,6 +1053,7 @@
 "tweaks.result.injected" = "Dans l'app depuis sa dernière signature.";
 "tweaks.result.injectedConverted" = "Dans l'app depuis sa dernière signature, converti.";
 "tweaks.result.notUsed" = "Pas utilisée par un tweak activé";
+"tweaks.libraryOnly" = "Bibliothèque seule : ajoutée à l'app seulement si un tweak activé en a besoin.";
 "install.summary.tweaks" = "Tweaks";
 
 /* Dépendances des tweaks */

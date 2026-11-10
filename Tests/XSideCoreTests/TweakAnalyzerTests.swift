@@ -57,6 +57,22 @@ struct TweakAnalyzerTests {
         #expect(try Data(contentsOf: storage.appendingPathComponent(p.id).appendingPathComponent(e.path)) == dylib())
     }
 
+    /// An entry whose filter plist can't be read is still an entry: one that doesn't say where it
+    /// loads (« Injecter quand même »), never a library left out silently at signing.
+    @Test func anUnreadableFilterIsAnEntryWithoutFilter() async throws {
+        let src = try await deb([.file("./Library/MobileSubstrate/DynamicLibraries/Example.dylib", dylib()),
+                                 .file("./Library/MobileSubstrate/DynamicLibraries/Example.plist", Data("{ Filter = ".utf8))])
+        let storage = scratch("store")
+        defer { cleanup(src, storage) }
+        let p = try await analyze(src, into: storage)
+        let e = try #require(p.entries.first)
+        #expect(e.filter == TweakFilter())
+        #expect(!p.isLibraryOnly)
+        let lib = try await deb([.file("./usr/lib/libexample.dylib", dylib(linking: []))])
+        defer { cleanup(lib) }
+        #expect(try await analyze(lib, into: storage).isLibraryOnly)
+    }
+
     /// The C function hooks a binary imports are recorded at analysis (none: an empty list).
     @Test func cFunctionHooksAreRecorded() async throws {
         let hooking = MachOImportsTests.symtabMachO([("_MSHookFunction", 0x01), ("_MSHookMessageEx", 0x01)])
@@ -150,7 +166,9 @@ struct TweakAnalyzerTests {
         let storage = scratch("store")
         defer { cleanup(src, storage) }
         let p = try await analyze(src, into: storage)
-        #expect(p.entries.isEmpty)
+        // No plist, or one in a subfolder: a library. An unreadable plist: an entry without filter.
+        #expect(p.entries.map(\.imageName) == ["Broken.dylib"])
+        #expect(p.entries.first?.filter == TweakFilter())
         #expect(p.binaries.count == 3)
     }
 
