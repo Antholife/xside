@@ -230,10 +230,9 @@ private struct TweakFixture {
     }
 
     func run(_ items: [TweakSigningItem], options: InstallOptions = InstallOptions(), deviceOS: String? = "17.5",
-             offHere: [TweakPackage]? = nil,
              reports: Reports? = nil, order: Order? = nil, duo: Outcomes? = nil) async throws -> URL {
         var options = options
-        options.tweaks = TweakJob(items: items, deviceOS: deviceOS, offHere: offHere)
+        options.tweaks = TweakJob(items: items, deviceOS: deviceOS)
         return try await resigner.resign(
             ipa: ipa, workDir: work, bundleID: "com.example.new", options: options, iconURL: nil,
             profileURL: profileURL, profile: profile(), identitySHA1: realSigning ? "-" : "SHA", facts: nil,
@@ -923,7 +922,7 @@ struct TweakResignTests {
         return try #require(page["PreferenceSpecifiers"] as? [[String: Any]])
     }
 
-    /// With XSide's module: the payload lists what went in (and what is off here), and XSide's
+    /// With XSide's module: the payload carries no tweak list, and XSide's
     /// page (« Réglages XSide ») ends with « Tweaks · N »; the app's page keeps only XSide's row.
     @Test func theIPhoneListsTheTweaksWithTheModule() async throws {
         var f = try await TweakFixture()
@@ -932,16 +931,9 @@ struct TweakResignTests {
         a.package.author = "Anthony"
         a.package.summary = "Does alpha things."
         let b = tweak(idB, name: "Beta")
-        var c = tweak(idC, name: "Gamma").package
-        c.version = "2.0"
-        let app = try await f.run([try f.item(a), try f.item(b)], offHere: [c])
+        let app = try await f.run([try f.item(a), try f.item(b)])
         let payload = try #require(try plist(app)["XSideWelcome"] as? [String: Any])
-        let tweaks = try #require(payload["tweaks"] as? [[String: Any]])
-        #expect(tweaks.map { $0["name"] as? String } == ["Alpha", "Beta", "Gamma"])
-        #expect(tweaks[0]["converted"] as? Bool == true && tweaks[0]["author"] as? String == "Anthony")
-        #expect(tweaks[0]["summary"] as? String == "Does alpha things.")
-        #expect(tweaks[1]["converted"] as? Bool == false && tweaks[1]["off"] as? Bool == false)
-        #expect(tweaks[2]["off"] as? Bool == true && tweaks[2]["version"] as? String == "2.0")
+        #expect(payload["tweaks"] == nil)
         let root = try settingsItems(app)
         #expect(root.map { $0["Key"] as? String } == ["io.github.xside.settings.group", "io.github.xside.settings.pane"])
         let pane = try settingsItems(app, "XSide")
@@ -974,13 +966,12 @@ struct TweakResignTests {
         #expect(try settingsItems(app2).count == 2)
     }
 
-    /// No tweak in the app: no list in the payload, no row; nothing added without the module.
+    /// No tweak in the app: no row; nothing added without the module.
     @Test func noTweaksNoListNoRow() async throws {
         var f = try await TweakFixture()
         f.settings = true
         let skipped = tweak(idA, name: "Alpha", slices: [arm64("99.0")])
-        let app = try await f.run([try f.item(skipped)], offHere: [tweak(idB).package])
-        #expect((try plist(app)["XSideWelcome"] as? [String: Any])?["tweaks"] == nil)
+        let app = try await f.run([try f.item(skipped)])
         #expect(try settingsItems(app).count == 2)
         #expect(!exists(app.appendingPathComponent("Settings.bundle/XSideTweaks.plist")))
         var g = try await TweakFixture()

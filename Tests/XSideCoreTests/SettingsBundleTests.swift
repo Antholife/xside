@@ -338,8 +338,8 @@ struct SettingsBundleTests {
 
     private var pane: TweaksPane {
         TweaksPane.make([PhoneTweak(name: "XSPivotFix", version: "1.0", author: "Anthony", summary: "Puts the tab back.",
-                                    converted: false, offHere: false),
-                         PhoneTweak(name: "uYouPlus", version: nil, author: nil, summary: nil, converted: true, offHere: false)],
+                                    converted: false),
+                         PhoneTweak(name: "uYouPlus", version: nil, author: nil, summary: nil, converted: true)],
                         language: "fr")!
     }
 

@@ -1768,8 +1768,6 @@ struct PipelineTweakTests {
         let result = try await f.pipeline().install(recordID: f.record.id, device: device(), env: env,
                                                     tweaks: [TweakUse(id: one.id, enabled: false), TweakUse(id: two.id)])
         #expect(ids(await f.log.options.last) == [two.id])
-        // Still listed on the iPhone, as off on this device.
-        #expect(await f.log.options.last?.tweaks?.offHere?.map(\.id) == [one.id])
         #expect(result.tweaks == [TweakUse(id: one.id, enabled: false), TweakUse(id: two.id)])
         #expect(result.tweakResults == [two.id: .injected(converted: false)])
         // All off: no tweak step, nothing to report.

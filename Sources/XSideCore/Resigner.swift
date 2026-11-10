@@ -91,14 +91,10 @@ public struct TweakSigningItem: Codable, Equatable, Sendable {
 public struct TweakJob: Codable, Equatable, Sendable {
     public var items: [TweakSigningItem]
     public var deviceOS: String?
-    /// The app's tweaks off on this device: not injected, only listed on the iPhone
-    /// (« désactivé sur cet appareil », `PhoneTweaks`). nil: none.
-    public var offHere: [TweakPackage]?
 
-    public init(items: [TweakSigningItem], deviceOS: String? = nil, offHere: [TweakPackage]? = nil) {
+    public init(items: [TweakSigningItem], deviceOS: String? = nil) {
         self.items = items
         self.deviceOS = deviceOS
-        self.offHere = offHere
     }
 }
 
@@ -294,7 +290,7 @@ public struct Resigner: Sendable {
         // After iCloud, before XSide's module: tweaks get what header room is left once the
         // module's command is set aside. Never fails the install.
         var tweakPaths = false
-        // What the iPhone lists (the payload and the Settings page): what went in, then what is off here.
+        // What the iPhone's Settings page lists: the tweaks that went in.
         var phoneTweaks: [PhoneTweak] = []
         if let tweakPlan {
             await onTweaks(nil)
@@ -310,16 +306,14 @@ public struct Resigner: Sendable {
             let applied = await applyTweaks(tweakPlan, app: app, executable: executableURL, reserve: reserve,
                                             identity: identitySHA1)
             tweakPaths = applied.supportAdded
-            phoneTweaks = PhoneTweaks.list(items: tweakItems, results: applied.report.results,
-                                           offHere: options.tweaks?.offHere ?? [])
+            phoneTweaks = PhoneTweaks.list(items: tweakItems, results: applied.report.results)
             await onTweaks(applied.report)
         }
         // The library first among what follows: the payload, Bonjour keys and quick actions mean
         // nothing without it (quick actions nothing handles would be a regression), so they
         // follow its outcome. After a Duo patch its load command is already there.
         let hasLibrary = features && addWelcomePopup(to: app, executable: executableURL)
-        var payload = hasLibrary ? welcome(profile).map { Self.payload($0, with: facts) } : nil
-        payload?.tweaks = phoneTweaks.isEmpty ? nil : phoneTweaks
+        let payload = hasLibrary ? welcome(profile).map { Self.payload($0, with: facts) } : nil
         // The default container stands for the app's own: its original id and declared containers.
         let iCloudKeys = iCloudApplied
             ? (originalBundleID: info.bundleID, containers: ICloudSignedOut.containerIdentifiers(originalEntitlements)) : nil

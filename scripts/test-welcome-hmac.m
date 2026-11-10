@@ -649,39 +649,6 @@ int main(int argc, const char *argv[]) {
         [missing removeObjectForKey:@"alertLate"];
         check(XSSettingsFromJSONObject(missing) == nil, @"settings JSON with a missing field refused");
     }
-    @autoreleasepool {
-        // The tweak list XSide writes at signing (XSideWelcome.tweaks, PhoneTweaks on the Mac):
-        // read as untrusted, never trusted for type, length or count.
-        NSArray *good = XSTweaksSanitized(@[
-            @{@"name": @"XSPivotFix", @"version": @"1.0", @"author": @"Anthony", @"summary": @"Puts the tab back.",
-              @"converted": @NO, @"off": @NO},
-            @{@"name": @"uYouPlus", @"version": @"3.0.5", @"author": @"MiRO92", @"converted": @YES, @"off": @NO},
-            @{@"name": @"Shorts Remover", @"version": @"2.0", @"converted": @NO, @"off": @YES}]);
-        check(good.count == 3 && [good[0][@"name"] isEqual:@"XSPivotFix"] && [good[0][@"summary"] isEqual:@"Puts the tab back."]
-              && ![good[0][@"converted"] boolValue] && [good[1][@"converted"] boolValue] && [good[2][@"off"] boolValue]
-              && good[1][@"summary"] == nil && good[2][@"author"] == nil, @"tweaks: the Mac's list read as written");
-        check(XSTweaksInjectedCount(good) == 2, @"tweaks: N counts those in the app, not those off here");
-        check([XSTweakVersionLine(good[0]) isEqual:@"1.0 · Anthony"] && [XSTweakVersionLine(good[2]) isEqual:@"2.0"]
-              && [XSTweakVersionLine(@{@"name": @"X"}) isEqual:@"—"], @"tweaks: « version · auteur »");
-        check(XSTweaksSanitized(nil).count == 0 && XSTweaksSanitized(@"x").count == 0 && XSTweaksSanitized(@{}).count == 0
-              && XSTweaksSanitized(@[]).count == 0, @"tweaks: no list, or not a list: none");
-        NSArray *odd = XSTweaksSanitized(@[@"junk", @3, @{}, @{@"name": @""}, @{@"name": @42}, @{@"name": @"   "},
-                                           @{@"name": @"Kept", @"version": @7, @"author": @[@"a"], @"summary": NSNull.null,
-                                             @"converted": @"yes", @"off": @{}}]);
-        check(odd.count == 1 && [odd[0][@"name"] isEqual:@"Kept"] && odd[0][@"version"] == nil && odd[0][@"author"] == nil
-              && odd[0][@"summary"] == nil && ![odd[0][@"converted"] boolValue] && ![odd[0][@"off"] boolValue],
-              @"tweaks: entries of the wrong type dropped, fields of the wrong type left out");
-        NSMutableArray *many = [NSMutableArray array];
-        for (int i = 0; i < 5000; i++) [many addObject:@{@"name": [NSString stringWithFormat:@"T%d", i]}];
-        check(XSTweaksSanitized(many).count == 64, @"tweaks: at most 64");
-        NSString *huge = [@"" stringByPaddingToLength:100000 withString:@"é👍" startingAtIndex:0];
-        NSDictionary *big = XSTweaksSanitized(@[@{@"name": huge, @"version": huge, @"author": huge, @"summary": huge}]).firstObject;
-        check([big[@"name"] length] <= 128 * 2 && [big[@"version"] length] <= 64 * 2 && [big[@"author"] length] <= 128 * 2
-              && [big[@"summary"] length] <= 1000 * 2 && [big[@"summary"] length] >= 1000, @"tweaks: lengths capped");
-        NSString *cut = big[@"name"];
-        check([cut rangeOfComposedCharacterSequenceAtIndex:cut.length - 1].location + [cut rangeOfComposedCharacterSequenceAtIndex:cut.length - 1].length
-              == cut.length && [cut dataUsingEncoding:NSUTF8StringEncoding] != nil, @"tweaks: never cut inside a character");
-    }
     if (failures) { fprintf(stderr, "%d check(s) failed\n", failures); return 1; }
     printf("all checks passed\n");
     return 0;

@@ -313,63 +313,6 @@ NSDate *XSPrefsDateForLoad(NSDate *atStart, NSDate *live, BOOL firstLoad) {
     return firstLoad ? atStart : live;
 }
 
-// MARK: - Tweaks of this copy
-
-/// Trimmed, nil when blank or not a string, at most `max` composed characters.
-static NSString *XSCappedString(id value, NSUInteger max) {
-    if (![value isKindOfClass:NSString.class]) return nil;
-    NSString *s = [(NSString *)value stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-    if (!s.length) return nil;
-    __block NSUInteger count = 0, end = 0;
-    [s enumerateSubstringsInRange:NSMakeRange(0, s.length) options:NSStringEnumerationByComposedCharacterSequences
-                       usingBlock:^(NSString *sub, NSRange range, NSRange enclosing, BOOL *stop) {
-        if (count == max) { *stop = YES; return; }
-        count++;
-        end = NSMaxRange(range);
-    }];
-    return end == s.length ? s : [s substringToIndex:end];
-}
-
-static BOOL XSFlag(id value) { return [value isKindOfClass:NSNumber.class] && [value boolValue]; }
-
-NSArray<NSDictionary *> *XSTweaksSanitized(id raw) {
-    if (![raw isKindOfClass:NSArray.class]) return @[];
-    NSMutableArray<NSDictionary *> *out = [NSMutableArray array];
-    NSUInteger looked = 0;
-    for (id item in (NSArray *)raw) {
-        if (out.count == 64 || ++looked > 1024) break;
-        if (![item isKindOfClass:NSDictionary.class]) continue;
-        NSDictionary *d = item;
-        NSString *name = XSCappedString(d[@"name"], 128);
-        if (!name) continue;
-        NSMutableDictionary *t = [@{@"name": name, @"converted": @(XSFlag(d[@"converted"])), @"off": @(XSFlag(d[@"off"]))}
-                                  mutableCopy];
-        NSString *version = XSCappedString(d[@"version"], 64);
-        NSString *author = XSCappedString(d[@"author"], 128);
-        NSString *summary = XSCappedString(d[@"summary"], 1000);
-        if (version) t[@"version"] = version;
-        if (author) t[@"author"] = author;
-        if (summary) t[@"summary"] = summary;
-        [out addObject:t];
-    }
-    return out;
-}
-
-NSUInteger XSTweaksInjectedCount(NSArray<NSDictionary *> *tweaks) {
-    NSUInteger n = 0;
-    for (NSDictionary *t in tweaks) if (!XSFlag(t[@"off"])) n++;
-    return n;
-}
-
-NSString *XSTweakVersionLine(NSDictionary *tweak) {
-    NSMutableArray *parts = [NSMutableArray array];
-    for (NSString *key in @[@"version", @"author"]) {
-        NSString *s = XSCappedString(tweak[key], 128);
-        if (s) [parts addObject:s];
-    }
-    return parts.count ? [parts componentsJoinedByString:@" · "] : @"—";
-}
-
 NSString *XSSettingsRowTitle(id root) {
     if (![root isKindOfClass:NSDictionary.class]) return nil;
     id items = root[@"PreferenceSpecifiers"];
