@@ -98,6 +98,16 @@ enum SnapshotRenderer {
                     render(bar().padding(20).frame(width: 600).background(Color(nsColor: .windowBackgroundColor)),
                            dark: dark, to: out.appendingPathComponent("pending-bar-failed-\(language)-\(scheme).png"))
                     model.refreshResults[entry.id] = nil
+                    // Its refreshes stopped: said, with « Reprendre » (mega review U2).
+                    var paused = sample.records
+                    if let r = paused.firstIndex(where: { $0.id == youtube.id }),
+                       let i = paused[r].installations.firstIndex(where: { $0.deviceID == phone.deviceID }) {
+                        paused[r].installations[i].refreshPaused = true
+                    }
+                    model.showSnapshot(records: paused, devices: sample.devices, live: sample.live, now: now)
+                    render(bar().padding(20).frame(width: 600).background(Color(nsColor: .windowBackgroundColor)),
+                           dark: dark, to: out.appendingPathComponent("pending-bar-paused-\(language)-\(scheme).png"))
+                    model.showSnapshot(records: sample.records, devices: sample.devices, live: sample.live, now: now)
                 }
                 render(LicencesView(onClose: {}).background(Color(nsColor: .windowBackgroundColor)),
                        dark: dark, to: out.appendingPathComponent("licences-\(language)-\(scheme).png"))
@@ -122,6 +132,14 @@ enum SnapshotRenderer {
                 render(InstallSummaryView(model: model, flow: flow)
                         .padding(20).frame(width: InstallWindow.width).background(Color(nsColor: .windowBackgroundColor)),
                        dark: dark, to: out.appendingPathComponent("install-summary-\(language)-\(scheme).png"))
+                // The summary with a tweak « À régler »: the footer says why Install waits (mega review U5).
+                let summary = sample.flow()
+                summary.reviewsSteps = false
+                summary.phase = .editing(error: nil)
+                model.showSnapshotFlow(summary)
+                render(InstallSheet(model: model, flow: summary, close: {})
+                    .frame(width: InstallWindow.width).background(Color(nsColor: .windowBackgroundColor)),
+                       dark: dark, to: out.appendingPathComponent("install-summary-blocked-\(language)-\(scheme).png"))
                 // Step ③ as the approved mockup (A): two devices, then one; empty (B); the kept
                 // downloads (C).
                 // « -shared »: AltList's download failed; its line is on Rocket's card, uYouPlus says « voir … ».
