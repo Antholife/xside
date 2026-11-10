@@ -398,9 +398,21 @@ extension AppModel {
     }
 
     /// « Retirer »: off this device's list, from its next signing (the files go once no device has it).
+    /// The copies downloaded (or reused from the kept downloads) for it that nothing left there
+    /// relies on go with it (device round 3, F3), signed with it or not.
     func removeTweak(_ id: String, for entry: AppEntry) async {
         guard let current = currentEntry(entry.id) else { return }
-        await changeTweaks(current) { uses in uses.removeAll { $0.id == id } }
+        let pool = current.record.tweaks ?? []
+        let listed = (current.installation.tweaks ?? []).compactMap { u in pool.first { $0.id == u.id } }
+        let freed = listed.first { $0.id == id }.map { removed in
+            Set(DependencyRows.copiesFreedByRemoving(removed, listed: listed,
+                                                     context: entryContext(current.record, id, on: current.installation.deviceID))
+                .map(\.id))
+        } ?? []
+        if !freed.isEmpty {
+            Self.logger.notice("tweak removed on \(current.installation.deviceID): \(freed.count) dependency copy(ies) no longer needed go too")
+        }
+        await changeTweaks(current) { uses in uses.removeAll { $0.id == id || freed.contains($0.id) } }
     }
 
     private func changeTweaks(_ entry: AppEntry, _ change: (inout [TweakUse]) -> Void) async {

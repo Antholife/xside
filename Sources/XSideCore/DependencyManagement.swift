@@ -263,3 +263,28 @@ extension DependencyRows {
         }
     }
 }
+
+extension DependencyRows {
+    /// « Retirer » `removed` from one installation (device round 3, F3): the copies of `listed`
+    /// (that installation's other packages) downloaded or reused from the kept downloads that it
+    /// asked for and that no package left there relies on (XSide's own copy serves them, or
+    /// nothing needs it). They go with it. A .deb the person added stays theirs. `context`: that
+    /// device's, its `others` replaced.
+    public static func copiesFreedByRemoving(_ removed: TweakPackage, listed: [TweakPackage],
+                                             context: TweakContext) -> [TweakPackage] {
+        let left = listed.filter { $0.id != removed.id }
+        let candidates = left.filter { p in
+            guard case .downloaded = p.origin else { return false }
+            return !dependents(of: p, among: [removed]).isEmpty
+        }
+        guard !candidates.isEmpty else { return [] }
+        let ids = Set(candidates.map(\.id))
+        var kept = Set<String>()
+        for p in left where !ids.contains(p.id) {
+            var c = context
+            c.others = left.filter { $0.id != p.id }
+            kept.formUnion(TweakClassifier.reliedOn(p, c).map(\.id))
+        }
+        return candidates.filter { !kept.contains($0.id) }
+    }
+}

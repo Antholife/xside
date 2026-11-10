@@ -187,6 +187,33 @@ struct DownloadUninstallTests {
         }
     }
 
+    // MARK: F3: « Utilisée par » is real use; signed or not, the file goes once no list has it
+
+    private static func retire(_ s: Setup, _ record: AppRecord, _ device: String, _ ids: Set<String>) async throws {
+        let list = await uses(s.lib, record, device).filter { !ids.contains($0.id) }
+        try await s.lib.setTweaks(list, recordID: record.id, deviceID: device)
+    }
+
+    @Test func aCopyRemovedWithItsTweakGoesWhetherOrNotTheAppWasSigned() async throws {
+        for signed in [false, true] {
+            try await withTemporaryDirectory("retire-\(signed)") { dir in
+                let s = try await Self.setup(dir, signed: signed)
+                // YouTube's tweak and its Cephei gone from both devices: Instagram still uses it.
+                try await Self.retire(s, s.youtube, "ipad", [s.ytTweak, s.ytCephei])
+                try await Self.retire(s, s.youtube, "iphone", [s.ytTweak, s.ytCephei])
+                #expect(FileManager.default.fileExists(atPath: s.file))
+                let usage = try #require(await s.lib.downloadUsage().first)
+                #expect(usage.apps == ["Instagram"])
+                #expect(usage.users.map(\.app) == ["Instagram"])
+                #expect(usage.installations.map(\.app) == ["Instagram"])
+                // Instagram's too: nothing lists it any more, the file goes.
+                try await Self.retire(s, s.instagram, "iphone", [s.igTweak, s.igCephei])
+                #expect(!FileManager.default.fileExists(atPath: s.file), "signed: \(signed)")
+                #expect(await s.lib.downloadUsage().isEmpty)
+            }
+        }
+    }
+
     // MARK: Which tweaks go off, and their group
 
     @Test func theTweaksLeftWithoutItAreTheOnesTurnedOff() {

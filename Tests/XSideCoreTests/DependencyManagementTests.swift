@@ -308,7 +308,7 @@ struct DependencyManagementTests {
                                   files: [.file("./usr/lib/libcephei.dylib", FakeIPA.dylibMachO(linking: [], padding: 64))],
                                   compression: "gz").write(to: debFile)
             _ = try await lib.addTweak(debFile, origin: .downloaded(repo: "chariz", url: "u", sha256: used.uppercased()),
-                                       recordID: rec.id, deviceIDs: [], runner: ProcessRunner(), now: Date())
+                                       recordID: rec.id, deviceIDs: ["d1"], runner: ProcessRunner(), now: Date())
 
             let usage = await lib.downloadUsage()
             #expect(usage.count == 3)
@@ -322,7 +322,7 @@ struct DependencyManagementTests {
             // Newest first within a package, packages by id.
             #expect(usage.map(\.version) == ["1.0", "1.17.1", "1.16"])
 
-            // One still in an app's pool is never deleted.
+            // One a device's list has is never deleted.
             #expect(await lib.removeUnusedDownload(sha256: used) == false)
             #expect(FileManager.default.fileExists(atPath: lib.root.appendingPathComponent("downloads/\(used).deb").path))
             #expect(await lib.removeUnusedDownload(sha256: "not-a-sha") == false)

@@ -229,6 +229,20 @@ public enum TweakClassifier {
         analyze(package, context).resolution
     }
 
+    /// The person's packages (not XSide's) this tweak relies on, with their own providers'.
+    public static func reliedOn(_ package: TweakPackage, _ context: TweakContext) -> [TweakPackage] {
+        let a = analyze(package, context)
+        var out: [TweakPackage] = []
+        var queue = a.providers.filter { $0.origin != .embedded }
+        while let p = queue.first {
+            queue.removeFirst()
+            guard !out.contains(where: { $0.id == p.id }), p.id != package.id, out.count < 64 else { continue }
+            out.append(p)
+            queue += analyze(p, context).providers.filter { $0.origin != .embedded }
+        }
+        return out
+    }
+
     /// The embedded packages the signing must copy for this tweak (also those its providers
     /// need), in `embedded` order.
     public static func providers(_ package: TweakPackage, _ context: TweakContext) -> [TweakPackage] {
@@ -547,14 +561,18 @@ public enum TweakClassifier {
             .filter { $0.package != "firmware" && !$0.unparseable }
     }
 
-    /// The copy that serves `dep` on this device: the person's before XSide's, but first one that
-    /// also satisfies what the device's other tweaks ask of the same package (an app loads only
-    /// one copy). `conflict`: what another tweak asks that the copy doesn't satisfy while another
-    /// copy at hand would (two versions needed at once).
+    /// The copy that serves `dep` on this device: a .deb the person added (« Ajouter son .deb… »)
+    /// first, then XSide's own, then a copy downloaded (or reused from the kept downloads) for a
+    /// tweak XSide's can't serve (device round 3, F2: once that tweak is gone, XSide's serves
+    /// again). Among those, the first that also satisfies what the device's other tweaks ask of
+    /// the same package (an app loads only one copy). `conflict`: what another tweak asks that
+    /// the copy doesn't satisfy while another copy at hand would (two versions needed at once).
     private static func provider(for dep: DebDependency, _ others: [TweakPackage], _ embedded: [TweakPackage],
                                  _ wanted: [DebDependency])
         -> (package: TweakPackage, embedded: Bool, conflict: DebDependency?)? {
-        let candidates = others.map { ($0, false) } + embedded.map { ($0, true) }
+        let isDownload = { (p: TweakPackage) -> Bool in if case .downloaded = p.origin { true } else { false } }
+        let candidates = others.filter { !isDownload($0) }.map { ($0, false) } + embedded.map { ($0, true) }
+            + others.filter(isDownload).map { ($0, false) }
         let fitting = candidates.filter { satisfies($0.0, dep) }
         guard let first = fitting.first else { return nil }
         let names = { (p: TweakPackage) in Set([p.packageID] + p.provides) }

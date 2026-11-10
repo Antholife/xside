@@ -642,8 +642,8 @@ public actor AppLibrary {
         collectUnusedDownloads(after: "app \(id.uuidString) removed")
     }
 
-    /// After an app, an installation or a device went: the kept downloads no app's pool uses any
-    /// more are deleted (device round 2, item 9). Never one still in a pool; not while a tweak is
+    /// After an app, an installation, a device or a tweak went: the kept downloads no device's
+    /// list uses any more are deleted (device round 2, item 9; round 3). Never one a list has; not while a tweak is
     /// being analysed (it may be reading one), the next removal or « Tout nettoyer » does it then.
     private func collectUnusedDownloads(after event: String) {
         guard tweaksInFlight == 0 else { return }
@@ -1213,6 +1213,8 @@ extension AppLibrary {
         // now (device round 3: no « Tout nettoyer » left to do it).
         if !Set(before.map(\.id)).isSubset(of: Set(wanted.map(\.id))) {
             collectUnusedTweaks(recordID: recordID)
+            // Signed with it or not: a download no list has any more goes (device round 3, F3).
+            collectUnusedDownloads(after: "a tweak taken off \(recordID.uuidString) on one device")
         }
         return true
     }
@@ -1518,6 +1520,9 @@ extension AppLibrary {
             let lists = Self.deviceLists(record)
             for p in pool {
                 guard case .downloaded(_, _, let raw) = p.origin else { continue }
+                // Real use only (device round 3, F3): a device's list has it. A copy kept in the
+                // pool for what an app was last signed with doesn't count.
+                guard lists.values.contains(where: { $0.contains { $0.id == p.id } }) else { continue }
                 let sha = raw.lowercased()
                 users[sha, default: []].insert(record.displayName)
                 for (deviceID, list) in lists where list.contains(where: { $0.id == p.id }) {
@@ -1618,14 +1623,19 @@ extension AppLibrary {
         return true
     }
 
-    /// Deletes a kept download no app's pool uses. False (nothing deleted) when one does, or
+    /// Deletes a kept download no device's list uses. False (nothing deleted) when one does, or
     /// for an id that isn't a SHA-256.
     @discardableResult
     public func removeUnusedDownload(sha256: String) -> Bool {
         let sha = sha256.lowercased()
         guard Self.isSHA256(sha) else { return false }
+        // Used: a device's list (or the one waiting for its first install) has a package from it.
+        // What an app was last signed with is in its own folder: the file isn't needed for it.
         let used = items.contains { r in
-            (r.tweaks ?? []).contains { if case .downloaded(_, _, let s) = $0.origin { s.lowercased() == sha } else { false } }
+            let ids = Set((r.tweaks ?? []).filter {
+                if case .downloaded(_, _, let s) = $0.origin { s.lowercased() == sha } else { false }
+            }.map(\.id))
+            return !ids.isEmpty && Self.deviceLists(r).values.contains { $0.contains { ids.contains($0.id) } }
         }
         guard !used else { return false }
         removeDownload(sha256: sha)
