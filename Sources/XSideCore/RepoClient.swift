@@ -105,9 +105,15 @@ public struct RepoClient: Sendable {
 
         // The index: checked against Release before anything reads it. A listed name the server
         // doesn't have (404) falls back to the next one.
+        // One over the cap is skipped too: tooLarge only when nothing else could be fetched.
         var fetched: (entry: IndexEntry, file: URL)?
+        var skippedTooLarge = false
         for (i, candidate) in listed.enumerated() {
-            guard candidate.size <= Self.maxIndexBytes else { throw RepoError.tooLarge }
+            guard candidate.size <= Self.maxIndexBytes else {
+                log.notice("\(repo.id): \(candidate.name) is \(candidate.size) bytes, over the cap, trying the next index")
+                skippedTooLarge = true
+                continue
+            }
             guard let indexURL = URL(string: candidate.name, relativeTo: folder)?.absoluteURL else { throw RepoError.noIndex }
             let file = scratch.appendingPathComponent("index-" + candidate.name)
             do {
@@ -118,7 +124,7 @@ public struct RepoClient: Sendable {
                 log.notice("\(repo.id): \(candidate.name) listed but missing (404), trying the next index")
             }
         }
-        guard let (entry, indexFile) = fetched else { throw RepoError.noIndex }
+        guard let (entry, indexFile) = fetched else { throw skippedTooLarge ? RepoError.tooLarge : RepoError.noIndex }
         let got = try Self.fileSize(indexFile)
         guard got == entry.size, try Self.hexDigest(of: indexFile, sha512: entry.sha512) == entry.hash else {
             log.error("\(repo.id): \(entry.name) hash check failed (\(got) bytes, Release says \(entry.size))")

@@ -438,6 +438,20 @@ struct RepoClientTests {
         }
     }
 
+    @Test func oversizedIndexFallsBackToTheNextListed() async throws {
+        try await withTemporaryDirectory("repo") { dir in
+            let fetcher = FakeFetcher()
+            let idx = Self.index(Self.threeVersions)
+            let huge = String(repeating: "a", count: 64)
+            let release = "SHA256:\n \(huge) \(32 * 1024 * 1024 + 1) Packages.xz\n \(Self.sha256(idx)) \(idx.count) Packages\n"
+            fetcher.serve(Self.chariz + "Release", Data(release.utf8))
+            fetcher.serve(Self.chariz + "Packages", idx)
+            let offer = try await client(fetcher, dir).offer(for: DebDependency(package: Self.cephei), preferredArchitecture: nil)
+            #expect(offer.version == "2.0")
+            #expect(fetcher.fetched.map(\.lastPathComponent) == ["Release", "Packages"])
+        }
+    }
+
     @Test func corruptVerifiedIndexIsNoIndex() async throws {
         try await withTemporaryDirectory("repo") { dir in
             // Hash-verified but not a gzip stream: unusable, not "too large".
