@@ -2900,7 +2900,9 @@ final class AppModel {
     /// seconds apart while ReportCrash may still be writing it. A crash found flags the row and is
     /// notified at once. One at a time per installation; stops at a job on the device or a device
     /// that can't be read (the quiet look, backed off, takes over).
-    func lookForCrashNow(_ key: JobKey, inUseSince: Date, reason: String) {
+    /// `duringUse`: false for the look that checks a crash fix (mega review K6): a crash then is
+    /// the relaunch's, raised as a launch crash, not as one in use.
+    func lookForCrashNow(_ key: JobKey, inUseSince: Date, duringUse: Bool = true, reason: String) {
         guard !crashFastLooks.contains(key), !removingDevices.contains(key.deviceID) else { return }
         crashFastLooks.insert(key)
         crashSchedule.boost(deviceID: key.deviceID, now: Date())
@@ -2911,8 +2913,10 @@ final class AppModel {
                 guard !isDeviceBusy(key.deviceID) else { break }
                 let result = await readCrash(key, since: inUseSince.addingTimeInterval(-CrashWatch.runSlack))
                 if case .found(let finding) = result {
+                    // The crash a fix answered, or one dismissed: not this run's, look again.
+                    if crashWatch.isSettled(recordID: key.recordID, deviceID: key.deviceID, fileName: finding.fileName) { continue }
                     Self.logger.notice("crash found at once (\(reason)) on \(key.deviceID): \(finding.diagnosis.summary)")
-                    crashFound(finding, key: key, inUseSince: inUseSince)
+                    crashFound(finding, key: key, inUseSince: duringUse ? inUseSince : nil)
                     break
                 }
                 if case .failed = result { break }
@@ -3001,8 +3005,12 @@ final class AppModel {
     func perform(_ action: CrashAction, on key: JobKey, allDevices: Bool = false, diagnosis: CrashDiagnosis? = nil) async -> Bool {
         guard let record = records.first(where: { $0.id == key.recordID }),
               let installation = record.installations.first(where: { $0.deviceID == key.deviceID }) else { return false }
-        // The crash it answers never comes back as a new one (the look after the fix reads it again).
-        changeCrashWatch { $0.fixStarted(recordID: key.recordID, deviceID: key.deviceID) }
+        // The crash it answers never comes back as a new one (the look after the fix reads it
+        // again): the flagged one, and the one diagnosed, flagged or not (mega review K6).
+        let diagnosed: String? = if case .found(let shown)? = crashChecks[key], diagnosis == nil || shown.diagnosis == diagnosis {
+            shown.fileName
+        } else { nil }
+        changeCrashWatch { $0.fixStarted(recordID: key.recordID, deviceID: key.deviceID, fileName: diagnosed) }
         switch action {
         case .reinstallWithoutXSide:
             if allDevices {
@@ -3078,7 +3086,7 @@ final class AppModel {
             Self.logger.notice("crash fix \(action.rawValue) on \(key.deviceID): done\(opened ? ", app opened" : "")")
             crashFixes[key] = .done(action, subject: subject, opened: opened)
             // Does it stay up now? A new crash replaces this line with its own box.
-            if opened { lookForCrashNow(key, inUseSince: started, reason: "after a crash fix") }
+            if opened { lookForCrashNow(key, inUseSince: started, duringUse: false, reason: "after a crash fix") }
         }
     }
 

@@ -104,6 +104,10 @@ public struct CrashWatch: Codable, Equatable, Sendable {
     /// Crash files a crash fix answered, by installation: never raised again (the look that
     /// checks the fix reaches back a minute and read it again). Optional: older files have none.
     private var answered: [String: Set<String>]?
+    /// Crash files already announced (notified), by installation, and when: one raised again
+    /// (cleared by a launch, then read again by the look that launch asks for) comes back without
+    /// a second notification (mega review K2). Optional: older files have none.
+    private var announced: [String: [String: Date]]?
 
     public init() {}
 
@@ -168,6 +172,9 @@ public struct CrashWatch: Codable, Equatable, Sendable {
         if let current = flags[key], current.fileName == fileName || current.crashDate > date { return false }
         flags[key] = CrashFlag(fileName: fileName, diagnosis: diagnosis, raisedAt: now,
                                duringUse: inUseSince == nil ? nil : true)
+        if announced?[key]?[fileName] != nil { return false }
+        announced = announced ?? [:]
+        announced?[key, default: [:]][fileName] = now
         return true
     }
 
@@ -209,12 +216,20 @@ public struct CrashWatch: Codable, Equatable, Sendable {
         dismissed[key, default: []].insert(flag.fileName)
     }
 
-    /// A crash fix starts for the installation's flagged crash: that file is answered.
-    public mutating func fixStarted(recordID: UUID, deviceID: String) {
+    /// A crash fix starts for the installation's flagged crash and for the crash it was diagnosed
+    /// from (`fileName`, which may not be flagged: mega review K6): those files are answered.
+    public mutating func fixStarted(recordID: UUID, deviceID: String, fileName: String? = nil) {
         let key = Self.key(recordID: recordID, deviceID: deviceID)
-        guard let file = flags[key]?.fileName else { return }
+        let files = [flags[key]?.fileName, fileName].compactMap { $0 }
+        guard !files.isEmpty else { return }
         answered = answered ?? [:]
-        answered?[key, default: []].insert(file)
+        answered?[key, default: []].formUnion(files)
+    }
+
+    /// The person dealt with that crash file (dismissed it, or a fix answered it): never raised again.
+    public func isSettled(recordID: UUID, deviceID: String, fileName: String) -> Bool {
+        let key = Self.key(recordID: recordID, deviceID: deviceID)
+        return dismissed[key]?.contains(fileName) == true || answered?[key]?.contains(fileName) == true
     }
 
     /// The app was seen running at `date` (a check-in, or still up after XSide opened it): a flag
@@ -255,6 +270,7 @@ public struct CrashWatch: Codable, Equatable, Sendable {
         lastLaunch[key] = nil
         reportedRuns?[key] = nil
         answered?[key] = nil
+        announced?[key] = nil
     }
 
     /// The device is gone from XSide.
@@ -265,6 +281,7 @@ public struct CrashWatch: Codable, Equatable, Sendable {
         for key in lastLaunch.keys where key.hasSuffix(suffix) { lastLaunch[key] = nil }
         reportedRuns = reportedRuns?.filter { !$0.key.hasSuffix(suffix) }
         answered = answered?.filter { !$0.key.hasSuffix(suffix) }
+        announced = announced?.filter { !$0.key.hasSuffix(suffix) }
         seen[deviceID] = nil
         lastScan[deviceID] = nil
     }
@@ -281,6 +298,11 @@ public struct CrashWatch: Codable, Equatable, Sendable {
         lastLaunch = lastLaunch.filter { keys.contains($0.key) }
         if let runs = reportedRuns { reportedRuns = runs.filter { keys.contains($0.key) } }
         if let a = answered { answered = a.filter { keys.contains($0.key) } }
+        if let a = announced {
+            announced = a.filter { keys.contains($0.key) }
+                .mapValues { $0.filter { now.timeIntervalSince($0.value) < Self.seenKeep } }
+                .filter { !$0.value.isEmpty }
+        }
     }
 }
 

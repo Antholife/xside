@@ -132,6 +132,47 @@ import Foundation
         #expect(!r16)
     }
 
+    /// Mega review K2: a crash announced, then cleared by the next launch's check-in, read again
+    /// by the look that launch's "previous run crashed" asks for: the notice comes back (now in
+    /// use) without a second notification.
+    @Test func aCrashAnnouncedOnceIsNeverAnnouncedTwice() {
+        var w = CrashWatch()
+        let crash = t0.addingTimeInterval(60)
+        let first = raise(&w, "Demo-1.ips", crashAt: crash)
+        #expect(first)
+        let cleared = w.launchSeen(recordID: record, deviceID: device, at: crash.addingTimeInterval(90))
+        #expect(cleared)
+        #expect(w.flag(recordID: record, deviceID: device) == nil)
+        let again = w.raise(recordID: record, deviceID: device, fileName: "Demo-1.ips", diagnosis: diagnosis(at: crash),
+                            installedAt: t0, now: crash.addingTimeInterval(95), inUseSince: crash.addingTimeInterval(-30))
+        #expect(!again)
+        #expect(w.flag(recordID: record, deviceID: device)?.duringUse == true)
+        // Another file is still news.
+        let other = w.raise(recordID: record, deviceID: device, fileName: "Demo-2.ips", diagnosis: diagnosis(at: crash.addingTimeInterval(200)),
+                            installedAt: t0, now: crash.addingTimeInterval(230), inUseSince: crash.addingTimeInterval(150))
+        #expect(other)
+        // Remembered with the read files: forgotten with its installation and after `seenKeep`.
+        w.prune(keeping: [CrashWatch.key(recordID: record, deviceID: device)], now: crash.addingTimeInterval(CrashWatch.seenKeep + 300))
+        w.forget(recordID: record, deviceID: device)
+        let afresh = raise(&w, "Demo-1.ips", crashAt: crash)
+        #expect(afresh)
+    }
+
+    /// Mega review K6: the crash the fix answers is the diagnosed one, flagged or not; the look
+    /// that checks the fix passes over it (and dismissed ones) to a newer crash.
+    @Test func theDiagnosedCrashIsAnsweredFlaggedOrNot() {
+        var w = CrashWatch()
+        w.fixStarted(recordID: record, deviceID: device, fileName: "Demo-9.ips")
+        #expect(w.isSettled(recordID: record, deviceID: device, fileName: "Demo-9.ips"))
+        let answered = raise(&w, "Demo-9.ips", crashAt: t0.addingTimeInterval(60))
+        #expect(!answered)
+        #expect(!w.isSettled(recordID: record, deviceID: device, fileName: "Demo-10.ips"))
+        let newer = raise(&w, "Demo-10.ips", crashAt: t0.addingTimeInterval(120))
+        #expect(newer)
+        w.dismiss(recordID: record, deviceID: device)
+        #expect(w.isSettled(recordID: record, deviceID: device, fileName: "Demo-10.ips"))
+    }
+
     @Test func eachLookStartsWhereTheLastOneDid() {
         var w = CrashWatch()
         let first = w.scanSince(deviceID: device, now: t0)
