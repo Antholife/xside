@@ -22,7 +22,8 @@
 //  - gives back two APIs that iOS 27 turns off for apps built with its SDK (the SDK raise): UIApplication
 //    statusBarOrientation (a no-op: now the scene's orientation, which old games lay out from) and
 //    UIAccelerometer ("no longer available": now fed by CoreMotion, same values in g, to the delegate's
-//    accelerometer:didAccelerate:). Boost 2 needed both.
+//    accelerometer:didAccelerate:). Boost 2 needed both. UIAlertView too ("no longer available" on
+//    init): a stand-in with the same API and delegate calls shows a UIAlertController on the scene.
 //  - UIScreen.mainScreen is the scene's screen once it connects: on the Duo it otherwise stays the
 //    outer screen while the app shows on the inner one (Boost 2 sized itself to it: a small picture).
 //  - on a screen other than iOS's main one (the Duo's inner screen), accelerometer x/y are turned a
@@ -265,6 +266,206 @@ static BOOL XSHook(Class c, SEL sel, IMP repl, IMP *orig) {
     if (class_addMethod(c, sel, repl, method_getTypeEncoding(m))) *orig = current;
     else *orig = method_setImplementation(m, repl);
     return YES;
+}
+
+#pragma mark - UIAlertView, which iOS 27 also turns off for its SDK
+
+// UIAlertView throws on init for an app built with SDK 27 ("no longer available"; Boost 2's
+// calibrate button). Its methods are replaced by a stand-in that keeps the same API and delegate
+// calls and shows a UIAlertController on the scene: title, message, buttons in order (the cancel
+// one with the cancel style), text fields for the input styles.
+@interface XSAlertState : NSObject
+@property (nonatomic, copy) NSString *title, *message;
+@property (nonatomic, weak) id delegate;
+@property (nonatomic, strong) NSMutableArray<NSString *> *buttons;
+@property (nonatomic) NSInteger cancelIndex;
+@property (nonatomic) NSInteger style;            // UIAlertViewStyle
+@property (nonatomic, strong) NSMutableArray<UITextField *> *fields;
+@property (nonatomic, strong) UIAlertController *shown;
+@end
+@implementation XSAlertState
+@end
+
+static const void *XSAlertKey = &XSAlertKey;
+static NSMutableSet *gAlertsShown;                // kept alive while on screen, like UIAlertView did
+
+static XSAlertState *XSAlert(id self) {
+    XSAlertState *s = objc_getAssociatedObject(self, XSAlertKey);
+    if (!s) {
+        s = [XSAlertState new];
+        s.buttons = [NSMutableArray array];
+        s.fields = [NSMutableArray array];
+        s.cancelIndex = -1;
+        objc_setAssociatedObject(self, XSAlertKey, s, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    return s;
+}
+
+static void XSAlertTell(id alert, NSString *selName, NSInteger index, BOOL withIndex) {
+    id d = XSAlert(alert).delegate;
+    SEL sel = NSSelectorFromString(selName);
+    if (![d respondsToSelector:sel]) return;
+    if (withIndex) ((void (*)(id, SEL, id, NSInteger))objc_msgSend)(d, sel, alert, index);
+    else ((void (*)(id, SEL, id))objc_msgSend)(d, sel, alert);
+}
+
+static id h_alertInitWithFrame(id self, SEL _cmd, CGRect frame) {
+    IMP viewInit = class_getMethodImplementation(UIView.class, @selector(initWithFrame:));
+    self = ((id (*)(id, SEL, CGRect))viewInit)(self, _cmd, frame);
+    if (self) XSAlert(self);
+    return self;
+}
+static id h_alertInit(id self, SEL _cmd) { return h_alertInitWithFrame(self, @selector(initWithFrame:), CGRectZero); }
+
+static NSInteger h_alertAddButton(id self, SEL _cmd, NSString *title) {
+    XSAlertState *s = XSAlert(self);
+    [s.buttons addObject:title ?: @""];
+    return (NSInteger)s.buttons.count - 1;
+}
+
+// Declared variadic like UIAlertView's: callers pass otherButtonTitles... as variadic arguments.
+static id h_alertInitWithTitle(id self, SEL _cmd, NSString *title, NSString *message, id delegate, NSString *cancel, NSString *other, ...) {
+    self = h_alertInitWithFrame(self, @selector(initWithFrame:), CGRectZero);
+    if (!self) return nil;
+    XSAlertState *s = XSAlert(self);
+    s.title = title; s.message = message; s.delegate = delegate;
+    if (cancel) s.cancelIndex = h_alertAddButton(self, NULL, cancel);
+    if (other) {
+        h_alertAddButton(self, NULL, other);
+        va_list ap;
+        va_start(ap, other);
+        NSString *more;
+        while ((more = va_arg(ap, NSString *))) h_alertAddButton(self, NULL, more);
+        va_end(ap);
+    }
+    return self;
+}
+
+static NSString *h_alertTitle(id self, SEL _cmd) { return XSAlert(self).title; }
+static void h_alertSetTitle(id self, SEL _cmd, NSString *v) { XSAlert(self).title = v; }
+static NSString *h_alertMessage(id self, SEL _cmd) { return XSAlert(self).message; }
+static void h_alertSetMessage(id self, SEL _cmd, NSString *v) { XSAlert(self).message = v; }
+static id h_alertDelegate(id self, SEL _cmd) { return XSAlert(self).delegate; }
+static void h_alertSetDelegate(id self, SEL _cmd, id v) { XSAlert(self).delegate = v; }
+static NSInteger h_alertNumberOfButtons(id self, SEL _cmd) { return (NSInteger)XSAlert(self).buttons.count; }
+static NSString *h_alertButtonTitle(id self, SEL _cmd, NSInteger i) {
+    NSArray *b = XSAlert(self).buttons;
+    return i >= 0 && i < (NSInteger)b.count ? b[i] : nil;
+}
+static NSInteger h_alertCancelIndex(id self, SEL _cmd) { return XSAlert(self).cancelIndex; }
+static void h_alertSetCancelIndex(id self, SEL _cmd, NSInteger i) { XSAlert(self).cancelIndex = i; }
+static NSInteger h_alertFirstOther(id self, SEL _cmd) {
+    XSAlertState *s = XSAlert(self);
+    for (NSInteger i = 0; i < (NSInteger)s.buttons.count; i++) if (i != s.cancelIndex) return i;
+    return -1;
+}
+static BOOL h_alertVisible(id self, SEL _cmd) { return XSAlert(self).shown != nil; }
+static NSInteger h_alertStyle(id self, SEL _cmd) { return XSAlert(self).style; }
+static void h_alertSetStyle(id self, SEL _cmd, NSInteger style) {
+    XSAlertState *s = XSAlert(self);
+    s.style = style;
+    [s.fields removeAllObjects];
+    NSInteger count = style == 3 ? 2 : (style == 1 || style == 2) ? 1 : 0;   // login+password / secure / plain
+    for (NSInteger i = 0; i < count; i++) {
+        UITextField *f = [UITextField new];
+        f.secureTextEntry = style == 1 || (style == 3 && i == 1);
+        [s.fields addObject:f];
+    }
+}
+static UITextField *h_alertTextField(id self, SEL _cmd, NSInteger i) {
+    NSArray *f = XSAlert(self).fields;
+    UIAlertController *shown = XSAlert(self).shown;
+    if (shown && i >= 0 && i < (NSInteger)shown.textFields.count) return shown.textFields[i];
+    if (i >= 0 && i < (NSInteger)f.count) return f[i];
+    [NSException raise:NSRangeException format:@"textFieldAtIndex:%ld is outside the alert's text fields", (long)i];
+    return nil;
+}
+
+static void XSAlertFinish(id alert, NSInteger index) {
+    XSAlertTell(alert, @"alertView:willDismissWithButtonIndex:", index, YES);
+    XSAlert(alert).shown = nil;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        XSAlertTell(alert, @"alertView:didDismissWithButtonIndex:", index, YES);
+        [gAlertsShown removeObject:alert];
+    });
+}
+
+static UIViewController *XSTopController(void) {
+    UIWindowScene *scene = gScene;
+    UIWindow *win = nil;
+    for (UIWindow *w in scene.windows) if (w.isKeyWindow) { win = w; break; }
+    if (!win) win = scene.windows.firstObject;
+    UIViewController *vc = win.rootViewController;
+    while (vc.presentedViewController && !vc.presentedViewController.isBeingDismissed) vc = vc.presentedViewController;
+    return vc;
+}
+
+static void h_alertShow(id self, SEL _cmd) {
+    XSAlertState *s = XSAlert(self);
+    if (s.shown) return;
+    UIViewController *top = XSTopController();
+    if (!top) { XSLOG("alert: nowhere to show it"); return; }
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:s.title message:s.message preferredStyle:UIAlertControllerStyleAlert];
+    for (UITextField *model in s.fields) {
+        [ac addTextFieldWithConfigurationHandler:^(UITextField *f) {
+            f.text = model.text;
+            f.placeholder = model.placeholder;
+            f.secureTextEntry = model.secureTextEntry;
+            f.keyboardType = model.keyboardType;
+            f.autocapitalizationType = model.autocapitalizationType;
+            f.autocorrectionType = model.autocorrectionType;
+        }];
+    }
+    __weak id weakSelf = self;
+    [s.buttons enumerateObjectsUsingBlock:^(NSString *title, NSUInteger i, BOOL *stop) {
+        UIAlertActionStyle style = (NSInteger)i == s.cancelIndex ? UIAlertActionStyleCancel : UIAlertActionStyleDefault;
+        [ac addAction:[UIAlertAction actionWithTitle:title style:style handler:^(UIAlertAction *a) {
+            id alert = weakSelf;
+            if (!alert) return;
+            XSAlertTell(alert, @"alertView:clickedButtonAtIndex:", (NSInteger)i, YES);
+            XSAlertFinish(alert, (NSInteger)i);
+        }]];
+    }];
+    if (s.buttons.count == 0) XSLOG("alert: shown without buttons");
+    if (!gAlertsShown) gAlertsShown = [NSMutableSet set];
+    [gAlertsShown addObject:self];
+    s.shown = ac;
+    XSAlertTell(self, @"willPresentAlertView:", 0, NO);
+    [top presentViewController:ac animated:YES completion:^{
+        id alert = weakSelf;
+        if (alert) XSAlertTell(alert, @"didPresentAlertView:", 0, NO);
+    }];
+    XSLOG("alert shown (UIAlertView stand-in, %lu buttons)", (unsigned long)s.buttons.count);
+}
+
+static void h_alertDismiss(id self, SEL _cmd, NSInteger index, BOOL animated) {
+    UIAlertController *ac = XSAlert(self).shown;
+    if (!ac) return;
+    XSAlertFinish(self, index);
+    [ac.presentingViewController dismissViewControllerAnimated:animated completion:nil];
+}
+
+static void XSAlertViewInstall(Class c) {
+    struct { const char *sel; IMP imp; const char *types; } m[] = {
+        {"init", (IMP)h_alertInit, "@@:"},
+        {"initWithFrame:", (IMP)h_alertInitWithFrame, "@@:{CGRect={CGPoint=dd}{CGSize=dd}}"},
+        {"initWithTitle:message:delegate:cancelButtonTitle:otherButtonTitles:", (IMP)h_alertInitWithTitle, "@@:@@@@@"},
+        {"title", (IMP)h_alertTitle, "@@:"}, {"setTitle:", (IMP)h_alertSetTitle, "v@:@"},
+        {"message", (IMP)h_alertMessage, "@@:"}, {"setMessage:", (IMP)h_alertSetMessage, "v@:@"},
+        {"delegate", (IMP)h_alertDelegate, "@@:"}, {"setDelegate:", (IMP)h_alertSetDelegate, "v@:@"},
+        {"addButtonWithTitle:", (IMP)h_alertAddButton, "q@:@"},
+        {"numberOfButtons", (IMP)h_alertNumberOfButtons, "q@:"},
+        {"buttonTitleAtIndex:", (IMP)h_alertButtonTitle, "@@:q"},
+        {"cancelButtonIndex", (IMP)h_alertCancelIndex, "q@:"}, {"setCancelButtonIndex:", (IMP)h_alertSetCancelIndex, "v@:q"},
+        {"firstOtherButtonIndex", (IMP)h_alertFirstOther, "q@:"},
+        {"isVisible", (IMP)h_alertVisible, "B@:"}, {"visible", (IMP)h_alertVisible, "B@:"},
+        {"alertViewStyle", (IMP)h_alertStyle, "q@:"}, {"setAlertViewStyle:", (IMP)h_alertSetStyle, "v@:q"},
+        {"textFieldAtIndex:", (IMP)h_alertTextField, "@@:q"},
+        {"show", (IMP)h_alertShow, "v@:"},
+        {"dismissWithClickedButtonIndex:animated:", (IMP)h_alertDismiss, "v@:qB"},
+    };
+    for (size_t i = 0; i < sizeof m / sizeof m[0]; i++) class_replaceMethod(c, sel_registerName(m[i].sel), m[i].imp, m[i].types);
+    XSLOG("UIAlertView: stand-in installed");
 }
 
 #pragma mark - Legacy lifecycle forwarding without duplicates
@@ -538,6 +739,8 @@ __attribute__((constructor)) static void XSDuoLegacyInit(void) {
                 XSHook(accel, @selector(setDelegate:), (IMP)h_accelSetDelegate, &oAccelSetDelegate);
                 XSHook(accel, NSSelectorFromString(@"setUpdateInterval:"), (IMP)h_accelSetInterval, &oAccelSetInterval);
             }
+            Class alertView = NSClassFromString(@"UIAlertView");
+            if (alertView) XSAlertViewInstall(alertView);
             gActive = YES;
             XSLOG("loaded");
         } @catch (NSException *e) {
