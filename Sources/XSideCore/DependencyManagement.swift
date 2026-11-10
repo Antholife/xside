@@ -101,11 +101,15 @@ public struct DownloadUsage: Equatable, Sendable, Identifiable {
     /// Per app (same order), the tweaks that need it and where each is on.
     public var users: [DownloadUser] = []
 
+    /// Each app × device whose list has it, by device then app: the uninstall sheet's lines.
+    public var installations: [DownloadInstallation] = []
+
     public var id: String { sha256 }
     public var isUsed: Bool { !apps.isEmpty }
 
     public init(sha256: String, packageID: String, version: String, repo: String, repoName: String, size: Int64,
-                downloadedAt: Date, apps: [String], users: [DownloadUser] = []) {
+                downloadedAt: Date, apps: [String], users: [DownloadUser] = [], installations: [DownloadInstallation] = []) {
+        self.installations = installations
         self.sha256 = sha256
         self.packageID = packageID
         self.version = version
@@ -209,4 +213,53 @@ public struct DownloadUser: Equatable, Sendable {
 extension DownloadUsage {
     /// « 3 tweaks » of « … dans 2 apps ».
     public var tweakCount: Int { users.reduce(0) { $0 + $1.tweaks.count } }
+}
+
+/// One app × device whose list has a kept download (« Désinstaller… »), with the tweaks enabled
+/// there that need it.
+public struct DownloadInstallation: Equatable, Hashable, Sendable {
+    public struct Key: Hashable, Sendable {
+        public let recordID: UUID
+        public let deviceID: String
+
+        public init(recordID: UUID, deviceID: String) {
+            self.recordID = recordID
+            self.deviceID = deviceID
+        }
+    }
+
+    public let recordID: UUID
+    public let app: String
+    public let deviceID: String
+    public let tweaks: [String]
+
+    public var key: Key { Key(recordID: recordID, deviceID: deviceID) }
+
+    public init(recordID: UUID, app: String, deviceID: String, tweaks: [String]) {
+        self.recordID = recordID
+        self.app = app
+        self.deviceID = deviceID
+        self.tweaks = tweaks
+    }
+}
+
+extension DependencyRows {
+    /// On one device, the tweaks of `enabled` that `removed` (packages of one download, among
+    /// `enabled`) leaves without what they need: ❌ or missing it once they're gone. Those are
+    /// turned off there by « Désinstaller… ». One another version or package still satisfies
+    /// stays on. `context`: that device's, its `others` replaced.
+    public static func disabledByUninstalling(_ removed: [TweakPackage], enabled: [TweakPackage],
+                                              context: TweakContext) -> [TweakPackage] {
+        let gone = Set(removed.map(\.id))
+        let names = Set(removed.flatMap { [$0.packageID] + $0.provides })
+        let left = enabled.filter { !gone.contains($0.id) }
+        let needing = Set(removed.flatMap { dependents(of: $0, among: left) }.map(\.id))
+        return left.filter { p in
+            guard needing.contains(p.id) else { return false }
+            var after = context
+            after.others = left.filter { $0.id != p.id }
+            if case .incompatible = TweakClassifier.verdict(p, after) { return true }
+            return !names.isDisjoint(with: missing(p, after))
+        }
+    }
 }

@@ -19,9 +19,13 @@ public enum TweakGroups {
         public var signedAnyway: Bool
         /// The `Depends` packages missing there.
         public var missingDependencies: [String]
+        /// Turned off there because the person uninstalled its dependency (`TweakUse.removedDependency`):
+        /// while off, never « À régler » (a deliberate removal blocks nothing).
+        public var dependencyRemoved: Bool
 
         public init(verdict: TweakVerdict?, isOn: Bool, isForced: Bool, signedAnyway: Bool = false,
-                    missingDependencies: [String] = []) {
+                    missingDependencies: [String] = [], dependencyRemoved: Bool = false) {
+            self.dependencyRemoved = dependencyRemoved
             self.verdict = verdict
             self.isOn = isOn
             self.isForced = isForced
@@ -44,6 +48,10 @@ public enum TweakGroups {
     public static func group(_ devices: [DeviceState]) -> Group {
         var missingWhereOn = false, settleable = false, usable = false, usableOn = false
         for d in devices {
+            if d.dependencyRemoved && !d.isOn {
+                usable = true // off by choice, like a switch turned off
+                continue
+            }
             if !d.missingDependencies.isEmpty && d.isOn { missingWhereOn = true }
             let works: Bool
             switch d.verdict {

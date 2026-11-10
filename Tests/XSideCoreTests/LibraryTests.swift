@@ -769,12 +769,13 @@ struct LibraryTweakTests {
         #expect(try await record(lib).tweaks == [p])
         #expect(exists(lib.tweakDirectory(recordID: rec.id, id: p.id)))
         // No folder is deleted while any analysis runs (it may be keeping one it found stored):
-        // the dropped one waits for the next collection.
-        _ = try await lib.setTweaks([], recordID: rec.id, deviceID: "A")
+        // the dropped one waits for the next collection. (Taking it off the list collects at
+        // once since device round 3: done while the analysis is held.)
         let other = GateRunner()
         async let q = lib.addTweak(try await tweakDeb(in: tmp, version: "1.0", payload: "q", compression: "bz2"),
                                    recordID: rec.id, deviceIDs: ["B"], runner: other, now: tweakNow)
         await other.waitUntilHeld()
+        _ = try await lib.setTweaks([], recordID: rec.id, deviceID: "A")
         _ = try await lib.recordSigning(signing("B", uses: [], signed: []), for: rec.id, requireExisting: true)
         #expect(try await record(lib).tweaks?.contains(p) == false)
         #expect(exists(lib.tweakDirectory(recordID: rec.id, id: p.id)))

@@ -10,11 +10,16 @@ public struct TweakUse: Codable, Equatable, Sendable {
     public var enabled: Bool
     /// « Injecter quand même »: the person overrode an overridable ❌. nil: not overridden.
     public var force: Bool?
+    /// Turned off because the person uninstalled this dependency here (Settings > Tweaks,
+    /// « Désinstaller… »): its name, for « Désactivé : tu as retiré … ». Such a tweak isn't
+    /// « À régler »; turning it back on clears it (`AppLibrary.setTweaks`). nil: not that.
+    public var removedDependency: String?
 
-    public init(id: String, enabled: Bool = true, force: Bool? = nil) {
+    public init(id: String, enabled: Bool = true, force: Bool? = nil, removedDependency: String? = nil) {
         self.id = id
         self.enabled = enabled
         self.force = force
+        self.removedDependency = removedDependency
     }
 }
 
@@ -1186,16 +1191,29 @@ extension AppLibrary {
     @discardableResult
     public func setTweaks(_ uses: [TweakUse], recordID: UUID, deviceID: String) throws -> Bool {
         let index = try indexOf(recordID)
-        let wanted = Self.ordered(uses, pool: items[index].tweaks ?? [])
+        // A tweak turned back on no longer says why it was off.
+        let wanted = Self.ordered(uses, pool: items[index].tweaks ?? []).map { u in
+            var u = u
+            if u.enabled { u.removedDependency = nil }
+            return u
+        }
         let previous = items
+        let before: [TweakUse]
         if let i = items[index].installations.firstIndex(where: { $0.deviceID == deviceID }) {
-            guard (items[index].installations[i].tweaks ?? []) != wanted else { return false }
+            before = items[index].installations[i].tweaks ?? []
+            guard before != wanted else { return false }
             items[index].installations[i].tweaks = wanted
         } else {
-            guard (items[index].pendingTweakUses?[deviceID] ?? []) != wanted else { return false }
+            before = items[index].pendingTweakUses?[deviceID] ?? []
+            guard before != wanted else { return false }
             setPending(wanted, deviceID: deviceID, at: index)
         }
         do { try save() } catch { items = previous; throw error }
+        // A tweak removed from the list: its files, and a download no one uses any more, may go
+        // now (device round 3: no « Tout nettoyer » left to do it).
+        if !Set(before.map(\.id)).isSubset(of: Set(wanted.map(\.id))) {
+            collectUnusedTweaks(recordID: recordID)
+        }
         return true
     }
 
@@ -1238,6 +1256,12 @@ extension AppLibrary {
                 Self.logger.error("tweaks of \(recordID.uuidString): unused ones not dropped: \(error.localizedDescription)")
                 return
             }
+            // A tweak gone from the app, not only the app: a download it was the last to use goes too.
+            let fromDownloads = pool.contains { p in
+                guard dropped.contains(p.id), case .downloaded = p.origin else { return false }
+                return true
+            }
+            if fromDownloads { collectUnusedDownloads(after: "tweaks of \(recordID.uuidString) dropped") }
         }
         let keep = used.union((items[index].tweaks ?? []).map(\.id)).union(offeredTweaks[recordID] ?? [])
         let folder = tweaksFolder(recordID)
@@ -1488,14 +1512,26 @@ extension AppLibrary {
     public func downloadUsage() -> [DownloadUsage] {
         var users: [String: Set<String>] = [:]
         var detail: [String: [DownloadUser]] = [:]
+        var installations: [String: [DownloadInstallation]] = [:]
         for record in items {
             let pool = record.tweaks ?? []
-            var lists = record.pendingTweakUses ?? [:]
-            for i in record.installations { if let t = i.tweaks { lists[i.deviceID] = t } }
+            let lists = Self.deviceLists(record)
             for p in pool {
                 guard case .downloaded(_, _, let raw) = p.origin else { continue }
                 let sha = raw.lowercased()
                 users[sha, default: []].insert(record.displayName)
+                for (deviceID, list) in lists where list.contains(where: { $0.id == p.id }) {
+                    let on = Set(list.filter(\.enabled).map(\.id))
+                    let names = DependencyRows.dependents(of: p, among: pool).filter { on.contains($0.id) }.map(\.name)
+                    if let k = installations[sha]?.firstIndex(where: { $0.recordID == record.id && $0.deviceID == deviceID }) {
+                        let had = installations[sha]![k]
+                        installations[sha]![k] = DownloadInstallation(recordID: record.id, app: record.displayName, deviceID: deviceID,
+                                                                      tweaks: had.tweaks + names.filter { !had.tweaks.contains($0) })
+                    } else {
+                        installations[sha, default: []].append(DownloadInstallation(recordID: record.id, app: record.displayName,
+                                                                                    deviceID: deviceID, tweaks: names))
+                    }
+                }
                 let tweaks = DependencyRows.dependents(of: p, among: pool).map { t in
                     DownloadUser.Tweak(name: t.name, deviceIDs: lists.filter { $0.value.contains { $0.id == t.id && $0.enabled } }
                                         .map(\.key).sorted())
@@ -1511,12 +1547,75 @@ extension AppLibrary {
             return DownloadUsage(sha256: sha, packageID: e.packageID, version: e.version, repo: e.repo,
                                  repoName: DependencySources.name(forRepoID: e.repo),
                                  size: stamp.size, downloadedAt: e.downloadedAt, apps: (users[sha] ?? []).sorted(),
-                                 users: (detail[sha] ?? []).sorted { $0.app < $1.app })
+                                 users: (detail[sha] ?? []).sorted { $0.app < $1.app },
+                                 installations: (installations[sha] ?? []).sorted { ($0.deviceID, $0.app) < ($1.deviceID, $1.app) })
         }
         .sorted {
             $0.packageID != $1.packageID ? $0.packageID < $1.packageID
                 : DebVersion.compare($0.version, $1.version) == .orderedDescending
         }
+    }
+
+    /// Every device's tweak list: its installation's, else the one waiting for its first install.
+    static func deviceLists(_ record: AppRecord) -> [String: [TweakUse]] {
+        var lists = record.pendingTweakUses ?? [:]
+        for i in record.installations { if let t = i.tweaks { lists[i.deviceID] = t } }
+        return lists
+    }
+
+    /// « Désinstaller… » (Settings > Tweaks, device round 3): takes the packages stored from this
+    /// download off the lists of `targets` (app × device), from their next signing, and turns off
+    /// there the tweaks of `disabling` (`DependencyRows.disabledByUninstalling`), saying why
+    /// (`TweakUse.removedDependency` = `name`): a deliberate removal is never « À régler ». One
+    /// save, all or nothing. Once no installation (nor a device waiting for its first install)
+    /// lists a package from it, the file is deleted (it only feeds new copies: what an app was
+    /// signed with stays in its own folder). Never while a tweak is being analysed. Returns true
+    /// when the file was deleted.
+    @discardableResult
+    public func uninstallDownload(sha256: String, from targets: Set<DownloadInstallation.Key>,
+                                  disabling: [DownloadInstallation.Key: Set<String>], name: String) throws -> Bool {
+        let sha = sha256.lowercased()
+        guard Self.isSHA256(sha) else { return false }
+        func fromIt(_ p: TweakPackage) -> Bool {
+            if case .downloaded(_, _, let s) = p.origin { s.lowercased() == sha } else { false }
+        }
+        let previous = items
+        var touched: [UUID] = []
+        for index in items.indices {
+            let ids = Set((items[index].tweaks ?? []).filter(fromIt).map(\.id))
+            guard !ids.isEmpty else { continue }
+            let recordID = items[index].id
+            func change(_ uses: [TweakUse], _ key: DownloadInstallation.Key) -> [TweakUse]? {
+                guard uses.contains(where: { ids.contains($0.id) }) else { return nil }
+                let off = disabling[key] ?? []
+                return uses.filter { !ids.contains($0.id) }.map { u in
+                    guard off.contains(u.id), u.enabled else { return u }
+                    return TweakUse(id: u.id, enabled: false, force: nil, removedDependency: name)
+                }
+            }
+            for key in targets where key.recordID == recordID {
+                if let i = items[index].installations.firstIndex(where: { $0.deviceID == key.deviceID }) {
+                    guard let uses = items[index].installations[i].tweaks, let changed = change(uses, key) else { continue }
+                    items[index].installations[i].tweaks = changed
+                } else {
+                    guard let uses = items[index].pendingTweakUses?[key.deviceID], let changed = change(uses, key) else { continue }
+                    setPending(changed, deviceID: key.deviceID, at: index)
+                }
+                if !touched.contains(recordID) { touched.append(recordID) }
+            }
+        }
+        guard !touched.isEmpty else { return false }
+        do { try save() } catch { items = previous; throw error }
+        Self.logger.notice("download cache: \(sha).deb uninstalled from \(targets.count) installation(s)")
+        for id in touched { collectUnusedTweaks(recordID: id) }
+        let stillListed = items.contains { r in
+            let ids = Set((r.tweaks ?? []).filter(fromIt).map(\.id))
+            return !ids.isEmpty && Self.deviceLists(r).values.contains { $0.contains { ids.contains($0.id) } }
+        }
+        guard !stillListed, tweaksInFlight == 0, Self.isRegularFile(downloadURL(sha)) else { return false }
+        removeDownload(sha256: sha)
+        Self.logger.notice("download cache: \(sha).deb deleted, no installation uses it any more")
+        return true
     }
 
     /// Deletes a kept download no app's pool uses. False (nothing deleted) when one does, or
