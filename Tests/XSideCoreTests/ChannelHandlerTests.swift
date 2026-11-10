@@ -176,6 +176,32 @@ import Foundation
         #expect(ChannelHandler.handle(.refresh, installation: i, now: now, reminder: true) == (.accepted, .refreshRequested))
     }
 
+    /// Mega review C4: the refresh the phone asked for failed, so the phone may ask once more at
+    /// once; that retry counts like a request, and a success or a stop on the Mac gives none.
+    @Test func aFailedPhoneRefreshAllowsOneRetry() {
+        var i = installation()
+        i.lastDeviceRefreshRequest = now.addingTimeInterval(-5 * 60)
+        i.lastRefreshOutcome = RefreshOutcome(at: now.addingTimeInterval(-4 * 60), succeeded: false, reasonKey: "k")
+        #expect(ChannelHandler.handle(.refresh, installation: i, now: now, reminder: true) == (.accepted, .refreshRequested))
+        #expect(ChannelHandler.isPhoneRetry(i, now: now))
+        var retried = i
+        retried.lastDeviceRefreshWasRetry = true
+        #expect(ChannelHandler.handle(.refresh, installation: retried, now: now, reminder: true) == (.busy, .none))
+        var succeeded = i
+        succeeded.lastRefreshOutcome = RefreshOutcome(at: now.addingTimeInterval(-4 * 60), succeeded: true)
+        #expect(ChannelHandler.handle(.refresh, installation: succeeded, now: now, reminder: true) == (.busy, .none))
+        var stopped = i
+        stopped.lastRefreshOutcome = RefreshOutcome(at: now.addingTimeInterval(-4 * 60), succeeded: false, reasonKey: "cancelled")
+        #expect(ChannelHandler.handle(.refresh, installation: stopped, now: now, reminder: true) == (.busy, .none))
+        // A failure from before the request isn't its outcome.
+        var older = i
+        older.lastRefreshOutcome = RefreshOutcome(at: now.addingTimeInterval(-6 * 60), succeeded: false, reasonKey: "k")
+        #expect(ChannelHandler.handle(.refresh, installation: older, now: now, reminder: true) == (.busy, .none))
+        // Past the interval, a request is no retry.
+        i.lastDeviceRefreshRequest = now.addingTimeInterval(-11 * 60)
+        #expect(!ChannelHandler.isPhoneRetry(i, now: now))
+    }
+
     /// Settings seeded for older state follow the Mac's global reminder setting.
     @Test func setAutoRefreshSeedsWithTheGlobalReminder() {
         var old = installation()
@@ -619,6 +645,22 @@ import Foundation
         #expect(!reloaded.refreshPaused)
         #expect(ChannelHandler.handle(.refresh, installation: reloaded, now: now.addingTimeInterval(5 * 60), reminder: true)
                 == (.busy, .none))
+    }
+
+    /// Mega review C4: whether the phone's last request was its retry is kept (and a new request
+    /// that isn't one clears it), across a signing too.
+    @Test func thePhonesRetryIsRemembered() async throws {
+        let (lib, rec, tmp) = try await library(); defer { try? FileManager.default.removeItem(at: tmp) }
+        try await lib.markDeviceRefreshRequest(at: now, recordID: rec.id, deviceID: "a", retry: true)
+        var reloaded = try #require(await AppLibrary(root: tmp).records().first?.installations.first)
+        #expect(reloaded.lastDeviceRefreshWasRetry == true)
+        var signed = reloaded
+        signed.lastDeviceRefreshRequest = nil
+        signed.lastDeviceRefreshWasRetry = nil
+        #expect(signed.keepingChannelState(of: reloaded).lastDeviceRefreshWasRetry == true)
+        try await lib.markDeviceRefreshRequest(at: now.addingTimeInterval(700), recordID: rec.id, deviceID: "a")
+        reloaded = try #require(await AppLibrary(root: tmp).records().first?.installations.first)
+        #expect(reloaded.lastDeviceRefreshWasRetry == nil)
     }
 
     @Test func missingSettingsAreSeeded() async throws {

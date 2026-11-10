@@ -1453,13 +1453,19 @@ final class AppModel {
                 await reply(.deviceUnreachable)
                 return
             }
-            switch refreshFromDevice(job, stored: fresh, now: Date()) {
+            // Dated before the job starts, so a failure it records at once still comes after it
+            // (mega review C4: a failed request gives the phone one retry).
+            let askedAt = Date()
+            let retry = ChannelHandler.isPhoneRetry(fresh, now: askedAt)
+            switch refreshFromDevice(job, stored: fresh, now: askedAt) {
             case .failure(let refusal):
                 Self.channelLogger.notice("channel: refresh not started: \(Self.describe(refusal.reply))")
                 await reply(refusal.reply)
             case .success(let task):
+                if retry { Self.channelLogger.notice("channel: the phone retries its failed refresh of \(found.recordID)") }
                 do {
-                    try await library.markDeviceRefreshRequest(at: Date(), recordID: job.recordID, deviceID: job.deviceID)
+                    try await library.markDeviceRefreshRequest(at: askedAt, recordID: job.recordID, deviceID: job.deviceID,
+                                                               retry: retry)
                 } catch {
                     Self.channelLogger.error("channel: refresh request not recorded: \(String(describing: error))")
                 }

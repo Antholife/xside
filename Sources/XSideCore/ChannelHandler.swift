@@ -62,8 +62,24 @@ public enum ChannelHandler {
     /// phone sends can reset): sooner, the request is answered `busy`. XSide's own attempts don't count.
     public static let refreshInterval: TimeInterval = 10 * 60
 
-    /// The phone asked for a refresh less than `refreshInterval` ago.
+    /// The phone asked for a refresh less than `refreshInterval` ago, and may not retry it.
     public static func phoneRefreshTooSoon(_ installation: Installation, now: Date) -> Bool {
+        guard let last = installation.lastDeviceRefreshRequest, now.timeIntervalSince(last) < refreshInterval else { return false }
+        return !phoneMayRetry(installation)
+    }
+
+    /// The refresh the phone's last request started failed (not stopped on the Mac), and that
+    /// request wasn't a retry: the phone may ask once more at once (mega review C4). Bounded: two
+    /// requests per `refreshInterval` at most, whatever the phone reports.
+    static func phoneMayRetry(_ installation: Installation) -> Bool {
+        guard installation.lastDeviceRefreshWasRetry != true, let last = installation.lastDeviceRefreshRequest,
+              let outcome = installation.lastRefreshOutcome, !outcome.succeeded, outcome.at >= last,
+              outcome.reasonKey != "cancelled" else { return false }
+        return true
+    }
+
+    /// A phone request XSide starts now is that retry (recorded with it, see `phoneMayRetry`).
+    public static func isPhoneRetry(_ installation: Installation, now: Date) -> Bool {
         guard let last = installation.lastDeviceRefreshRequest else { return false }
         return now.timeIntervalSince(last) < refreshInterval
     }
@@ -219,6 +235,7 @@ extension Installation {
         }
         if let asked = current.lastDeviceRefreshRequest, asked > (lastDeviceRefreshRequest ?? .distantPast) {
             result.lastDeviceRefreshRequest = asked
+            result.lastDeviceRefreshWasRetry = current.lastDeviceRefreshWasRetry
         }
         if let edit = current.lastMacEdit, edit > (lastMacEdit ?? .distantPast) { result.lastMacEdit = edit }
         // A choice, not an outcome: the stored one stands (it may have changed during the job).

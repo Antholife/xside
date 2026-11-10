@@ -105,6 +105,9 @@ public struct Installation: Codable, Equatable, Sendable {
     /// Last refresh the phone itself asked for and XSide started: the phone's refresh limit counts
     /// from it. Set only by XSide; nothing the phone sends resets it. nil if never.
     public var lastDeviceRefreshRequest: Date?
+    /// That request was the phone's one retry after a failed one (`ChannelHandler.phoneMayRetry`).
+    /// nil: it wasn't, or never.
+    public var lastDeviceRefreshWasRetry: Bool?
     /// Last time the Mac's user changed this installation's in-app settings (the per-app window,
     /// a pause from the panel, a field changed in the install window). Seeded or default values
     /// aren't edits. nil if never. Drives `SettingsDelivery`.
@@ -241,6 +244,7 @@ public struct Installation: Codable, Equatable, Sendable {
         channelSecret = try? c.decodeIfPresent(Data.self, forKey: .channelSecret)
         lastCheckIn = try? c.decodeIfPresent(Date.self, forKey: .lastCheckIn)
         lastDeviceRefreshRequest = try? c.decodeIfPresent(Date.self, forKey: .lastDeviceRefreshRequest)
+        lastDeviceRefreshWasRetry = try? c.decodeIfPresent(Bool.self, forKey: .lastDeviceRefreshWasRetry)
         lastMacEdit = try? c.decodeIfPresent(Date.self, forKey: .lastMacEdit)
         withoutXSideFeatures = try? c.decodeIfPresent(Bool.self, forKey: .withoutXSideFeatures)
         duoCompatibility = try? c.decodeIfPresent(Bool.self, forKey: .duoCompatibility)
@@ -875,13 +879,15 @@ public actor AppLibrary {
 
     /// Records that the phone asked for a refresh XSide started (see
     /// `Installation.lastDeviceRefreshRequest`). Throws `recordNotFound` when the installation is gone.
-    public func markDeviceRefreshRequest(at date: Date, recordID: UUID, deviceID: String) throws {
+    /// `retry`: it is the phone's one retry after a failed request.
+    public func markDeviceRefreshRequest(at date: Date, recordID: UUID, deviceID: String, retry: Bool = false) throws {
         let index = try indexOf(recordID)
         guard let i = items[index].installations.firstIndex(where: { $0.deviceID == deviceID }) else {
             throw XSideError.recordNotFound
         }
         let previous = items
         items[index].installations[i].lastDeviceRefreshRequest = date
+        items[index].installations[i].lastDeviceRefreshWasRetry = retry ? true : nil
         do { try save() } catch { items = previous; throw error }
     }
 

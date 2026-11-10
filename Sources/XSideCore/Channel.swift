@@ -72,7 +72,7 @@ import CryptoKit
 //   can't start: `paused(by)` (automatic refresh off for this installation), `busy` (a job is
 //   already running on it, or the phone's own previous refresh request started less than 10
 //   minutes ago, a date XSide keeps and nothing the phone sends resets; XSide's own attempts
-//   don't count), `deviceUnreachable` (the Mac can't see the device), or
+//   don't count; when the refresh it started failed, one more request is let through at once), `deviceUnreachable` (the Mac can't see the device), or
 //   `failed(reasonKey)` (e.g. Xcode isn't usable). reasonKey is an XSideError key, "cancelled"
 //   when the person stopped the job on the Mac, or "unknown".
 // - watch -> the check-in's `settings` reply at once (the request is a check-in: same fields, same
