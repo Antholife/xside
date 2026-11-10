@@ -120,7 +120,8 @@ public enum TarReader {
             String(decoding: UnsafeRawBufferPointer(rebasing: h[at..<(at + width)]).prefix { $0 != 0 }, as: UTF8.self)
         }
         let name = field(0, 100)
-        let isUstar = field(257, 5) == "ustar"
+        // POSIX ustar only (`ustar\0`): old GNU headers (`ustar  \0`) keep atime/ctime there.
+        let isUstar = Array(h[257..<263]) == Array("ustar\0".utf8)
         let prefix = isUstar ? field(345, 155) : ""
         return prefix.isEmpty ? name : prefix + "/" + name
     }

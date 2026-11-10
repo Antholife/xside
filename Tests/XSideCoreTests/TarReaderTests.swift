@@ -122,6 +122,28 @@ struct TarReaderTests {
         #expect(try TarReader.entries(t).map(\.path) == ["a"])
     }
 
+    /// Rewrites the first header's magic (and bytes from 345) and fixes its checksum.
+    private func reheader(_ t: Data, magic: [UInt8], at345: String) -> Data {
+        var b = [UInt8](t)
+        for (i, m) in magic.enumerated() { b[257 + i] = m }
+        for (i, c) in at345.utf8.enumerated() { b[345 + i] = c }
+        for i in 148..<156 { b[i] = 0x20 }
+        let sum = b[0..<512].reduce(0) { $0 + Int($1) }
+        let o = String(sum, radix: 8)
+        for (i, c) in (String(repeating: "0", count: 6 - o.count) + o).utf8.enumerated() { b[148 + i] = c }
+        b[154] = 0; b[155] = 0x20
+        return Data(b)
+    }
+
+    /// Old GNU headers (`ustar  \0`) keep atime/ctime where POSIX has the prefix.
+    @Test func gnuHeadersHaveNoPrefix() throws {
+        let t = FakeDeb.tar([.file("a", Data("x".utf8))])
+        let gnu = reheader(t, magic: Array("ustar  \0".utf8), at345: "14567012345")
+        #expect(try TarReader.entries(gnu).map(\.path) == ["a"])
+        let posix = reheader(t, magic: Array("ustar\0".utf8) + Array("00".utf8), at345: "dir")
+        #expect(try TarReader.entries(posix).map(\.path) == ["dir/a"])
+    }
+
     @Test func badChecksumThrows() {
         var t = FakeDeb.tar([.file("a")]); t[0] ^= 0x01
         #expect(throws: DebError.self) { try TarReader.entries(t) }
