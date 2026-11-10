@@ -50,8 +50,22 @@ static void testCore(void) {
     check([XSICloudStoreSuite(@"other") isEqualToString:@"io.github.xside.icloud-kvs.other"], @"core: additional store suite");
 }
 
-static void testShim(void) {
+static void testShim(BOOL proxy) {
     CKContainer *container = [CKContainer defaultContainer];
+    const char *kind = object_getClassName(container);
+    check(strstr(kind, "XSiStub") != NULL && (proxy ? strstr(kind, "Proxy") != NULL : strstr(kind, "Proxy") == NULL),
+          [NSString stringWithFormat:@"the stub is %s (%s)", proxy ? "the NSProxy fallback" : "the CKContainer subclass", kind]);
+    check([container isProxy] == proxy, @"isProxy says which stub it is");
+    check([container isKindOfClass:[CKContainer class]] && [container.privateCloudDatabase isKindOfClass:[CKDatabase class]],
+          @"the stubs pass for a CKContainer / CKDatabase");
+    check([container respondsToSelector:@selector(accountStatusWithCompletionHandler:)]
+          && [container respondsToSelector:@selector(fetchAllLongLivedOperationIDsWithCompletionHandler:)]
+          && ![container respondsToSelector:NSSelectorFromString(@"xsideNoSuchMethod")],
+          @"respondsToSelector: as a container");
+    __block NSError *idsError = nil;
+    dispatch_semaphore_t ids = dispatch_semaphore_create(0);
+    [container fetchAllLongLivedOperationIDsWithCompletionHandler:^(NSArray *i, NSError *e) { idsError = e; dispatch_semaphore_signal(ids); }];
+    check(waitFor(ids) && notAuthenticated(idsError), @"a forwarded container method: not authenticated");
     check([container.containerIdentifier isEqualToString:@"iCloud.com.example.icloudtest"],
           [NSString stringWithFormat:@"defaultContainer is the original app's (%@)", container.containerIdentifier]);
     check([[CKContainer containerWithIdentifier:@"iCloud.other"].containerIdentifier isEqualToString:@"iCloud.other"],
@@ -139,9 +153,10 @@ int main(int argc, const char **argv) {
             printf(failures ? "%d failure(s)\n" : "all inert iCloud shim checks passed\n", failures);
             return failures ? 1 : 0;
         }
-        testCore();
-        testShim();
-        printf(failures ? "%d failure(s)\n" : "all iCloud shim checks passed\n", failures);
+        BOOL proxy = argc > 1 && strcmp(argv[1], "--proxy") == 0;
+        if (!proxy) testCore();
+        testShim(proxy);
+        printf(failures ? "%d failure(s)\n" : (proxy ? "all iCloud shim checks passed (NSProxy fallback)\n" : "all iCloud shim checks passed\n"), failures);
         return failures ? 1 : 0;
     }
 }

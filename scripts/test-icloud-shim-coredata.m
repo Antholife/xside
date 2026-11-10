@@ -42,7 +42,9 @@ int main(int argc, char **argv) {
         if (loadError) { printf("FAIL store not loaded: %s\n", loadError.description.UTF8String); failures++; }
         Class ck = objc_getClass("CKContainer");
         id dflt = ck ? ((id (*)(id, SEL))objc_msgSend)(ck, NSSelectorFromString(@"defaultContainer")) : nil;
-        BOOL stub = dflt && strstr(object_getClassName(dflt), "XSiStub") != NULL;
+        // An optional second argument: a word the stub's class name must contain (Proxy: the fallback).
+        BOOL stub = dflt && strstr(object_getClassName(dflt), "XSiStub") != NULL
+            && (argc < 3 || strstr(object_getClassName(dflt), argv[2]) != NULL);
         printf("%s CloudKit hooked when Core Data loads it (%s)\n", stub ? "ok  " : "FAIL", dflt ? object_getClassName(dflt) : "no CloudKit");
         if (!stub) failures++;
         printf(failures ? "%d failure(s)\n" : "Core Data + CloudKit without linking CloudKit: no crash\n", failures);

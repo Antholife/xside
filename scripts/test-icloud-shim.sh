@@ -10,7 +10,9 @@ cd "$(dirname "$0")/.."
 OUT="$(mktemp -d)"
 trap 'rm -rf "$OUT"' EXIT
 CFLAGS=(-fobjc-arc -Wall -Wextra -Werror -Wno-unused-parameter -mmacosx-version-min=12.0)
-xcrun clang "${CFLAGS[@]}" -dynamiclib -I App/ICloud -framework Foundation -weak_framework CloudKit \
+# XSICLOUD_TEST_HOOKS: this test build only (never bundle.sh) reads XSICLOUD_FORCE_PROXY=1, which
+# makes the library use its NSProxy stubs as when CloudKit refuses the CKContainer subclass.
+xcrun clang "${CFLAGS[@]}" -DXSICLOUD_TEST_HOOKS=1 -dynamiclib -I App/ICloud -framework Foundation -weak_framework CloudKit \
     -install_name @executable_path/XSideICloud.dylib \
     -o "$OUT/XSideICloud.dylib" App/ICloud/*.m
 xcrun clang "${CFLAGS[@]}" -I App/ICloud -framework Foundation -framework CloudKit \
@@ -22,6 +24,8 @@ plutil -insert XSideOriginalBundleID -string com.example.icloudtest "$OUT/Info.p
 plutil -insert XSideICloudSignedOut -bool YES "$OUT/Info.plist"
 mkdir -p "$OUT/home"
 CFFIXED_USER_HOME="$OUT/home" "$OUT/test-icloud-shim"
+# The same probes with the NSProxy fallback forced.
+XSICLOUD_FORCE_PROXY=1 CFFIXED_USER_HOME="$OUT/home" "$OUT/test-icloud-shim" --proxy
 # The same library in an app whose Info.plist lacks XSideICloudSignedOut (signed before with the
 # option, now off): it must stay inert.
 mkdir -p "$OUT/inert"
@@ -39,3 +43,5 @@ if otool -L "$OUT/test-icloud-shim-coredata" | grep -q CloudKit.framework; then
 fi
 mkdir -p "$OUT/store"
 CFFIXED_USER_HOME="$OUT/home" "$OUT/test-icloud-shim-coredata" "$OUT/store"
+rm -rf "$OUT/store"; mkdir -p "$OUT/store"
+XSICLOUD_FORCE_PROXY=1 CFFIXED_USER_HOME="$OUT/home" "$OUT/test-icloud-shim-coredata" "$OUT/store" Proxy

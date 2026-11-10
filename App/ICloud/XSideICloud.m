@@ -6,7 +6,10 @@
 //
 // - CKContainer: +defaultContainer, +containerWithIdentifier: and the private init paths return
 //   a stub (a runtime subclass of CKContainer, allocated with NSObject's allocator, never
-//   initialised by CloudKit). accountStatus -> CKAccountStatusNoAccount, the private accountInfo
+//   initialised by CloudKit; CloudKit warns that subclassing CKContainer/CKDatabase will become an
+//   error: when the subclass can't be made or its +initialize throws, an NSProxy stub with the
+//   same methods and answers stands in, passing isKindOfClass: for the class it replaces).
+//   accountStatus -> CKAccountStatusNoAccount, the private accountInfo
 //   -> a CKAccountInfo saying no account (Core Data / SwiftData mirroring and CKSyncEngine wait
 //   instead of retrying), every other method with a completion block -> CKErrorNotAuthenticated.
 // - CKDatabase: stub databases (same technique); addOperation: and every convenience method
@@ -181,6 +184,16 @@ static void xsiFailInvocation(NSInvocation *inv, NSString *owner) {
 
 #pragma mark - Stub classes (methods copied into runtime subclasses of CKContainer / CKDatabase)
 
+static const void *kStubBaseKey = &kStubBaseKey;
+
+// The class a stub stands for (CKContainer, CKDatabaseImplementation...): its superclass, or for
+// an NSProxy stub the class recorded on it when it was made.
+static Class xsiStubBase(id object) {
+    Class cls = object_getClass(object);
+    Class base = cls ? objc_getAssociatedObject(cls, kStubBaseKey) : nil;
+    return base ?: class_getSuperclass(cls);
+}
+
 static Class gStubContainerClass, gStubDatabaseClass, gStubContainerImplClass, gStubDatabaseImplClass;
 static NSMutableDictionary<NSString *, id> *gContainers;   // identifier -> stub container
 static NSOperationQueue *gStubOperationQueue;
@@ -307,15 +320,15 @@ static void xsiEnqueueOperation(id op, id database) {
 // Behind-the-scenes implementation objects: everything fails NotAuthenticated.
 @interface XSiStubImplTemplate : NSObject @end
 @implementation XSiStubImplTemplate
-- (NSString *)description { return [NSString stringWithFormat:@"<%s (XSide stub)>", class_getName(class_getSuperclass(object_getClass(self)))]; }
+- (NSString *)description { return [NSString stringWithFormat:@"<%s (XSide stub)>", class_getName(xsiStubBase(self))]; }
 - (NSString *)debugDescription { return [self description]; }
 - (id)forwardingTargetForSelector:(SEL)sel { return nil; }
 - (NSMethodSignature *)methodSignatureForSelector:(SEL)sel {
-    Method m = class_getInstanceMethod(class_getSuperclass(object_getClass(self)), sel);
+    Method m = class_getInstanceMethod(xsiStubBase(self), sel);
     if (!m) XLOG("%{public}s: unknown selector %{public}s", class_getName(object_getClass(self)), sel_getName(sel));
     return m ? [NSMethodSignature signatureWithObjCTypes:method_getTypeEncoding(m)] : nil;
 }
-- (void)forwardInvocation:(NSInvocation *)inv { xsiFailInvocation(inv, NSStringFromClass(class_getSuperclass(object_getClass(self)))); }
+- (void)forwardInvocation:(NSInvocation *)inv { xsiFailInvocation(inv, NSStringFromClass(xsiStubBase(self))); }
 @end
 
 // Never forwarded: object lifetime and identity stay NSObject's.
@@ -355,6 +368,81 @@ static Class xsiMakeStubClass(Class base, Class template, const char *name) {
     }
     objc_registerClassPair(cls);
     return cls;
+}
+
+// What an NSProxy stub adds to its template's methods: it passes for an instance of the class it
+// replaces (Swift casts and isKindOfClass: checks ask it), and answers respondsToSelector: as one.
+@interface XSiStubProxyTemplate : NSObject @end
+@implementation XSiStubProxyTemplate
+- (BOOL)isKindOfClass:(Class)c {
+    if (!c) return NO;
+    for (Class k = xsiStubBase(self); k; k = class_getSuperclass(k)) if (k == c) return YES;
+    for (Class k = object_getClass(self); k; k = class_getSuperclass(k)) if (k == c) return YES;
+    return NO;
+}
+- (BOOL)isMemberOfClass:(Class)c { return c && c == xsiStubBase(self); }
+- (BOOL)respondsToSelector:(SEL)sel {
+    if (!sel) return NO;
+    return class_respondsToSelector(object_getClass(self), sel) || [xsiStubBase(self) instancesRespondToSelector:sel];
+}
+- (BOOL)conformsToProtocol:(Protocol *)p { return p && [xsiStubBase(self) conformsToProtocol:p]; }
+@end
+
+static void xsiCopyMethods(Class from, Class to) {
+    unsigned n = 0;
+    Method *ms = class_copyMethodList(from, &n);
+    for (unsigned i = 0; i < n; i++) class_addMethod(to, method_getName(ms[i]), method_getImplementation(ms[i]), method_getTypeEncoding(ms[i]));
+    free(ms);
+}
+
+// The fallback: an NSProxy subclass with the template's methods; every other message reaches the
+// template's forwardInvocation: (NSProxy implements almost nothing). Nil when it can't be made.
+static Class xsiMakeProxyClass(Class base, Class template, const char *name) {
+    if (!base || !template) return nil;
+    Class existing = objc_getClass(name);
+    if (existing) return objc_getAssociatedObject(existing, kStubBaseKey) == base ? existing : nil;
+    Class cls = objc_allocateClassPair([NSProxy class], name, 0);
+    if (!cls) return nil;
+    xsiCopyMethods(template, cls);
+    xsiCopyMethods([XSiStubProxyTemplate class], cls);
+    objc_registerClassPair(cls);
+    objc_setAssociatedObject(cls, kStubBaseKey, base, OBJC_ASSOCIATION_ASSIGN);   // classes live forever
+    return cls;
+}
+
+// Test builds only (scripts/test-icloud-shim.sh compiles with XSICLOUD_TEST_HOOKS):
+// XSICLOUD_FORCE_PROXY=1 takes the fallback as if CloudKit refused every subclass.
+static BOOL xsiForceProxy(void) {
+#if XSICLOUD_TEST_HOOKS
+    const char *v = getenv("XSICLOUD_FORCE_PROXY");
+    return v && strcmp(v, "1") == 0;
+#else
+    return NO;
+#endif
+}
+
+// Whether CloudKit takes the subclass: the first message runs its +initialize (and the base
+// class's) here, where an exception is caught, rather than in the app's first call.
+static BOOL xsiSubclassAccepted(Class cls) {
+    if (!cls) return NO;
+    @try {
+        return ((Class (*)(id, SEL))objc_msgSend)(cls, @selector(class)) == cls;
+    } @catch (NSException *e) {
+        XLOG("%{public}s refused: %{public}@", class_getName(cls), e.reason);
+        return NO;
+    }
+}
+
+// The stub class for `base`: a runtime subclass, else (CloudKit refuses it) an NSProxy stub.
+static Class xsiStubClass(Class base, Class template, const char *name, const char *proxyName) {
+    if (!base || !template) return nil;
+    if (!xsiForceProxy()) {
+        Class cls = xsiMakeStubClass(base, template, name);
+        if (xsiSubclassAccepted(cls)) return cls;
+    }
+    Class proxy = xsiMakeProxyClass(base, template, proxyName);
+    XLOG("%{public}s: subclass unavailable, %{public}s stub", class_getName(base), proxy ? "NSProxy" : "no");
+    return proxy;
 }
 
 static id xsiStubContainer(NSString *identifier) {
@@ -589,15 +677,17 @@ static void xsiInstallCloudKit(void) {
         gKeptReceivers = [NSHashTable hashTableWithOptions:NSPointerFunctionsStrongMemory | NSPointerFunctionsObjectPointerPersonality];
         gStubOperationQueue = [NSOperationQueue new];
         gStubOperationQueue.name = @"XSiCloud stub operations";
-        gStubContainerClass = xsiMakeStubClass(container, [XSiStubContainerTemplate class], "XSiStubContainer");
-        gStubDatabaseClass = xsiMakeStubClass(database, [XSiStubDatabaseTemplate class], "XSiStubDatabase");
+        gStubContainerClass = xsiStubClass(container, [XSiStubContainerTemplate class], "XSiStubContainer", "XSiStubProxyContainer");
+        gStubDatabaseClass = xsiStubClass(database, [XSiStubDatabaseTemplate class], "XSiStubDatabase", "XSiStubProxyDatabase");
         if (!gStubContainerClass || !gStubDatabaseClass) {
             XLOG("CloudKit hooks not installed: stub classes unavailable");
             return;
         }
         Class containerImpl = objc_getClass("CKContainerImplementation"), databaseImpl = objc_getClass("CKDatabaseImplementation");
-        gStubContainerImplClass = xsiMakeStubClass(containerImpl, [XSiStubImplTemplate class], "XSiStubContainerImplementation");
-        gStubDatabaseImplClass = xsiMakeStubClass(databaseImpl, [XSiStubImplTemplate class], "XSiStubDatabaseImplementation");
+        gStubContainerImplClass = xsiStubClass(containerImpl, [XSiStubImplTemplate class], "XSiStubContainerImplementation",
+                                               "XSiStubProxyContainerImplementation");
+        gStubDatabaseImplClass = xsiStubClass(databaseImpl, [XSiStubImplTemplate class], "XSiStubDatabaseImplementation",
+                                              "XSiStubProxyDatabaseImplementation");
 
         Class meta = object_getClass(container);
         xsiReplace(meta, @selector(defaultContainer), (IMP)xsi_defaultContainer);
