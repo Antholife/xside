@@ -333,6 +333,15 @@ import CryptoKit
 
     // MARK: the Mac's lookup
 
+    /// The 16-byte token can be derived on its own with a single HKDF (no enc/mac keys), for the
+    /// installation lookup (review 2, K2-1); it equals the token of the full key schedule.
+    @Test func tokenCanBeDerivedOnItsOwn() {
+        #expect(ChannelKeys.token(secret: secret) == ChannelKeys(secret: secret).token)
+        let other = Data(repeating: 9, count: 32)
+        #expect(ChannelKeys.token(secret: other) == ChannelKeys(secret: other).token)
+        #expect(ChannelKeys.token(secret: other) != ChannelKeys.token(secret: secret))
+    }
+
     @Test func libraryFindsTheInstallationByToken() async throws {
         let tmp = TestTemp.root.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: tmp) }

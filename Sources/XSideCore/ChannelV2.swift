@@ -34,6 +34,13 @@ public struct ChannelKeys: Sendable, Equatable {
         authentication = derive("mac", 32)
         token = derive("token", 16)
     }
+
+    /// Only the 16-byte token, one HKDF (no enc/mac keys): for the opaque installation lookup,
+    /// which compares tokens and derives the full schedule just for the match.
+    public static func token(secret: Data) -> Data {
+        HKDF<SHA256>.deriveKey(inputKeyMaterial: SymmetricKey(data: secret), salt: Self.salt, info: Data("token".utf8),
+                               outputByteCount: 16).withUnsafeBytes { Data($0) }
+    }
 }
 
 enum ChannelCrypto {
@@ -344,7 +351,8 @@ enum ChannelParsedLine {
 
 extension AppLibrary {
     /// The installation a request line names: by exact channel id (v1), or by the token its secret
-    /// derives (v2). One HKDF per installation with a secret: the library is small.
+    /// derives (v2). Only the token is derived per installation (one HKDF each, no enc/mac keys);
+    /// the caller derives the full schedule for the one it matched.
     public func installation(channelRef ref: ChannelKeyRef) -> (recordID: UUID, installation: Installation)? {
         switch ref {
         case .installationID(let id):
@@ -353,7 +361,7 @@ extension AppLibrary {
             guard token.count == ChannelCrypto.tokenLength else { return nil }
             for record in records() {
                 for installation in record.installations {
-                    if let secret = installation.channelSecret, ChannelKeys(secret: secret).token == token {
+                    if let secret = installation.channelSecret, ChannelKeys.token(secret: secret) == token {
                         return (record.id, installation)
                     }
                 }
