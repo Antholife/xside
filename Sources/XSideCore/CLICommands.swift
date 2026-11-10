@@ -341,6 +341,7 @@ public enum CLIJSONOutput {
         case .noAnswer, .waiting: "no answer from XSide (is it running and up to date?)"
         case .stoppedAnswering: "XSide stopped answering while working on it; the outcome is unknown: check its panel or xside apps"
         case .stillWorking: "XSide is still working on it; check its panel or xside apps"
+        case .restarted: "XSide restarted while working on it; the outcome is unknown: check its panel or xside apps"
         }
     }
 }

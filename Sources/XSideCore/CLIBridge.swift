@@ -203,12 +203,15 @@ public enum CLIBridge {
         public let ok: Bool
         public let working: Bool
         public let message: String
+        /// The answer itself is in the request's `ReplyFile` (`message` only says so).
+        public let inFile: Bool
 
-        public init(id: String, ok: Bool, message: String) {
+        public init(id: String, ok: Bool, message: String, inFile: Bool = false) {
             self.id = id
             self.ok = ok
             self.working = false
             self.message = message
+            self.inFile = inFile
         }
 
         /// The interim answer: XSide has the request and is at it.
@@ -217,10 +220,13 @@ public enum CLIBridge {
             self.ok = true
             self.working = working
             self.message = message
+            self.inFile = false
         }
 
         public var userInfo: [String: String] {
-            ["id": id, "ok": ok ? "1" : "0", "message": message].merging(working ? ["working": "1"] : [:]) { $1 }
+            ["id": id, "ok": ok ? "1" : "0", "message": message]
+                .merging(working ? ["working": "1"] : [:]) { $1 }
+                .merging(inFile ? ["file": "1"] : [:]) { $1 }
         }
 
         public init?(userInfo: [AnyHashable: Any]?) {
@@ -228,8 +234,115 @@ public enum CLIBridge {
             if info["working"] == "1" {
                 self.init(id: id, working: true, message: info["message"] ?? "")
             } else {
-                self.init(id: id, ok: info["ok"] == "1", message: info["message"] ?? "")
+                self.init(id: id, ok: info["ok"] == "1", message: info["message"] ?? "", inFile: info["file"] == "1")
             }
+        }
+    }
+
+    /// Where the answers that say more than "done" go (mega review C6): a crash diagnosis (the
+    /// app, its library, the device) and the report archive's path. A distributed notification is
+    /// heard by any program of the session, sandboxed ones included; this file, in the library
+    /// next to the key, only by the user (0600, in a 0700 folder). Named after the request id (a
+    /// UUID, nothing else); the tool reads it and deletes it; one nobody read goes after `lifetime`.
+    public enum ReplyFile {
+        public static let folderName = "cli-replies"
+        public static let lifetime: TimeInterval = 10 * 60
+        /// What the notification says instead (the tool prints the file's answer).
+        public static let notice = "XSide's answer is in a file only you can read (xside prints it)."
+
+        /// The commands whose final answer goes to a file.
+        public static func isFor(_ command: Command) -> Bool {
+            switch command {
+            case .crash, .report: true
+            default: false
+            }
+        }
+
+        /// The request's file in `library`, nil when `id` isn't a UUID.
+        public static func url(id: String, in library: URL) -> URL? {
+            guard let uuid = UUID(uuidString: id) else { return nil }
+            return library.appendingPathComponent(folderName, isDirectory: true).appendingPathComponent(uuid.uuidString)
+        }
+
+        /// Writes `reply` (atomically, 0600) and returns what the notification carries instead.
+        /// Unread files older than `lifetime` go first.
+        public static func write(_ reply: Reply, in library: URL, now: Date) throws -> Reply {
+            guard let file = url(id: reply.id, in: library) else { throw CocoaError(.fileWriteInvalidFileName) }
+            let fm = FileManager.default
+            let folder = file.deletingLastPathComponent()
+            try fm.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path)
+            prune(folder, now: now)
+            let body = try JSONSerialization.data(withJSONObject: ["ok": reply.ok, "message": reply.message])
+            let temporary = folder.appendingPathComponent(".\(UUID().uuidString)")
+            guard fm.createFile(atPath: temporary.path, contents: body, attributes: [.posixPermissions: 0o600]) else {
+                throw CocoaError(.fileWriteUnknown)
+            }
+            if rename(temporary.path, file.path) != 0 {
+                try? fm.removeItem(at: temporary)
+                throw CocoaError(.fileWriteUnknown)
+            }
+            return Reply(id: reply.id, ok: reply.ok, message: notice, inFile: true)
+        }
+
+        /// The answer `reply` stands for: read from its file (then deleted) when it is in one.
+        public static func take(_ reply: Reply, in library: URL) -> Reply {
+            guard reply.inFile else { return reply }
+            guard let file = url(id: reply.id, in: library), let data = try? Data(contentsOf: file),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let message = object["message"] as? String else {
+                return Reply(id: reply.id, ok: false, message: "XSide's answer couldn't be read (\(folderName) in its library)")
+            }
+            try? FileManager.default.removeItem(at: file)
+            return Reply(id: reply.id, ok: (object["ok"] as? Bool) ?? false, message: message)
+        }
+
+        private static func prune(_ folder: URL, now: Date) {
+            let fm = FileManager.default
+            guard let names = try? fm.contentsOfDirectory(atPath: folder.path) else { return }
+            for name in names {
+                let path = folder.appendingPathComponent(name).path
+                guard let modified = (try? fm.attributesOfItem(atPath: path))?[.modificationDate] as? Date,
+                      now.timeIntervalSince(modified) > lifetime else { continue }
+                try? fm.removeItem(atPath: path)
+            }
+        }
+    }
+
+    /// The app's memory of the requests it took (mega review C7): the tool sends its request
+    /// every second until answered, and each copy gets the stored answer rather than running it
+    /// again. Bounded: an entry not asked for `lifetime` goes, and beyond `capacity` finished
+    /// answers the least recently asked go; one still being worked on is never dropped for room.
+    public struct ReplyCache: Sendable {
+        public static let capacity = 32
+        public static let lifetime: TimeInterval = 10 * 60
+        private var entries: [String: (reply: Reply, asked: Date)] = [:]
+
+        public init() {}
+
+        public var count: Int { entries.count }
+
+        /// The stored answer to `id` (the request was taken), nil if new. Asking keeps it.
+        public mutating func reply(for id: String, at now: Date) -> Reply? {
+            expire(now)
+            guard let entry = entries[id] else { return nil }
+            entries[id] = (entry.reply, now)
+            return entry.reply
+        }
+
+        public mutating func store(_ reply: Reply, at now: Date) {
+            expire(now)
+            entries[reply.id] = (reply, now)
+            let finished = entries.filter { !$0.value.reply.working }
+            if finished.count > Self.capacity {
+                for (id, _) in finished.sorted(by: { $0.value.asked < $1.value.asked }).prefix(finished.count - Self.capacity) {
+                    entries[id] = nil
+                }
+            }
+        }
+
+        private mutating func expire(_ now: Date) {
+            entries = entries.filter { now.timeIntervalSince($0.value.asked) <= Self.lifetime }
         }
     }
 
@@ -251,13 +364,16 @@ public enum CLIBridge {
             case stoppedAnswering
             /// Still working after `longest`: the outcome is unknown yet.
             case stillWorking
+            /// XSide restarted after it took the request (its key changed, mega review C7): the
+            /// outcome is unknown, and the request isn't sent to the new XSide, which would do it again.
+            case restarted
 
             /// 0 done, 1 failed or never started, 2 outcome unknown (see the panel or `xside apps`).
             public var exitCode: Int32 {
                 switch self {
                 case .finished(let reply): reply.ok ? 0 : 1
                 case .waiting, .noAnswer: 1
-                case .stoppedAnswering, .stillWorking: 2
+                case .stoppedAnswering, .stillWorking, .restarted: 2
                 }
             }
         }
@@ -265,8 +381,21 @@ public enum CLIBridge {
         private let start: Date
         private var lastAnswer: Date?
         private var final: Reply?
+        /// The key the request was last sent with, and the one it was sent with when XSide answered.
+        private var sentKey: String?
+        private var answeredKey: String?
+        private var restarted = false
 
         public init(start: Date) { self.start = start }
+
+        /// The request is about to be sent with `key` (XSide's key read just now): false, and the
+        /// wait ends `.restarted`, when XSide answered with another key and hasn't finished.
+        /// An unreadable key (nil) changes nothing.
+        public mutating func sending(key: String?) -> Bool {
+            if let key, final == nil, let answeredKey, key != answeredKey { restarted = true }
+            if let key { sentKey = key }
+            return !restarted
+        }
 
         /// True once XSide answered anything about this request.
         public var acknowledged: Bool { lastAnswer != nil }
@@ -275,11 +404,13 @@ public enum CLIBridge {
         public mutating func received(_ reply: Reply, at date: Date, requestID: String? = nil) {
             if let requestID, reply.id != requestID { return }
             lastAnswer = date
+            if answeredKey == nil { answeredKey = sentKey }
             if !reply.working { final = reply }
         }
 
         public func outcome(at now: Date) -> Outcome {
             if let final { return .finished(final) }
+            if restarted { return .restarted }
             guard let lastAnswer else {
                 return now.timeIntervalSince(start) > Self.firstAnswer ? .noAnswer : .waiting
             }

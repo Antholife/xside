@@ -100,26 +100,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated {
                 // Just launched by the tool: answered once the library is read (it asks again).
                 guard model.hasLoadedRecords else { return }
-                // The tool sends again until answered: a request is handled once.
-                guard !Self.handledRequests.contains(request.id) else {
+                // The tool sends again until answered: a request is handled once (its answer is
+                // kept a while, mega review C7).
+                if let stored = Self.replies.reply(for: request.id, at: Date()) {
                     center.postNotificationName(CLIBridge.replyName(bundleID: bundleID), object: nil,
-                                                userInfo: Self.lastReplies[request.id] ?? [:], deliverImmediately: true)
+                                                userInfo: stored.userInfo, deliverImmediately: true)
                     return
                 }
-                Self.handledRequests.insert(request.id)
                 // Some take a moment (an uninstall, the report archive): "working" at once, which
                 // the tool's repeated asks get back until the answer is there, so it waits as long
                 // as the work takes (review D–G, Important 1).
-                let working = CLIBridge.Reply(id: request.id, working: true, message: Self.workingMessage(request.command)).userInfo
-                Self.lastReplies[request.id] = working
+                let working = CLIBridge.Reply(id: request.id, working: true, message: Self.workingMessage(request.command))
+                Self.replies.store(working, at: Date())
                 center.postNotificationName(CLIBridge.replyName(bundleID: bundleID), object: nil,
-                                            userInfo: working, deliverImmediately: true)
+                                            userInfo: working.userInfo, deliverImmediately: true)
                 Task { @MainActor in
                     let answer = await model.handle(request.command)
-                    let reply = CLIBridge.Reply(id: request.id, ok: answer.ok, message: answer.message).userInfo
-                    Self.lastReplies[request.id] = reply
+                    var reply = CLIBridge.Reply(id: request.id, ok: answer.ok, message: answer.message)
+                    // A crash diagnosis or the report's path: in a file only the user reads, not
+                    // in a notification every program of the session hears (mega review C6).
+                    if CLIBridge.ReplyFile.isFor(request.command) {
+                        do {
+                            reply = try CLIBridge.ReplyFile.write(reply, in: model.libraryRoot, now: Date())
+                        } catch {
+                            Self.logger.error("command line answer not written: \(String(describing: error))")
+                            reply = CLIBridge.Reply(id: request.id, ok: false, message: "XSide couldn't write its answer (see its logs).")
+                        }
+                    }
+                    Self.replies.store(reply, at: Date())
                     center.postNotificationName(CLIBridge.replyName(bundleID: bundleID), object: nil,
-                                                userInfo: reply, deliverImmediately: true)
+                                                userInfo: reply.userInfo, deliverImmediately: true)
                 }
             }
         }
@@ -133,8 +143,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         default: "Working on it…"
         }
     }
-    private static var handledRequests: Set<String> = []
-    private static var lastReplies: [String: [String: String]] = [:]
+    private static var replies = CLIBridge.ReplyCache()
 
     func applicationWillTerminate(_ notification: Notification) {
         Self.model?.stopChannel() // the apps stop seeing XSide on the network at once

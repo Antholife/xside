@@ -198,6 +198,7 @@ var isAppRunning: Bool { !NSRunningApplication.runningApplications(withBundleIde
     nonisolated(unsafe) var wait = CLIBridge.Wait(start: Date())
     nonisolated(unsafe) var workingMessage: String?
     let observer = center.addObserver(forName: CLIBridge.replyName(bundleID: bundleID), object: nil, queue: .main) { note in
+        // Every copy of the answer comes through here: a file's is read (and deleted) once below.
         guard let answer = CLIBridge.Reply(userInfo: note.userInfo) else { return }
         wait.received(answer, at: Date(), requestID: id)
         if answer.id == id, answer.working { workingMessage = answer.message }
@@ -209,8 +210,11 @@ var isAppRunning: Bool { !NSRunningApplication.runningApplications(withBundleIde
     while outcome == .waiting {
         let now = Date()
         if now.timeIntervalSince(lastSent) >= 1 {
+            let current = request
+            // XSide restarted after it took the request: not sent again (mega review C7).
+            guard wait.sending(key: current.key) else { break }
             center.postNotificationName(CLIBridge.requestName(bundleID: bundleID), object: nil,
-                                        userInfo: request.userInfo, deliverImmediately: true)
+                                        userInfo: current.userInfo, deliverImmediately: true)
             lastSent = now
         }
         // Progress, so a long wait never looks stuck: the app's own words once (after 2 s, so a
@@ -227,6 +231,11 @@ var isAppRunning: Bool { !NSRunningApplication.runningApplications(withBundleIde
         outcome = wait.outcome(at: Date())
     }
     center.removeObserver(observer)
+    outcome = wait.outcome(at: Date())
+    // A crash diagnosis or the report's path comes in a file only the user reads (mega review C6).
+    if case .finished(let reply) = outcome, reply.inFile {
+        outcome = .finished(CLIBridge.ReplyFile.take(reply, in: libraryRoot))
+    }
     if jsonOutput {
         // Only JSON on stdout, whatever the outcome; the exit code still tells it.
         print(CLIJSONOutput.document(for: outcome))
@@ -244,8 +253,8 @@ var isAppRunning: Bool { !NSRunningApplication.runningApplications(withBundleIde
         FileHandle.standardError.write(Data("xside: no answer from XSide (is it running and up to date?)\n".utf8))
     case .stoppedAnswering:
         FileHandle.standardError.write(Data("xside: XSide stopped answering while working on it; the outcome is unknown: check its panel or xside apps\n".utf8))
-    case .stillWorking, .waiting:
-        FileHandle.standardError.write(Data("xside: XSide is still working on it; check its panel or xside apps\n".utf8))
+    case .stillWorking, .waiting, .restarted:
+        FileHandle.standardError.write(Data("xside: \(CLIJSONOutput.message(for: outcome) ?? "")\n".utf8))
     }
     exit(outcome.exitCode)
 }
