@@ -24,6 +24,13 @@ struct AppsSettingsPage: View {
     }
 
     var body: some View {
+        content
+            // Devices listed at the panel's pace while this page shows (« Réessayer » waits for them).
+            .onAppear { model.isMyAppsShown = true }
+            .onDisappear { model.isMyAppsShown = false }
+    }
+
+    @ViewBuilder private var content: some View {
         let groups = groups
         if groups.isEmpty {
             VStack(spacing: 8) {

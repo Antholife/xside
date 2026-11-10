@@ -48,3 +48,15 @@ public struct RefreshPolicy: Sendable, Equatable {
         return true
     }
 }
+
+/// How often the background engine lists devices: every tick (15 s) while the person is looking
+/// at them, in the panel or in Settings > Mes apps (where a failed refresh's « Réessayer » waits
+/// for the device to be back), every minute otherwise.
+public enum DevicePolling {
+    public static let fast: Duration = .seconds(15)
+    public static let slow: Duration = .seconds(60)
+
+    public static func interval(panelOpen: Bool, myAppsShown: Bool) -> Duration {
+        panelOpen || myAppsShown ? fast : slow
+    }
+}

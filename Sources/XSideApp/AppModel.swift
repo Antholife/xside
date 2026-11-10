@@ -266,6 +266,8 @@ final class AppModel {
     var onCrashFound: ((_ key: JobKey, _ flag: CrashFlag) -> Void)?
     /// True while the menu-bar popover is on screen (drives the device polling rate).
     private(set) var isPopoverOpen = false
+    /// Settings > Mes apps is on screen: devices are listed at the panel's pace (`DevicePolling`).
+    @ObservationIgnored var isMyAppsShown = false
 
     /// `startsServices`: false only for the debug snapshot harness (`SnapshotRenderer`): nothing is
     /// cleaned, loaded, probed or published.

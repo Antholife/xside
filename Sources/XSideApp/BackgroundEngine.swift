@@ -9,8 +9,8 @@ import XSideCore
 final class BackgroundEngine {
     private static let logger = Log("engine")
     /// Device polling while the popover is open / closed.
-    static let fastPoll: Duration = .seconds(15)
-    static let slowPoll: Duration = .seconds(60)
+    static let fastPoll: Duration = DevicePolling.fast
+    static let slowPoll: Duration = DevicePolling.slow
     /// Periodic due evaluation (also run on device changes and on wake).
     static let evaluationInterval: Duration = .seconds(5 * 60)
     /// Hidden debug setting (days): `defaults write io.github.xside.XSide debugThresholdDays 7`
@@ -91,7 +91,8 @@ final class BackgroundEngine {
             MainActor.assumeIsolated { self?.didWake() }
         }
 
-        // Ticks every 15 s; lists devices every tick while the popover is open, every 60 s otherwise.
+        // Ticks every 15 s; lists devices every tick while the popover or Settings > Mes apps is
+        // shown, every 60 s otherwise (`DevicePolling`).
         tasks.append(Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: Self.fastPoll)
@@ -138,7 +139,7 @@ final class BackgroundEngine {
     private func pollTick() async {
         // The crash logs' own schedule (every 2 min, 15 s after an install or a check-in).
         model.scanCrashesIfDue()
-        let interval = model.isPopoverOpen ? Self.fastPoll : Self.slowPoll
+        let interval = DevicePolling.interval(panelOpen: model.isPopoverOpen, myAppsShown: model.isMyAppsShown)
         // Small tolerance so a 60 s poll isn't pushed to 75 s by tick jitter.
         guard ContinuousClock.now - lastPoll >= interval - .seconds(1) else { return }
         lastPoll = .now

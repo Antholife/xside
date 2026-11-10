@@ -202,6 +202,14 @@ struct PendingChangesBar: View {
                 .controlSize(.small)
                 .disabled(!model.canRefresh(model.currentEntry(entry.id) ?? entry))
         }
+        // Listed again at once: « Réessayer » follows the device's state from now on (then every
+        // 15 s while Mes apps shows).
+        .onAppear {
+            #if DEBUG
+            if SnapshotRenderer.folder != nil { return } // the harness lists no device
+            #endif
+            model.refreshDevices()
+        }
     }
 
     private func refreshButton(disabled: Bool) -> some View {
