@@ -24,11 +24,14 @@ public struct AppInfo: Equatable, Sendable {
     public let icloud: ICloudAppInfo?
     /// Some Mach-O of the app still carries a legacy 32-bit ARM slice, which XSide removes at signing.
     public let hasLegacy32: Bool
+    /// What was added to the app, its warning signs and accesses (read at import); nil when not read.
+    public let content: IPAContent?
 
     public init(bundleID: String, name: String, version: String?, executable: String,
                 sharedKeychainGroups: [String] = [], sharedKeychainVendor: String? = nil,
                 minimumOSVersion: String? = nil, sdkVersion: String? = nil, duo: DuoAppInfo? = nil,
-                icloud: ICloudAppInfo? = nil, hasLegacy32: Bool = false) {
+                icloud: ICloudAppInfo? = nil, hasLegacy32: Bool = false, content: IPAContent? = nil) {
+        self.content = content
         self.icloud = icloud
         self.hasLegacy32 = hasLegacy32
         self.sdkVersion = sdkVersion
@@ -192,6 +195,44 @@ public enum IPAInspector {
             let from = data.startIndex + blob + Int(offset) + 8
             let plist = data.subdata(in: from..<(from + Int(size) - 8))
             return (try? PropertyListSerialization.propertyList(from: plist, format: nil)) as? [String: Any]
+        }
+        return nil
+    }
+
+    /// The Team ID in the code signature's CodeDirectory (first slice of a fat binary): who signed
+    /// this Mach-O. nil when it is unsigned, signed without a team (ad hoc), or anything about it
+    /// is malformed. Only plain identifiers (ASCII letters and digits, at most 32) are returned.
+    public static func codeSigningTeamID(_ data: Data) -> String? {
+        guard let start = try? sliceOffsets(data).first,
+              let commands = try? loadCommands(data, at: start),
+              let signature = commands.first(where: { $0.cmd == 0x1D }), // LC_CODE_SIGNATURE
+              let dataoff = readU32(data, signature.pos + 8, bigEndian: false),
+              let datasize = readU32(data, signature.pos + 12, bigEndian: false),
+              UInt64(start) + UInt64(dataoff) + UInt64(datasize) <= UInt64(data.count) else { return nil }
+        let blob = start + Int(dataoff)
+        guard readU32(data, blob, bigEndian: true) == 0xFADE_0CC0, // CSMAGIC_EMBEDDED_SIGNATURE
+              let length = readU32(data, blob + 4, bigEndian: true), length <= datasize,
+              let count = readU32(data, blob + 8, bigEndian: true), UInt64(count) * 8 + 12 <= UInt64(length)
+        else { return nil }
+        for i in 0..<Int(count) {
+            guard readU32(data, blob + 12 + i * 8, bigEndian: true) == 0, // CSSLOT_CODEDIRECTORY
+                  let offset = readU32(data, blob + 16 + i * 8, bigEndian: true),
+                  UInt64(offset) + 52 <= UInt64(length) else { continue }
+            let cd = blob + Int(offset)
+            guard readU32(data, cd, bigEndian: true) == 0xFADE_0C02, // CSMAGIC_CODEDIRECTORY
+                  let cdLength = readU32(data, cd + 4, bigEndian: true),
+                  UInt64(offset) + UInt64(cdLength) <= UInt64(length),
+                  let version = readU32(data, cd + 8, bigEndian: true), version >= 0x20200,
+                  let teamOffset = readU32(data, cd + 48, bigEndian: true),
+                  teamOffset > 0, teamOffset < cdLength else { return nil }
+            let from = data.startIndex + cd + Int(teamOffset)
+            let to = data.startIndex + cd + Int(cdLength)
+            let window = data[from..<min(to, from + 33)]
+            guard let nul = window.firstIndex(of: 0), nul > from else { return nil }
+            let team = data[from..<nul]
+            guard team.allSatisfy({ ($0 >= 0x30 && $0 <= 0x39) || ($0 >= 0x41 && $0 <= 0x5A) || ($0 >= 0x61 && $0 <= 0x7A) })
+            else { return nil }
+            return String(decoding: team, as: UTF8.self)
         }
         return nil
     }

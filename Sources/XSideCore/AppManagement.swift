@@ -3,7 +3,7 @@
 /// mockup, why they're greyed, and which app the page shows once that one is gone.
 public enum AppManagement {
     public enum Item: Equatable, Sendable {
-        case refresh, pause, stop, resume, separator, removeFromList, uninstall
+        case refresh, pause, stop, resume, separator, ipaContent, removeFromList, uninstall
     }
 
     /// Why the row's actions are greyed (`AppModel.canManage` is false).
@@ -17,10 +17,11 @@ public enum AppManagement {
     }
 
     /// « Rafraîchir maintenant », « Mettre en pause ▸ » and « Arrêter de rafraîchir » while it
-    /// refreshes, « Reprendre » instead of both once it's stopped or paused; then « Retirer de la
-    /// liste » and « Désinstaller de … ».
+    /// refreshes, « Reprendre » instead of both once it's stopped or paused; then « Contenu de
+    /// l'IPA… »; then « Retirer de la liste » and « Désinstaller de … ».
     public static func menu(isPaused: Bool) -> [Item] {
-        (isPaused ? [.refresh, .resume] : [.refresh, .pause, .stop]) + [.separator, .removeFromList, .uninstall]
+        (isPaused ? [.refresh, .resume] : [.refresh, .pause, .stop])
+            + [.separator, .ipaContent, .separator, .removeFromList, .uninstall]
     }
 
     /// The reason, nil when nothing blocks. The device's removal first (it ends every row of

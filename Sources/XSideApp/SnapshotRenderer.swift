@@ -4,7 +4,7 @@ import SwiftUI
 import XSideCore
 
 /// Debug-only: `XSIDE_SNAPSHOTS=<folder>` renders the panel, Settings > Mes apps and Créer &
-/// contribuer, the compatibility fixes in every state (`fixes-*`), the iCloud notes for a free and a paid team (`icloud-team-*`), the install window's step ② and
+/// contribuer, the compatibility fixes in every state (`fixes-*`), the iCloud notes for a free and a paid team (`icloud-team-*`), what an IPA holds (`ipa-content-*`), the install window's step ② and
 /// step ① summary with made-up apps on two devices (long names) to PNGs in that folder, in English and French, light and
 /// dark, then quits; nothing of the app starts. It runs only in a copy whose bundle id ends in
 /// ".snapshot", so its preferences are its own, and its library is a folder inside the output:
@@ -109,6 +109,13 @@ enum SnapshotRenderer {
                            dark: dark, to: out.appendingPathComponent("pending-bar-paused-\(language)-\(scheme).png"))
                     model.showSnapshot(records: sample.records, devices: sample.devices, live: sample.live, now: now)
                 }
+                // « Ce qu'il y a dans cette IPA »: an IPA someone changed, then an untouched one.
+                render(VStack(alignment: .leading, spacing: 18) {
+                    IPAContentCards(content: Self.changedIPA)
+                    IPAContentCards(content: IPAContent(additions: [], accesses: [.notifications, .microphone]))
+                }
+                .padding(20).frame(width: InstallWindow.width).background(Color(nsColor: .windowBackgroundColor)),
+                       dark: dark, to: out.appendingPathComponent("ipa-content-\(language)-\(scheme).png"))
                 render(LicencesView(onClose: {}).background(Color(nsColor: .windowBackgroundColor)),
                        dark: dark, to: out.appendingPathComponent("licences-\(language)-\(scheme).png"))
                 model.settingsPane = .build
@@ -311,6 +318,15 @@ enum SnapshotRenderer {
 
     /// Lays the view out in an off-screen window at its own size, lets SwiftUI settle (pages report
     /// their height a turn later), and saves what it draws.
+    /// The approved mockup's IPA: a known tweak, an unknown library with two signs, ElleKit.
+    static let changedIPA = IPAContent(additions: [
+        IPAAddition(name: "YTKACE", path: "Frameworks/YTKACE.dylib", size: 5_578_944, load: .launch, kind: .tweak, hasMetadata: false),
+        IPAAddition(name: "libhelper.dylib", path: "Frameworks/libhelper.dylib", size: 84_000, load: .launch, kind: .unknown,
+                    hasMetadata: false, signs: [.discordWebhook, .keychain]),
+        IPAAddition(name: "ElleKit", path: "Frameworks/ElleKit.framework/ElleKit", size: 120_000, load: .indirect,
+                    loadedBy: "YTKACE", kind: .tweakLibrary, hasMetadata: false),
+    ], accesses: [.camera, .microphone, .photos, .location, .localNetwork])
+
     @MainActor private static func render(_ view: some View, dark: Bool, to url: URL) {
         let appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         let host = NSHostingView(rootView: AnyView(view.environment(\.colorScheme, dark ? .dark : .light)))

@@ -294,6 +294,7 @@ struct InstallSheet: View {
     /// ② install options, ③ tweaks, ④ XSide module in the app.
     @ViewBuilder private var editingStep: some View {
         if !flow.reviewsSteps {
+            if let content = flow.info?.content { IPAContentCards(content: content) }
             DevicePicker(model: model, flow: flow)
             BlockedNotice(model: model, flow: flow)
             PreflightNotes(warnings: model.preflightWarnings(for: flow), model: model, flow: flow)
@@ -301,6 +302,8 @@ struct InstallSheet: View {
         } else {
             switch flow.step {
             case 0:
+                // What the IPA holds first, before anything else (it never blocks « Suivant »).
+                if let content = flow.info?.content { IPAContentCards(content: content) }
                 DevicePicker(model: model, flow: flow)
                 PreflightNotes(warnings: model.preflightWarnings(for: flow), model: model, flow: flow)
             case 1:

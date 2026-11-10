@@ -188,5 +188,21 @@
 			<string>%2$d apps</string>
 		</dict>
 	</dict>
+	<key>ipaContent.count</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>ld</string>
+			<key>one</key>
+			<string>%ld addition to the original app</string>
+			<key>other</key>
+			<string>%ld additions to the original app</string>
+		</dict>
+	</dict>
 </dict>
 </plist>

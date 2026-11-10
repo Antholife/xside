@@ -73,6 +73,16 @@ XSide installe des fichiers `.ipa` sur ton iPhone et ton iPad avec un compte App
 | 🐞 **Signaler un bug facilement** | *Signaler un problème* ouvre le formulaire GitHub déjà rempli, et enregistre le journal complet sur ton Bureau pour le joindre. Tes infos personnelles sont masquées. |
 | 🌍 **Traduit** | Français et anglais. |
 
+## 🔍 Ce que contient une IPA
+
+Une IPA trouvée sur internet peut avoir été modifiée par n'importe qui. Avant tout le reste, la fenêtre d'installation montre ce que quelqu'un a ajouté à l'app d'origine, et *Réglages > Mes apps*, dans le menu *⋯* de l'app, le remontre plus tard (*Contenu de l'IPA…*, lu dans l'IPA gardée par XSide). Rien n'est envoyé nulle part : XSide lit l'IPA sur ton Mac.
+
+- **Les ajouts.** Chaque bibliothèque que l'app charge depuis l'IPA et qui ne vient pas de son développeur : les fichiers `.dylib` isolés (sauf les bibliothèques de Swift), les frameworks connus pour servir aux tweaks (CydiaSubstrate, ElleKit, Substitute, libhooker, Cephei, Orion…), et toute bibliothèque signée par une autre équipe que l'app. Chacun avec son nom, son emplacement, sa taille, comment il est chargé, et s'il s'agit d'un tweak, d'une bibliothèque de tweaks ou d'un ajout inconnu (*sans nom ni auteur* quand rien ne le nomme). Les frameworks normaux de l'app (Firebase, Swift…) ne sont pas listés. Les tweaks que tu ajoutes avec XSide non plus : ils ont leur onglet *Tweaks*.
+- **Les signaux d'alerte**, dans les ajouts seulement : une adresse dont les voleurs de comptes se servent pour récupérer ce qu'ils prennent (webhooks Discord, bots Telegram, sites de partage de texte, ngrok, webhook.site, requestbin, une adresse faite d'une IP et d'un port), et, dans un ajout inconnu ou qui contient une telle adresse, la lecture du trousseau, la surveillance du presse-papiers, la lecture de tous les cookies, ou le téléchargement de code qu'il lance. Ce sont des indices, pas des preuves, et la liste est courte exprès : un tweak connu qui lit ses propres réglages n'est pas signalé.
+- **Les accès que l'app peut demander**, d'après son Info.plist et ses entitlements (appareil photo, micro, photos, position, réseau local, notifications…). iOS te les demande au moment où l'app en a besoin, et tu peux refuser.
+
+Rien de tout ça ne bloque l'installation. **XSide ne peut pas garantir qu'une app est sûre** : il montre ce qu'elle contient et ce qui mérite ton attention. Dans le doute, prends l'IPA à une source de confiance.
+
 ## ⚙️ Comment ça marche
 
 ```mermaid

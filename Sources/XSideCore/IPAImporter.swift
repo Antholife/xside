@@ -64,7 +64,9 @@ public enum IPAImporter {
                        // The executable's SDK first: the one iOS goes by (preflight, Duo option).
                        sdkVersion: duo.sdkVersion ?? info.sdkVersion, duo: duo,
                        icloud: ICloudAppInfo.read(executable: executable, entitlements: entitlements),
-                       hasLegacy32: MachOThinner.hasARM32Slices(under: app))
+                       hasLegacy32: MachOThinner.hasARM32Slices(under: app),
+                       content: IPAContentScanner.scan(app: app, executable: info.executable, plist: plist,
+                                                       entitlements: entitlements))
     }
 
     private static func require(_ type: FileAttributeType, _ url: URL) throws {

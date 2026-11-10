@@ -307,6 +307,9 @@ public struct AppRecord: Codable, Identifiable, Equatable, Sendable {
     /// Tweaks chosen for a device the app isn't installed on yet (by device id): they keep the
     /// tweak's files until that device's first signing, which records its own list.
     public var pendingTweakUses: [String: [TweakUse]]?
+    /// What the kept .ipa holds besides the original app (`IPAContentScanner`), read at import.
+    /// nil in older state, or when damaged: read again from the .ipa when needed.
+    public var content: IPAContent?
 
     public init(id: UUID, displayName: String, originalBundleID: String, signedBundleID: String,
                 ipaPath: String, options: InstallOptions, installations: [Installation], teamID: String,
@@ -347,6 +350,7 @@ public struct AppRecord: Codable, Identifiable, Equatable, Sendable {
         // One at a time: a damaged (or newer) entry doesn't cost the others.
         tweaks = (try? c.decodeIfPresent([LossyTweak].self, forKey: .tweaks))?.compactMap(\.package)
         pendingTweakUses = try? c.decodeIfPresent([String: [TweakUse]].self, forKey: .pendingTweakUses)
+        content = try? c.decodeIfPresent(IPAContent.self, forKey: .content)
     }
 
     private struct LossyTweak: Decodable {
@@ -568,6 +572,7 @@ public actor AppLibrary {
             items[index].icloud = info.icloud
             items[index].legacy32 = info.hasLegacy32
             items[index].executable = info.executable
+            items[index].content = info.content
             record = items[index]
         } else {
             record = AppRecord(id: id, displayName: info.name, originalBundleID: info.bundleID,
@@ -578,10 +583,20 @@ public actor AppLibrary {
             record.icloud = info.icloud
             record.legacy32 = info.hasLegacy32
             record.executable = info.executable
+            record.content = info.content
             items.append(record)
         }
         do { try save() } catch { items = previous; throw error }
         return record
+    }
+
+    /// Stores what was read of the app's kept .ipa (`IPAContentScanner`), for a record imported
+    /// before it was read at import.
+    public func setContent(_ content: IPAContent, for id: UUID) throws {
+        let index = try indexOf(id)
+        let previous = items
+        items[index].content = content
+        do { try save() } catch { items = previous; throw error }
     }
 
     public func setOptions(_ options: InstallOptions, for id: UUID) throws {

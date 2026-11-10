@@ -1007,6 +1007,19 @@ final class AppModel {
     /// The library was read once: until then, "no app" isn't known to be true (just launched).
     private(set) var hasLoadedRecords = false
 
+    /// What the app's kept .ipa holds besides the original app (Mes apps « Contenu de l'IPA… »):
+    /// the record's, else read again from `original.ipa` (an import by an older XSide, or older
+    /// rules) and stored. nil when it can't be read.
+    func ipaContent(for recordID: UUID) async -> IPAContent? {
+        guard let record = records.first(where: { $0.id == recordID }) else { return nil }
+        if let content = record.content, content.isCurrent { return content }
+        let ipa = library.root.appendingPathComponent(record.ipaPath)
+        guard let content = try? await IPAImporter.inspect(ipa: ipa, runner: runner).content else { return record.content }
+        try? await library.setContent(content, for: recordID)
+        await reloadRecords()
+        return content
+    }
+
     func reloadRecords() async {
         records = await library.records()
         let history = await library.connectionHistory()

@@ -285,6 +285,7 @@ private struct AppSettingsContent: View {
     let model: AppModel
     let entry: AppEntry
     @AppStorage(AppSettingsTab.storageKey) private var tabName = AppSettingsTab.module.rawValue
+    @State private var showsIPAContent = false
 
     private var tab: AppSettingsTab { AppSettingsTab(rawValue: tabName) ?? .module }
     private var appName: String { entry.record.options.displayName ?? entry.record.displayName }
@@ -324,6 +325,9 @@ private struct AppSettingsContent: View {
                 .reportsPaneHeight("detail", adding: 64 + 44 + barHeight) // the header, the tabs and the bar above
             }
             .scrollBounceBehavior(.basedOnSize)
+        }
+        .sheet(isPresented: $showsIPAContent) {
+            IPAContentSheet(model: model, recordID: entry.record.id, appName: appName) { showsIPAContent = false }
         }
     }
 
@@ -572,6 +576,11 @@ private struct AppSettingsContent: View {
                 .help(blockedReason ?? "")
         case .separator:
             Divider()
+        case .ipaContent:
+            // Read only: never greyed.
+            Button(L("ipaContent.menu"), systemImage: "doc.text.magnifyingglass") {
+                DispatchQueue.main.async { showsIPAContent = true }
+            }
         case .removeFromList:
             Button(L("popover.app.removeFromList"), systemImage: "minus.circle", action: removeFromList)
                 .disabled(!canManage)

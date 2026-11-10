@@ -73,6 +73,16 @@ XSide installs `.ipa` files on your iPhone and iPad with a free Apple Account, t
 | 🐞 **Easy bug reports** | *Report a problem* opens the GitHub bug form already filled in, and saves the full log on your Desktop to attach. Personal details are masked. |
 | 🌍 **Localized** | English and French. |
 
+## 🔍 What's in an IPA
+
+An IPA found on the internet may have been changed by anyone. Before anything else, the install window shows what someone added to the original app, and *Settings > My apps*, in the app's *⋯* menu, shows it again later (*IPA contents…*, read from the IPA XSide kept). Nothing is sent anywhere: XSide reads the IPA on your Mac.
+
+- **Additions.** Every library the app loads from inside the IPA that doesn't come from its developer: loose `.dylib` files (Swift's own libraries excepted), frameworks known as tweak infrastructure (CydiaSubstrate, ElleKit, Substitute, libhooker, Cephei, Orion…), and any library signed by another team than the app. Each with its name, where it is, its size, how it's loaded and whether it's a tweak, a tweak library or unknown (*no name or author* when nothing names it). The app's normal frameworks (Firebase, Swift…) aren't listed. Tweaks you add with XSide aren't either: they have their own *Tweaks* tab.
+- **Warning signs**, in the additions only: an address that account thieves use to collect what they take (Discord webhooks, Telegram bots, paste sites, ngrok, webhook.site, requestbin, a URL to a raw IP address and port), and, in an unknown addition or one with such an address, reading the keychain, watching the clipboard, reading every cookie, or downloading code and running it. Signs are hints, not proof, and the list is kept short on purpose: a well-known tweak reading its own settings isn't flagged.
+- **Accesses the app can ask for**, from its Info.plist and entitlements (camera, microphone, photos, location, local network, notifications…). iOS asks you when the app needs one, and you can say no.
+
+Nothing here blocks an install. **XSide can't guarantee that an app is safe**: it shows what the app contains and what deserves your attention. When in doubt, get the IPA from a source you trust.
+
 ## ⚙️ How it works
 
 ```mermaid
