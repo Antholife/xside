@@ -1295,6 +1295,11 @@ final class AppModel {
     /// meanwhile are written. False when the server refused it (answer it as a check-in).
     private func holdWatch(installationID: String, nonce: String, secret: Data, first: ChannelWatchState,
                            key: JobKey, saysBye: Bool, hold: ChannelServer.Hold) async -> Bool {
+        // A first line that can't be sealed: not held, so the connection isn't kept open with no
+        // line on it (mega review C3); the caller answers as a check-in.
+        guard (try? ChannelHandler.replyLine(.settings(first.settings, lastRefresh: first.lastRefresh, pausedUntil: first.pausedUntil),
+                                             installationID: installationID, requestNonce: nonce, secret: secret)) != nil
+        else { return false }
         let token = UUID()
         let opened = Date()
         let push = await hold(installationID) { [weak self] close in

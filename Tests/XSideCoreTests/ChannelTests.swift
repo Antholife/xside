@@ -36,6 +36,21 @@ import CryptoKit
         #expect(ChannelRequest.refresh.pollEvery == nil)
     }
 
+    /// Mega review C3: a pause end past year 3000 (stored state, any source) is carried as year
+    /// 3000 instead of making every reply to that installation fail to seal.
+    @Test func aPauseEndPastTheLastDateIsClamped() throws {
+        let far = Date(timeIntervalSince1970: 1e14)
+        let settings = InAppSettings.defaults(reminder: true, at: Date(timeIntervalSince1970: 1_800_000_000))
+        let max = Date(timeIntervalSince1970: TimeInterval(channelMaxMillis) / 1000)
+        for reply in [ChannelReply.settings(settings, pausedUntil: far), .live(seq: 1, settings, pausedUntil: far)] {
+            let decoded = try ChannelReply.decode(body: try reply.encodedBody())
+            switch decoded {
+            case let .settings(_, _, until), let .live(_, _, _, until): #expect(until == max)
+            default: Issue.record("wrong reply \(decoded)")
+            }
+        }
+    }
+
     @Test func wrongSecretIsRejected() throws {
         var seen = NonceCache()
         let env = try seal()

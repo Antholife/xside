@@ -48,6 +48,19 @@ struct CLIBridgeTests {
         #expect(CLIBridge.Request(userInfo: ["id": "1", "command": "pause", "seconds": "abc"]) == nil)
         #expect(CLIBridge.Request(userInfo: ["id": "1", "command": "pause"])?.command == .pause(seconds: nil))
     }
+
+    /// Mega review C3: a pause longer than the tool can ask for (a hand-posted request) is refused,
+    /// so no pause can end past the dates the channel carries.
+    @Test func aPauseLongerThanTheLongestIsRefused() {
+        let record = "00000000-0000-0000-0000-000000000001"
+        for seconds in [String(CLIBridge.maxPause + 1), String(Int.max)] {
+            #expect(CLIBridge.Request(userInfo: ["id": "1", "command": "pause", "seconds": seconds]) == nil)
+            #expect(CLIBridge.Request(userInfo: ["id": "1", "command": "pause-app", "record": record, "devices": "d1",
+                                                 "seconds": seconds]) == nil)
+        }
+        #expect(CLIBridge.Request(userInfo: ["id": "1", "command": "pause", "seconds": String(CLIBridge.maxPause)])?.command
+                == .pause(seconds: CLIBridge.maxPause))
+    }
 }
 
 /// Review D–G Important 1: a long `uninstall` or `report` is waited for as long as it takes.

@@ -302,7 +302,7 @@ public enum ChannelReply: Codable, Equatable, Sendable {
             try c.encode("settings", forKey: .type)
             try c.encode(s, forKey: .settings)
             try c.encodeIfPresent(lastRefresh, forKey: .lastRefresh)
-            try c.encodeIfPresent(pausedUntil, forKey: .pausedUntil)
+            try c.encodeIfPresent(pausedUntil.flatMap(channelClamped), forKey: .pausedUntil)
         case .accepted: try c.encode("accepted", forKey: .type)
         case .refreshed: try c.encode("refreshed", forKey: .type)
         case let .failed(key):
@@ -319,7 +319,7 @@ public enum ChannelReply: Codable, Equatable, Sendable {
             try c.encode(seq, forKey: .seq)
             try c.encode(s, forKey: .settings)
             try c.encodeIfPresent(lastRefresh, forKey: .lastRefresh)
-            try c.encodeIfPresent(pausedUntil, forKey: .pausedUntil)
+            try c.encodeIfPresent(pausedUntil.flatMap(channelClamped), forKey: .pausedUntil)
         case let .alive(seq):
             try c.encode("alive", forKey: .type)
             try c.encode(seq, forKey: .seq)
@@ -354,6 +354,15 @@ func channelMillis(_ date: Date) -> Int64? {
     let ms = (date.timeIntervalSince1970 * 1000).rounded()
     guard ms.isFinite, ms >= 0, ms <= Double(channelMaxMillis) else { return nil }
     return Int64(ms)
+}
+
+/// `date` brought into 1970...3000, nil when it isn't a date at all (not finite). For a pause's
+/// end, which only says when it ends (mega review C3): one stored past year 3000 is carried as
+/// year 3000 rather than making every reply to its installation fail to seal.
+func channelClamped(_ date: Date) -> Date? {
+    let s = date.timeIntervalSince1970
+    guard s.isFinite else { return nil }
+    return Date(timeIntervalSince1970: min(max(s, 0), TimeInterval(channelMaxMillis) / 1000))
 }
 
 extension JSONEncoder {

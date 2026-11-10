@@ -147,6 +147,13 @@ public enum CLIBridge {
             ["id": id, "command": command, "record": record.uuidString, "devices": devices.joined(separator: "\n")]
         }
 
+        /// A pause's length as sent: 1 s to `maxPause` (mega review C3: longer, its end would be
+        /// past the dates the channel can carry).
+        private static func pauseSeconds(_ text: String) -> Int? {
+            guard let seconds = Int(text), (1...CLIBridge.maxPause).contains(seconds) else { return nil }
+            return seconds
+        }
+
         public init?(userInfo: [AnyHashable: Any]?) {
             guard let info = userInfo as? [String: String], let id = info["id"] else { return nil }
             switch info["command"] {
@@ -157,7 +164,7 @@ public enum CLIBridge {
             case "pause":
                 // Present but unreadable: refused, never read as "until resumed".
                 if let text = info["seconds"] {
-                    guard let seconds = Int(text), seconds > 0 else { return nil }
+                    guard let seconds = Self.pauseSeconds(text) else { return nil }
                     self.init(id: id, key: info["key"], command: .pause(seconds: seconds))
                 } else {
                     self.init(id: id, key: info["key"], command: .pause(seconds: nil))
@@ -178,7 +185,7 @@ public enum CLIBridge {
                     self.init(id: id, key: info["key"], command: .editSettings(recordID: record, deviceIDs: devices, changes: changes))
                 case "pause-app":
                     if let text = info["seconds"] {
-                        guard let seconds = Int(text), seconds > 0 else { return nil }
+                        guard let seconds = Self.pauseSeconds(text) else { return nil }
                         self.init(id: id, key: info["key"], command: .pauseApp(recordID: record, deviceIDs: devices, seconds: seconds))
                     } else {
                         self.init(id: id, key: info["key"], command: .pauseApp(recordID: record, deviceIDs: devices, seconds: nil))
