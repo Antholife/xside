@@ -763,8 +763,9 @@ extension AppModel {
     /// A card's dependencies, with this model's lines and actions.
     func dependencyState(_ target: DependencyTarget, rows: [DependencyRow], names: [String: String],
                          elsewhere: [String: String] = [:]) -> TweakDependencyState {
-        TweakDependencyState(rows: rows, deviceNames: names, errors: dependencyErrors, notices: liveDependencyNotices,
-                             progress: dependencyProgress, beingAdded: dependenciesBeingAdded, elsewhere: elsewhere,
+        let lines = dependencyLines(target.scope)
+        return TweakDependencyState(rows: rows, deviceNames: names, errors: lines.errors, notices: lines.notices,
+                             progress: lines.progress, beingAdded: lines.beingAdded, elsewhere: elsewhere,
                              addDeb: { dep, urls in Task { await self.addDependencyDeb(urls, for: dep, target: target) } },
                              download: { dep in
                                  guard let tweak = self.dependencyRows(target)?.package else { return }
@@ -776,9 +777,11 @@ extension AppModel {
     /// tweak name (`DependencyRows.lineCards`).
     func dependencyLinesElsewhere(_ cards: [TweakPackage], target: (String) -> DependencyTarget) -> [String: [String: String]] {
         var owners = DependencyRows.lineCards(cards.compactMap { p in dependencyRows(target(p.id)).map { (p.id, $0.rows) } })
-        // The card that started the last action keeps its lines (while it lists the dependency).
-        for (package, tweakID) in dependencyLineOwners where owners[package] != nil && cards.contains(where: { $0.id == tweakID }) {
-            owners[package] = tweakID
+        // The card that started the last action here keeps its lines (while it lists the dependency).
+        let scope = cards.first.map { target($0.id).scope }
+        for (line, tweakID) in dependencyLineOwners where line.scope == scope
+            && owners[line.package] != nil && cards.contains(where: { $0.id == tweakID }) {
+            owners[line.package] = tweakID
         }
         let names = Dictionary(cards.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
         var out: [String: [String: String]] = [:]
@@ -790,10 +793,21 @@ extension AppModel {
         return out
     }
 
-    /// Its own lines (« Mettre à jour »).
-    var ownDependencyState: TweakDependencyState {
-        TweakDependencyState(rows: [], errors: dependencyErrors, notices: liveDependencyNotices,
-                             progress: dependencyProgress, beingAdded: dependenciesBeingAdded)
+    /// Its own lines (« Mettre à jour »), in that place.
+    func ownDependencyState(_ scope: DependencyScope) -> TweakDependencyState {
+        let lines = dependencyLines(scope)
+        return TweakDependencyState(rows: [], errors: lines.errors, notices: lines.notices,
+                                    progress: lines.progress, beingAdded: lines.beingAdded)
+    }
+
+    /// The dependency lines of one place, by package id (mega review U7).
+    func dependencyLines(_ scope: DependencyScope)
+        -> (errors: [String: String], notices: [String: String], progress: [String: String], beingAdded: Set<String>) {
+        func here(_ d: [DependencyLineKey: String]) -> [String: String] {
+            Dictionary(d.filter { $0.key.scope == scope }.map { ($0.key.package, $0.value) }, uniquingKeysWith: { a, _ in a })
+        }
+        return (here(dependencyErrors), here(liveDependencyNotices), here(dependencyProgress),
+                Set(dependenciesBeingAdded.filter { $0.scope == scope }.map(\.package)))
     }
 }
 
@@ -811,10 +825,9 @@ struct InstallTweaksSection: View {
             EmptyView()
         } cards: {
             GroupedTweakCards(items: items(order, elsewhere: elsewhere), blocksNext: true, isDisabled: flow.isRunning,
-                              removeHelp: L("tweaks.remove.help"), lines: model.ownDependencyState)
+                              removeHelp: L("tweaks.remove.help"), lines: model.ownDependencyState(.window))
         }
         .disabled(flow.isRunning)
-        .onChange(of: flow.deviceIDs, initial: true) { model.syncTweakDevices(flow) }
     }
 
     private func items(_ order: [(package: TweakPackage, dependencyOf: [String])],
@@ -881,7 +894,7 @@ struct InstalledTweaksSection: View {
                 .font(.system(size: 11))
         } cards: {
             GroupedTweakCards(items: items(order, listed: listed, elsewhere: elsewhere, disabled: disabled), blocksNext: false,
-                              isDisabled: disabled, removeHelp: L("tweaks.remove.helpOne"), lines: model.ownDependencyState)
+                              isDisabled: disabled, removeHelp: L("tweaks.remove.helpOne"), lines: model.ownDependencyState(.installation(entry.id)))
         }
     }
 

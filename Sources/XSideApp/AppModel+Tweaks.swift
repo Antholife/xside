@@ -529,6 +529,28 @@ enum DependencyTarget: Hashable {
         case .draft(let id), .entry(_, let id): id
         }
     }
+
+    /// Where its dependency lines belong.
+    var scope: DependencyScope {
+        switch self {
+        case .draft: .window
+        case .entry(let key, _): .installation(key)
+        }
+    }
+}
+
+/// Where a dependency's lines (progress, result, error) belong: the install window, or one
+/// installation in Mes apps. The cards of one place share them (`dependencyLineOwners`).
+enum DependencyScope: Hashable {
+    case window
+    case installation(JobKey)
+}
+
+/// A dependency's lines in one place (mega review U7: keyed by package id alone, a download on
+/// one app turned « Télécharger » off on another, and closing the install window wiped Mes apps' lines).
+struct DependencyLineKey: Hashable {
+    let scope: DependencyScope
+    let package: String
 }
 
 extension AppModel {
@@ -571,9 +593,10 @@ extension AppModel {
     /// « Ajouter son .deb… »: kept only if it is that package in a version that will do.
     func addDependencyDeb(_ urls: [URL], for dependency: DebDependency, target: DependencyTarget) async {
         guard let url = urls.first else { return }
-        dependencyLineOwners[dependency.package] = target.tweakID
+        let line = DependencyLineKey(scope: target.scope, package: dependency.package)
+        dependencyLineOwners[line] = target.tweakID
         await addingDependency(dependency, target: target) {
-            self.dependencyProgress[dependency.package] = L("tweaks.adding", url.lastPathComponent)
+            self.dependencyProgress[line] = L("tweaks.adding", url.lastPathComponent)
             return try await self.addDependency(url, origin: .added, for: dependency, target: target)
         }
     }
@@ -583,14 +606,15 @@ extension AppModel {
     /// how big, then it is downloaded, checked, kept and added on the devices that use the tweak.
     func downloadDependency(_ dependency: DebDependency, for tweak: TweakPackage, target: DependencyTarget) async {
         let repoName = DependencySources.name(for: dependency.package)
-        dependencyLineOwners[dependency.package] = target.tweakID
+        let line = DependencyLineKey(scope: target.scope, package: dependency.package)
+        dependencyLineOwners[line] = target.tweakID
         await addingDependency(dependency, target: target) {
             let work = self.libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent(UUID().uuidString)
             defer { try? FileManager.default.removeItem(at: work) }
             let downloader = DependencyDownloader(library: self.library,
                                                   client: RepoClient(fetcher: self.repoFetcher, runner: self.runner, workDir: work))
             let source: DependencySource
-            self.dependencyProgress[dependency.package] = L("deps.progress.looking", repoName)
+            self.dependencyProgress[line] = L("deps.progress.looking", repoName)
             do {
                 source = try await downloader.prepare(dependency, preferredArchitecture: tweak.architecture)
             } catch {
@@ -604,7 +628,7 @@ extension AppModel {
                     await downloader.release(source)
                     return .cancelled("download not confirmed")
                 }
-                self.dependencyProgress[dependency.package] = Self.downloadingText(source)
+                self.dependencyProgress[line] = Self.downloadingText(source)
                 let fetched: (file: URL, origin: TweakOrigin)
                 do {
                     fetched = try await downloader.fetch(source)
@@ -637,7 +661,7 @@ extension AppModel {
     /// `updating`: « Mettre à jour » on the dependency's own card, whose id the new copy replaces.
     private func addingDependency(_ dependency: DebDependency, target: DependencyTarget, updating: Bool = false,
                                   _ work: @escaping () async throws -> DependencyOutcome) async {
-        let key = dependency.package
+        let key = DependencyLineKey(scope: target.scope, package: dependency.package)
         guard !dependenciesBeingAdded.contains(key) else { return }
         dependencyErrors[key] = nil
         dependencyNotices[key] = nil
@@ -650,22 +674,22 @@ extension AppModel {
         do {
             switch try await work() {
             case .added(let notice, let package):
-                Self.logger.notice("dependency \(key) added: \(notice)")
+                Self.logger.notice("dependency \(key.package) added: \(notice)")
                 dependencyNotices[key] = notice
                 let about = updating ? package ?? target.tweakID : target.tweakID
                 dependencyNoticeSubjects[key] = (target, DependencyNoticeSubject(tweakID: about, packageID: package))
             case .problem(let problem):
-                Self.logger.notice("dependency \(key) not added: \(problem)")
+                Self.logger.notice("dependency \(key.package) not added: \(problem)")
                 dependencyErrors[key] = problem
             case .cancelled(let why):
-                Self.logger.notice("dependency \(key) not added: \(why)")
+                Self.logger.notice("dependency \(key.package) not added: \(why)")
             }
         } catch let failure as DependencyFailure {
-            Self.logger.notice("dependency \(key) not added: \(failure.text)")
+            Self.logger.notice("dependency \(key.package) not added: \(failure.text)")
             dependencyErrors[key] = failure.text
         } catch {
             Self.logger.notice("dependency \(key) not added: \(String(describing: error))")
-            dependencyErrors[key] = Self.tweakErrorText(error, name: key)
+            dependencyErrors[key] = Self.tweakErrorText(error, name: key.package)
         }
     }
 
@@ -839,13 +863,14 @@ extension AppModel {
         let dependency = wanted.map { DebDependency(package: package.packageID, relation: $0.relation, version: $0.version) }
             ?? DebDependency(package: package.packageID)
         let repoName = DependencySources.name(for: package.packageID)
-        dependencyLineOwners[dependency.package] = package.id
+        let line = DependencyLineKey(scope: target.scope, package: dependency.package)
+        dependencyLineOwners[line] = package.id
         await addingDependency(dependency, target: target, updating: true) {
             let work = self.libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent(UUID().uuidString)
             defer { try? FileManager.default.removeItem(at: work) }
             let downloader = DependencyDownloader(library: self.library,
                                                   client: RepoClient(fetcher: self.repoFetcher, runner: self.runner, workDir: work))
-            self.dependencyProgress[dependency.package] = L("deps.progress.looking", repoName)
+            self.dependencyProgress[line] = L("deps.progress.looking", repoName)
             let offer: DependencySource?
             do {
                 offer = try await downloader.update(dependency, installed: package.version ?? "0",
@@ -855,7 +880,7 @@ extension AppModel {
             }
             guard let source = offer else { return .added(L("deps.upToDate", package.name, package.version ?? "?")) }
             guard self.confirmDownload(source, dependency: dependency) else { return .cancelled("update not confirmed") }
-            self.dependencyProgress[dependency.package] = Self.downloadingText(source)
+            self.dependencyProgress[line] = Self.downloadingText(source)
             let fetched: (file: URL, origin: TweakOrigin)
             do {
                 fetched = try await downloader.fetch(source)
@@ -912,7 +937,7 @@ extension AppModel {
 
     /// The green result lines that still hold (retest, G1): one whose tweak was removed, or whose
     /// copy left the pool (or the install window), is no longer shown.
-    var liveDependencyNotices: [String: String] {
+    var liveDependencyNotices: [DependencyLineKey: String] {
         dependencyNotices.filter { key, _ in
             guard let (target, subject) = dependencyNoticeSubjects[key] else { return true }
             let present: Set<String>

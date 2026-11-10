@@ -131,7 +131,7 @@ enum SnapshotRenderer {
                     step.step = 2
                     model.showSnapshotFlow(step)
                     if suffix == "-shared" {
-                        model.dependencyErrors = ["com.opa334.altlist": L("deps.error.notFound.github", "AltList")]
+                        model.dependencyErrors = [DependencyLineKey(scope: .window, package: "com.opa334.altlist"): L("deps.error.notFound.github", "AltList")]
                     }
                     // The whole window: the footer says why « Suivant » waits (device round 2, items 3 and 6).
                     step.phase = .editing(error: nil)

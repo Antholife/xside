@@ -156,7 +156,9 @@ final class AppModel {
     var tweaksBeingAdded: [JobKey: [String]] = [:]
     /// A tweak card's dependencies (by package id): why the last action on one failed (orange
     /// line), what it did (green line), what is going on now (« Téléchargement depuis … »).
-    var dependencyErrors: [String: String] = [:]
+    /// By place and package id (`DependencyLineKey`, mega review U7): another app's card, or the
+    /// install window's, has its own.
+    var dependencyErrors: [DependencyLineKey: String] = [:]
     /// A crash fix's refresh, by installation: running, done or failed (the crash box says it).
     var crashFixes: [JobKey: CrashFixState] = [:]
     /// How the last refresh of each installation ended, for the pending bar of Settings > Mes apps
@@ -165,14 +167,14 @@ final class AppModel {
     var refreshResults: [JobKey: RefreshResult] = [:]
     /// What the last add of a dependency did (by package id, a green line under its row); shown
     /// through `liveDependencyNotices`, while what it says still holds.
-    var dependencyNotices: [String: String] = [:]
+    var dependencyNotices: [DependencyLineKey: String] = [:]
     /// What each of those lines is about: where it was asked, the tweak and the copy added.
-    var dependencyNoticeSubjects: [String: (target: DependencyTarget, subject: DependencyNoticeSubject)] = [:]
-    var dependenciesBeingAdded: Set<String> = []
-    var dependencyProgress: [String: String] = [:]
+    var dependencyNoticeSubjects: [DependencyLineKey: (target: DependencyTarget, subject: DependencyNoticeSubject)] = [:]
+    var dependenciesBeingAdded: Set<DependencyLineKey> = []
+    var dependencyProgress: [DependencyLineKey: String] = [:]
     /// The card whose button started a dependency's last action (by package id: the tweak id): its
     /// lines stay there, not on the first card that lists it (device round 2, item 5).
-    var dependencyLineOwners: [String: String] = [:]
+    var dependencyLineOwners: [DependencyLineKey: String] = [:]
     /// When each app last checked in on each device, by any installation (`AppLibrary.connectionHistory`).
     var connections: [String: Date] = [:]
     /// Settings > Mes apps > « Dépendances téléchargées »: the kept downloads (nil: not read yet).
@@ -192,8 +194,11 @@ final class AppModel {
             if oldValue !== install {
                 oldValue?.removeAppIcon()
                 oldValue?.removeTweakStaging()
-                dependencyErrors = [:]
-                dependencyNotices = [:]
+                // The window's lines go with it; Mes apps keeps its own (mega review U7).
+                dependencyErrors = dependencyErrors.filter { $0.key.scope != .window }
+                dependencyNotices = dependencyNotices.filter { $0.key.scope != .window }
+                dependencyNoticeSubjects = dependencyNoticeSubjects.filter { $0.key.scope != .window }
+                dependencyLineOwners = dependencyLineOwners.filter { $0.key.scope != .window }
                 dropKeptEmptyRecords()
             }
         }
