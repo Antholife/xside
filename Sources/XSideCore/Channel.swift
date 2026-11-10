@@ -104,6 +104,17 @@ import CryptoKit
 // - A line that isn't an envelope at all, longer than 64 KB, or not complete within 10 s: the
 //   connection is closed without a reply. Connections beyond 4 at once or 20 a minute from one
 //   address (16 in all) are dropped without a reply too.
+//
+// Known limitation (mega review C2): authenticated, NOT encrypted. Bodies are plaintext JSON, and
+// the phone checks in to any `_xside._tcp` advertiser, so someone on the same network who watches
+// the traffic (or advertises the service) learns installation ids (record UUID | device id), the
+// app's settings and version, its last refresh outcome and how its previous run ended. Nobody
+// without the secret can forge a request or a reply. Encrypting needs a v2 format on both sides
+// (a key derived from the per-installation secret + AEAD, or an opaque installation token) and a
+// migration for the dylibs already installed: not in 1.2 (backlog).
+//
+// Replay after a restart (mega review C1): the nonce caches live in memory, so XSide refuses a
+// request sealed before its channel started (it can't tell it from one the previous run took).
 
 public enum ChannelError: Error, Equatable { case invalidNonce, invalidTimestamp }
 
