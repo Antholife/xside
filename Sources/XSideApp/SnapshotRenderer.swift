@@ -71,8 +71,33 @@ enum SnapshotRenderer {
                        dark: dark, to: out.appendingPathComponent("crash-fix-\(language)-\(scheme).png"))
                 for (name, key) in sample.selections {
                     model.settingsApp = key
-                    render(SettingsView(model: model).background(Color(nsColor: .windowBackgroundColor)),
-                           dark: dark, to: out.appendingPathComponent("myapps-\(name)-\(language)-\(scheme).png"))
+                    // The YouTube iPhone page on each tab (device round 3, R3-1), the others on the first.
+                    for tab in name == "iphone" ? AppSettingsTab.allCases : [.module] {
+                        UserDefaults.standard.set(tab.rawValue, forKey: AppSettingsTab.storageKey)
+                        render(SettingsView(model: model).background(Color(nsColor: .windowBackgroundColor)),
+                               dark: dark, to: out.appendingPathComponent("myapps-\(name)\(tab == .module ? "" : "-" + tab.rawValue)-\(language)-\(scheme).png"))
+                    }
+                }
+                UserDefaults.standard.set(AppSettingsTab.module.rawValue, forKey: AppSettingsTab.storageKey)
+                // The pending bar's states (R3-2): pending, running (its step), done, failed.
+                if let youtube = model.records.first, let phone = youtube.installations.first(where: { $0.deviceID == sample.deviceIDs[0] }) {
+                    let entry = AppEntry(record: youtube, installation: phone)
+                    func bar() -> some View {
+                        PendingChangesBar(model: model, entry: entry, appName: "YouTube", deviceName: "iPhone Duo de Anthony")
+                    }
+                    render(bar().padding(20).frame(width: 600).background(Color(nsColor: .windowBackgroundColor)),
+                           dark: dark, to: out.appendingPathComponent("pending-bar-\(language)-\(scheme).png"))
+                    model.showSnapshotJob(entry.id, stage: .step(.signing))
+                    render(bar().padding(20).frame(width: 600).background(Color(nsColor: .windowBackgroundColor)),
+                           dark: dark, to: out.appendingPathComponent("pending-bar-running-\(language)-\(scheme).png"))
+                    model.showSnapshotJob(entry.id, stage: nil)
+                    model.refreshResults[entry.id] = .done(now)
+                    render(bar().padding(20).frame(width: 600).background(Color(nsColor: .windowBackgroundColor)),
+                           dark: dark, to: out.appendingPathComponent("pending-bar-done-\(language)-\(scheme).png"))
+                    model.refreshResults[entry.id] = .failed(L("popover.unreachableHint"))
+                    render(bar().padding(20).frame(width: 600).background(Color(nsColor: .windowBackgroundColor)),
+                           dark: dark, to: out.appendingPathComponent("pending-bar-failed-\(language)-\(scheme).png"))
+                    model.refreshResults[entry.id] = nil
                 }
                 render(LicencesView(onClose: {}).background(Color(nsColor: .windowBackgroundColor)),
                        dark: dark, to: out.appendingPathComponent("licences-\(language)-\(scheme).png"))
@@ -128,9 +153,22 @@ enum SnapshotRenderer {
                 model.showSnapshotFlow(nil)
                 render(DownloadedDependenciesTable(usage: sample.downloads, deviceName: { id in
                     DeviceShortName.short(sample.devices.first { $0.id == id }?.name ?? id)
-                }, remove: { _ in }, removeUnused: {}, done: {})
+                }, uninstall: { _ in }, done: {})
                     .background(Color(nsColor: .windowBackgroundColor)),
                        dark: dark, to: out.appendingPathComponent("downloads-\(language)-\(scheme).png"))
+                // « Désinstaller Cephei 1.17.1 ? »: everything checked, then the iPad only, then
+                // one app of the iPhone (device round 3, R3-3).
+                let cephei = sample.downloads[0]
+                let iPadOnly = Set(cephei.installations.filter { $0.deviceID == sample.deviceIDs[1] }.map(\.key))
+                let oneApp = Set(cephei.installations.filter { $0.deviceID == sample.deviceIDs[0] }.prefix(1).map(\.key))
+                for (suffix, checked) in [("all", nil), ("ipad", iPadOnly), ("oneapp", oneApp)] as [(String, Set<DownloadInstallation.Key>?)] {
+                    render(UninstallDependencySheet(usage: cephei, device: { id in
+                        let d = sample.devices.first { $0.id == id }
+                        return (d?.name ?? id, d?.kind == .iPad)
+                    }, checked: checked, confirm: { _ in }, cancel: {})
+                        .background(Color(nsColor: .windowBackgroundColor)),
+                           dark: dark, to: out.appendingPathComponent("uninstall-\(suffix)-\(language)-\(scheme).png"))
+                }
                 // Settings > Tweaks: every app's downloads, on their own page (device round 2, item 8).
                 model.downloadUsage = sample.downloads
                 model.settingsPane = .tweaks
@@ -281,14 +319,22 @@ enum SnapshotRenderer {
                               apps: ["Tweak Test", "YouTube"],
                               users: [DownloadUser(app: "Tweak Test", tweaks: [.init(name: "XSide Test Cephei", deviceIDs: [iPhone])]),
                                       DownloadUser(app: "YouTube", tweaks: [.init(name: "uYouPlus", deviceIDs: [iPhone, iPad]),
-                                                                            .init(name: "YouPiP", deviceIDs: [iPhone])])]),
+                                                                            .init(name: "YouPiP", deviceIDs: [iPhone])])],
+                              installations: [
+                                  DownloadInstallation(recordID: records[0].id, app: "YouTube", deviceID: iPad, tweaks: ["uYouPlus"]),
+                                  DownloadInstallation(recordID: records[1].id, app: "Instagram", deviceID: iPhone, tweaks: ["Rocket"]),
+                                  DownloadInstallation(recordID: records[0].id, app: "YouTube", deviceID: iPhone,
+                                                       tweaks: ["uYouPlus", "YouPiP"]),
+                              ]),
                 DownloadUsage(sha256: String(repeating: "a", count: 64), packageID: "com.opa334.altlist", version: "1.0.4",
                               repo: "github:opa334/AltList", repoName: "GitHub opa334/AltList", size: 61_440, downloadedAt: Date(timeIntervalSince1970: 1_800_000_000),
                               apps: []),
                 DownloadUsage(sha256: String(repeating: "b", count: 64), packageID: "com.hbang.alderis", version: "1.2.1",
                               repo: "chariz", repoName: "Chariz", size: 96_000, downloadedAt: Date(timeIntervalSince1970: 1_800_000_000),
                               apps: ["YouTube"], users: [DownloadUser(app: "YouTube", tweaks: [.init(name: "Return YouTube Dislike",
-                                                                                                   deviceIDs: [iPhone])])]),
+                                                                                                   deviceIDs: [iPhone])])],
+                              installations: [DownloadInstallation(recordID: records[0].id, app: "YouTube", deviceID: iPhone,
+                                                                   tweaks: ["Return YouTube Dislike"])]),
             ]
         }
 
@@ -400,9 +446,13 @@ enum SnapshotRenderer {
             let needs = Self.tweak(15, "YTLite", version: "5.0", author: "dayanch96", bundles: [video.originalBundleID],
                                    depends: [[DebDependency(package: "com.opa334.altlist", relation: ">=", version: "1.0")]])
             let springboard = Self.tweak(16, "Spotlight Shortcuts", version: "2.0", author: nil, bundles: ["com.apple.springboard"])
-            video.tweaks = [ok, other, lib, added, needs, springboard]
+            // Off because AltList was uninstalled from here (device round 3): « Prêts », with its note.
+            let reborn = Self.tweak(17, "YouTube Reborn", version: "4.2", author: "LillieH", bundles: [video.originalBundleID],
+                                    depends: [[DebDependency(package: "com.opa334.altlist")]])
+            video.tweaks = [ok, other, lib, added, needs, springboard, reborn]
             video.installations[1].tweaks = [TweakUse(id: ok.id), TweakUse(id: other.id, force: true), TweakUse(id: lib.id),
-                                             TweakUse(id: added.id), TweakUse(id: needs.id), TweakUse(id: springboard.id, enabled: false)]
+                                             TweakUse(id: added.id), TweakUse(id: needs.id), TweakUse(id: springboard.id, enabled: false),
+                                             TweakUse(id: reborn.id, enabled: false, removedDependency: "AltList")]
             video.installations[1].signedChoices?.tweaks = [ok.id, other.id, lib.id]
             video.installations[1].signedChoices?.forcedTweaks = [other.id]
             video.installations[1].tweakResults = [ok.id: .injected(converted: false), other.id: .skipped(.noRoom)]

@@ -870,15 +870,39 @@ extension AppModel {
         downloadUsage = await library.downloadUsage()
     }
 
-    func removeKeptDownload(_ sha256: String) async {
-        let removed = await library.removeUnusedDownload(sha256: sha256)
-        Self.logger.notice("kept download \(sha256) \(removed ? "deleted" : "kept (in use)")")
-        await loadDownloadUsage()
-    }
-
-    func removeUnusedDownloads() async {
-        let freed = await library.removeUnusedDownloads()
-        Self.logger.notice("kept downloads: \(freed.count) deleted, \(freed.bytes) bytes freed")
+    /// « Désinstaller… » (Settings > Tweaks, device round 3): off the chosen installations' lists
+    /// from their next signing; there, the tweaks it leaves without what they need are turned off
+    /// with the reason. The file goes once no installation lists it.
+    func uninstallDownload(_ usage: DownloadUsage, from keys: Set<DownloadInstallation.Key>) async {
+        var disabling: [DownloadInstallation.Key: Set<String>] = [:]
+        for key in keys {
+            guard let record = records.first(where: { $0.id == key.recordID }) else { continue }
+            let list = tweakLists(record)[key.deviceID] ?? []
+            let listed = Set(list.map(\.id)), on = Set(list.filter(\.enabled).map(\.id))
+            let pool = record.tweaks ?? []
+            let removed = pool.filter { p in
+                guard listed.contains(p.id), case .downloaded(_, _, let sha) = p.origin else { return false }
+                return sha.lowercased() == usage.sha256
+            }
+            let enabled = pool.filter { on.contains($0.id) || removed.contains($0) }
+            disabling[key] = Set(DependencyRows.disabledByUninstalling(removed, enabled: enabled,
+                                                                       context: entryContext(record, "", on: key.deviceID)).map(\.id))
+        }
+        // Its usual name (« Cephei »), else the name its package gives.
+        var name = DependencyNames.display(usage.packageID)
+        if name == usage.packageID, let stored = records.lazy.compactMap({ r in
+            r.tweaks?.first { if case .downloaded(_, _, let s) = $0.origin { s.lowercased() == usage.sha256 } else { false } }
+        }).first {
+            name = stored.name
+        }
+        do {
+            let deleted = try await library.uninstallDownload(sha256: usage.sha256, from: keys, disabling: disabling, name: name)
+            Self.logger.notice("kept download \(usage.sha256) uninstalled from \(keys.count) installation(s), "
+                               + "\(disabling.values.reduce(0) { $0 + $1.count }) tweak(s) turned off, file \(deleted ? "deleted" : "kept")")
+        } catch {
+            Self.logger.error("kept download \(usage.sha256) not uninstalled: \(String(describing: error))")
+        }
+        await reloadRecords()
         await loadDownloadUsage()
     }
 

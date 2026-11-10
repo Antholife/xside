@@ -22,6 +22,10 @@ struct DuoOptionRow: View {
     /// `isOn` is a choice already stored on an installation (Settings > Mes apps): it shows, and
     /// can be turned off, even when the app's current .ipa no longer allows it (duo review minor 2).
     var storedChoice = false
+    /// Settings > Mes apps: its change waits for the next refresh (« en attente »).
+    var pending = false
+    /// Settings > Mes apps: the explanation (and its details) behind « En savoir plus ».
+    var foldsDetails = false
     @State private var showsDetails = false
 
     /// The switch can be used: to turn it on when possible, or to clear a stored choice.
@@ -47,19 +51,29 @@ struct DuoOptionRow: View {
                             .background(Theme.brand, in: Capsule())
                             .fixedSize()
                     }
+                    if pending { PendingBadge() }
                 }
                 if let deviceName {
                     Text(deviceName).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
                 }
                 if let status { FixStatusLine(text: status.text, kind: status.kind) }
-                Text(caption)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button(L("duo.details.title")) { showsDetails.toggle() }
-                    .buttonStyle(.link)
-                    .font(.system(size: 11))
-                    .popover(isPresented: $showsDetails, arrowEdge: .bottom) { DuoDetails(needsModule: needsModule) }
+                if foldsDetails {
+                    FoldedExplanation {
+                        captionText
+                        ForEach(DuoDetails.keys(needsModule: needsModule), id: \.self) { key in
+                            Text(L("duo.details.\(key)"))
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                } else {
+                    captionText
+                    Button(L("duo.details.title")) { showsDetails.toggle() }
+                        .buttonStyle(.link)
+                        .font(.system(size: 11))
+                        .popover(isPresented: $showsDetails, arrowEdge: .bottom) { DuoDetails(needsModule: needsModule) }
+                }
                 if needsModule {
                     Label(L("duo.caption.moduleWarning"), systemImage: "exclamationmark.triangle.fill")
                         .font(.system(size: 11))
@@ -88,6 +102,13 @@ struct DuoOptionRow: View {
         .background(state == .recommended ? Theme.violet.opacity(0.10) : .clear,
                     in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .accessibilityElement(children: .contain)
+    }
+
+    private var captionText: some View {
+        Text(caption)
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     /// How it stands for this app and device; nil when not known (an app imported by an older XSide).
@@ -123,10 +144,14 @@ struct DuoOptionRow: View {
 private struct DuoDetails: View {
     let needsModule: Bool
 
+    static func keys(needsModule: Bool) -> [String] {
+        [needsModule ? "whatModule" : "what", needsModule ? "riskModule" : "risk", "undo", "onlyDuo"]
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L("duo.option")).font(.system(size: 13, weight: .semibold))
-            ForEach([needsModule ? "whatModule" : "what", needsModule ? "riskModule" : "risk", "undo", "onlyDuo"], id: \.self) { key in
+            ForEach(Self.keys(needsModule: needsModule), id: \.self) { key in
                 Text(L("duo.details.\(key)"))
                     .font(.system(size: 12))
                     .fixedSize(horizontal: false, vertical: true)

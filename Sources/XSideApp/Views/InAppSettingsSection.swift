@@ -20,8 +20,8 @@ struct InAppSettingsSection: View {
     var setAutoRefresh: ((Bool) -> Void)?
     /// Per-device status lines, under the box.
     var statuses: [DeviceSyncLine] = []
-    /// Right under the features card (Mes apps: the change waits for the next refresh).
-    var featuresNotice: AnyView?
+    /// Mes apps: the features switch's change waits for the next refresh (« en attente »).
+    var featuresPending = false
     var isDisabled = false
     /// Two columns (features, status and where to find them | the options): the install window.
     var columns = false
@@ -67,7 +67,8 @@ struct InAppSettingsSection: View {
     /// The features switch with why one would turn it off, and the per-device status.
     @ViewBuilder private var featuresPart: some View {
         card {
-            InAppRow(symbol: "puzzlepiece.extension.fill", title: L("inApp.features"), note: L("inApp.features.note")) {
+            InAppRow(symbol: "puzzlepiece.extension.fill", title: L("inApp.features"), note: L("inApp.features.note"),
+                     pending: featuresPending) {
                 Toggle(L("inApp.features"), isOn: Binding(get: { hasFeatures }, set: { on in
                     if on { hasFeatures = true } else { confirmingNoFeatures = true }
                 }))
@@ -91,7 +92,6 @@ struct InAppSettingsSection: View {
             .background(Color(nsColor: .systemOrange).opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .padding(.horizontal, 10)
             .padding(.bottom, 10)
-            if let featuresNotice { featuresNotice }
         }
         if !hasFeatures {
             Label(L("inApp.features.off"), systemImage: "minus.circle")
@@ -328,6 +328,8 @@ struct InAppRow<Accessory: View>: View {
     let title: String
     let note: String?
     var preview: InAppPreview.Kind?
+    /// Its change waits for the app's next refresh (Settings > Mes apps).
+    var pending = false
     @ViewBuilder let accessory: Accessory
 
     var body: some View {
@@ -342,6 +344,7 @@ struct InAppRow<Accessory: View>: View {
                 HStack(spacing: 4) {
                     Text(title).font(.system(size: 13))
                     if let preview { PreviewButton(kind: preview) }
+                    if pending { PendingBadge() }
                 }
                 if let note {
                     Text(note)

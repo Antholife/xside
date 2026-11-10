@@ -111,6 +111,9 @@ struct TweakRow: Identifiable {
     var signedAnyway = false
     /// A `Depends` package is missing on this device (« Dépendances » settles it).
     var missingHere = false
+    /// Off because the person uninstalled its dependency here (« Désactivé : tu as retiré … »):
+    /// its switch can be turned back on (it then shows « À régler » as usual).
+    var dependencyRemoved = false
 
     var id: String { deviceID }
     /// The chip's name: « iPhone Duo » for « iPhone Duo de Anthony ».
@@ -137,6 +140,8 @@ struct TweakCardItem: Identifiable {
     let setOn: (String, Bool) -> Void
     let setForce: (String, Bool) -> Void
     let remove: () -> Void
+    /// Settings > Mes apps: its change waits for the next refresh (« en attente »).
+    var isPending = false
     var id: String { package.id }
 }
 
@@ -312,6 +317,7 @@ struct TweakCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(package.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                    if item.isPending { PendingBadge() }
                     if isConverted, item.group == .ready {
                         Text(L("tweaks.tag.converted"))
                             .font(.system(size: 10, weight: .semibold))
@@ -434,7 +440,9 @@ struct TweakCard: View {
     // MARK: Prêts
 
     @ViewBuilder private var readyDetails: some View {
-        let depRows = (item.dependencies?.rows ?? []).filter { row in
+        // Off because the person removed its dependency: its note says so, no ✕ line for it.
+        let removedOnPurpose = !rows.isEmpty && rows.allSatisfy { $0.dependencyRemoved && !$0.isOn }
+        let depRows = removedOnPurpose ? [] : (item.dependencies?.rows ?? []).filter { row in
             row.statuses.contains { if case .notNeeded = $0.status { false } else { true } }
         }
         let results = rows.filter { $0.result != nil }
@@ -694,8 +702,10 @@ private struct DeviceChip: View {
                 .labelsHidden()
                 .toggleStyle(.xside)
                 .controlSize(.mini)
-                // A dependency missing here: it can't be turned on (it can be turned off).
-                .disabled(isDisabled || row.isBlocked || row.verdict == nil || (row.missingHere && !row.isOn))
+                // A dependency missing here: it can't be turned on (it can be turned off), unless
+                // the person removed it on purpose: on again, it shows « À régler » as usual.
+                .disabled(isDisabled || row.verdict == nil
+                          || (!(row.dependencyRemoved && !row.isOn) && (row.isBlocked || (row.missingHere && !row.isOn))))
                 .accessibilityLabel(L("tweaks.enable.a11y", packageName, row.deviceName))
                 .help(L("tweaks.enable.a11y", packageName, row.deviceName))
         }
@@ -848,16 +858,12 @@ struct InstallTweaksSection: View {
 /// Settings > Mes apps: the installation's tweaks in the same three groups (one chip: this
 /// device), what its last signing did with each, the pending line while its choice isn't in the
 /// app yet, and the link to every app's downloaded dependencies (Settings > Tweaks).
-struct InstalledTweaksSection<Notice: View>: View {
+struct InstalledTweaksSection: View {
     let model: AppModel
     let entry: AppEntry
     let deviceName: String
-    @ViewBuilder let pendingNotice: Notice
 
-    private var listed: [(TweakPackage, TweakUse)] {
-        let pool = entry.record.tweaks ?? []
-        return (entry.installation.tweaks ?? []).compactMap { use in pool.first { $0.id == use.id }.map { ($0, use) } }
-    }
+    private var listed: [(TweakPackage, TweakUse)] { model.listedTweaks(entry) }
 
     var body: some View {
         let disabled = !model.canManage(entry)
@@ -874,13 +880,13 @@ struct InstalledTweaksSection<Notice: View>: View {
         } cards: {
             GroupedTweakCards(items: items(order, listed: listed, elsewhere: elsewhere, disabled: disabled), blocksNext: false,
                               isDisabled: disabled, removeHelp: L("tweaks.remove.helpOne"), lines: model.ownDependencyState)
-            pendingNotice
         }
     }
 
     private func items(_ order: [(package: TweakPackage, dependencyOf: [String])], listed: [(TweakPackage, TweakUse)],
                        elsewhere: [String: [String: String]], disabled: Bool) -> [TweakCardItem] {
         let nestedUnder = TweakNesting.parents(order.map(\.package))
+        let pending = model.pendingTweakIDs(entry)
         return order.compactMap { item -> TweakCardItem? in
             guard nestedUnder[item.package.id] == nil,
                   let (package, use) = listed.first(where: { $0.0.id == item.package.id }) else { return nil }
@@ -896,29 +902,56 @@ struct InstalledTweaksSection<Notice: View>: View {
                 }, update: DependencySources.canDownload(p.packageID)
                     ? { Task { await model.updateDependency(p, target: depTarget) } } : nil)
             }
-            let group = TweakGroups.group([TweakGroups.DeviceState(verdict: r.verdict, isOn: r.isOn, isForced: r.isForced,
-                                                                   signedAnyway: r.signedAnyway,
-                                                                   missingDependencies: model.missingDependencies(package, for: entry))])
+            let group = model.installedTweakGroup(package, use: use, for: entry)
             return TweakCardItem(package: package, rows: [r], group: group,
                                  dependencies: found.map { model.dependencyState(target, rows: $0.rows, names: $0.deviceNames,
                                                                                  elsewhere: elsewhere[package.id] ?? [:]) },
                                  nested: nested,
                                  setOn: { _, on in Task { await model.setTweak(package.id, enabled: on, for: entry) } },
                                  setForce: { _, on in Task { await model.setTweakForce(package.id, on, for: entry) } },
-                                 remove: { Task { await model.removeTweak(package.id, for: entry) } })
+                                 remove: { Task { await model.removeTweak(package.id, for: entry) } },
+                                 isPending: pending.contains(package.id))
         }
     }
 
     private func row(_ package: TweakPackage, use: TweakUse) -> TweakRow {
         let v = model.tweakVerdicts(package, for: entry)
         let signed = entry.installation.signedChoices?.tweaks?.contains(package.id) == true
+        let removed = use.enabled ? nil : use.removedDependency
         return TweakRow(deviceID: entry.installation.deviceID, deviceName: deviceName,
                         verdict: v.verdict, forcedVerdict: v.forced, isOn: use.enabled, isForced: use.force == true,
-                        result: TweakText.result(entry.installation.tweakResults?[package.id], package: package,
-                                                 enabled: use.enabled, signed: signed, deviceName: deviceName),
+                        result: removed.map { L("tweaks.removedDependency", $0) }
+                            ?? TweakText.result(entry.installation.tweakResults?[package.id], package: package,
+                                                enabled: use.enabled, signed: signed, deviceName: deviceName),
                         signedAnyway: {
                             if case .injected? = entry.installation.tweakResults?[package.id] { true } else { false }
                         }(),
-                        missingHere: !model.missingDependencies(package, for: entry).isEmpty)
+                        missingHere: !model.missingDependencies(package, for: entry).isEmpty,
+                        dependencyRemoved: removed != nil)
+    }
+}
+
+extension AppModel {
+    /// The installation's tweaks with their use there, in its list's order.
+    func listedTweaks(_ entry: AppEntry) -> [(TweakPackage, TweakUse)] {
+        let pool = entry.record.tweaks ?? []
+        return (entry.installation.tweaks ?? []).compactMap { use in pool.first { $0.id == use.id }.map { ($0, use) } }
+    }
+
+    /// The group of one of the installation's tweaks (« À régler », « Prêts », « Pas compatibles »).
+    func installedTweakGroup(_ package: TweakPackage, use: TweakUse, for entry: AppEntry) -> TweakGroups.Group {
+        let v = tweakVerdicts(package, for: entry)
+        let signedAnyway = if case .injected? = entry.installation.tweakResults?[package.id] { true } else { false }
+        return TweakGroups.group([TweakGroups.DeviceState(verdict: v.verdict, isOn: use.enabled, isForced: use.force == true,
+                                                          signedAnyway: signedAnyway,
+                                                          missingDependencies: missingDependencies(package, for: entry),
+                                                          dependencyRemoved: !use.enabled && use.removedDependency != nil)])
+    }
+
+    /// The cards « À régler » on this installation: the Tweaks tab's red badge.
+    func tweaksToSettleCount(_ entry: AppEntry) -> Int {
+        let listed = listedTweaks(entry)
+        let nested = TweakNesting.parents(listed.map(\.0))
+        return listed.filter { nested[$0.0.id] == nil && installedTweakGroup($0.0, use: $0.1, for: entry) == .toSettle }.count
     }
 }

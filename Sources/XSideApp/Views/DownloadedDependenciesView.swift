@@ -3,18 +3,18 @@ import XSideCore
 
 /// Settings > Tweaks (device round 2, item 8: its own page, for every app, no longer reached
 /// from one app): every `.deb` XSide kept from a trusted repo, its size and who uses it (« 3 tweaks
-/// dans 2 apps », unfolded per app, tweak and device), « Supprimer » for one no app uses and
-/// « Tout nettoyer » for all of those. One an app's pool still uses is never deleted; those no app
-/// uses any more go by themselves when an app is removed.
+/// dans 2 apps », unfolded per app, tweak and device), and « Désinstaller… » for one an app uses
+/// (device round 3, R3-3: chosen device by device, app by app). Those no installation uses any
+/// more go by themselves (an app, an installation or a tweak removed), so there is no « Supprimer »
+/// or « Tout nettoyer » any more.
 struct TweaksSettingsPage: View {
     let model: AppModel
+    @State private var uninstalling: DownloadUsage?
 
     var body: some View {
         ScrollView(.vertical) {
             DownloadedDependenciesTable(usage: model.downloadUsage, deviceName: { DeviceShortName.short(model.deviceName($0)) },
-                                        remove: { sha in Task { await model.removeKeptDownload(sha) } },
-                                        removeUnused: { Task { await model.removeUnusedDownloads() } },
-                                        done: nil)
+                                        uninstall: { uninstalling = $0 }, done: nil)
                 .reportsPaneHeight()
         }
         .scrollBounceBehavior(.basedOnSize)
@@ -24,21 +24,28 @@ struct TweaksSettingsPage: View {
             #endif
             await model.loadDownloadUsage()
         }
+        .sheet(item: $uninstalling) { usage in
+            UninstallDependencySheet(usage: usage, device: { id in
+                let name = model.deviceName(id)
+                return (name, model.devices.first { $0.id == id }?.kind == .iPad || name.lowercased().contains("ipad"))
+            }, confirm: { keys in
+                uninstalling = nil
+                Task { await model.uninstallDownload(usage, from: keys) }
+            }, cancel: { uninstalling = nil })
+        }
     }
 }
 
 struct DownloadedDependenciesTable: View {
     let usage: [DownloadUsage]?
     let deviceName: (String) -> String
-    let remove: (String) -> Void
-    let removeUnused: () -> Void
+    /// « Désinstaller… » on a used one: the sheet.
+    let uninstall: (DownloadUsage) -> Void
     /// A sheet's « OK »; nil on the Settings page.
     let done: (() -> Void)?
 
     private static func size(_ bytes: Int64) -> String { fileSize(bytes) }
     @State private var unfolded: Set<String> = []
-
-    private var unusedBytes: Int64 { (usage ?? []).filter { !$0.isUsed }.reduce(0) { $0 + $1.size } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -58,11 +65,9 @@ struct DownloadedDependenciesTable: View {
             } else {
                 ProgressView().controlSize(.small)
             }
-            HStack {
-                Spacer()
-                Button(L("downloads.cleanAll", Self.size(unusedBytes)), action: removeUnused)
-                    .disabled(unusedBytes == 0)
-                if let done {
+            if let done {
+                HStack {
+                    Spacer()
                     Button(L("install.done"), action: done)
                         .keyboardShortcut(.defaultAction)
                 }
@@ -75,7 +80,7 @@ struct DownloadedDependenciesTable: View {
 
     /// Column widths: package, version, repo, size; « Utilisée par » takes the rest, then the button.
     private static let widths: [CGFloat] = [130, 58, 64, 58]
-    private static let buttonWidth: CGFloat = 92
+    private static let buttonWidth: CGFloat = 104
 
     private func cells(_ texts: [AnyView], usedBy: AnyView, button: AnyView) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -102,10 +107,10 @@ struct DownloadedDependenciesTable: View {
                     AnyView(Text(u.repoName).font(.system(size: 12)).lineLimit(1)),
                     AnyView(Text(Self.size(u.size)).font(.system(size: 12)).monospacedDigit().lineLimit(1)),
                 ], usedBy: AnyView(usedBy(u)), button: AnyView(Group {
-                    if u.isUsed {
-                        Button(L("downloads.used")) {}.disabled(true).help(L("downloads.used.help"))
-                    } else {
-                        Button(L("downloads.delete")) { remove(u.sha256) }
+                    // Listed by no installation (only what an app was last signed with): it goes
+                    // by itself at that app's next signing.
+                    if !u.installations.isEmpty {
+                        Button(L("downloads.uninstall")) { uninstall(u) }
                     }
                 }.controlSize(.small)))
             }

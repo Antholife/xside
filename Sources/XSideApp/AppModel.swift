@@ -159,6 +159,10 @@ final class AppModel {
     var dependencyErrors: [String: String] = [:]
     /// A crash fix's refresh, by installation: running, done or failed (the crash box says it).
     var crashFixes: [JobKey: CrashFixState] = [:]
+    /// How the last refresh of each installation ended, for the pending bar of Settings > Mes apps
+    /// (device round 3, R3-2): done (shown a few seconds), or failed with its reason (until the
+    /// next run). Cleared when a new run starts (`claim`).
+    var refreshResults: [JobKey: RefreshResult] = [:]
     /// What the last add of a dependency did (by package id, a green line under its row).
     var dependencyNotices: [String: String] = [:]
     var dependenciesBeingAdded: Set<String> = []
@@ -326,6 +330,11 @@ final class AppModel {
     /// Snapshot harness only: `flow` as the install window's (its tweak cards read it).
     func showSnapshotFlow(_ flow: InstallFlow?) {
         install = flow
+    }
+
+    /// Snapshot harness only: `key` as if its refresh were at `stage` (nil: not running).
+    func showSnapshotJob(_ key: JobKey, stage: JobStage?) {
+        jobs[key] = stage
     }
 
     /// Snapshot harness only: `finding` as a crash XSide found by itself on `key` (row flag and window).
@@ -2032,6 +2041,7 @@ final class AppModel {
 
     private func claim(_ key: JobKey, stage: JobStage = .waiting) {
         claims[key, default: 0] += 1
+        refreshResults[key] = nil // a new run: the bar follows it
         if jobs[key] == nil { jobs[key] = stage }
         if jobActivity == nil {
             jobActivity = ProcessInfo.processInfo.beginActivity(
@@ -2104,6 +2114,7 @@ final class AppModel {
             }
         } catch {
             await reloadRecords()
+            if wasRefresh { refreshResults[key] = .failed(Self.refreshFailureText(error)) }
             onJobFinished?(job, error, automatic, wasRefresh)
             // Deleted from the device: the pipeline dropped the installation; its reminder and
             // notification state go too (after the notification above, which reads the record).
@@ -2111,6 +2122,7 @@ final class AppModel {
             throw error
         }
         await reloadRecords()
+        if wasRefresh { showRefreshDone(key) }
         // A crash flagged before this install or refresh waits for the next check to go.
         changeCrashWatch { $0.installed(recordID: key.recordID, deviceID: key.deviceID, at: Date()) }
         // Just installed (and opened, for an install from the window): a crash is most likely now.

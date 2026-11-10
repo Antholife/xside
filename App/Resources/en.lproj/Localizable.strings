@@ -999,7 +999,6 @@
 "icloud.confirm.message" = "%@ will believe no iCloud account is signed in. It will no longer crash because of iCloud, but its data will stay on this device: nothing will sync. An app that requires iCloud may stay on its sign-in screen. You can turn the option off at any time.";
 "icloud.confirm.turnOn" = "Turn on";
 
-"pending.line" = "Change pending: will apply at the app's next refresh on %@";
 "pending.refreshNow" = "Refresh now";
 
 "tweaks.conversion.hookingLibrary" = "Its hooking library (Substrate, Substitute or libhooker) is replaced by ElleKit, added to the app";
@@ -1132,17 +1131,13 @@
 "deps.remove.breaks" = "%1$@ needs it: it will become incompatible (❌) on %2$@.";
 "downloads.open" = "Downloaded dependencies…";
 "downloads.title" = "Downloaded dependencies";
-"downloads.caption" = "Downloaded from the trusted repos. XSide never deletes one an app still uses.";
+"downloads.caption" = "One copy on the Mac; XSide puts a copy in each app that needs it, device by device. The ones nothing uses any more are deleted by themselves.";
 "downloads.none" = "No downloaded dependency.";
 "downloads.package" = "Package";
 "downloads.version" = "Version";
 "downloads.repo" = "Repo";
 "downloads.size" = "Size";
 "downloads.usedBy" = "Used by";
-"downloads.used" = "In use";
-"downloads.used.help" = "An app still uses it: remove its tweaks first.";
-"downloads.delete" = "Delete";
-"downloads.cleanAll" = "Clean up all (%@)";
 
 /* 1.2: what's new, tweaks and compatibility */
 "whatsNew.120.tweaks.title" = "Tweaks in your apps";
@@ -1173,3 +1168,44 @@
 "whatsNew.120.pending.text" = "In Settings > My apps, an option that only applies when the app is signed again (XSide module, iPhone Duo compatibility, signed-out iCloud) says Change pending under it, with a Refresh now button, until a refresh applies it.";
 "whatsNew.120.rowMenu.title" = "Refresh now moved";
 "whatsNew.120.rowMenu.text" = "An app's row in the panel no longer shows a refresh button when you hover it: Refresh now is in its … menu, and its right-click menu.";
+
+/* Device round 3: Mes apps tabs, the pending bar, uninstalling a downloaded dependency */
+"downloads.uninstall" = "Uninstall…";
+"uninstall.title" = "Uninstall %@ %@?";
+"uninstall.caption" = "Choose where to remove it from. The tweaks that need it are turned off there, from each app's next refresh.";
+"uninstall.wholeDevice" = "whole device";
+"uninstall.noTweak" = "no enabled tweak uses it";
+"uninstall.appsOn" = "%@ on %@";
+"uninstall.keeps.apps" = "%@ keeps it in its %ld apps";
+"uninstall.keeps.app" = "%@ keeps it in %@";
+"uninstall.note.removed" = "Removed from %@ only: %@";
+"uninstall.note" = "%@, so XSide keeps the file on the Mac. It is deleted once no device uses it any more.";
+"uninstall.button.one" = "Remove from %@";
+"uninstall.button.many" = "Remove from %ld devices";
+"uninstall.button.all" = "Uninstall everywhere";
+"tweaks.removedDependency" = "Off: you removed %@";
+"device.withArticle" = "the %@";
+"pending.badge" = "pending";
+"pending.badge.help" = "Applies at the app's next refresh on this device";
+"pending.bar.count.one" = "1 pending change";
+"pending.bar.count" = "%ld pending changes";
+"pending.bar.when.one" = "applies at the next refresh";
+"pending.bar.when" = "apply at the next refresh";
+"pending.what.xsideModule" = "XSide module";
+"pending.what.duoCompatibility" = "iPhone Duo compatibility";
+"pending.what.iCloudSignedOut" = "Simulate signed-out iCloud";
+"pending.what.tweaks" = "Tweaks";
+"pending.bar.running" = "Refreshing %@ on %@…";
+"pending.bar.step" = "%@ (%ld/%ld)";
+"pending.bar.done" = "Changes applied";
+"pending.bar.doneDetail" = "%@ refreshed at %@ · reopen the app on %@";
+"pending.bar.failed" = "The refresh failed";
+"pending.bar.failedKept" = "%@ · the changes are still pending";
+"pending.bar.seeDetail" = "See details";
+"pending.bar.retry" = "Try again";
+"appSettings.tab.module" = "XSide module";
+"appSettings.tab.fixes" = "Fixes";
+"appSettings.tab.tweaks" = "Tweaks";
+"appSettings.tab.toSettle" = "%ld to settle";
+"appSettings.row.pending" = "Pending changes: they apply at the app's next refresh";
+"fixes.learnMore" = "Learn more";

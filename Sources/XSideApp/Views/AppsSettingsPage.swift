@@ -214,6 +214,14 @@ private struct AppListRow: View {
                             .foregroundStyle(.primary)
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
+                        // Changes waiting for a refresh (device round 3, R3-1).
+                        if !model.pendingSigningChanges(entry).isEmpty {
+                            Circle()
+                                .fill(Color(nsColor: .systemOrange))
+                                .frame(width: 7, height: 7)
+                                .help(L("appSettings.row.pending"))
+                                .accessibilityLabel(L("appSettings.row.pending"))
+                        }
                         // Beside the name: the caption keeps the row's width.
                         if entry.installation.refreshPaused {
                             Text(L("appSettings.row.paused"))
@@ -246,11 +254,32 @@ private struct AppListRow: View {
     }
 }
 
-/// One installation's XSide settings: a brand header (icon, name, device), then the options.
+/// The three tabs of an app's detail (device round 3, R3-1), remembered from one app to the next.
+enum AppSettingsTab: String, CaseIterable {
+    case module, fixes, tweaks
+
+    static let storageKey = "appSettings.tab"
+    var title: String { L("appSettings.tab.\(rawValue)") }
+
+    /// The signing-time options shown on the tab.
+    var settings: Set<SigningTimeSetting> {
+        switch self {
+        case .module: [.xsideModule]
+        case .fixes: [.duoCompatibility, .iCloudSignedOut]
+        case .tweaks: [.tweaks]
+        }
+    }
+}
+
+/// One installation's XSide settings: a brand header (icon, name, device), the pending bar, then
+/// the three tabs: « Module XSide » (the features switch, the in-app settings, the device status,
+/// the note), « Correctifs » (Duo, iCloud, 32 bits) and « Tweaks ».
 private struct AppSettingsContent: View {
     let model: AppModel
     let entry: AppEntry
+    @AppStorage(AppSettingsTab.storageKey) private var tabName = AppSettingsTab.module.rawValue
 
+    private var tab: AppSettingsTab { AppSettingsTab(rawValue: tabName) ?? .module }
     private var appName: String { entry.record.options.displayName ?? entry.record.displayName }
     private var deviceName: String {
         model.devices.first { $0.id == entry.installation.deviceID }?.name
@@ -264,72 +293,138 @@ private struct AppSettingsContent: View {
         entry.installation.withoutXSideFeaturesHere != true
             && !entry.record.options.resolvedWithoutXSideFeatures(default: AppModel.withoutXSideFeaturesByDefault)
     }
+    /// Read from the library's current installation, not the value this view was built with: a
+    /// switch changed here is in it as soon as it is stored (device round 2, item 10).
+    private var pending: Set<SigningTimeSetting> { model.pendingSigningChanges(entry) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
+            PendingChangesBar(model: model, entry: entry, appName: appName, deviceName: deviceName)
+                .padding([.horizontal, .top], 16)
+            tabBar
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 12) {
-                    if entry.record.installations.count > 1 {
-                        Text(L("appSettings.perDevice", entry.record.installations.count))
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                    switch tab {
+                    case .module: moduleTab
+                    case .fixes: fixesTab
+                    case .tweaks: InstalledTweaksSection(model: model, entry: entry, deviceName: deviceName)
                     }
-                    InAppSettingsSection(
-                        settings: settings, appName: appName,
-                        hasFeatures: Binding(get: { hasFeatures }, set: { on in
-                            Task { await model.setXSideFeatures(on, for: entry) }
-                        }),
-                        edit: { change in Task { await model.editInApp(entry.id, change) } },
-                        setAutoRefresh: { on in
-                            Task {
-                                if on {
-                                    await model.resumeRefreshing(entry)
-                                } else if AppRowAlerts.confirmStopRefreshing(app: appName, device: deviceName) {
-                                    // Asked as from the row's "Arrêter de rafraîchir".
-                                    await model.stopRefreshing(entry)
-                                }
-                            }
-                        },
-                        statuses: [DeviceSyncLine(deviceID: entry.installation.deviceID, deviceName: deviceName,
-                                                  installation: entry.installation, lastSeen: model.channelSeen[entry.id],
-                                                  live: model.isLive(entry.id),
-                                                  connectedBefore: model.connectedBefore(entry.record, deviceID: entry.installation.deviceID))],
-                        featuresNotice: AnyView(pendingNotice(.xsideModule)),
-                        isDisabled: !model.canManage(entry))
-                    Text(L("appSettings.note"))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    CompatibilityFixesSection {
-                        duoOption
-                        iCloudOption
-                        CompatibilityFixCard { Legacy32InfoRow(appName: appName, applied: entry.record.legacy32) }
-                    }
-                    InstalledTweaksSection(model: model, entry: entry, deviceName: deviceName) { pendingNotice(.tweaks) }
                 }
                 .padding(16)
-                .reportsPaneHeight("detail", adding: 64) // the header above
+                .reportsPaneHeight("detail", adding: 64 + 44 + barHeight) // the header, the tabs and the bar above
             }
             .scrollBounceBehavior(.basedOnSize)
         }
     }
 
-    /// The Mac's choice for XSide's module now: this device's own, else the app's, else the Mac's default.
-    private var wantsWithoutFeatures: Bool { !hasFeatures }
-    /// Read from the library's current installation, not the value this view was built with: a
-    /// switch changed here is in it as soon as it is stored (device round 2, item 10).
-    private var pending: Set<SigningTimeSetting> {
-        (model.currentEntry(entry.id) ?? entry).installation.pendingSigningChanges(wantsWithoutXSideFeatures: wantsWithoutFeatures)
+    /// Room for the pending bar when it shows.
+    private var barHeight: CGFloat {
+        pending.isEmpty && model.jobs[entry.id] == nil && model.refreshResults[entry.id] == nil ? 0 : 72
     }
 
-    /// Under a signing-time option: its stored choice isn't in the installed copy yet.
-    @ViewBuilder private func pendingNotice(_ setting: SigningTimeSetting) -> some View {
-        if pending.contains(setting) {
-            PendingChangeNotice(deviceName: deviceName, isDisabled: !model.canManage(entry)) {
-                _ = model.refreshNow(RefreshJob(recordID: entry.record.id, deviceID: entry.installation.deviceID))
+    // MARK: Tabs
+
+    private var tabBar: some View {
+        HStack(spacing: 4) {
+            ForEach(AppSettingsTab.allCases, id: \.self) { t in
+                tabButton(t)
             }
+            Spacer(minLength: 0)
+        }
+        .padding(3)
+        .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .accessibilityElement(children: .contain)
+    }
+
+    private func pendingCount(_ t: AppSettingsTab) -> Int {
+        let n = pending.intersection(t.settings).count
+        guard t == .tweaks, n > 0 else { return n }
+        return max(1, model.pendingTweakIDs(entry).count)
+    }
+
+    private func tabButton(_ t: AppSettingsTab) -> some View {
+        let selected = t == tab
+        let toSettle = t == .tweaks ? model.tweaksToSettleCount(entry) : 0
+        let waiting = pendingCount(t)
+        var a11y: [String] = []
+        if toSettle > 0 { a11y.append(L("appSettings.tab.toSettle", toSettle)) }
+        if waiting > 0 { a11y.append(L(waiting == 1 ? "pending.bar.count.one" : "pending.bar.count", waiting)) }
+        return Button {
+            tabName = t.rawValue
+        } label: {
+            HStack(spacing: 6) {
+                Text(t.title)
+                    .font(.system(size: 12, weight: selected ? .semibold : .medium))
+                    .foregroundStyle(selected ? .primary : .secondary)
+                    .lineLimit(1)
+                    .fixedSize()
+                if toSettle > 0 {
+                    TabBadge(text: L("appSettings.tab.toSettle", toSettle), tint: Color(nsColor: .systemRed))
+                }
+                if waiting > 0 {
+                    TabBadge(text: "\(waiting)", tint: Color(nsColor: .systemOrange))
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(selected ? AnyShapeStyle(Color(nsColor: .controlBackgroundColor)) : AnyShapeStyle(.clear))
+                .shadow(color: .black.opacity(selected ? 0.12 : 0), radius: 1, y: 0.5))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
+        .accessibilityValue(a11y.joined(separator: ", "))
+        .help(a11y.joined(separator: " · "))
+    }
+
+    // MARK: « Module XSide »
+
+    @ViewBuilder private var moduleTab: some View {
+        if entry.record.installations.count > 1 {
+            Text(L("appSettings.perDevice", entry.record.installations.count))
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        InAppSettingsSection(
+            settings: settings, appName: appName,
+            hasFeatures: Binding(get: { hasFeatures }, set: { on in
+                Task { await model.setXSideFeatures(on, for: entry) }
+            }),
+            edit: { change in Task { await model.editInApp(entry.id, change) } },
+            setAutoRefresh: { on in
+                Task {
+                    if on {
+                        await model.resumeRefreshing(entry)
+                    } else if AppRowAlerts.confirmStopRefreshing(app: appName, device: deviceName) {
+                        // Asked as from the row's "Arrêter de rafraîchir".
+                        await model.stopRefreshing(entry)
+                    }
+                }
+            },
+            statuses: [DeviceSyncLine(deviceID: entry.installation.deviceID, deviceName: deviceName,
+                                      installation: entry.installation, lastSeen: model.channelSeen[entry.id],
+                                      live: model.isLive(entry.id),
+                                      connectedBefore: model.connectedBefore(entry.record, deviceID: entry.installation.deviceID))],
+            featuresPending: pending.contains(.xsideModule),
+            isDisabled: !model.canManage(entry))
+        Text(L("appSettings.note"))
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    // MARK: « Correctifs »
+
+    private var fixesTab: some View {
+        CompatibilityFixesSection {
+            duoOption
+            iCloudOption
+            CompatibilityFixCard { Legacy32InfoRow(appName: appName, applied: entry.record.legacy32, foldsDetails: true) }
         }
     }
 
@@ -342,14 +437,14 @@ private struct AppSettingsContent: View {
                                 Task { await model.setICloudSignedOut(value, for: entry) }
                             }),
                             missing: on && entry.installation.iCloudSignedOutMissing == true,
-                            skippedForModule: entry.installation.iCloudSignedOutSkippedForModule == true)
+                            skippedForModule: entry.installation.iCloudSignedOutSkippedForModule == true,
+                            pending: pending.contains(.iCloudSignedOut), foldsDetails: true)
             .disabled(!model.canManage(entry))
-            pendingNotice(.iCloudSignedOut)
         }
     }
 
     /// An install option, not part of the XSide module: applied at this installation's next
-    /// signing (a refresh, which can be started from here).
+    /// signing (a refresh, which the pending bar can start).
     private var duoOption: some View {
         let on = entry.installation.duoCompatibility == true
         return CompatibilityFixCard {
@@ -361,9 +456,8 @@ private struct AppSettingsContent: View {
                          }),
                          needsModule: entry.record.duo?.needsLegacyModule == true,
                          missing: on && entry.installation.duoCompatibilityMissing == true,
-                         storedChoice: true)
+                         storedChoice: true, pending: pending.contains(.duoCompatibility), foldsDetails: true)
             .disabled(!model.canManage(entry))
-            pendingNotice(.duoCompatibility)
         }
     }
 
@@ -384,5 +478,21 @@ private struct AppSettingsContent: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .background(Theme.brand)
+    }
+}
+
+/// A tab's count: « 1 à régler » in red, pending changes in orange.
+private struct TabBadge: View {
+    let text: String
+    let tint: Color
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(tint, in: Capsule())
+            .fixedSize()
     }
 }

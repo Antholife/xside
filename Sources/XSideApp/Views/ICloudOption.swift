@@ -17,6 +17,10 @@ struct ICloudOptionRow: View {
     var missing = false
     /// …because the app had room for one more library only, and XSide's module got it.
     var skippedForModule = false
+    /// Settings > Mes apps: its change waits for the next refresh (« en attente »).
+    var pending = false
+    /// Settings > Mes apps: the explanation (and its details) behind « En savoir plus ».
+    var foldsDetails = false
     @State private var showsDetails = false
 
     var body: some View {
@@ -38,19 +42,29 @@ struct ICloudOptionRow: View {
                             .background(Theme.brand, in: Capsule())
                             .fixedSize()
                     }
+                    if pending { PendingBadge() }
                 }
                 if let deviceName {
                     Text(deviceName).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
                 }
                 if let status { FixStatusLine(text: status.text, kind: status.kind) }
-                Text(L("icloud.caption"))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button(L("icloud.details.title")) { showsDetails.toggle() }
-                    .buttonStyle(.link)
-                    .font(.system(size: 11))
-                    .popover(isPresented: $showsDetails, arrowEdge: .bottom) { ICloudDetails() }
+                if foldsDetails {
+                    FoldedExplanation {
+                        captionText
+                        ForEach(ICloudDetails.keys, id: \.self) { key in
+                            Text(L("icloud.details.\(key)"))
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                } else {
+                    captionText
+                    Button(L("icloud.details.title")) { showsDetails.toggle() }
+                        .buttonStyle(.link)
+                        .font(.system(size: 11))
+                        .popover(isPresented: $showsDetails, arrowEdge: .bottom) { ICloudDetails() }
+                }
                 if missing {
                     Label(L(skippedForModule ? "icloud.missing.module" : "icloud.missing", appName), systemImage: "exclamationmark.triangle.fill")
                         .font(.system(size: 11))
@@ -72,6 +86,13 @@ struct ICloudOptionRow: View {
         .background(state == .recommended ? Theme.violet.opacity(0.10) : .clear,
                     in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .accessibilityElement(children: .contain)
+    }
+
+    private var captionText: some View {
+        Text(L("icloud.caption"))
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     /// How it stands for this app; nil when not known (an app imported by an older XSide).
@@ -99,10 +120,12 @@ extension ICloudOptionRow {
 
 /// "Learn more": what the option covers, item by item, and what it doesn't.
 private struct ICloudDetails: View {
+    static let keys = ["cloudKit", "coreData", "kvs", "drive", "limits"]
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L("icloud.option")).font(.system(size: 13, weight: .semibold))
-            ForEach(["cloudKit", "coreData", "kvs", "drive", "limits"], id: \.self) { key in
+            ForEach(Self.keys, id: \.self) { key in
                 Text(L("icloud.details.\(key)"))
                     .font(.system(size: 12))
                     .fixedSize(horizontal: false, vertical: true)

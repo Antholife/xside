@@ -999,7 +999,6 @@
 "icloud.confirm.message" = "%@ croira qu'aucun compte iCloud n'est connecté. Elle ne plantera plus à cause d'iCloud, mais ses données resteront sur cet appareil : rien ne sera synchronisé. Une app qui exige iCloud peut rester sur son écran de connexion. Tu pourras désactiver l'option à tout moment.";
 "icloud.confirm.turnOn" = "Activer";
 
-"pending.line" = "Changement en attente : s'appliquera au prochain rafraîchissement de l'app sur %@";
 "pending.refreshNow" = "Rafraîchir maintenant";
 
 "tweaks.conversion.hookingLibrary" = "Sa bibliothèque d'injection (Substrate, Substitute ou libhooker) est remplacée par ElleKit, ajouté à l'app";
@@ -1132,17 +1131,13 @@
 "deps.remove.breaks" = "%1$@ en a besoin : il deviendra incompatible (❌) sur %2$@.";
 "downloads.open" = "Dépendances téléchargées…";
 "downloads.title" = "Dépendances téléchargées";
-"downloads.caption" = "Téléchargées depuis les dépôts de confiance. XSide ne supprime jamais celles qu'une app utilise encore.";
+"downloads.caption" = "Un seul exemplaire sur le Mac ; XSide en met une copie dans chaque app qui en a besoin, appareil par appareil. Celles que plus rien n'utilise sont supprimées toutes seules.";
 "downloads.none" = "Aucune dépendance téléchargée.";
 "downloads.package" = "Paquet";
 "downloads.version" = "Version";
 "downloads.repo" = "Dépôt";
 "downloads.size" = "Taille";
 "downloads.usedBy" = "Utilisée par";
-"downloads.used" = "Utilisée";
-"downloads.used.help" = "Une app l'utilise encore : retire d'abord ses tweaks.";
-"downloads.delete" = "Supprimer";
-"downloads.cleanAll" = "Tout nettoyer (%@)";
 
 /* 1.2: what's new, tweaks and compatibility */
 "whatsNew.120.tweaks.title" = "Des tweaks dans tes apps";
@@ -1173,3 +1168,44 @@
 "whatsNew.120.pending.text" = "Dans Réglages > Mes apps, une option qui ne s'applique qu'à la prochaine signature de l'app (module XSide, compatibilité iPhone Duo, iCloud déconnecté) affiche Changement en attente dessous, avec un bouton Rafraîchir maintenant, jusqu'à ce qu'un rafraîchissement l'applique.";
 "whatsNew.120.rowMenu.title" = "Rafraîchir maintenant a changé de place";
 "whatsNew.120.rowMenu.text" = "La ligne d'une app dans le panneau n'affiche plus de bouton de rafraîchissement au survol : Rafraîchir maintenant est dans son menu … et son menu clic droit.";
+
+/* Device round 3: Mes apps tabs, the pending bar, uninstalling a downloaded dependency */
+"downloads.uninstall" = "Désinstaller…";
+"uninstall.title" = "Désinstaller %@ %@ ?";
+"uninstall.caption" = "Choisis où la retirer. Les tweaks qui en ont besoin y seront désactivés, à partir du prochain rafraîchissement de chaque app.";
+"uninstall.wholeDevice" = "tout l'appareil";
+"uninstall.noTweak" = "aucun tweak activé ne s'en sert";
+"uninstall.appsOn" = "%@ sur %@";
+"uninstall.keeps.apps" = "%@ la garde dans ses %ld apps";
+"uninstall.keeps.app" = "%@ la garde dans %@";
+"uninstall.note.removed" = "Retirée de %@ seulement : %@";
+"uninstall.note" = "%@, donc XSide garde le fichier sur le Mac. Il sera supprimé quand plus aucun appareil ne l'utilise.";
+"uninstall.button.one" = "Retirer de %@";
+"uninstall.button.many" = "Retirer de %ld appareils";
+"uninstall.button.all" = "Désinstaller partout";
+"tweaks.removedDependency" = "Désactivé : tu as retiré %@";
+"device.withArticle" = "l'%@";
+"pending.badge" = "en attente";
+"pending.badge.help" = "S'appliquera au prochain rafraîchissement de l'app sur cet appareil";
+"pending.bar.count.one" = "1 changement en attente";
+"pending.bar.count" = "%ld changements en attente";
+"pending.bar.when.one" = "s'appliquera au prochain rafraîchissement";
+"pending.bar.when" = "s'appliqueront au prochain rafraîchissement";
+"pending.what.xsideModule" = "Module XSide";
+"pending.what.duoCompatibility" = "Compatibilité iPhone Duo";
+"pending.what.iCloudSignedOut" = "Simuler iCloud déconnecté";
+"pending.what.tweaks" = "Tweaks";
+"pending.bar.running" = "Rafraîchissement de %@ sur %@…";
+"pending.bar.step" = "%@ (%ld/%ld)";
+"pending.bar.done" = "Changements appliqués";
+"pending.bar.doneDetail" = "%@ rafraîchie à %@ · rouvre l'app sur %@";
+"pending.bar.failed" = "Le rafraîchissement a échoué";
+"pending.bar.failedKept" = "%@ · les changements restent en attente";
+"pending.bar.seeDetail" = "Voir le détail";
+"pending.bar.retry" = "Réessayer";
+"appSettings.tab.module" = "Module XSide";
+"appSettings.tab.fixes" = "Correctifs";
+"appSettings.tab.tweaks" = "Tweaks";
+"appSettings.tab.toSettle" = "%ld à régler";
+"appSettings.row.pending" = "Changements en attente : ils s'appliqueront au prochain rafraîchissement de l'app";
+"fixes.learnMore" = "En savoir plus";

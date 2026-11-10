@@ -34,12 +34,42 @@ struct CompatibilityFixCard<Content: View>: View {
     }
 }
 
+/// Settings > Mes apps (device round 3, R3-1): a fix's long explanation folded behind « En savoir
+/// plus », closed at first; its one-line state stays above it.
+struct FoldedExplanation<Content: View>: View {
+    @ViewBuilder let content: Content
+    @State private var isOpen = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button {
+                withAnimation(.smooth(duration: 0.18)) { isOpen.toggle() }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .bold))
+                        .rotationEffect(.degrees(isOpen ? 90 : 0))
+                    Text(L("fixes.learnMore"))
+                }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Theme.violet)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(isOpen ? .isSelected : [])
+            if isOpen { content }
+        }
+    }
+}
+
 /// « Retrait du code 32 bits (armv7) »: an automatic fix, always listed, no switch. Says whether
 /// it applies to this .ipa (`applied`, from the import scan; nil: an app imported before XSide
 /// looked), then what it does. The install's progress list has its own step for it.
 struct Legacy32InfoRow: View {
     let appName: String
     let applied: Bool?
+    /// Settings > Mes apps: the explanation behind « En savoir plus ».
+    var foldsDetails = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -64,10 +94,11 @@ struct Legacy32InfoRow: View {
                     FixStatusLine(text: L(applied ? "fixes.legacy32.applied" : "fixes.legacy32.notApplied", appName),
                                   kind: applied ? .recommended : .neutral)
                 }
-                Text(L("fixes.legacy32.caption"))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                if foldsDetails {
+                    FoldedExplanation { caption }
+                } else {
+                    caption
+                }
             }
             // No switch: the text keeps the width of the rows that have one.
             Spacer(minLength: 8)
@@ -75,7 +106,14 @@ struct Legacy32InfoRow: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: foldsDetails ? .contain : .combine)
+    }
+
+    private var caption: some View {
+        Text(L("fixes.legacy32.caption"))
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
