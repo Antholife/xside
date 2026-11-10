@@ -26,7 +26,8 @@ APP=build/XSide.app
 # Every app gets XSide's features through this library: no release without it, nor a test build of it.
 WELCOME="$APP/Contents/Resources/XSideWelcome.dylib"
 [ -f "$WELCOME" ] || { echo "No $WELCOME (iOS SDK missing?): not releasing without it" >&2; exit 1; }
-if strings -a "$WELCOME" | grep -qE 'XSIDE_TEST_(REMINDER|LATE)_BUILD'; then
+# On the file itself: `strings | grep -q` under pipefail fails with SIGPIPE once grep stops early.
+if grep -qaE 'XSIDE_TEST_(REMINDER|LATE)_BUILD' "$WELCOME"; then
     echo "$WELCOME is a test build (XSIDE_TEST_REMINDER / XSIDE_TEST_LATE): not releasing it" >&2; exit 1
 fi
 # The "Simulate signed-out iCloud" option adds this one: an app would go without it silently.
@@ -36,7 +37,7 @@ ICLOUD="$APP/Contents/Resources/XSideICloud.dylib"
 DUOLEGACY="$APP/Contents/Resources/XSideDuoLegacy.dylib"
 [ -f "$DUOLEGACY" ] || { echo "No $DUOLEGACY (iOS SDK missing?): not releasing without it" >&2; exit 1; }
 # Its manifest names this class: it must be in the library.
-nm -gU "$DUOLEGACY" 2>/dev/null | grep -q '_OBJC_CLASS_$_XSDuoSceneDelegate' \
+nm -gU "$DUOLEGACY" 2>/dev/null | grep '_OBJC_CLASS_$_XSDuoSceneDelegate' >/dev/null \
     || { echo "$DUOLEGACY has no XSDuoSceneDelegate class" >&2; exit 1; }
 # Converted tweaks get this path redirect: without it they'd look for their files in /Library/...
 TWEAKSUPPORT="$APP/Contents/Resources/XSideTweakSupport.dylib"
@@ -49,10 +50,10 @@ nm -gU "$TWEAKSUPPORT" 2>/dev/null | grep ' _xs_tweak_redirect$' >/dev/null \
 # show on a device).
 for LIB in "$WELCOME" "$ICLOUD" "$DUOLEGACY" "$TWEAKSUPPORT"; do
     [ "$(lipo -archs "$LIB" 2>/dev/null)" = arm64 ] || { echo "$LIB is not an arm64-only library" >&2; exit 1; }
-    vtool -show-build "$LIB" 2>/dev/null | grep -qE 'platform IOS$' || { echo "$LIB is not built for iOS" >&2; exit 1; }
+    vtool -show-build "$LIB" 2>/dev/null | grep -E 'platform IOS$' >/dev/null || { echo "$LIB is not built for iOS" >&2; exit 1; }
 done
 # CloudKit weakly linked: hooked before the app runs, even in an app that doesn't link it.
-otool -l "$ICLOUD" | grep -A2 LC_LOAD_WEAK_DYLIB | grep -q '/CloudKit.framework/CloudKit' \
+otool -l "$ICLOUD" | grep -A2 LC_LOAD_WEAK_DYLIB | grep '/CloudKit.framework/CloudKit' >/dev/null \
     || { echo "$ICLOUD doesn't link CloudKit weakly" >&2; exit 1; }
 # The zstd decoder (.deb members, repo indexes): both architectures, and its BSD licence shipped.
 UNZSTD="$APP/Contents/Helpers/xside-unzstd"
