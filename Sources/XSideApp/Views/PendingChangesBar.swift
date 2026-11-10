@@ -36,6 +36,16 @@ extension AppModel {
         return current.installation.pendingSigningChanges(wantsWithoutXSideFeatures: without)
     }
 
+    /// Why « Rafraîchir maintenant » can't start this installation's refresh now, in plain words
+    /// (its help, mega review U2); nil when it can, or when a job on the row is the reason.
+    func refreshBlockedReason(_ entry: AppEntry) -> String? {
+        let current = currentEntry(entry.id) ?? entry
+        if current.installation.refreshPaused { return L("pending.refreshNow.paused") }
+        guard !canRefresh(current), jobs[entry.id] == nil, !removingDevices.contains(entry.installation.deviceID) else { return nil }
+        if !isPipelineReady { return L("pending.refreshNow.noSigning") }
+        return L("pending.refreshNow.deviceAway", deviceWithArticle(DeviceShortName.short(deviceName(entry.installation.deviceID))))
+    }
+
     /// The listed tweaks whose switch or « Injecter quand même » differs from the last signing
     /// (nothing known before a signing with tweaks): their card says « en attente ».
     func pendingTweakIDs(_ entry: AppEntry) -> Set<String> {
@@ -110,7 +120,9 @@ struct PendingChangesBar: View {
     }
 
     private func pendingView(_ pending: Set<SigningTimeSetting>) -> some View {
-        bar(tint: Color(nsColor: .systemOrange)) {
+        let current = model.currentEntry(entry.id) ?? entry
+        let paused = current.installation.refreshPaused
+        return bar(tint: Color(nsColor: .systemOrange)) {
             Image(systemName: "clock.arrow.circlepath")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color(nsColor: .systemOrange))
@@ -122,9 +134,22 @@ struct PendingChangesBar: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                // Stopped for this app: no refresh will apply them until it is resumed (mega review U2).
+                if paused {
+                    Text(L("pending.refreshNow.paused"))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color(nsColor: .systemOrange))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer(minLength: 8)
-            refreshButton(disabled: !model.canManage(entry))
+            if paused {
+                Button(L("settings.pause.resume")) { Task { await model.resumeRefreshing(current) } }
+                    .controlSize(.small)
+                    .disabled(!model.canManage(current))
+            } else {
+                refreshButton(disabled: !model.canRefresh(current), help: model.refreshBlockedReason(current))
+            }
         }
     }
 
@@ -201,6 +226,7 @@ struct PendingChangesBar: View {
             Button(L("pending.bar.retry")) { _ = model.refreshNow(job) }
                 .controlSize(.small)
                 .disabled(!model.canRefresh(model.currentEntry(entry.id) ?? entry))
+                .help(model.refreshBlockedReason(entry) ?? "")
         }
         // Listed again at once: « Réessayer » follows the device's state from now on (then every
         // 15 s while Mes apps shows).
@@ -212,10 +238,11 @@ struct PendingChangesBar: View {
         }
     }
 
-    private func refreshButton(disabled: Bool) -> some View {
+    private func refreshButton(disabled: Bool, help: String? = nil) -> some View {
         Button(L("pending.refreshNow")) { _ = model.refreshNow(job) }
             .controlSize(.small)
             .disabled(disabled)
+            .help(help ?? "")
     }
 
     private func bar<Content: View>(tint: Color, @ViewBuilder _ content: () -> Content) -> some View {

@@ -1004,6 +1004,9 @@
 "icloud.confirm.turnOn" = "Turn on";
 
 "pending.refreshNow" = "Refresh now";
+"pending.refreshNow.paused" = "Refreshing is stopped for this app: resume it to apply the changes.";
+"pending.refreshNow.noSigning" = "Xcode and signing aren't ready: see the Xcode and signing page.";
+"pending.refreshNow.deviceAway" = "Xcode can't see %@: plug it in over USB or unlock it.";
 
 "tweaks.conversion.hookingLibrary" = "Its hooking library (Substrate, Substitute or libhooker) is replaced by ElleKit, added to the app";
 "tweaks.conversion.jailbreakPaths" = "Its files are copied into the app and found there instead of the jailbreak's folders";

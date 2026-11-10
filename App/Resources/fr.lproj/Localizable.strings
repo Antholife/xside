@@ -1004,6 +1004,9 @@
 "icloud.confirm.turnOn" = "Activer";
 
 "pending.refreshNow" = "Rafraîchir maintenant";
+"pending.refreshNow.paused" = "Le rafraîchissement de cette app est arrêté : reprends-le pour appliquer les changements.";
+"pending.refreshNow.noSigning" = "Xcode et la signature ne sont pas prêts : vois la page Xcode et signature.";
+"pending.refreshNow.deviceAway" = "Xcode ne voit pas %@ : branche-le en USB ou déverrouille-le.";
 
 "tweaks.conversion.hookingLibrary" = "Sa bibliothèque d'injection (Substrate, Substitute ou libhooker) est remplacée par ElleKit, ajouté à l'app";
 "tweaks.conversion.jailbreakPaths" = "Ses fichiers sont copiés dans l'app et trouvés là plutôt que dans les dossiers du jailbreak";
