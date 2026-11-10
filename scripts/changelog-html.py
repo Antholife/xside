@@ -2,6 +2,7 @@
 
 Usage: python3 scripts/changelog-html.py 1.0.4-beta
 Handles what the changelog uses: ### headings, - bullets, **bold**, *italics*, `code`, [links](url).
+The never-released sections that follow it (e.g. 1.1.0, included in 1.2.0) are included.
 """
 import html
 import re
@@ -9,9 +10,18 @@ import sys
 
 tag = sys.argv[1]
 text = open("CHANGELOG.md", encoding="utf-8").read()
-match = re.search(rf"^## \[{re.escape(tag)}\][^\n]*\n(.*?)(?=^## \[|^\[[^\]]+\]: )", text, re.S | re.M)
+END = r"(?=^## \[|^\[[^\]]+\]: |\Z)"
+match = re.search(rf"^## \[{re.escape(tag)}\][^\n]*\n(.*?){END}", text, re.S | re.M)
 if not match:
     sys.exit(f"CHANGELOG.md has no section for {tag}")
+# The sections right after it that were never released on their own ("## [1.1.0] — never
+# released, included in 1.2.0") are part of this version: shown after its own, under their title.
+sections = [("", match.group(1))]
+NEXT = re.compile(rf"^## \[([^\]]+)\]([^\n]*never released[^\n]*)\n(.*?){END}", re.S | re.M)
+pos = match.end()
+while (more := NEXT.match(text, pos)):
+    sections.append((more.group(1) + more.group(2).rstrip(), more.group(3)))
+    pos = more.end()
 
 
 def inline(line):
@@ -24,7 +34,12 @@ def inline(line):
 
 
 out, in_list = [], False
-for raw in match.group(1).strip().splitlines():
+lines = []
+for title, body in sections:
+    if title:
+        lines.append("## " + title)
+    lines += body.strip().splitlines()
+for raw in lines:
     line = raw.strip()
     if line.startswith("- "):
         if not in_list:
@@ -35,7 +50,9 @@ for raw in match.group(1).strip().splitlines():
     if in_list:
         out.append("</ul>")
         in_list = False
-    if line.startswith("### "):
+    if line.startswith("## "):
+        out.append(f"<h2>{inline(line[3:])}</h2>")
+    elif line.startswith("### "):
         out.append(f"<h3>{inline(line[4:])}</h3>")
     elif line:
         out.append(f"<p>{inline(line)}</p>")
