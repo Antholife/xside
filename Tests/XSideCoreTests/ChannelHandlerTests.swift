@@ -322,7 +322,7 @@ import Foundation
     }
 
     @Test func sealedReplyOpensOnThePhone() throws {
-        let data = try ChannelHandler.replyLine(.refreshed, installationID: installationID, requestNonce: "n1", secret: secret)
+        let data = try ChannelHandler.replyLine(.refreshed, installationID: installationID, requestNonce: "n1", secret: secret, version: .v1)
         #expect(data.last == 0x0A)
         let envelope = try ChannelReplyEnvelope.decode(line: data.dropLast())
         #expect(envelope.open(secret: secret, expectedInstallationID: installationID, expectedNonce: "n1") == .refreshed)
@@ -564,7 +564,7 @@ import Foundation
         #expect(sent.refreshCard == Field(value: false, changedAt: edit, changedBy: .mac))
         #expect(ChannelHandler.fieldsChanged(for: phone, by: sent) == [.refreshCard])
         // Over the wire, as the phone opens it.
-        let line = try ChannelHandler.replyLine(reply, installationID: channelID, requestNonce: "n1", secret: secret)
+        let line = try ChannelHandler.replyLine(reply, installationID: channelID, requestNonce: "n1", secret: secret, version: .v1)
         let opened = try ChannelReplyEnvelope.decode(line: line.dropLast())
             .open(secret: secret, expectedInstallationID: channelID, expectedNonce: "n1")
         guard case let .settings(received, _, _)? = opened else { Issue.record("reply not opened"); return }

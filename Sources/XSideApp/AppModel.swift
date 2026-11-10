@@ -1298,24 +1298,26 @@ final class AppModel {
     /// A watch whose `watch` request authenticated and whose check-in was stored: held open by the
     /// server if a slot is left, then its first line (`first`, the check-in's reply) and what changed
     /// meanwhile are written. False when the server refused it (answer it as a check-in).
-    private func holdWatch(installationID: String, nonce: String, secret: Data, first: ChannelWatchState,
-                           key: JobKey, saysBye: Bool, hold: ChannelServer.Hold) async -> Bool {
+    private func holdWatch(installationID: String, nonce: String, secret: Data, version: ChannelVersion,
+                           first: ChannelWatchState, key: JobKey, saysBye: Bool, hold: ChannelServer.Hold) async -> Bool {
         // A first line that can't be sealed: not held, so the connection isn't kept open with no
         // line on it (mega review C3); the caller answers as a check-in.
         guard (try? ChannelHandler.replyLine(.settings(first.settings, lastRefresh: first.lastRefresh, pausedUntil: first.pausedUntil),
-                                             installationID: installationID, requestNonce: nonce, secret: secret)) != nil
+                                             installationID: installationID, requestNonce: nonce, secret: secret,
+                                             version: version)) != nil
         else { return false }
         let token = UUID()
         let opened = Date()
         let push = await hold(installationID) { [weak self] close in
             Task { @MainActor in
                 self?.watchEnded(token, key: key, close: close, saysBye: saysBye, installationID: installationID,
-                                 secret: secret, opened: opened)
+                                 secret: secret, version: version, opened: opened)
             }
         }
         guard let push else { return false }
         do {
             if let replaced = try channelWatches.open(token, installationID: installationID, nonce: nonce, secret: secret,
+                                                      version: version,
                                                       first: first, now: Date(), send: push) {
                 endedWatchTokens.take(replaced)
             }
@@ -1332,7 +1334,7 @@ final class AppModel {
     }
 
     private func watchEnded(_ token: UUID, key: JobKey, close: WatchClose, saysBye: Bool, installationID: String,
-                            secret: Data, opened: Date) {
+                            secret: Data, version: ChannelVersion, opened: Date) {
         if channelWatches.close(token) == nil {
             endedWatchTokens.insert(token) // not registered yet (see `holdWatch`), or already replaced
         } else {
@@ -1343,7 +1345,7 @@ final class AppModel {
         // replaces it on the device (an install or refresh ends the app it replaces).
         let now = Date()
         if ChannelHandler.watchEndedAbruptly(close, saysBye: saysBye, installationID: installationID, now: now,
-                                             nonces: &channelNonces, secret: secret) {
+                                             nonces: &channelNonces, secret: secret, version: version) {
             guard !isDeviceBusy(key.deviceID) else {
                 Self.channelLogger.notice("channel: watch of \(key.recordID) on \(key.deviceID) dropped during a job: not a crash")
                 return
@@ -1357,16 +1359,19 @@ final class AppModel {
     /// read or changed, and only its settings, pause and refresh.
     private func handleChannelLine(_ line: Data, send: @escaping ChannelServer.Send,
                                    hold: @escaping ChannelServer.Hold) async {
-        guard let envelope = try? ChannelEnvelope.decode(line: line) else {
+        // v1 (dylibs signed by XSide 1.1/1.2, until their next signing) names the installation;
+        // v2 carries a token its secret derives. Answered in the version it came in.
+        guard let head = ChannelHandler.head(of: line) else {
             Self.channelLogger.info("channel: malformed request ignored")
             return
         }
-        let found = await library.installation(channelID: envelope.installationID)
+        let found = await library.installation(channelRef: head.ref)
         let now = Date()
-        let received = ChannelHandler.receive(line: line, now: now, nonces: &channelNonces) { id in
-            id == envelope.installationID ? found?.installation.channelSecret : nil
+        let received = ChannelHandler.receive(line: line, now: now, nonces: &channelNonces) { ref in
+            guard ref == head.ref, let found, let secret = found.installation.channelSecret else { return nil }
+            return (ChannelEnvelope.installationID(recordID: found.recordID, deviceID: found.installation.deviceID), secret)
         }
-        guard case let .request(installationID, nonce, request) = received, let found,
+        guard case let .request(installationID, nonce, request, version) = received, let found,
               let secret = found.installation.channelSecret else {
             Self.channelLogger.notice("channel: request rejected (unknown installation, bad signature, stale or replayed)")
             await send(ChannelHandler.rejectedLine)
@@ -1405,16 +1410,17 @@ final class AppModel {
         }
         let reply: (ChannelReply) async -> Void = { answer in
             do {
-                await send(try ChannelHandler.replyLine(answer, installationID: installationID, requestNonce: nonce, secret: secret))
+                await send(try ChannelHandler.replyLine(answer, installationID: installationID, requestNonce: nonce, secret: secret,
+                                                        version: version))
             } catch {
                 Self.channelLogger.error("channel: reply not sealed: \(String(describing: error))")
             }
         }
-        let requestedAt = ChannelHandler.requestDate(timestampMillis: envelope.timestamp, now: now)
+        let requestedAt = ChannelHandler.requestDate(timestampMillis: head.timestamp, now: now)
         let (answer, update) = ChannelHandler.handle(request, installation: found.installation, now: now,
                                                      reminder: Self.setting(Self.deviceReminderKey),
                                                      requestedAt: requestedAt)
-        Self.channelLogger.notice("channel: \(Self.describe(request)) from \(job.deviceID) for \(found.recordID)")
+        Self.channelLogger.notice("channel: \(Self.describe(request)) from \(job.deviceID) for \(found.recordID) (v\(version.rawValue))")
         switch update {
         case .none:
             await reply(answer)
@@ -1434,7 +1440,7 @@ final class AppModel {
             }
             // A watch (only ever an authenticated one) stays open; refused, it is a plain check-in.
             if ChannelHandler.watchRequested(received) != nil, case let .settings(first, lastRefresh, pausedUntil) = answer,
-               await holdWatch(installationID: installationID, nonce: nonce, secret: secret,
+               await holdWatch(installationID: installationID, nonce: nonce, secret: secret, version: version,
                                first: ChannelWatchState(settings: first, lastRefresh: lastRefresh, pausedUntil: pausedUntil),
                                key: key, saysBye: request.saysBye, hold: hold) {
                 return

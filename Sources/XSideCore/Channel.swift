@@ -6,7 +6,34 @@ import CryptoKit
 // Transport: TCP to the Bonjour service `_xside._tcp`. One request line, one reply line; each line
 // is one JSON object terminated by "\n" (0x0A). JSON never contains a raw newline.
 //
-// Request line = ChannelEnvelope:
+// Two versions of the frames (mega review C2). v2 (ChannelV2.swift, what the dylib sends since
+// this change) encrypts the bodies and names the installation by an opaque token; v1 (below,
+// bodies in clear) is still accepted from the 1.1/1.2 dylibs already installed, until their next
+// signing writes the new dylib and a new secret. The bodies (ChannelRequest, ChannelReply) and every
+// exchange are the same in both; only the frame differs. XSide answers a line in the version it came
+// in, and never opens a line as the other version:
+// - A line with a "v" key is v2 and only v2 (any other value, a missing or extra field: malformed);
+//   a line without one is v1.
+// - Keys, from the installation's 32-byte secret S, HKDF-SHA256 with salt "XSide channel v2" and
+//   info "enc" (32 bytes), "mac" (32 bytes) and "token" (16 bytes). A signing rotates S, so all three.
+// - v2 request line = ChannelEnvelopeV2:
+//     {"body":"<b64 ciphertext>","iv":"<b64 of 16 bytes>","mac":"<b64 of 32 bytes>","nonce":"n1",
+//      "timestamp":1800000000000,"token":"<b64 of 16 bytes>","v":2}
+//   body = AES-256-CTR(encKey, iv, the request JSON a v1 body carries), iv 16 random bytes per line.
+//   mac = HMAC-SHA256(macKey, "xside2|request|" + b64(token) + "|" + timestampMillis + "|" + nonce
+//         + "|" + b64(iv) + "|" + b64(body))   (encrypt-then-MAC; no field can hold a "|").
+// - v2 reply (and watch) line = ChannelReplyEnvelopeV2: {"body","iv","mac","nonce","token","v":2},
+//   nonce = the request's (a watch's: the watch request's, `seq` inside the encrypted body),
+//   mac = HMAC-SHA256(macKey, "xside2|reply|" + b64(token) + "|" + nonce + "|" + b64(iv) + "|" + b64(body)).
+//   A v2 watch's `bye` is a v2 request; a v1 `bye` on it doesn't count.
+// - Checked in this order, on both sides: the exact field set and lengths (token 16, iv 16, mac 32,
+//   1 byte to 64 KB of ciphertext, a valid nonce), the token, the MAC in constant time, and only
+//   then the time window, the decryption, the body's JSON and (XSide) the nonce cache. Nothing
+//   unauthenticated is decrypted, parsed or remembered.
+// - XSide finds the installation whose secret derives the token (unknown: the bare `rejected`).
+// - The bare unsigned `{"type":"rejected"}` is the same in both versions.
+//
+// v1 request line = ChannelEnvelope:
 //   {"installationID":"<recordUUID>|<deviceID>","timestamp":1800000000000,"nonce":"n1",
 //    "body":"<base64 of the body bytes>","mac":"<base64 of 32 bytes>"}
 // - timestamp: integer milliseconds since 1970 (an integer, not a Date, to avoid float drift).
@@ -105,13 +132,12 @@ import CryptoKit
 //   connection is closed without a reply. Connections beyond 4 at once or 20 a minute from one
 //   address (16 in all) are dropped without a reply too.
 //
-// Known limitation (mega review C2): authenticated, NOT encrypted. Bodies are plaintext JSON, and
-// the phone checks in to any `_xside._tcp` advertiser, so someone on the same network who watches
-// the traffic (or advertises the service) learns installation ids (record UUID | device id), the
-// app's settings and version, its last refresh outcome and how its previous run ended. Nobody
-// without the secret can forge a request or a reply. Encrypting needs a v2 format on both sides
-// (a key derived from the per-installation secret + AEAD, or an opaque installation token) and a
-// migration for the dylibs already installed: not in 1.2 (backlog).
+// What v2 leaves visible on the network (mega review C2, was "not encrypted"): that a phone talks
+// to XSide, the token (the same for one signing: an observer can tell it's the same app on the same
+// phone, not which one), the timestamp, the nonce and the lengths; not the installation ids, the
+// settings, the version, the refresh outcome or the run report. The phone checks in to any
+// `_xside._tcp` advertiser, which learns the same and still can't forge a reply. A 1.1/1.2 dylib
+// still speaks v1 (everything above in clear) until its next signing.
 //
 // Replay after a restart (mega review C1): the nonce caches live in memory, so XSide refuses a
 // request sealed before its channel started (it can't tell it from one the previous run took).
@@ -596,21 +622,27 @@ public struct ChannelWatchReader: Sendable {
     public let installationID: String
     public let nonce: String
     private let secret: Data
+    /// The watch request's version: only lines in it are taken (`XSOpenWatchLineV2` for v2).
+    public let version: ChannelVersion
     /// The last line number taken (0 before the first `live`/`alive`).
     public private(set) var lastSeq = 0
 
-    public init(installationID: String, nonce: String, secret: Data) {
+    public init(installationID: String, nonce: String, secret: Data, version: ChannelVersion = .v1) {
         self.installationID = installationID
         self.nonce = nonce
         self.secret = secret
+        self.version = version
     }
 
     /// The reply carried by `line` (without its "\n") if it is the watch's next line, else nil
     /// (and nothing changes: the phone closes the watch).
     public mutating func open(line: Data) -> ChannelReply? {
-        guard let envelope = try? ChannelReplyEnvelope.decode(line: line),
-              let reply = envelope.open(secret: secret, expectedInstallationID: installationID, expectedNonce: nonce),
-              let seq = reply.watchSeq, seq == lastSeq + 1 else { return nil }
+        let opened: ChannelReply? = switch version {
+        case .v1: (try? ChannelReplyEnvelope.decode(line: line))?
+            .open(secret: secret, expectedInstallationID: installationID, expectedNonce: nonce)
+        case .v2: (try? ChannelReplyEnvelopeV2.decode(line: line))?.open(secret: secret, expectedNonce: nonce)
+        }
+        guard let reply = opened, let seq = reply.watchSeq, seq == lastSeq + 1 else { return nil }
         lastSeq = seq
         return reply
     }

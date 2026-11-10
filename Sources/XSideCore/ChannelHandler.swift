@@ -21,8 +21,10 @@ public enum ChannelReceived: Equatable, Sendable {
     /// the time window, replayed nonce, unreadable body): answered with the unsigned
     /// `ChannelHandler.rejectedLine`, then closed. Nothing is signed for such a request.
     case rejected
-    /// Authenticated: `installationID` matched exactly and its secret verified the MAC.
-    case request(installationID: String, nonce: String, ChannelRequest)
+    /// Authenticated: `installationID` matched exactly (v1) or its secret derives the line's token
+    /// (v2), and its secret verified the MAC. `version`: the format it came in, the one the replies
+    /// must use (a v2 request never gets a v1 line).
+    case request(installationID: String, nonce: String, ChannelRequest, version: ChannelVersion = .v1)
 }
 
 /// XSide's side of the channel, without any networking: authenticates a line, decides the reply
@@ -32,28 +34,51 @@ public enum ChannelHandler {
     /// Longest accepted request line (a check-in is well under 2 KB).
     public static let maxLineLength = 64 * 1024
 
-    /// Opens `line` (without its "\n") with the secret `secret(installationID)` returns, nil for an
-    /// installation XSide doesn't know (or has no secret for). The nonce is recorded only for an
-    /// authenticated request.
+    /// The clear part of a request line (which installation it names, its version and timestamp),
+    /// nil when it isn't a request line of either version. Nothing in it is authenticated yet.
+    public static func head(of line: Data) -> ChannelLineHead? {
+        guard line.count <= maxLineLength else { return nil }
+        return ChannelParsedLine(line)?.head
+    }
+
+    /// Opens `line` (without its "\n"), v1 or v2 as it says. `installation` names the installation
+    /// a line's id (v1) or token (v2) stands for and its secret, nil for one XSide doesn't know (or
+    /// has no secret for). The nonce is recorded only for an authenticated request, in the
+    /// installation's cache (shared by both versions).
     public static func receive(line: Data, now: Date, nonces: inout ChannelNonces,
-                               secret: (String) -> Data?) -> ChannelReceived {
-        guard line.count <= maxLineLength, let envelope = try? ChannelEnvelope.decode(line: line) else {
-            return .malformed
-        }
-        // The lookup comes first: no cache is ever created for an id XSide doesn't know.
-        guard let key = secret(envelope.installationID) else { return .rejected }
+                               installation: (ChannelKeyRef) -> (installationID: String, secret: Data)?) -> ChannelReceived {
+        guard line.count <= maxLineLength, let parsed = ChannelParsedLine(line) else { return .malformed }
+        let head = parsed.head
+        // The lookup comes first: no cache is ever created for an installation XSide doesn't know.
+        guard let (installationID, key) = installation(head.ref) else { return .rejected }
+        if case let .v1(envelope) = parsed, envelope.installationID != installationID { return .rejected }
         // Sealed before this channel started: its nonce may be in the caches of a previous run,
         // which are gone (mega review C1), so it can't be told from a replay.
-        if let start = nonces.notBeforeMillis, envelope.timestamp < start { return .rejected }
-        let opened = nonces.withCache(for: envelope.installationID) { envelope.open(secret: key, now: now, seen: &$0) }
+        if let start = nonces.notBeforeMillis, head.timestamp < start { return .rejected }
+        let opened: ChannelRequest? = nonces.withCache(for: installationID) { cache in
+            switch parsed {
+            case .v1(let envelope): envelope.open(secret: key, now: now, seen: &cache)
+            case .v2(let envelope): envelope.open(keys: ChannelKeys(secret: key), installationID: installationID, now: now, seen: &cache)
+            }
+        }
         guard let request = opened else { return .rejected }
-        return .request(installationID: envelope.installationID, nonce: envelope.nonce, request)
+        return .request(installationID: installationID, nonce: parsed.nonce, request, version: head.version)
+    }
+
+    /// `receive` for v1 lines only, with the secret `secret(installationID)` returns (a v2 line,
+    /// whose token this can't map, is rejected).
+    public static func receive(line: Data, now: Date, nonces: inout ChannelNonces,
+                               secret: (String) -> Data?) -> ChannelReceived {
+        receive(line: line, now: now, nonces: &nonces) { ref in
+            guard case let .installationID(id) = ref, let key = secret(id) else { return nil }
+            return (id, key)
+        }
     }
 
     /// The installation a received line asks to watch: only an authenticated `watch` request (the
     /// one kind of connection XSide keeps open), never a line that failed to authenticate.
     public static func watchRequested(_ received: ChannelReceived) -> String? {
-        guard case let .request(installationID, _, request) = received, case .watch = request else { return nil }
+        guard case let .request(installationID, _, request, _) = received, case .watch = request else { return nil }
         return installationID
     }
 
@@ -158,11 +183,17 @@ public enum ChannelHandler {
                              autoRefresh: c(s.autoRefresh))
     }
 
-    /// The signed reply line for an authenticated request.
+    /// The signed reply line for an authenticated request, in the request's `version` (always
+    /// passed: a v2 request must never be answered in v1).
     public static func replyLine(_ reply: ChannelReply, installationID: String, requestNonce: String,
-                                 secret: Data) throws -> Data {
-        try ChannelReplyEnvelope.seal(reply, installationID: installationID, requestNonce: requestNonce,
-                                      secret: secret).encodedLine()
+                                 secret: Data, version: ChannelVersion) throws -> Data {
+        switch version {
+        case .v1:
+            try ChannelReplyEnvelope.seal(reply, installationID: installationID, requestNonce: requestNonce,
+                                          secret: secret).encodedLine()
+        case .v2:
+            try ChannelReplyEnvelopeV2.seal(reply, requestNonce: requestNonce, secret: secret).encodedLine()
+        }
     }
 
     /// `{"type":"rejected"}` + "\n": the bare, unsigned refusal (see `ChannelReceived.rejected`).

@@ -629,7 +629,7 @@ import Foundation
     }
 
     private func abrupt(_ close: WatchClose, saysBye: Bool = true, nonces: inout ChannelNonces) -> Bool {
-        ChannelHandler.watchEndedAbruptly(close, saysBye: saysBye, installationID: id, now: now, nonces: &nonces, secret: secret)
+        ChannelHandler.watchEndedAbruptly(close, saysBye: saysBye, installationID: id, now: now, nonces: &nonces, secret: secret, version: .v1)
     }
 
     @Test func aGoodbyeIsAClean() throws {

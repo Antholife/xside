@@ -70,6 +70,36 @@ static void requestCase(NSDictionary *entry, NSData *secret, NSDictionary *body,
     check([str(line) isEqualToString:expected], [name stringByAppendingString:@": request line"]);
 }
 
+static void requestCaseV2(NSDictionary *entry, NSData *secret, NSDictionary *body, NSString *name) {
+    int64_t ts = [entry[@"timestamp"] longLongValue];
+    NSString *nonce = entry[@"nonce"];
+    NSData *iv = [[NSData alloc] initWithBase64EncodedString:entry[@"iv"] options:0];
+    NSData *token = XSChannelToken(secret);
+    check([str(XSJSONData(body)) isEqualToString:entry[@"bodyJSON"]], [name stringByAppendingString:@": v2 plaintext JSON"]);
+    NSData *ct = XSAESCTR(XSChannelEncKey(secret), iv, XSJSONData(body));
+    check([[ct base64EncodedStringWithOptions:0] isEqualToString:entry[@"body"]], [name stringByAppendingString:@": v2 ciphertext"]);
+    NSString *signedString = ct ? XSRequestSignedStringV2(token, ts, nonce, iv, ct) : @"";
+    check([signedString isEqualToString:entry[@"signedString"]], [name stringByAppendingString:@": v2 signed string"]);
+    NSData *mac = XSHMACSHA256(XSChannelMacKey(secret), [signedString dataUsingEncoding:NSUTF8StringEncoding]);
+    check([[mac base64EncodedStringWithOptions:0] isEqualToString:entry[@"mac"]], [name stringByAppendingString:@": v2 MAC"]);
+    NSData *line = XSSealRequestV2WithIV(body, secret, ts, nonce, iv);
+    check([str(line) isEqualToString:[entry[@"line"] stringByAppendingString:@"\n"]], [name stringByAppendingString:@": v2 request line"]);
+}
+
+/// A line's JSON object with `key` set to `value` (nil removes it), as a line.
+static NSData *withField(NSString *line, NSString *key, id value) {
+    NSMutableDictionary *o = [[NSJSONSerialization JSONObjectWithData:[line dataUsingEncoding:NSUTF8StringEncoding] options:0 error:NULL] mutableCopy];
+    o[key] = value;
+    return XSJSONData(o);
+}
+
+/// `b64` with byte `index` flipped.
+static NSString *flipped(NSString *b64, NSUInteger index) {
+    NSMutableData *d = [[[NSData alloc] initWithBase64EncodedString:b64 options:0] mutableCopy];
+    ((uint8_t *)d.mutableBytes)[index] ^= 1;
+    return [d base64EncodedStringWithOptions:0];
+}
+
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
         if (argc < 2) { fprintf(stderr, "usage: %s channel-fixture.json\n", argv[0]); return 2; }
@@ -252,6 +282,118 @@ int main(int argc, const char *argv[]) {
               && XSOpenWatchLine(signedBody(@{@"type": @"alive", @"seq": @1.5}), secret, iid, wnonce, 0, NULL) == XSReplyInvalid
               && XSOpenWatchLine(signedBody(@{@"type": @"alive", @"seq": @1}), secret, iid, wnonce, 0, NULL) == XSReplyOK,
               @"watch: seq must be the next integer");
+
+        // Channel v2 (mega review C2): keys, sealed requests, opened replies, hostile lines.
+        NSDictionary *v2 = fx[@"v2"];
+        check([XSChannelEncKey(secret) isEqual:hex(v2[@"encKeyHex"])] && [XSChannelMacKey(secret) isEqual:hex(v2[@"macKeyHex"])]
+              && [XSChannelToken(secret) isEqual:hex(v2[@"tokenHex"])], @"v2: HKDF keys and token match the Mac's");
+        check(XSChannelToken(hex(@"ff")).length == 16 && ![XSChannelToken(hex(@"ff")) isEqual:XSChannelToken(secret)]
+              && XSChannelToken([NSData data]) == nil, @"v2: another secret, another token; no secret, none");
+        // NIST SP 800-38A F.5.5, first block.
+        NSData *nk = hex(@"603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4");
+        NSData *nctr = hex(@"f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff");
+        check([XSAESCTR(nk, nctr, hex(@"6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e51"))
+               isEqual:hex(@"601ec313775789a5b7a7f504bbf3d228f443e3ca4d62b59aca84e990cacaf5c5")]
+              && XSAESCTR(nk, [nctr subdataWithRange:NSMakeRange(0, 15)], nctr) == nil
+              && XSAESCTR([nk subdataWithRange:NSMakeRange(0, 31)], nctr, nctr) == nil, @"v2: AES-256-CTR (NIST vector, lengths)");
+        requestCaseV2(v2[@"refreshRequest"], secret, XSRefreshBody(), @"v2 refresh");
+        requestCaseV2(v2[@"checkInRequest"], secret, XSCheckInBody(fixtureSettings(), last, @"2.3.1", 45), @"v2 checkIn");
+        requestCaseV2(v2[@"byeWatchRequest"], secret,
+                      XSWithRunReport(XSWatchBody(fixtureSettings(), nil, @"2.3.1", YES), @{@"ended": @"clean", @"since": ms(1799999000000)}),
+                      @"v2 bye watch");
+        requestCaseV2(v2[@"byeRequest"], secret, XSByeBody(), @"v2 bye");
+        NSData *r1 = XSSealRequestV2(XSRefreshBody(), secret, 1800000000000, @"n1");
+        NSData *r2 = XSSealRequestV2(XSRefreshBody(), secret, 1800000000000, @"n1");
+        check(r1 && r2 && ![r1 isEqual:r2] && ![str(r1) containsString:@"refresh"] && ![str(r1) containsString:@"rec|dev"]
+              && [str(r1) containsString:@"\"v\":2"], @"v2: a random IV per request, nothing readable on the wire");
+        check(XSSealRequestV2WithIV(XSRefreshBody(), secret, 1800000000000, @"n1", [NSData dataWithBytes:"0123456789abcde" length:15]) == nil
+              && XSSealRequestV2(XSRefreshBody(), [NSData data], 1800000000000, @"n1") == nil
+              && XSSealRequestV2(XSRefreshBody(), secret, 1800000000000, @"bad nonce") == nil, @"v2: sealing refuses bad IV, secret, nonce");
+
+        NSDictionary *sr = v2[@"settingsReply"];
+        NSString *srNonce = sr[@"nonce"], *srLine = sr[@"line"];
+        NSData *srData = [srLine dataUsingEncoding:NSUTF8StringEncoding];
+        NSDictionary *v2body = nil;
+        check(XSOpenReplyV2(srData, secret, srNonce, &v2body) == XSReplyOK && [v2body[@"type"] isEqual:@"settings"]
+              && sameSettings(XSSettingsFromJSONObject(v2body[@"settings"]) ?: @{}, fixtureSettings())
+              && XSMillis(XSRefreshOutcomeFromJSONObject(v2body[@"lastRefresh"])[@"at"]) == 1799995000250, @"v2 reply: opens, settings read back");
+        NSMutableData *srNL = [srData mutableCopy];
+        [srNL appendBytes:"\n" length:1];
+        check(XSOpenReplyV2(srNL, secret, srNonce, NULL) == XSReplyOK, @"v2 reply: with its newline");
+        check(XSOpenReplyV2(srData, secret, @"other", NULL) == XSReplyInvalid
+              && XSOpenReplyV2(srData, hex(@"ff"), srNonce, NULL) == XSReplyInvalid, @"v2 reply: other nonce or secret refused");
+        NSArray<NSData *> *hostileV2 = @[
+            withField(srLine, @"body", flipped(sr[@"body"], 0)),              // tampered ciphertext
+            withField(srLine, @"iv", flipped(sr[@"iv"], 15)),                 // tampered IV
+            withField(srLine, @"token", flipped(sr[@"token"], 0)),            // another token
+            withField(srLine, @"mac", flipped(sr[@"mac"], 31)),               // tampered MAC
+            withField(srLine, @"iv", [[NSData dataWithBytes:"0123456789abcde" length:15] base64EncodedStringWithOptions:0]),
+            withField(srLine, @"iv", [[NSData dataWithBytes:"0123456789abcdefg" length:17] base64EncodedStringWithOptions:0]),
+            withField(srLine, @"iv", nil),
+            withField(srLine, @"body", @""),
+            withField(srLine, @"mac", @"QQ=="),
+            withField(srLine, @"v", nil),                                     // not v2
+            withField(srLine, @"v", @1),
+            withField(srLine, @"v", @"2"),
+            withField(srLine, @"v", @YES),
+            withField(srLine, @"installationID", @"rec|dev"),                 // a v1 field
+            [srData subdataWithRange:NSMakeRange(0, srData.length / 2)],     // truncated
+            [srData subdataWithRange:NSMakeRange(0, srData.length - 1)],
+        ];
+        BOOL allRefused = YES;
+        for (NSUInteger i = 0; i < hostileV2.count; i++) {
+            if (XSOpenReplyV2(hostileV2[i], secret, srNonce, NULL) != XSReplyInvalid) { allRefused = NO; fprintf(stderr, "hostile %lu\n", (unsigned long)i); }
+        }
+        check(allRefused, @"v2 reply: truncated, wrong IV length, tampered fields, other token, v1/v2 confusion refused");
+        NSMutableData *huge = [NSMutableData dataWithLength:64 * 1024 + 1];
+        memset(huge.mutableBytes, 'a', huge.length);
+        check(XSOpenReplyV2(huge, secret, srNonce, NULL) == XSReplyInvalid, @"v2 reply: over 64 KB refused");
+        // No fallback: the v1 reply (well signed) isn't a v2 one, nor the reverse.
+        check(XSOpenReplyV2(line, secret, nonce, NULL) == XSReplyInvalid
+              && XSOpenReply(srData, secret, iid, srNonce, NULL) == XSReplyInvalid, @"v2 reply: v1 and v2 replies never mixed");
+        check(XSOpenReplyV2([@"{\"type\":\"rejected\"}\n" dataUsingEncoding:NSUTF8StringEncoding], secret, srNonce, NULL)
+              == XSReplyUnknownInstallation, @"v2 reply: bare rejected");
+        // A reply MAC computed as a request's (other domain) is refused.
+        NSData *srIV = [[NSData alloc] initWithBase64EncodedString:sr[@"iv"] options:0];
+        NSData *srCT = [[NSData alloc] initWithBase64EncodedString:sr[@"body"] options:0];
+        NSString *asRequest = [XSHMACSHA256(XSChannelMacKey(secret), [XSRequestSignedStringV2(XSChannelToken(secret), 0, srNonce, srIV, srCT)
+                                                                     dataUsingEncoding:NSUTF8StringEncoding]) base64EncodedStringWithOptions:0];
+        check(XSOpenReplyV2(withField(srLine, @"mac", asRequest), secret, srNonce, NULL) == XSReplyInvalid
+              && [XSReplySignedStringV2(XSChannelToken(secret), srNonce, srIV, srCT) isEqualToString:sr[@"signedString"]],
+              @"v2 reply: signed string, request-domain MAC refused");
+        // A well-MACed body that isn't a reply object.
+        NSData *(^sealReplyV2)(NSData *, NSString *) = ^NSData *(NSData *plain, NSString *rn) {
+            NSData *riv = [NSData dataWithBytes:"ABCDEFGHIJKLMNOP" length:16];
+            NSData *ct = XSAESCTR(XSChannelEncKey(secret), riv, plain);
+            NSString *m = [XSHMACSHA256(XSChannelMacKey(secret), [XSReplySignedStringV2(XSChannelToken(secret), rn, riv, ct)
+                                                                  dataUsingEncoding:NSUTF8StringEncoding]) base64EncodedStringWithOptions:0];
+            return XSJSONData(@{@"v": @2, @"token": [XSChannelToken(secret) base64EncodedStringWithOptions:0], @"nonce": rn,
+                                @"iv": [riv base64EncodedStringWithOptions:0], @"body": [ct base64EncodedStringWithOptions:0], @"mac": m});
+        };
+        check(XSOpenReplyV2(sealReplyV2([@"not json" dataUsingEncoding:NSUTF8StringEncoding], srNonce), secret, srNonce, NULL) == XSReplyInvalid
+              && XSOpenReplyV2(sealReplyV2([@"[1]" dataUsingEncoding:NSUTF8StringEncoding], srNonce), secret, srNonce, NULL) == XSReplyInvalid
+              && XSOpenReplyV2(sealReplyV2(XSJSONData(@{@"type": @"busy"}), srNonce), secret, srNonce, NULL) == XSReplyOK,
+              @"v2 reply: an authentic non-reply body refused (and a real one opens)");
+
+        // v2 watch lines.
+        NSDictionary *live2 = v2[@"liveLine"], *a2 = v2[@"aliveLine"];
+        NSString *w2 = live2[@"nonce"];
+        NSData *l2d = [live2[@"line"] dataUsingEncoding:NSUTF8StringEncoding], *a2d = [a2[@"line"] dataUsingEncoding:NSUTF8StringEncoding];
+        check(XSOpenWatchLineV2(l2d, secret, w2, 0, &pushed) == XSReplyOK && [pushed[@"type"] isEqual:@"live"]
+              && [XSSettingValue(XSSettingsFromJSONObject(pushed[@"settings"]) ?: @{}, @"reminder") isEqual:@YES]
+              && XSOpenWatchLineV2(a2d, secret, w2, 1, &pushed) == XSReplyOK && [pushed[@"type"] isEqual:@"alive"],
+              @"v2 watch: live then alive open");
+        check(XSOpenWatchLineV2(l2d, secret, w2, 1, NULL) == XSReplyInvalid && XSOpenWatchLineV2(a2d, secret, w2, 0, NULL) == XSReplyInvalid
+              && XSOpenWatchLineV2(l2d, secret, @"other", 0, NULL) == XSReplyInvalid
+              && XSOpenWatchLineV2(srData, secret, srNonce, 0, NULL) == XSReplyInvalid
+              && XSOpenWatchLineV2(live, secret, wnonce, 0, NULL) == XSReplyInvalid
+              && XSOpenWatchLine(l2d, secret, iid, w2, 0, NULL) == XSReplyInvalid
+              && XSOpenWatchLineV2([@"{\"type\":\"rejected\"}" dataUsingEncoding:NSUTF8StringEncoding], secret, w2, 0, NULL) == XSReplyInvalid
+              && XSOpenWatchLineV2(withField(live2[@"line"], @"body", flipped(live2[@"body"], 3)), secret, w2, 0, NULL) == XSReplyInvalid,
+              @"v2 watch: replayed, skipped, other watch, settings reply, v1 line, bare rejected, tampered refused");
+        check(XSOpenWatchLineV2(sealReplyV2(XSJSONData(@{@"type": @"alive", @"seq": @YES}), w2), secret, w2, 0, NULL) == XSReplyInvalid
+              && XSOpenWatchLineV2(sealReplyV2(XSJSONData(@{@"type": @"alive", @"seq": @1}), w2), secret, w2, 0, NULL) == XSReplyOK,
+              @"v2 watch: seq must be the next integer");
 
         // Nonces.
         check(XSNonceValid(@"n1") && XSNonceValid(@"a-b_C9") && !XSNonceValid(@"") && !XSNonceValid(@"a|b")

@@ -47,7 +47,7 @@ import Foundation
 
     func openedWatch(_ sink: Sink, nonce: String = "w1") throws -> ChannelWatches<Int> {
         let hub = ChannelWatches<Int>()
-        try hub.open(1, installationID: id, nonce: nonce, secret: secret,
+        try hub.open(1, installationID: id, nonce: nonce, secret: secret, version: .v1,
                      first: ChannelWatchState(settings: settings, lastRefresh: nil), now: now) { sink.lines.append($0) }
         return hub
     }
@@ -120,7 +120,7 @@ import Foundation
             #expect(received == .rejected)
             #expect(ChannelHandler.watchRequested(received) == nil)
         }
-        let unknown = ChannelHandler.receive(line: line(try good.encodedLine()), now: now, nonces: &nonces) { _ in nil }
+        let unknown = ChannelHandler.receive(line: line(try good.encodedLine()), now: now, nonces: &nonces, secret: { _ in nil })
         #expect(ChannelHandler.watchRequested(unknown) == nil)
         let accepted = ChannelHandler.receive(line: line(try good.encodedLine()), now: now, nonces: &nonces, secret: keys)
         #expect(ChannelHandler.watchRequested(accepted) == id)
@@ -150,7 +150,7 @@ import Foundation
         // The hub: lines go to the new connection only.
         let first = Sink(), second = Sink()
         let hub = try openedWatch(first)
-        let replaced = try hub.open(2, installationID: id, nonce: "w2", secret: secret,
+        let replaced = try hub.open(2, installationID: id, nonce: "w2", secret: secret, version: .v1,
                                     first: ChannelWatchState(settings: settings, lastRefresh: nil), now: now) { second.lines.append($0) }
         #expect(replaced == 1)
         #expect(hub.close(1) == nil) // the old connection's end doesn't close the new watch
@@ -206,7 +206,7 @@ import Foundation
         _ = try await lib.applyCheckIn(merged, checkIn: checkIn, outcome: outcome, recordID: rec.id, deviceID: "a")
         let sink = Sink()
         let hub = ChannelWatches<Int>()
-        try hub.open(1, installationID: channelID, nonce: "w1", secret: secret,
+        try hub.open(1, installationID: channelID, nonce: "w1", secret: secret, version: .v1,
                      first: ChannelWatchState(settings: first, lastRefresh: last), now: now) { sink.lines.append($0) }
         // Nothing changed: nothing written.
         let storedNow = try #require(await lib.installation(channelID: channelID)).installation

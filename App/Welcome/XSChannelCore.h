@@ -74,4 +74,38 @@ XSReplyStatus XSOpenWatchLine(NSData *line, NSData *secret, NSString *installati
 /// Standard base64 with padding, decoded only if it is canonical (re-encodes to the same text).
 NSData *_Nullable XSCanonicalBase64(id _Nullable text);
 
+// MARK: - Channel v2 (mega review C2): encrypted bodies, an opaque token. What this library sends.
+// Keys from the 32-byte secret with HKDF-SHA256 (salt "XSide channel v2"); bodies AES-256-CTR with
+// a random 16-byte IV per line; encrypt-then-MAC over every field, checked (constant time) before
+// anything is decrypted. Mirrors ChannelV2.swift.
+
+/// HKDF-SHA256 (RFC 5869) of `ikm`, `length` bytes (1 to 255 * 32); nil for an empty `ikm`.
+NSData *_Nullable XSHKDFSHA256(NSData *ikm, NSData *salt, NSData *info, NSUInteger length);
+/// The body key (32 bytes), the MAC key (32 bytes) and the token (16 bytes) of `secret`.
+NSData *_Nullable XSChannelEncKey(NSData *secret);
+NSData *_Nullable XSChannelMacKey(NSData *secret);
+NSData *_Nullable XSChannelToken(NSData *secret);
+/// AES-256-CTR (big-endian 128-bit counter from `iv`); encrypts and decrypts. Nil unless the key
+/// is 32 bytes and the IV 16.
+NSData *_Nullable XSAESCTR(NSData *key, NSData *iv, NSData *input);
+
+/// `xside2|request|b64(token)|millis|nonce|b64(iv)|b64(ciphertext)`: what a v2 request's MAC covers.
+NSString *XSRequestSignedStringV2(NSData *token, int64_t millis, NSString *nonce, NSData *iv, NSData *ciphertext);
+/// `xside2|reply|b64(token)|nonce|b64(iv)|b64(ciphertext)`: what a v2 reply's MAC covers.
+NSString *XSReplySignedStringV2(NSData *token, NSString *nonce, NSData *iv, NSData *ciphertext);
+
+/// The v2 request line (with its "\n") for `body`, encrypted under a fresh random IV and sealed
+/// with keys from `secret`. Nil for an invalid nonce, an empty secret or a body that isn't JSON.
+NSData *_Nullable XSSealRequestV2(NSDictionary *body, NSData *secret, int64_t millis, NSString *nonce);
+/// The same with a given IV (16 bytes, else nil): for the fixture check only.
+NSData *_Nullable XSSealRequestV2WithIV(NSDictionary *body, NSData *secret, int64_t millis, NSString *nonce, NSData *iv);
+
+/// Opens one v2 reply line: exactly the v2 fields, this secret's token, the request's `nonce`, the
+/// MAC (before decrypting), then a JSON object with a "type". The bare unsigned {"type":"rejected"}
+/// is XSReplyUnknownInstallation; a v1 reply, like anything else, is XSReplyInvalid.
+XSReplyStatus XSOpenReplyV2(NSData *line, NSData *secret, NSString *nonce, NSDictionary *_Nullable *_Nullable body);
+/// XSOpenWatchLine for a v2 watch: XSOpenReplyV2, then `live`/`alive` with "seq" == `lastSeq` + 1.
+XSReplyStatus XSOpenWatchLineV2(NSData *line, NSData *secret, NSString *nonce, int64_t lastSeq,
+                                NSDictionary *_Nullable *_Nullable body);
+
 NS_ASSUME_NONNULL_END

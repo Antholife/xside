@@ -148,6 +148,66 @@ import CryptoKit
         /// A watch that says goodbye, reporting a clean previous run, and its `bye`.
         var byeWatchRequest: FixtureEntry
         var byeRequest: FixtureEntry
+        /// Channel v2 (mega review C2): the same exchanges, encrypted, with fixed IVs.
+        var v2: FixtureV2
+    }
+    struct FixtureV2Entry: Codable, Equatable {
+        var token: String
+        var timestamp: Int64?
+        var nonce: String
+        var iv: String
+        /// The plaintext (what the ciphertext decrypts to).
+        var bodyJSON: String
+        var body: String
+        var signedString: String
+        var mac: String
+        var line: String
+    }
+    struct FixtureV2: Codable, Equatable {
+        var encKeyHex: String
+        var macKeyHex: String
+        var tokenHex: String
+        var refreshRequest: FixtureV2Entry
+        var checkInRequest: FixtureV2Entry
+        var byeWatchRequest: FixtureV2Entry
+        var byeRequest: FixtureV2Entry
+        var settingsReply: FixtureV2Entry
+        var liveLine: FixtureV2Entry
+        var aliveLine: FixtureV2Entry
+    }
+    static func fixtureIV(_ n: UInt8) -> Data { Data((0..<16).map { n &* 16 &+ UInt8($0) }) }
+    static func hexString(_ d: Data) -> String { d.map { String(format: "%02x", $0) }.joined() }
+    static func requestEntryV2(_ r: ChannelRequest, nonce: String, iv: UInt8) throws -> FixtureV2Entry {
+        let ts: Int64 = 1_800_000_000_000
+        let e = try ChannelEnvelopeV2.seal(r, secret: fixtureSecret, timestampMillis: ts, nonce: nonce, iv: fixtureIV(iv))
+        return FixtureV2Entry(token: e.token.base64EncodedString(), timestamp: ts, nonce: nonce, iv: e.iv.base64EncodedString(),
+                              bodyJSON: String(decoding: try ChannelEnvelope.encodeBody(r), as: UTF8.self),
+                              body: e.body.base64EncodedString(),
+                              signedString: String(decoding: ChannelEnvelopeV2.signedString(token: e.token, timestamp: ts, nonce: nonce,
+                                                                                            iv: e.iv, body: e.body), as: UTF8.self),
+                              mac: e.mac.base64EncodedString(),
+                              line: String(decoding: try e.encodedLine().dropLast(), as: UTF8.self))
+    }
+    static func replyEntryV2(_ r: ChannelReply, nonce: String, iv: UInt8) throws -> FixtureV2Entry {
+        let e = try ChannelReplyEnvelopeV2.seal(r, requestNonce: nonce, secret: fixtureSecret, iv: fixtureIV(iv))
+        return FixtureV2Entry(token: e.token.base64EncodedString(), timestamp: nil, nonce: nonce, iv: e.iv.base64EncodedString(),
+                              bodyJSON: String(decoding: try r.encodedBody(), as: UTF8.self),
+                              body: e.body.base64EncodedString(),
+                              signedString: String(decoding: ChannelReplyEnvelopeV2.signedString(token: e.token, nonce: nonce,
+                                                                                                 iv: e.iv, body: e.body), as: UTF8.self),
+                              mac: e.mac.base64EncodedString(),
+                              line: String(decoding: try e.encodedLine().dropLast(), as: UTF8.self))
+    }
+    static func currentFixtureV2() throws -> FixtureV2 {
+        let k = ChannelKeys(secret: fixtureSecret)
+        return FixtureV2(encKeyHex: hexString(k.encryption), macKeyHex: hexString(k.authentication), tokenHex: hexString(k.token),
+                         refreshRequest: try requestEntryV2(.refresh, nonce: "v2-n1", iv: 1),
+                         checkInRequest: try requestEntryV2(fixtureCheckIn, nonce: "v2-n2-checkin", iv: 2),
+                         byeWatchRequest: try requestEntryV2(fixtureByeWatch, nonce: "v2-n5-watch", iv: 3),
+                         byeRequest: try requestEntryV2(.bye, nonce: "v2-n6-bye", iv: 4),
+                         settingsReply: try replyEntryV2(.settings(fixtureSettings, lastRefresh: fixtureOutcome), nonce: "v2-n2-checkin", iv: 5),
+                         liveLine: try replyEntryV2(fixtureLive, nonce: "v2-n5-watch", iv: 6),
+                         aliveLine: try replyEntryV2(.alive(seq: 2), nonce: "v2-n5-watch", iv: 7))
     }
     static let fixtureCrashedRun = ChannelRequest.checkIn(
         settings: fixtureSettings, lastRefresh: nil, appVersion: "2.3.1", pollEvery: 15,
@@ -199,7 +259,8 @@ import CryptoKit
                     pausedReply: try replyEntry(fixturePaused, nonce: "n2-checkin"),
                     crashedRunCheckIn: try requestEntry(fixtureCrashedRun, nonce: "n4-run"),
                     byeWatchRequest: try requestEntry(fixtureByeWatch, nonce: "n5-watch"),
-                    byeRequest: try requestEntry(.bye, nonce: "n6-bye"))
+                    byeRequest: try requestEntry(.bye, nonce: "n6-bye"),
+                    v2: try currentFixtureV2())
     }
     static var fixtureURL: URL {
         URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/channel-fixture.json")
@@ -242,6 +303,34 @@ import CryptoKit
         #expect(bw.open(secret: secret, now: Self.fixtureNow, seen: &seen) == Self.fixtureByeWatch)
         let bye = try ChannelEnvelope.decode(line: Data(onDisk.byeRequest.line.utf8))
         #expect(bye.open(secret: secret, now: Self.fixtureNow, seen: &seen) == .bye)
+
+        // v2, as the dylib writes and reads it.
+        let keys = ChannelKeys(secret: secret)
+        let v2 = onDisk.v2
+        var seen2 = NonceCache()
+        func request(_ e: FixtureV2Entry) throws -> ChannelRequest? {
+            try ChannelEnvelopeV2.decode(line: Data(e.line.utf8)).open(keys: keys, installationID: Self.fixtureID, now: Self.fixtureNow, seen: &seen2)
+        }
+        #expect(try request(v2.refreshRequest) == .refresh)
+        #expect(try request(v2.checkInRequest) == Self.fixtureCheckIn)
+        #expect(try request(v2.byeWatchRequest) == Self.fixtureByeWatch)
+        #expect(try request(v2.byeRequest) == .bye)
+        #expect(try ChannelReplyEnvelopeV2.decode(line: Data(v2.settingsReply.line.utf8)).open(secret: secret, expectedNonce: "v2-n2-checkin")
+                == .settings(Self.fixtureSettings, lastRefresh: Self.fixtureOutcome))
+        var reader2 = ChannelWatchReader(installationID: Self.fixtureID, nonce: "v2-n5-watch", secret: secret, version: .v2)
+        #expect(reader2.open(line: Data(v2.liveLine.line.utf8)) == Self.fixtureLive)
+        #expect(reader2.open(line: Data(v2.aliveLine.line.utf8)) == .alive(seq: 2))
+    }
+
+    /// Hand-checked: the v2 refresh request's ciphertext is AES-256-CTR of its JSON (also checked
+    /// with `openssl enc -aes-256-ctr`), its key and token are HKDF-SHA256 of the fixture secret.
+    @Test func knownV2FixtureLiterals() throws {
+        let f = try Self.currentFixtureV2()
+        #expect(f.refreshRequest.bodyJSON == #"{"type":"refresh"}"#)
+        #expect(f.refreshRequest.iv == "EBESExQVFhcYGRobHB0eHw==")
+        #expect(f.refreshRequest.signedString.hasPrefix("xside2|request|\(f.refreshRequest.token)|1800000000000|v2-n1|EBESExQVFhcYGRobHB0eHw==|"))
+        #expect(f.settingsReply.signedString.hasPrefix("xside2|reply|\(f.settingsReply.token)|v2-n2-checkin|"))
+        #expect(f.refreshRequest.line.hasPrefix(#"{"body":""#) && f.refreshRequest.line.hasSuffix(#","v":2}"#))
     }
 
     /// The module's run marker: how the previous run ended, two optional fields of a check-in or a

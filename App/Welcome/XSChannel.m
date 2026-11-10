@@ -52,7 +52,7 @@ typedef void (^XSChannelHandler)(XSChannelResult result, NSDictionary *_Nullable
 /// passes, and says `XSChannelWaiting` once after XSWaitingNotice. For requests the person made.
 @property (nonatomic) BOOL patient;
 /// A watch (device feedback 4): after its first signed reply, the connection stays open and each
-/// later line is delivered (not final) once XSOpenWatchLine accepts it; the first one that doesn't,
+/// later line is delivered (not final) once XSOpenWatchLineV2 accepts it; the first one that doesn't,
 /// a silence of XSWatchKeepAliveTimeout, or the connection's end finishes it (XSChannelWatchEnded).
 @property (nonatomic) BOOL watches;
 - (void)start;
@@ -132,7 +132,7 @@ static NSMutableSet<XSChannelExchange *> *XSExchanges;
             [self finish:self->_watching ? XSChannelWatchEnded : XSChannelNotFound reply:nil];
             return;
         }
-        NSData *line = XSSealRequest(XSByeBody(), self->_installationID, self->_secret, XSMillis(NSDate.date), XSNewNonce());
+        NSData *line = XSSealRequestV2(XSByeBody(), self->_secret, XSMillis(NSDate.date), XSNewNonce());
         if (!line) { [self finish:XSChannelWatchEnded reply:nil]; return; }
         dispatch_data_t data = dispatch_data_create(line.bytes, line.length, self->_queue, DISPATCH_DATA_DESTRUCTOR_DEFAULT);
         nw_connection_send(connection, data, NW_CONNECTION_DEFAULT_MESSAGE_CONTEXT, true, ^(nw_error_t error) {
@@ -243,7 +243,9 @@ static BOOL XSIsPolicyDenied(nw_error_t error) {
     [_pending removeObjectAtIndex:0];
     _current = endpoint;
     _nonce = XSNewNonce();
-    NSData *line = XSSealRequest(_body, _installationID, _secret, XSMillis(NSDate.date), _nonce);
+    // Channel v2 only (encrypted, a token instead of the installation id; mega review C2): XSide
+    // answers in the version it gets, and this library opens v2 replies only.
+    NSData *line = XSSealRequestV2(_body, _secret, XSMillis(NSDate.date), _nonce);
     if (!line) { [self finish:XSChannelNotFound reply:nil]; return; }
     nw_parameters_t parameters = nw_parameters_create_secure_tcp(NW_PARAMETERS_DISABLE_PROTOCOL,
                                                                  NW_PARAMETERS_DEFAULT_CONFIGURATION);
@@ -324,7 +326,7 @@ static BOOL XSIsPolicyDenied(nw_error_t error) {
     NSDictionary *reply = nil;
     if (_watching) {
         // Every line is checked: signed for this watch, the next one. The first that isn't ends it.
-        if (XSOpenWatchLine(line, _secret, _installationID, _nonce, _seq, &reply) != XSReplyOK) {
+        if (XSOpenWatchLineV2(line, _secret, _nonce, _seq, &reply) != XSReplyOK) {
             NSLog(@"XSide: watch: a line didn't check out (after %lld), closed", (long long)_seq);
             [self dropConnection];
             return;
@@ -334,7 +336,7 @@ static BOOL XSIsPolicyDenied(nw_error_t error) {
         if ([reply[@"type"] isEqual:@"live"]) [self deliver:XSChannelReplied reply:reply final:NO];
         return;
     }
-    switch (XSOpenReply(line, _secret, _installationID, _nonce, &reply)) {
+    switch (XSOpenReplyV2(line, _secret, _nonce, &reply)) {
         case XSReplyUnknownInstallation:
             _sawRejected = YES;
             if (_current) [_refused addObject:_current]; // this XSide doesn't know us: not asked again
@@ -589,7 +591,7 @@ void XSSendSettings(NSArray<NSString *> *fields, void (^done)(XSPillContent *res
 //
 // A watch first: a signed `watch` request (a check-in that keeps its connection open), on which
 // XSide writes each change made on the Mac the moment it is stored. Every line is checked
-// (XSOpenWatchLine: signed for this installation and this watch's fresh nonce, the next seq), the
+// (XSOpenWatchLineV2: signed for this installation and this watch's fresh nonce, the next seq), the
 // first one that doesn't check out closes it, and so does a silence of XSWatchKeepAliveTimeout
 // (XSide writes at least every 25 s). XSide closes it after 5 min and another opens at once; the
 // app closes it when it leaves the foreground. While no watch is open (it couldn't open: an older

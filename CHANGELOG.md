@@ -35,6 +35,7 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 
 - The panel's app rows no longer show a refresh button on hover: *Refresh now* is in the row's ... menu (and its right-click menu).
 - The app's SDK is read from its executable at import. The "built for an older iOS" preflight note no longer shows: outside an iPhone Duo the layout difference it promised mostly isn't there, and on a Duo the iPhone Duo note says what matters (and only offers the option when the app can take it).
+- **The connection between the XSide module and the Mac is now encrypted.** What an app tells XSide on the local network (its settings, version, last refresh, how its last run ended) and XSide's answers can no longer be read by someone on the same Wi-Fi, and the app is named by an opaque token instead of its identifiers. Keys come from the secret XSide writes into the app at each signing; every message is still signed and checked before it is read. Apps signed by an earlier XSide keep working as they are and switch over at their next refresh.
 
 ### Fixed
 - **A device Xcode can't see is said as such.** When xcodebuild can't find the device (unplugged, locked, or its connection down: « Unable to find a destination matching the provided destination specifier » and its variants), XSide no longer says it couldn't create a provisioning profile: it names the device and tells you to plug it in or unlock it, then try again.

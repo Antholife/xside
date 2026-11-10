@@ -126,13 +126,20 @@ extension ChannelHandler {
     /// use), so the device's crash logs are worth a look at once. Only for a phone that said it
     /// says goodbye (`saysBye`, older dylibs don't), never for a watch XSide closed itself, and not
     /// when the phone wrote a `bye` that authenticates for the same installation (its nonce is
-    /// recorded like any request's: a replayed `bye` doesn't count).
+    /// recorded like any request's: a replayed `bye` doesn't count). The `bye` must come in the
+    /// watch's own `version`: a v1 one on a v2 watch doesn't count (no fallback).
     public static func watchEndedAbruptly(_ close: WatchClose, saysBye: Bool, installationID: String, now: Date,
-                                          nonces: inout ChannelNonces, secret: Data) -> Bool {
+                                          nonces: inout ChannelNonces, secret: Data, version: ChannelVersion) -> Bool {
         guard saysBye, case let .byPhone(farewell) = close else { return false }
         guard let farewell else { return true }
-        let received = receive(line: farewell, now: now, nonces: &nonces) { $0 == installationID ? secret : nil }
-        if case let .request(id, _, .bye) = received, id == installationID { return false }
+        let token = ChannelKeys(secret: secret).token
+        let received = receive(line: farewell, now: now, nonces: &nonces) { ref in
+            switch ref {
+            case .installationID(let id): id == installationID ? (installationID, secret) : nil
+            case .token(let t): ChannelEnvelope.constantTimeEqual(t, token) ? (installationID, secret) : nil
+            }
+        }
+        if case let .request(id, _, .bye, v) = received, id == installationID, v == version { return false }
         return true
     }
 }

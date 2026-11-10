@@ -36,6 +36,8 @@ public final class ChannelWatches<Token: Hashable> {
         let token: Token
         let nonce: String
         let secret: Data
+        /// The watch request's version: every line is written in it.
+        let version: ChannelVersion
         let send: (Data) -> Void
         var seq = 0
         var state: ChannelWatchState
@@ -56,12 +58,13 @@ public final class ChannelWatches<Token: Hashable> {
     /// installation's previous watch, which this one replaces (the caller closes that connection;
     /// nothing more is written to it).
     @discardableResult
-    public func open(_ token: Token, installationID: String, nonce: String, secret: Data,
+    public func open(_ token: Token, installationID: String, nonce: String, secret: Data, version: ChannelVersion,
                      first: ChannelWatchState, now: Date, send: @escaping (Data) -> Void) throws -> Token? {
         let line = try ChannelHandler.replyLine(.settings(first.settings, lastRefresh: first.lastRefresh, pausedUntil: first.pausedUntil),
-                                                installationID: installationID, requestNonce: nonce, secret: secret)
+                                                installationID: installationID, requestNonce: nonce, secret: secret, version: version)
         let replaced = watches[installationID]?.token
-        watches[installationID] = Watch(token: token, nonce: nonce, secret: secret, send: send, state: first, lastWrite: now)
+        watches[installationID] = Watch(token: token, nonce: nonce, secret: secret, version: version, send: send, state: first,
+                                        lastWrite: now)
         send(line)
         return replaced
     }
@@ -95,7 +98,8 @@ public final class ChannelWatches<Token: Hashable> {
     @discardableResult
     private func write(_ reply: ChannelReply, to watch: inout Watch, installationID: String, now: Date) -> Bool {
         guard let line = try? ChannelHandler.replyLine(reply, installationID: installationID,
-                                                       requestNonce: watch.nonce, secret: watch.secret) else { return false }
+                                                       requestNonce: watch.nonce, secret: watch.secret,
+                                                       version: watch.version) else { return false }
         watch.seq += 1
         watch.lastWrite = now
         watches[installationID] = watch
