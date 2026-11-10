@@ -1108,7 +1108,8 @@ extension AppLibrary {
         pool = pool.enumerated().filter { $0.offset == position || $0.element.id != new.id }.map(\.element)
         items[index].tweaks = pool
         func renamed(_ uses: [TweakUse]) -> [TweakUse] {
-            Self.ordered(uses.map { $0.id == old ? TweakUse(id: new.id, enabled: $0.enabled, force: $0.force) : $0 }, pool: pool)
+            // Everything a use says (on, forced, why it's off) carries over; only the id changes.
+            Self.ordered(uses.map { u in var u = u; if u.id == old { u.id = new.id }; return u }, pool: pool)
         }
         for i in items[index].installations.indices {
             if let uses = items[index].installations[i].tweaks { items[index].installations[i].tweaks = renamed(uses) }
@@ -1171,7 +1172,7 @@ extension AppLibrary {
         }
         items[index].tweaks = pool
         func renamed(_ list: [TweakUse]) -> [TweakUse] {
-            Self.ordered(list.map { u in renames[u.id].map { TweakUse(id: $0, enabled: u.enabled, force: u.force) } ?? u }, pool: pool)
+            Self.ordered(list.map { u in var u = u; if let id = renames[u.id] { u.id = id }; return u }, pool: pool)
         }
         for i in items[index].installations.indices {
             if let list = items[index].installations[i].tweaks { items[index].installations[i].tweaks = renamed(list) }

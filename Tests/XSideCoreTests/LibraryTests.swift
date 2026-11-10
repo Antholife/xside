@@ -997,6 +997,24 @@ struct LibraryStagedTweakTests {
         #expect(try await record(lib).tweaks == [v3.package])
     }
 
+    /// A tweak off because its dependency was uninstalled keeps saying so in its new version.
+    @Test func aReplacementKeepsWhyTheTweakIsOff() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let (lib, rec) = try await library(tmp, devices: ["A", "B"])
+        let v1 = try await lib.addTweak(try await tweakDeb(in: tmp, version: "1.0"), recordID: rec.id, deviceIDs: ["A", "B"],
+                                        runner: ProcessRunner(), now: tweakNow).package
+        let off = TweakUse(id: v1.id, enabled: false, removedDependency: "Cephei")
+        #expect(try await lib.setTweaks([off], recordID: rec.id, deviceID: "B"))
+        let v2 = try await lib.addTweak(try await tweakDeb(in: tmp, version: "2.0", payload: "new"), recordID: rec.id,
+                                        deviceIDs: ["A"], runner: ProcessRunner(), now: tweakNow).package
+        try await lib.replaceTweak(v1.id, with: v2, recordID: rec.id)
+        #expect(try await record(lib).installations.first { $0.deviceID == "B" }?.tweaks == [TweakUse(id: v2.id, enabled: false, removedDependency: "Cephei")])
+        var v3 = try await stage(try await tweakDeb(in: tmp, version: "3.0", payload: "newer"), in: tmp)
+        v3.replacing = v2.id
+        _ = try await lib.adoptTweaks([v3], recordID: rec.id)
+        #expect(try await record(lib).installations.first { $0.deviceID == "B" }?.tweaks == [TweakUse(id: v3.package.id, enabled: false, removedDependency: "Cephei")])
+    }
+
     @Test func aStagedTweakThatIsNotAPackageFolderIsRefused() async throws {
         let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
         let (lib, rec) = try await library(tmp, devices: ["A"])
