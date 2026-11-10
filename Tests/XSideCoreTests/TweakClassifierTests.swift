@@ -203,6 +203,12 @@ struct TweakClassifierTests {
                 == .incompatible(.iOSVersion(required: "18.0", device: "17.5")))
     }
 
+    @Test func firmwareEqualsIsThatVersionOnly() {
+        let only17 = package([entry()], depends: [dep("firmware", "=", "17.0")])
+        #expect(verdict(only17) == .incompatible(.iOSVersion(required: "= 17.0", device: "17.5")))
+        #expect(verdict(only17, context(deviceOS: "17.0")) == .compatible)
+    }
+
     @Test func anUnreadableFirmwareConstraintIsNeverSatisfied() {
         let p = package([entry()], depends: [[DebDependency(package: "firmware", unparseable: true)]])
         #expect(verdict(p) == .incompatible(.unreadableRequirement("iOS")))

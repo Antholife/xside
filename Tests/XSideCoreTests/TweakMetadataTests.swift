@@ -61,7 +61,7 @@ struct TweakMetadataTests {
         #expect(throws: DebError.tooLarge) { try DebControl.parse(deps) }
     }
 
-    @Test(arguments: ["../../x", "a b", "A", "-a", ".a", "a/b", "", "a\u{e9}", String(repeating: "a", count: 129)])
+    @Test(arguments: ["../../x", "a b", "-a", ".a", "a/b", "", "a\u{e9}", String(repeating: "a", count: 129)])
     func invalidPackageIDsThrow(_ id: String) {
         #expect(throws: DebError.self) { try DebControl.parse("Package: \(id)\nVersion: 1\n") }
     }
@@ -70,6 +70,35 @@ struct TweakMetadataTests {
         for id in ["a", "0ad", "libc++-dev", "com.foo.bar-baz+1", String(repeating: "a", count: 128)] {
             #expect(try DebControl.parse("Package: \(id)\n").package == id)
         }
+    }
+
+    /// dpkg accepts uppercase in Package and lowercases on lookup; Depends are already lowercased.
+    @Test func mixedCasePackageIsLowercasedAndMatchesItsDependents() throws {
+        let dep = try DebControl.parse("Package: com.Example.MyLib\nVersion: 1\n")
+        #expect(dep.package == "com.example.mylib")
+        let tweak = try DebControl.parse("Package: com.Example.MyTweak\nDepends: com.Example.MyLib (>= 1)\n")
+        #expect(tweak.package == "com.example.mytweak")
+        #expect(tweak.depends[0][0].package == dep.package)
+        #expect(throws: DebError.self) { try DebControl.parse("Package: -A\n") }
+    }
+
+    @Test func nameAuthorVersionAreOneShortLine() throws {
+        let long = String(repeating: "n", count: 1000)
+        let c = try DebControl.parse("Package: a\nName: First line\n second line\nAuthor: \(long) <x@y>\nVersion: 1.0\n")
+        #expect(c.name == "First line")
+        #expect(c.author?.count == 128)
+        let big = try DebControl.parse("Package: a\nName: \(long)\n")
+        #expect(big.name?.count == 256)
+        #expect(throws: DebError.self) { try DebControl.parse("Package: a\nVersion: 1.0\n 2.0\n") }
+        #expect(throws: DebError.self) { try DebControl.parse("Package: a\nVersion: \(String(repeating: "1", count: 65))\n") }
+    }
+
+    @Test func firmwareEqualsIsAnExactVersion() throws {
+        let eq = DebControl.firmwareBounds(try DebControl.parse("Package: a\nDepends: firmware (= 15.0)\n").depends)
+        #expect(eq.allows("15.0"))
+        #expect(!eq.allows("15.1") && !eq.allows("16") && !eq.allows("14.9"))
+        let both = DebControl.firmwareBounds(try DebControl.parse("Package: a\nDepends: firmware (= 15.0), firmware (<< 15.0)\n").depends)
+        #expect(!both.allows("15.0"))
     }
 
     @Test func crlfControlAndPackagesParse() throws {

@@ -126,8 +126,8 @@ public enum TweakAnalyzer {
         let control: DebControl
         do { control = try DebControl.parse(contents.control) } catch DebError.malformed(let reason) {
             if let raw = try? DebControl.stanzas(contents.control, maxStanzas: 1).first?["package"],
-               !raw.isEmpty, !DebControl.isValidPackageID(raw) {
-                throw TweakError.unreadable("invalid package id \u{201C}\(raw.prefix(64))\u{201D}: only lowercase letters, digits, + - . are allowed")
+               !raw.isEmpty, !DebControl.isValidPackageID(raw.lowercased()) {
+                throw TweakError.unreadable("invalid package id \u{201C}\(raw.prefix(64))\u{201D}: only letters, digits, + - . are allowed")
             }
             throw TweakError.unreadable(reason)
         }

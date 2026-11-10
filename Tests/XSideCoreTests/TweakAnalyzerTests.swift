@@ -180,16 +180,25 @@ struct TweakAnalyzerTests {
         await #expect(throws: TweakError.nothingUsable) { try await analyze(src, into: storage) }
     }
 
-    @Test func anUppercasePackageIDIsRefusedClearly() async throws {
+    /// dpkg lowercases on lookup: a mixed-case Package is kept, lowercased.
+    @Test func anUppercasePackageIDIsLowercased() async throws {
         let src = try await deb([.file("./usr/lib/libexample.dylib", dylib(linking: []))],
                                 control: "Package: com.Example.Tweak\nVersion: 1\n")
+        let storage = scratch("store")
+        defer { cleanup(src, storage) }
+        #expect(try await analyze(src, into: storage).packageID == "com.example.tweak")
+    }
+
+    @Test func anInvalidPackageIDIsRefusedClearly() async throws {
+        let src = try await deb([.file("./usr/lib/libexample.dylib", dylib(linking: []))],
+                                control: "Package: com.Example/Tweak\nVersion: 1\n")
         let storage = scratch("store")
         defer { cleanup(src, storage) }
         do {
             _ = try await analyze(src, into: storage)
             Issue.record("expected a throw")
         } catch let TweakError.unreadable(message) {
-            #expect(message.contains("com.Example.Tweak") && message.contains("package id"))
+            #expect(message.contains("com.Example/Tweak") && message.contains("package id"))
         }
         #expect(contents(storage).isEmpty)
     }

@@ -450,6 +450,9 @@ public enum TweakClassifier {
     }
 
     private static func describe(_ b: DebControl.FirmwareBounds) -> String {
+        if let m = b.min, let x = b.belowMax, !b.minExclusive, b.maxInclusive, DebVersion.compare(m, x) == .orderedSame {
+            return "= \(m)"
+        }
         var parts: [String] = []
         if let m = b.min { parts.append(b.minExclusive ? "> \(m)" : b.belowMax == nil ? m : "≥ \(m)") }
         if let x = b.belowMax { parts.append(b.maxInclusive ? "≤ \(x)" : "< \(x)") }

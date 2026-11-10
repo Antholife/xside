@@ -42,6 +42,9 @@ public enum ControlLimits {
     public static let maxPackageIDBytes = 128
     public static let maxFilterStrings = 512
     public static let maxFilterStringBytes = 1024
+    public static let maxNameLength = 256
+    public static let maxAuthorLength = 128
+    public static let maxVersionLength = 64
 }
 
 /// The fields of a `.deb` control file (or of one stanza of a repo `Packages` file) that XSide uses.
@@ -76,7 +79,8 @@ public struct DebControl: Codable, Equatable, Sendable {
 
     /// Builds a control from one stanza returned by `stanzas`.
     public static func make(_ fields: [String: String]) throws -> DebControl {
-        guard let package = fields["package"]?.trimmingCharacters(in: .whitespaces), !package.isEmpty else {
+        // dpkg accepts uppercase and lowercases on lookup; Depends are lowercased too.
+        guard let package = fields["package"]?.trimmingCharacters(in: .whitespaces).lowercased(), !package.isEmpty else {
             throw DebError.malformed("control has no Package")
         }
         guard isValidPackageID(package) else { throw DebError.malformed("invalid Package name") }
@@ -84,15 +88,29 @@ public struct DebControl: Codable, Equatable, Sendable {
             guard let v = fields[key]?.trimmingCharacters(in: .whitespaces), !v.isEmpty else { return nil }
             return v
         }
+        /// Shown in the UI, alerts and logs: the first line only, capped.
+        func line(_ key: String, max: Int) -> String? { nonEmpty(key).flatMap { Self.line(from: $0, max: max) } }
         var author = nonEmpty("author")
         if let a = author, let lt = a.firstIndex(of: "<") {
             let n = a[..<lt].trimmingCharacters(in: .whitespaces)
             author = n.isEmpty ? nil : n
         }
-        return DebControl(package: package, name: nonEmpty("name"), version: nonEmpty("version"),
+        if let a = author { author = Self.line(from: a, max: ControlLimits.maxAuthorLength) }
+        // A version is compared, not shown: refused rather than cut.
+        let version = nonEmpty("version")
+        if let v = version, v.contains("\n") || v.count > ControlLimits.maxVersionLength {
+            throw DebError.malformed("invalid Version")
+        }
+        return DebControl(package: package, name: line("name", max: ControlLimits.maxNameLength), version: version,
                           author: author, architecture: nonEmpty("architecture"),
                           depends: try parseDepends(fields["depends"] ?? ""),
                           provides: parseProvides(fields["provides"] ?? ""))
+    }
+
+    private static func line(from v: String, max: Int) -> String? {
+        let first = v.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""
+        let capped = String(first.prefix(max)).trimmingCharacters(in: .whitespaces)
+        return capped.isEmpty ? nil : capped
     }
 
     /// Debian package names: lowercase letters, digits, `+`, `-`, `.`; start with a letter or digit.
@@ -235,7 +253,7 @@ public struct DebControl: Codable, Equatable, Sendable {
         /// Highest lower bound (`>=`, `=`, or `>>` which is `minExclusive`).
         public var min: String?
         public var minExclusive = false
-        /// Lowest upper bound: exclusive for `<<`, inclusive (`maxInclusive`) for `<=`.
+        /// Lowest upper bound: exclusive for `<<`, inclusive (`maxInclusive`) for `<=` and `=`.
         public var belowMax: String?
         public var maxInclusive = false
         /// A firmware constraint existed but could not be read.
@@ -262,16 +280,16 @@ public struct DebControl: Codable, Equatable, Sendable {
             let d = group[0]
             if d.unparseable { b.unparseable = true; continue }
             guard let rel = d.relation, let v = d.version else { continue }
-            switch rel {
-            case ">=", "=", ">>":
+            // `=` is both bounds, inclusive.
+            if rel == ">=" || rel == "=" || rel == ">>" {
                 let c = b.min.map { DebVersion.compare(v, $0) }
                 if c == nil || c == .orderedDescending { b.min = v; b.minExclusive = rel == ">>" }
                 else if c == .orderedSame, rel == ">>" { b.minExclusive = true }
-            case "<<", "<=":
+            }
+            if rel == "<<" || rel == "<=" || rel == "=" {
                 let c = b.belowMax.map { DebVersion.compare(v, $0) }
-                if c == nil || c == .orderedAscending { b.belowMax = v; b.maxInclusive = rel == "<=" }
+                if c == nil || c == .orderedAscending { b.belowMax = v; b.maxInclusive = rel != "<<" }
                 else if c == .orderedSame, rel == "<<" { b.maxInclusive = false }
-            default: break
             }
         }
         return b
