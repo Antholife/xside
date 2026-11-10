@@ -385,7 +385,10 @@ public actor SideloadPipeline {
                                  force: use.force == true)
             }
         }
-        return (uses.isEmpty ? nil : uses, items.isEmpty ? nil : TweakJob(items: items, deviceOS: device.osVersion))
+        // Listed on the iPhone as off on this device (`PhoneTweaks`).
+        let off = uses.filter { !$0.enabled }.compactMap { byID[$0.id] }
+        return (uses.isEmpty ? nil : uses,
+                items.isEmpty ? nil : TweakJob(items: items, deviceOS: device.osVersion, offHere: off.isEmpty ? nil : off))
     }
 
     /// Holds the job's tweaks (`AppLibrary.reserveTweaks`) for as long as it runs, whichever way

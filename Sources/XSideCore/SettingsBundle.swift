@@ -64,6 +64,8 @@ public enum SettingsBundle {
     static let ownTable = "XSide"
     /// XSide's page in the bundle (`<name>.plist`), named by the row's `File`.
     static let paneFile = "XSide"
+    /// The page « Tweaks · N » opens (`TweaksPane`).
+    static let tweaksFile = "XSideTweaks"
 
     private static func hasStrings(named table: String, in bundle: URL) -> Bool {
         let fm = FileManager.default
@@ -82,11 +84,16 @@ public enum SettingsBundle {
     /// texts merged into each `<lang>.lproj`, the app's entries kept), else of a table of XSide's,
     /// `XSide`; XSide's page uses the same table. Throws on a page it can't read, or on links (a
     /// link could make it write outside the app).
-    public static func add(_ section: SettingsSection, to app: URL) throws {
+    /// `tweaks`: a second row, « Tweaks · N », after XSide's, opening a page of its own; without
+    /// `section` (no XSide module in the app) the row is alone. Either missing: its row and page go.
+    /// Both missing: nothing is written.
+    public static func add(_ section: SettingsSection?, tweaks: TweaksPane? = nil, to app: URL) throws {
+        guard section != nil || tweaks != nil else { return }
         let fm = FileManager.default
         let bundle = app.appendingPathComponent("Settings.bundle")
         let rootURL = bundle.appendingPathComponent("Root.plist")
         let paneURL = bundle.appendingPathComponent(paneFile + ".plist")
+        let tweaksURL = bundle.appendingPathComponent(tweaksFile + ".plist")
         var root: [String: Any] = [:]
         if let type = try? fm.attributesOfItem(atPath: bundle.path)[.type] as? FileAttributeType {
             guard type == .typeDirectory else { throw NotAPage() }
@@ -98,8 +105,10 @@ public enum SettingsBundle {
                 root = read
             }
             // Replaced only if it is a plain file (from an earlier signing).
-            if let paneType = try? fm.attributesOfItem(atPath: paneURL.path)[.type] as? FileAttributeType,
-               paneType != .typeRegular { throw NotAPage() }
+            for url in [paneURL, tweaksURL] {
+                if let type = try? fm.attributesOfItem(atPath: url.path)[.type] as? FileAttributeType,
+                   type != .typeRegular { throw NotAPage() }
+            }
         } else {
             try fm.createDirectory(at: bundle, withIntermediateDirectories: false)
         }
@@ -110,14 +119,21 @@ public enum SettingsBundle {
         items.append(["Type": "PSGroupSpecifier", "Key": keyPrefix + "group"])
         // "id" names the row for Settings' deep links: the dylib opens XSide's page directly with
         // "App-prefs:<bundle id>&path=<id>" (XSSettingsPaneURLString, undocumented).
-        items.append(["Type": "PSChildPaneSpecifier", "Title": section.titleKey, "File": paneFile,
-                      "Key": keyPrefix + "pane", "id": keyPrefix + "pane"])
+        if let section {
+            items.append(["Type": "PSChildPaneSpecifier", "Title": section.titleKey, "File": paneFile,
+                          "Key": keyPrefix + "pane", "id": keyPrefix + "pane"])
+        }
+        // Read-only and static: nothing on the phone needs to run for it (XSide's module or not).
+        if let tweaks {
+            items.append(["Type": "PSChildPaneSpecifier", "Title": tweaks.rowTitle, "File": tweaksFile,
+                          "Key": keyPrefix + "tweaks", "id": keyPrefix + "tweaks"])
+        }
 
         // XSide's page: the section, its footer under the rows.
         var group: [String: Any] = ["Type": "PSGroupSpecifier", "Key": keyPrefix + "section"]
-        if let footer = section.footerKey { group["FooterText"] = footer }
+        if let footer = section?.footerKey { group["FooterText"] = footer }
         var rows: [[String: Any]] = [group]
-        for row in section.rows {
+        for row in section?.rows ?? [] {
             switch row {
             case let .value(titleKey, key, defaultValue):
                 rows.append(["Type": "PSTitleValueSpecifier", "Title": titleKey,
@@ -142,8 +158,26 @@ public enum SettingsBundle {
             root["StringsTable"] = table
         }
         root["PreferenceSpecifiers"] = items
-        let pane: [String: Any] = ["Title": section.titleKey, "StringsTable": table, "PreferenceSpecifiers": rows]
-        try PropertyListSerialization.data(fromPropertyList: pane, format: .xml, options: 0).write(to: paneURL, options: .atomic)
+        if let section {
+            let pane: [String: Any] = ["Title": section.titleKey, "StringsTable": table, "PreferenceSpecifiers": rows]
+            try PropertyListSerialization.data(fromPropertyList: pane, format: .xml, options: 0).write(to: paneURL, options: .atomic)
+        } else if fm.fileExists(atPath: paneURL.path) {
+            try fm.removeItem(at: paneURL) // a plain file (checked above), from an earlier signing
+        }
+        if let tweaks {
+            var rows: [[String: Any]] = []
+            for (i, g) in tweaks.groups.enumerated() {
+                var group: [String: Any] = ["Type": "PSGroupSpecifier", "Title": g.title, "Key": keyPrefix + "tweak.\(i)"]
+                if let footer = g.footer { group["FooterText"] = footer }
+                rows.append(group)
+                rows.append(["Type": "PSTitleValueSpecifier", "Title": "Version", "Key": keyPrefix + "tweak.\(i).version",
+                             "DefaultValue": g.version])
+            }
+            let page: [String: Any] = ["Title": tweaks.title, "StringsTable": table, "PreferenceSpecifiers": rows]
+            try PropertyListSerialization.data(fromPropertyList: page, format: .xml, options: 0).write(to: tweaksURL, options: .atomic)
+        } else if fm.fileExists(atPath: tweaksURL.path) {
+            try fm.removeItem(at: tweaksURL)
+        }
         try PropertyListSerialization.data(fromPropertyList: root, format: .xml, options: 0).write(to: rootURL, options: .atomic)
         // After the pages: a strings file that can't be merged only leaves keys untranslated.
         // A table name with a path in it would make us write elsewhere.
@@ -153,8 +187,10 @@ public enum SettingsBundle {
             // Translations in the languages the app already has, never more (its localization set
             // stays as it was). In the app's own table, an entry it already has for the same text wins.
             let appLanguages = ((try? fm.contentsOfDirectory(atPath: app.path)) ?? []).filter { $0.hasSuffix(".lproj") }.sorted()
-            let ownKeys = table == ownTable ? [] : Set(section.strings.values.flatMap(\.keys))
-            LocalizedStrings.merge(section.strings, into: bundle, table: table, keepExisting: ownKeys,
+            var texts = section?.strings ?? [:]
+            texts.merge(tweaks?.strings ?? [:]) { $0.merging($1) { mine, _ in mine } }
+            let ownKeys = table == ownTable ? [] : Set(texts.values.flatMap(\.keys))
+            LocalizedStrings.merge(texts, into: bundle, table: table, keepExisting: ownKeys,
                                    developmentRegion: info?["CFBundleDevelopmentRegion"] as? String,
                                    mirroring: appLanguages)
         }

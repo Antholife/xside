@@ -315,4 +315,96 @@ struct SettingsBundleTests {
                                                    withDestinationURL: elsewhere.appendingPathComponent("x.plist"))
         #expect(throws: (any Error).self) { try SettingsBundle.add(xsideSection(), to: linkedRoot) }
     }
+
+    // MARK: - Tweaks (« Tweaks › N » and its page)
+
+    private var pane: TweaksPane {
+        TweaksPane.make([PhoneTweak(name: "XSPivotFix", version: "1.0", author: "Anthony", summary: "Puts the tab back.",
+                                    converted: false, offHere: false),
+                         PhoneTweak(name: "uYouPlus", version: nil, author: nil, summary: nil, converted: true, offHere: false)],
+                        language: "fr")!
+    }
+
+    private func tweaksPage(_ app: URL) throws -> [String: Any] {
+        let data = try Data(contentsOf: app.appendingPathComponent("Settings.bundle/XSideTweaks.plist"))
+        return try #require(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+    }
+
+    /// After « Réglages XSide », a row « Tweaks · N » opening a page with one group per tweak: its
+    /// name as title, a « Version » row, the description as footer.
+    @Test func tweaksRowOpensItsOwnPage() throws {
+        let app = try makeApp()
+        try SettingsBundle.add(xsideSection(language: "fr"), tweaks: pane, to: app)
+        let items = try specifiers(app)
+        #expect(items.count == 3)
+        #expect(items[1]["Key"] as? String == "io.github.xside.settings.pane")
+        #expect(items[2]["Type"] as? String == "PSChildPaneSpecifier")
+        #expect(items[2]["Title"] as? String == "Tweaks · 2")
+        #expect(items[2]["File"] as? String == "XSideTweaks")
+        #expect(items[2]["Key"] as? String == "io.github.xside.settings.tweaks")
+        let page = try tweaksPage(app)
+        #expect(page["Title"] as? String == "Tweaks")
+        #expect(page["StringsTable"] as? String == "XSide")
+        let rows = try #require(page["PreferenceSpecifiers"] as? [[String: Any]])
+        #expect(rows.count == 4)
+        #expect(rows[0]["Type"] as? String == "PSGroupSpecifier")
+        #expect(rows[0]["Title"] as? String == "XSPivotFix")
+        #expect(rows[0]["FooterText"] as? String == "Puts the tab back.")
+        #expect(rows[1]["Type"] as? String == "PSTitleValueSpecifier")
+        #expect(rows[1]["Title"] as? String == "Version")
+        #expect(rows[1]["DefaultValue"] as? String == "1.0 · Anthony")
+        #expect((rows[1]["Key"] as? String)?.hasPrefix("io.github.xside.settings.tweak.") == true)
+        #expect(rows[2]["Title"] as? String == "uYouPlus · converti")
+        #expect(rows[2]["FooterText"] == nil)
+        #expect(rows[3]["DefaultValue"] as? String == "—")
+        #expect(Set(rows.compactMap { $0["Key"] as? String }).count == 4)
+        // XSide's page is untouched by it.
+        #expect(try childItems(app).count == 14)
+    }
+
+    /// Without XSide's module (its features off): the tweaks row alone, no « Réglages XSide ».
+    @Test func tweaksRowWithoutTheSection() throws {
+        let app = try makeApp()
+        try SettingsBundle.add(nil, tweaks: pane, to: app)
+        let items = try specifiers(app)
+        #expect(items.count == 2)
+        #expect(items[0]["Type"] as? String == "PSGroupSpecifier")
+        #expect(items[1]["Key"] as? String == "io.github.xside.settings.tweaks")
+        #expect(!FileManager.default.fileExists(atPath: app.appendingPathComponent("Settings.bundle/XSide.plist").path))
+        #expect(try tweaksPage(app)["Title"] as? String == "Tweaks")
+    }
+
+    /// Signed again without tweaks: the row and its page go; with nothing at all, nothing is written.
+    @Test func noTweaksNoRowAndNoPage() throws {
+        let app = try makeApp()
+        try SettingsBundle.add(xsideSection(), tweaks: pane, to: app)
+        try SettingsBundle.add(xsideSection(), tweaks: nil, to: app)
+        #expect(try specifiers(app).count == 2)
+        #expect(!FileManager.default.fileExists(atPath: app.appendingPathComponent("Settings.bundle/XSideTweaks.plist").path))
+        let bare = try makeApp()
+        try SettingsBundle.add(nil, tweaks: nil, to: bare)
+        #expect(!FileManager.default.fileExists(atPath: bare.appendingPathComponent("Settings.bundle").path))
+    }
+
+    /// « converti » follows the iPhone's language through the strings table, like the other titles.
+    @Test func tweaksTitlesAreTranslated() throws {
+        let app = try makeApp()
+        try addAppLprojs(app, ["fr.lproj", "en.lproj"])
+        try SettingsBundle.add(xsideSection(language: "fr"), tweaks: pane, to: app)
+        let bundle = app.appendingPathComponent("Settings.bundle")
+        #expect(try strings(bundle.appendingPathComponent("en.lproj/XSide.strings"))["uYouPlus · converti"] == "uYouPlus · converted")
+        #expect(try strings(bundle.appendingPathComponent("fr.lproj/XSide.strings"))["uYouPlus · converti"] == "uYouPlus · converti")
+    }
+
+    @Test func refusesALinkedTweaksPage() throws {
+        let app = try makeApp()
+        let bundle = app.appendingPathComponent("Settings.bundle")
+        try FileManager.default.createDirectory(at: bundle, withIntermediateDirectories: true)
+        let elsewhere = try tempDir().appendingPathComponent("target.plist")
+        try Data().write(to: elsewhere)
+        try FileManager.default.createSymbolicLink(at: bundle.appendingPathComponent("XSideTweaks.plist"),
+                                                   withDestinationURL: elsewhere)
+        #expect(throws: (any Error).self) { try SettingsBundle.add(xsideSection(), tweaks: pane, to: app) }
+        #expect(try Data(contentsOf: elsewhere).isEmpty)
+    }
 }

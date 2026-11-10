@@ -175,6 +175,19 @@ NSString *_Nullable XSSettingsRowTitle(id _Nullable root);
 /// The strings table iOS reads the page's titles from: its StringsTable, else "Root".
 NSString *XSSettingsRowTable(id _Nullable root);
 
+// MARK: Tweaks of this copy (XSideWelcome.tweaks, PhoneTweaks in Sources/XSideCore)
+
+/// The payload's tweak list, read as untrusted: at most 64 entries (from the first 1024 items),
+/// each a dictionary with a non-blank string `name` (else dropped); `version`, `author`,
+/// `summary` kept only as non-blank strings, capped at 64, 128 and 1000 characters (`name` 128),
+/// never cut inside a character; `converted` and `off` always present as Bool NSNumbers (NO
+/// unless a number says YES). Anything else: an empty list. The caps are PhoneTweaks's.
+NSArray<NSDictionary *> *XSTweaksSanitized(id _Nullable raw);
+/// The sanitized tweaks in the app (not `off`): the N of « Tweaks · N ».
+NSUInteger XSTweaksInjectedCount(NSArray<NSDictionary *> *tweaks);
+/// « version · auteur » of a sanitized tweak, what is known of it; « — » for nothing.
+NSString *XSTweakVersionLine(NSDictionary *tweak);
+
 // MARK: Quick actions (device feedback 3, E1: static Info.plist items written on the Mac)
 
 /// io.github.xside.shortcut.<name>.

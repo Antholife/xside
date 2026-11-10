@@ -12,6 +12,9 @@ import Foundation
 /// - `installationID` (String), `channelSecret` (plist data, 32 bytes): the channel credentials
 /// - `installedAt` (plist date): first install of the app on this device
 /// - `signedAt` (plist date): when this signing happened (the phone's "Rafraîchie le" row)
+/// - `tweaks` (array, at most `PhoneTweaks.maxCount`): the tweaks of this copy, in load order, then
+///   those off on this device; each `{name, version?, author?, summary?, converted, off}`, strings
+///   capped (`PhoneTweaks`), `converted`/`off` Bools. Left out when the app has none.
 ///
 /// Optional parts missing from the payload are left out of the dictionary.
 public struct WelcomePayload: Sendable, Equatable {
@@ -22,6 +25,8 @@ public struct WelcomePayload: Sendable, Equatable {
     public var channelSecret: Data?
     public var installedAt: Date?
     public var signedAt: Date?
+    /// Set by the resigner from what the signing injected.
+    public var tweaks: [PhoneTweak]?
 
     public init(thresholdHours: Int, reminderLeadHours: Int, inApp: InAppSettings,
                 installationID: String? = nil, channelSecret: Data? = nil, installedAt: Date? = nil,
@@ -58,6 +63,7 @@ public struct WelcomePayload: Sendable, Equatable {
         if let channelSecret { result["channelSecret"] = channelSecret }
         if let installedAt { result["installedAt"] = installedAt }
         if let signedAt { result["signedAt"] = signedAt }
+        if let tweaks, !tweaks.isEmpty { result["tweaks"] = PhoneTweaks.plist(tweaks) }
         return result
     }
 }

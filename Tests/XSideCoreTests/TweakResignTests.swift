@@ -147,6 +147,8 @@ private struct TweakFixture {
     let welcome: URL?, iCloud: URL?, elleKit: URL?, license: URL?, support: URL?, legacy: URL?
     var failingSign: String?
     var realSigning = false
+    /// Gives the resigner a Settings section and a payload, as XSide.app does.
+    var settings = false
 
     init(executable exe: Data = executable(), withModule: Bool = true, withICloud: Bool = false,
          withElleKit: Bool = true, withSupport: Bool = true, embedded: [Stored] = [cepheiPackage()],
@@ -214,16 +216,24 @@ private struct TweakFixture {
     }
 
     var resigner: Resigner {
-        Resigner(runner: realSigning ? RealSigner(fake: fake)
+        var section: (@Sendable (ProvisioningProfile, InstallationFacts?) -> SettingsSection)?
+        var payload: @Sendable (ProvisioningProfile) -> WelcomePayload? = { _ in nil }
+        if settings {
+            section = fixtureSection
+            payload = fixturePayload
+        }
+        return Resigner(runner: realSigning ? RealSigner(fake: fake)
                     : failingSign.map { FailingSigner(fake: fake, failing: $0) } ?? RoutingRunner(fake: fake),
-                 welcomeDylib: welcome, iCloudLibrary: iCloud, duoLegacyLibrary: legacy,
+                 welcomeDylib: welcome, settingsSection: section, welcome: payload,
+                 iCloudLibrary: iCloud, duoLegacyLibrary: legacy,
                  elleKitLibrary: elleKit, elleKitLicense: license, tweakSupportLibrary: support, tweakDependencies: deps)
     }
 
     func run(_ items: [TweakSigningItem], options: InstallOptions = InstallOptions(), deviceOS: String? = "17.5",
+             offHere: [TweakPackage]? = nil,
              reports: Reports? = nil, order: Order? = nil, duo: Outcomes? = nil) async throws -> URL {
         var options = options
-        options.tweaks = TweakJob(items: items, deviceOS: deviceOS)
+        options.tweaks = TweakJob(items: items, deviceOS: deviceOS, offHere: offHere)
         return try await resigner.resign(
             ipa: ipa, workDir: work, bundleID: "com.example.new", options: options, iconURL: nil,
             profileURL: profileURL, profile: profile(), identitySHA1: realSigning ? "-" : "SHA", facts: nil,
@@ -238,6 +248,15 @@ private struct TweakFixture {
                 await reports?.add(report)
             })
     }
+}
+
+private let fixtureSection: @Sendable (ProvisioningProfile, InstallationFacts?) -> SettingsSection = { _, _ in
+    SettingsSection.xside(validUntil: "12 nov.", refreshedOn: "5 nov.", version: "1.0", installedOn: "1 nov.")
+}
+
+private let fixturePayload: @Sendable (ProvisioningProfile) -> WelcomePayload? = { _ in
+    WelcomePayload(thresholdHours: 48, reminderLeadHours: 24,
+                   inApp: InAppSettings.defaults(reminder: true, at: Date(timeIntervalSince1970: 0)))
 }
 
 /// Sets the SDK of every LC_BUILD_VERSION of a thin or fat binary to 27.1 (what the fake vtool does).
@@ -894,5 +913,77 @@ struct TweakResignTests {
             #expect(exists(app.appendingPathComponent(path)), "\(path)")
         }
         #expect(try loads(app) == ["@rpath/Own.framework/Own", Resigner.welcomeLoadPath])
+    }
+
+    // MARK: - The list the iPhone shows
+
+    private func settingsItems(_ app: URL, _ file: String = "Root") throws -> [[String: Any]] {
+        let data = try Data(contentsOf: app.appendingPathComponent("Settings.bundle/\(file).plist"))
+        let page = try #require(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+        return try #require(page["PreferenceSpecifiers"] as? [[String: Any]])
+    }
+
+    /// With XSide's module: the payload lists what went in (and what is off here), and the app's
+    /// page gets « Tweaks · N » next to « Réglages XSide ».
+    @Test func theIPhoneListsTheTweaksWithTheModule() async throws {
+        var f = try await TweakFixture()
+        f.settings = true
+        var a = tweak(idA, name: "Alpha", mentions: true)
+        a.package.author = "Anthony"
+        a.package.summary = "Does alpha things."
+        let b = tweak(idB, name: "Beta")
+        var c = tweak(idC, name: "Gamma").package
+        c.version = "2.0"
+        let app = try await f.run([try f.item(a), try f.item(b)], offHere: [c])
+        let payload = try #require(try plist(app)["XSideWelcome"] as? [String: Any])
+        let tweaks = try #require(payload["tweaks"] as? [[String: Any]])
+        #expect(tweaks.map { $0["name"] as? String } == ["Alpha", "Beta", "Gamma"])
+        #expect(tweaks[0]["converted"] as? Bool == true && tweaks[0]["author"] as? String == "Anthony")
+        #expect(tweaks[0]["summary"] as? String == "Does alpha things.")
+        #expect(tweaks[1]["converted"] as? Bool == false && tweaks[1]["off"] as? Bool == false)
+        #expect(tweaks[2]["off"] as? Bool == true && tweaks[2]["version"] as? String == "2.0")
+        let root = try settingsItems(app)
+        #expect(root.map { $0["Key"] as? String } == ["io.github.xside.settings.group", "io.github.xside.settings.pane",
+                                                      "io.github.xside.settings.tweaks"])
+        #expect(root[2]["Title"] as? String == "Tweaks · 2")
+        let page = try settingsItems(app, "XSideTweaks")
+        #expect(page.compactMap { $0["Type"] as? String == "PSGroupSpecifier" ? $0["Title"] as? String : nil }
+                == ["Alpha · converted", "Beta"])
+    }
+
+    /// XSide's features off: no module, no payload, no « Réglages XSide », but the app's page still
+    /// lists its tweaks (static rows, nothing to run).
+    @Test func theIPhoneListsTheTweaksWithoutTheModule() async throws {
+        var f = try await TweakFixture()
+        f.settings = true
+        let a = tweak(idA, name: "Alpha")
+        let app = try await f.run([try f.item(a)], options: InstallOptions(withoutXSideFeatures: true))
+        #expect(try plist(app)["XSideWelcome"] == nil)
+        let root = try settingsItems(app)
+        #expect(root.map { $0["Key"] as? String } == ["io.github.xside.settings.group", "io.github.xside.settings.tweaks"])
+        #expect(root[1]["Title"] as? String == "Tweaks · 1")
+        #expect(!exists(app.appendingPathComponent("Settings.bundle/XSide.plist")))
+        #expect(try settingsItems(app, "XSideTweaks").count == 2)
+
+        // A build without the module behaves the same.
+        var g = try await TweakFixture(withModule: false)
+        g.settings = true
+        let app2 = try await g.run([try g.item(a)])
+        #expect(try settingsItems(app2).count == 2)
+    }
+
+    /// No tweak in the app: no list in the payload, no row; nothing added without the module.
+    @Test func noTweaksNoListNoRow() async throws {
+        var f = try await TweakFixture()
+        f.settings = true
+        let skipped = tweak(idA, name: "Alpha", slices: [arm64("99.0")])
+        let app = try await f.run([try f.item(skipped)], offHere: [tweak(idB).package])
+        #expect((try plist(app)["XSideWelcome"] as? [String: Any])?["tweaks"] == nil)
+        #expect(try settingsItems(app).count == 2)
+        #expect(!exists(app.appendingPathComponent("Settings.bundle/XSideTweaks.plist")))
+        var g = try await TweakFixture()
+        g.settings = true
+        let bare = try await g.run([], options: InstallOptions(withoutXSideFeatures: true))
+        #expect(!exists(bare.appendingPathComponent("Settings.bundle")))
     }
 }
