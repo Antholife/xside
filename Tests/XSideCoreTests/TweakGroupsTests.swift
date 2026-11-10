@@ -57,14 +57,14 @@ struct TweakGroupsTests {
 
     @Test func aWebSearchForAnUnknownDependency() {
         let url = DependencyDirectory.webSearchURL(packageID: "com.example.helper", name: "Helper Lib")
-        #expect(url?.absoluteString == "https://duckduckgo.com/?q=com.example.helper+Helper+Lib+deb")
+        #expect(url?.absoluteString == "https://www.google.com/search?q=com.example.helper+Helper+Lib+deb")
         // The name is the id: once. Odd characters are encoded, never raw.
         #expect(DependencyDirectory.webSearchURL(packageID: "com.x", name: "com.x")?.absoluteString
-                == "https://duckduckgo.com/?q=com.x+deb")
+                == "https://www.google.com/search?q=com.x+deb")
         #expect(DependencyDirectory.webSearchURL(packageID: "a+b", name: "A&B #1")?.absoluteString
-                == "https://duckduckgo.com/?q=a%2Bb+A%26B+%231+deb")
+                == "https://www.google.com/search?q=a%2Bb+A%26B+%231+deb")
         #expect(DependencyDirectory.webSearchURL(packageID: "com.x", name: "Préférences")?.absoluteString
-                == "https://duckduckgo.com/?q=com.x+Pr%C3%A9f%C3%A9rences+deb")
+                == "https://www.google.com/search?q=com.x+Pr%C3%A9f%C3%A9rences+deb")
         #expect(DependencyDirectory.webSearchURL(packageID: "", name: "") == nil)
         #expect(DependencyDirectory.webSearchURL(packageID: String(repeating: "x", count: 300), name: "y") == nil)
     }

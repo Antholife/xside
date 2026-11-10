@@ -72,7 +72,7 @@ public enum TweakGroups {
 }
 
 extension DependencyDirectory {
-    /// « Rechercher sur le web » for a dependency XSide knows nothing about: a DuckDuckGo search
+    /// « Rechercher sur le web » for a dependency XSide knows nothing about: a Google search
     /// for its id, its name (when it differs) and « deb ». Only opened in the browser.
     public static func webSearchURL(packageID: String, name: String) -> URL? {
         let id = packageID.trimmingCharacters(in: .whitespaces)
@@ -86,7 +86,7 @@ extension DependencyDirectory {
         let terms = words.joined(separator: " ").split(separator: " ").map {
             String($0).addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
         }
-        return URL(string: "https://duckduckgo.com/?q=" + terms.joined(separator: "+"))
+        return URL(string: "https://www.google.com/search?q=" + terms.joined(separator: "+"))
     }
 }
 
