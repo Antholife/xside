@@ -454,16 +454,24 @@ struct InstallSheet: View {
                     Button(L("install.back")) { withAnimation(.smooth(duration: 0.2)) { flow.go(to: flow.step - 1) } }
                         .controlSize(.large)
                 }
-                // Step ③ with tweaks « À régler »: they are settled or removed first (device round 2, items 3 and 6).
-                if flow.reviewsSteps && flow.step == 2 && !model.tweaksToSettle(flow).isEmpty {
+                // Step ③ with tweaks « À régler »: they are settled or removed first (device round 2,
+                // items 3 and 6). On the summary, the same line, with « Modifier » to step ③ (mega review U5).
+                let toSettle = !model.tweaksToSettle(flow).isEmpty
+                if toSettle && (!flow.reviewsSteps || flow.step == 2) {
                     Text(L("install.tweaks.blocked"))
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Color(nsColor: .systemRed))
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Button(L("install.tweaks.removeBlocked")) { model.removeTweaksToSettle(flow) }
-                        .controlSize(.large)
-                        .fixedSize()
+                    if flow.reviewsSteps {
+                        Button(L("install.tweaks.removeBlocked")) { model.removeTweaksToSettle(flow) }
+                            .controlSize(.large)
+                            .fixedSize()
+                    } else {
+                        Button(L("install.summary.edit")) { withAnimation(.smooth(duration: 0.2)) { flow.go(to: 2) } }
+                            .controlSize(.large)
+                            .fixedSize()
+                    }
                 }
                 // Install only at the last step (or on the summary).
                 if flow.reviewsSteps && flow.step < InstallFlow.stepCount - 1 {
