@@ -881,7 +881,7 @@ static XSPillContent *XSRefreshUnansweredPill(XSChannelResult result) {
 
 static void XSStartRefresh(void) {
     // The first time, the local network page comes first (iOS asks while this browses).
-    XSExplainNetworkThen(^{
+    XSExplainNetworkThenOr(^{
         BOOL fr = XSFrench();
         XSPillContent *asking = XSPill(fr ? @"Demande de rafraîchissement à ton Mac…" : @"Asking your Mac for a refresh…",
                                        fr ? @"S'il accepte, l'app se fermera une fois rafraîchie ; rouvre-la ensuite."
@@ -889,6 +889,10 @@ static void XSStartRefresh(void) {
         asking.busy = YES;
         XSShowAnswer(asking);
         XSStartRefreshExchange();
+    }, ^{
+        // Its "Réseau local" page had no screen: no refresh asked, the next Refresh can start
+        // (mega review D4: it stayed "running", Refresh and the live updates dead until relaunch).
+        XSRefreshRunning = NO;
     });
 }
 

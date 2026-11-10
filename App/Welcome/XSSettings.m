@@ -19,7 +19,7 @@ static NSString *const XSLastExpiryKey = @"io.github.xside.welcome.lastExpiry";
 static NSString *const XSChannelGrantedKey = @"io.github.xside.welcome.channelGranted";
 static NSString *const XSNetworkExplainedKey = @"io.github.xside.welcome.networkExplained";
 /// The "changed on phone" flags, also saved (mega review minor 4): settings can first be loaded
-/// during a background launch (the wrapped setShortcutItems:), and a process killed before it
+/// while the app runs in the background (a background launch), and a process killed before it
 /// became active would otherwise lose the news, so the change would never be told.
 static NSString *const XSAutoRefreshChangedKey = @"io.github.xside.welcome.autoRefreshChangedOnPhone";
 static NSString *const XSOtherChangedKey = @"io.github.xside.welcome.otherChangedOnPhone";

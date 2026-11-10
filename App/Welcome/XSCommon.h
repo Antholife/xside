@@ -163,5 +163,8 @@ BOOL XSSystemAlertSeen(void);
 /// network: the first time, when XSNeedsNetworkExplanation says so, the sheet's "Réseau local"
 /// page is shown on its own first. After any first-launch sheet. Main thread.
 void XSExplainNetworkThen(void (^block)(void));
+/// The same, with `dropped` run instead of `block` when the access is dropped: its page had no
+/// screen to show on (no scene in front), so `block` never runs.
+void XSExplainNetworkThenOr(void (^block)(void), void (^_Nullable dropped)(void));
 
 NS_ASSUME_NONNULL_END

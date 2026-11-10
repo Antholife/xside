@@ -313,8 +313,8 @@ static void XSHideWindow(void) {
 - (NSArray<UIView *> *)notificationViews {
     UIView *head = [self head:@"bell.badge.fill" title:[self t:@"Notifications" en:@"Notifications"]
                      subtitle:[self t:@"Un rappel avant l'expiration" en:@"A reminder before it expires"]];
-    UILabel *why = [self label:[self t:@"XSide te prévient la veille de l'expiration, au cas où ton Mac n'aurait pas pu rafraîchir l'app à temps. Il te dit aussi si un rafraîchissement demandé d'ici échoue."
-                                    en:@"XSide reminds you the day before it expires, in case your Mac couldn't refresh the app in time. It also tells you if a refresh asked from here fails."]
+    UILabel *why = [self label:[self t:@"XSide te prévient avant l'expiration, au cas où ton Mac n'aurait pas pu rafraîchir l'app à temps. Il te dit aussi si un rafraîchissement demandé d'ici échoue."
+                                    en:@"XSide reminds you before it expires, in case your Mac couldn't refresh the app in time. It also tells you if a refresh asked from here fails."]
                           size:14 weight:UIFontWeightRegular color:UIColor.labelColor];
     UIView *ask = [self callout:@"bell.fill"
                           title:[self t:@"iOS va te demander d'autoriser" en:@"iOS will ask you to allow it"]
@@ -712,20 +712,25 @@ void XSAfterSheet(void (^block)(void)) {
 
 /// The sheet with `pages` (XSSheetPages); `expiry` nil for the stand-alone network page. Ends the
 /// sheet (XSSheetEnded) once closed, after `done`, or when no scene came.
-static void XSShowSheet(NSDate *expiry, NSArray<NSString *> *pages, BOOL startsNetwork, void (^done)(void), int attempt) {
+static void XSShowSheet(NSDate *expiry, NSArray<NSString *> *pages, BOOL startsNetwork, void (^done)(void),
+                        void (^dropped)(void), int attempt) {
     UIWindowScene *scene = XSScene();
     if (!scene) {
         if (attempt + 1 >= XSMaxAttempts) {
             // Never shown: what waited for it goes ahead, except a network access that was waiting
             // for the "Réseau local" page (device feedback round 2, P4: it used to run anyway, so
-            // iOS asked with no page before). It is dropped; the next access shows the page.
+            // iOS asked with no page before). It is dropped, and told so (`dropped`: a Refresh
+            // then stops waiting, mega review D4); the next access shows the page.
             if (done && ![pages containsObject:@"network"]) done();
-            else if (done) NSLog(@"XSide: local network: no screen for its page, access dropped");
+            else if (done) {
+                NSLog(@"XSide: local network: no screen for its page, access dropped");
+                if (dropped) dropped();
+            }
             XSSheetEnded();
             return;
         }
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            XSShowSheet(expiry, pages, startsNetwork, done, attempt + 1);
+            XSShowSheet(expiry, pages, startsNetwork, done, dropped, attempt + 1);
         });
         return;
     }
@@ -753,12 +758,14 @@ static void XSShowFirstSheet(NSDate *expiry) {
         BOOL ask = wantsReminder && settings.authorizationStatus == UNAuthorizationStatusNotDetermined;
         dispatch_async(dispatch_get_main_queue(), ^{
             NSArray *pages = XSSheetPages(XSHasChannel(), XSChannelGranted(), XSNetworkExplained(), ask);
-            XSShowSheet(expiry, pages, YES, nil, 0);
+            XSShowSheet(expiry, pages, YES, nil, nil, 0);
         });
     }];
 }
 
-void XSExplainNetworkThen(void (^block)(void)) {
+void XSExplainNetworkThen(void (^block)(void)) { XSExplainNetworkThenOr(block, nil); }
+
+void XSExplainNetworkThenOr(void (^block)(void), void (^dropped)(void)) {
     XSAfterSheet(^{
         if (!XSNeedsNetworkExplanation(XSHasChannel(), XSChannelGranted(), XSNetworkExplained())) {
             block();
@@ -777,7 +784,7 @@ void XSExplainNetworkThen(void (^block)(void)) {
                     return;
                 }
                 if ([page isEqual:@"networkDenied"]) XSSetNetworkExplained();
-                XSShowSheet(nil, @[page], NO, block, 0);
+                XSShowSheet(nil, @[page], NO, block, dropped, 0);
             });
             return;
         }
@@ -785,7 +792,7 @@ void XSExplainNetworkThen(void (^block)(void)) {
         // sheet left before its page): the "Réseau local" page on its own, then the access.
         NSLog(@"XSide: local network: its page first, then XSide's first access");
         XSSheetUp = YES;
-        XSShowSheet(nil, @[@"network"], NO, block, 0);
+        XSShowSheet(nil, @[@"network"], NO, block, dropped, 0);
     });
 }
 
@@ -963,6 +970,9 @@ static void XSReturn(void) {
     });
 }
 
+/// Seconds after its launch an app still in the background was launched there (see the run marker).
+static const NSTimeInterval XSBackgroundLaunchCheck = 3;
+
 __attribute__((constructor)) static void XSideWelcomeInit(void) {
     // How the previous run ended, then this one marked running (off the main thread).
     XSRunMarkerLaunched();
@@ -992,6 +1002,20 @@ __attribute__((constructor)) static void XSideWelcomeInit(void) {
                                                     usingBlock:^(NSNotification *n) { XSNoteLeaving(); }];
     }];
     // The run marker: in front, or left cleanly (a kill in the background is no crash of interest).
+    // A launch in the background (a silent push, a fetch...) was marked running by the constructor:
+    // still in the background a moment after its launch, it is clean, so a later kill there isn't
+    // reported as a crash (mega review D3). Not at once: with scenes, the app reads as in the
+    // background during its launch even when it opens in front; a crash in those first seconds
+    // stays reported.
+    [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidFinishLaunchingNotification
+                                                    object:nil queue:NSOperationQueue.mainQueue
+                                                usingBlock:^(NSNotification *n) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(XSBackgroundLaunchCheck * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            if (UIApplication.sharedApplication.applicationState != UIApplicationStateBackground) return;
+            NSLog(@"XSide: run marker: launched in the background, clean");
+            XSRunMarkerInFront(NO, NO);
+        });
+    }];
     [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification
                                                     object:nil queue:NSOperationQueue.mainQueue
                                                 usingBlock:^(NSNotification *n) { XSRunMarkerInFront(YES, NO); }];

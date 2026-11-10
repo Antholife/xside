@@ -483,7 +483,7 @@ XSPillContent *XSLaunchPillContent(NSDate *expiry) {
         } else {
             c.tone = XSPillToneRed;
             c.hint = [NSString stringWithFormat:fr
-                ? @"XSide n'a pas pu la rafraîchir. Ouvre XSide sur ton Mac, %@ sur le même Wi-Fi ou branché, avant qu'elle expire."
+                ? @"XSide n'a pas pu la rafraîchir. Ouvre XSide sur ton Mac, avec ton %@ sur le même Wi-Fi ou branché, avant qu'elle expire."
                 : @"XSide couldn't refresh it. Open XSide on your Mac, with your %@ on the same Wi-Fi or plugged in, before it expires.",
                 device];
         }
