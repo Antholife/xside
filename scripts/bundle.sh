@@ -46,8 +46,13 @@ else
 fi
 cp App/Info.plist "$APP/Contents/Info.plist"
 # The debug bundle gets its own identity: its defaults, notifications and permissions stay apart
-# from the release app's.
-[ "$CONFIG" = debug ] && plutil -replace CFBundleIdentifier -string io.github.xside.XSide.debug "$APP/Contents/Info.plist"
+# from the release app's. A distinct display name keeps it from showing up as a second "XSide"
+# next to the release (Dock, menu bar, System Settings > Notifications).
+if [ "$CONFIG" = debug ]; then
+    plutil -replace CFBundleIdentifier -string io.github.xside.XSide.debug "$APP/Contents/Info.plist"
+    plutil -replace CFBundleName -string "XSide (debug)" "$APP/Contents/Info.plist"
+    plutil -replace CFBundleDisplayName -string "XSide (debug)" "$APP/Contents/Info.plist"
+fi
 # Build stamp for Settings > About: commit count as build number, short commit, build date.
 if git rev-parse --git-dir >/dev/null 2>&1; then
     COMMIT="$(git rev-parse --short HEAD)"
