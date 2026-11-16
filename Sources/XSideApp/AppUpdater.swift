@@ -131,7 +131,8 @@ extension AppModel {
     private func backUpBeforeUpdate(record: AppRecord, device: Device, userInitiated: Bool) async {
         let live = records.first(where: { $0.id == record.id }) ?? record
         guard AppManagement.shouldBackUpBeforeUpdate(override: live.options.backupBeforeUpdate,
-                                                     default: Self.setting(Self.backupBeforeUpdateDefaultKey)),
+                                                     default: Self.setting(Self.backupBeforeUpdateDefaultKey),
+                                                     backupData: live.options.backupData),
               let installation = live.installations.first(where: { $0.deviceID == device.id }) else { return }
         switch await backUpNow(AppEntry(record: live, installation: installation)) {
         case .saved, .unchanged: break

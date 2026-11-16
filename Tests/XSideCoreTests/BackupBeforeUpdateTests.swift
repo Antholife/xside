@@ -4,10 +4,19 @@ import Foundation
 
 @Suite struct BackupBeforeUpdateTests {
     @Test func shouldBackUpBeforeUpdate_overrideElseDefault() {
-        #expect(AppManagement.shouldBackUpBeforeUpdate(override: nil, default: true))
-        #expect(!AppManagement.shouldBackUpBeforeUpdate(override: nil, default: false))
-        #expect(!AppManagement.shouldBackUpBeforeUpdate(override: false, default: true))
-        #expect(AppManagement.shouldBackUpBeforeUpdate(override: true, default: false))
+        #expect(AppManagement.shouldBackUpBeforeUpdate(override: nil, default: true, backupData: nil))
+        #expect(!AppManagement.shouldBackUpBeforeUpdate(override: nil, default: false, backupData: nil))
+        #expect(!AppManagement.shouldBackUpBeforeUpdate(override: false, default: true, backupData: nil))
+        #expect(AppManagement.shouldBackUpBeforeUpdate(override: true, default: false, backupData: nil))
+    }
+
+    @Test func backupDataOptOutRules() {
+        #expect(AppManagement.shouldBackUpBeforeUpdate(override: true, default: false, backupData: false))
+        #expect(AppManagement.shouldBackUpBeforeUpdate(override: true, default: true, backupData: false))
+        #expect(!AppManagement.shouldBackUpBeforeUpdate(override: nil, default: true, backupData: false))
+        #expect(!AppManagement.shouldBackUpBeforeUpdate(override: false, default: true, backupData: nil))
+        #expect(AppManagement.shouldBackUpBeforeUpdate(override: nil, default: true, backupData: nil))
+        #expect(AppManagement.shouldBackUpBeforeUpdate(override: nil, default: true, backupData: true))
     }
 
     @Test func optionsWithoutTheKeyStillLoad() throws {

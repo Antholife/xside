@@ -135,7 +135,8 @@ struct AppDataTab: View {
                       enabled: backupOn)
             toggleBox(L("settings.appData.beforeUpdate"), L("fiche.data.beforeUpdate.note"),
                       isOn: Binding(get: { options.backupBeforeUpdate ?? AppModel.setting(AppModel.backupBeforeUpdateDefaultKey) },
-                                    set: { v in Task { await model.setBackupBeforeUpdate(v, for: entry) } }))
+                                    set: { v in Task { await model.setBackupBeforeUpdate(v, for: entry) } }),
+                      enabled: backupOn)
             HStack(spacing: 8) {
                 Button(L("fiche.data.backUpNow")) { run(.backup) { await AppDataActions.backUpNow(entry, model: model) } }
                     .buttonStyle(.borderedProminent)

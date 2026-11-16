@@ -2,15 +2,18 @@
 /// zone at the bottom of « Module XSide »): the panel row's own, in the order of the approved
 /// mockup, why they're greyed, and which app the page shows once that one is gone.
 public enum AppManagement {
+    /// Whether to snapshot an app's data just before an app update installs. An explicit per-app
+    /// opt-in (`backupBeforeUpdate == true`) wins; else the app's master data-backup opt-out
+    /// (`backupData == false`) skips it; else the app's own choice, else the global default.
+    public static func shouldBackUpBeforeUpdate(override: Bool?, default defaultOn: Bool, backupData: Bool?) -> Bool {
+        if override == true { return true }
+        if backupData == false { return false }
+        return override ?? defaultOn
+    }
+
     /// The uninstall confirmation's "back up first" box: on when the device can be reached and the
     /// app's backups aren't turned off (`InstallOptions.backupData == false`); it can't be ticked
     /// without a reachable device.
-    /// Whether to snapshot an app's data just before an app update installs: the app's own choice
-    /// (`InstallOptions.backupBeforeUpdate`) when set, else the global default.
-    public static func shouldBackUpBeforeUpdate(override: Bool?, default defaultOn: Bool) -> Bool {
-        override ?? defaultOn
-    }
-
     public static func backupFirstDefault(deviceReachable: Bool, backupData: Bool?) -> Bool {
         deviceReachable && backupData != false
     }
