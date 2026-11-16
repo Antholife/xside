@@ -32,6 +32,7 @@ public actor AppDataBackup {
     private let base: URL
     private var indexURL: URL { base.appendingPathComponent("index.json") }
     private let fm = FileManager.default
+    private let log = Log("backup")
 
     /// `root` is the library root; the store lives in `root/backups`.
     public init(root: URL) {
@@ -166,12 +167,10 @@ public actor AppDataBackup {
 
     private static func fileSignatures(_ root: URL) -> [String: Signature] {
         var out: [String: Signature] = [:]
-        let prefix = root.resolvingSymlinksInPath().path
-        guard let e = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil) else { return out }
-        for case let url as URL in e {
+        guard let e = FileManager.default.enumerator(atPath: root.path) else { return out }
+        for case let rel as String in e {
             var st = stat()
-            guard lstat(url.path, &st) == 0, (st.st_mode & S_IFMT) == S_IFREG else { continue }
-            let rel = String(url.resolvingSymlinksInPath().path.dropFirst(prefix.count))
+            guard lstat(root.appendingPathComponent(rel).path, &st) == 0, (st.st_mode & S_IFMT) == S_IFREG else { continue }
             out[rel] = Signature(size: Int(st.st_size),
                                  mtime: TimeInterval(st.st_mtimespec.tv_sec) + TimeInterval(st.st_mtimespec.tv_nsec) / 1e9)
         }
@@ -179,37 +178,64 @@ public actor AppDataBackup {
     }
 
     /// Copies `source` into `dest` (which exists), linking files unchanged vs `previous`. Returns (bytes, files).
+    /// The source is untrusted app content: entries are addressed by their unresolved relative path, unsafe
+    /// paths and symlinks are skipped (only a count is logged), and no parent of a write target may be a symlink.
     private func copyTree(from source: URL, to dest: URL, linkingFrom previous: URL?) throws -> (Int, Int) {
-        let srcRoot = source.resolvingSymlinksInPath().path
-        guard let e = fm.enumerator(at: source, includingPropertiesForKeys: nil) else { return (0, 0) }
-        var bytes = 0, files = 0
-        for case let url as URL in e {
-            let rel = String(url.resolvingSymlinksInPath().path.dropFirst(srcRoot.count + 1))
+        guard let e = fm.enumerator(atPath: source.path) else { return (0, 0) }
+        var bytes = 0, files = 0, skipped = 0
+        for case let rel as String in e {
+            let comps = rel.split(separator: "/", omittingEmptySubsequences: false)
+            if rel.hasPrefix("/") || rel.isEmpty || comps.contains("..") || comps.contains("") { skipped += 1; continue }
+            let src = source.appendingPathComponent(rel)
             let target = dest.appendingPathComponent(rel)
             var st = stat()
-            guard lstat(url.path, &st) == 0 else { continue }
-            switch st.st_mode & S_IFMT {
+            guard lstat(src.path, &st) == 0 else { continue }
+            let kind = st.st_mode & S_IFMT
+            if kind != S_IFDIR && kind != S_IFLNK && kind != S_IFREG { continue }
+            guard Self.parentsAreRealDirs(of: rel, under: dest) else { skipped += 1; continue }
+            switch kind {
             case S_IFDIR:
-                try fm.createDirectory(at: target, withIntermediateDirectories: true)
+                try fm.createDirectory(at: target, withIntermediateDirectories: false)
             case S_IFLNK:
-                let dst = try fm.destinationOfSymbolicLink(atPath: url.path)
+                guard let dst = try? fm.destinationOfSymbolicLink(atPath: src.path),
+                      Self.symlinkStaysInside(dst, at: comps.dropLast().map(String.init)) else { skipped += 1; continue }
                 try fm.createSymbolicLink(atPath: target.path, withDestinationPath: dst)
-            case S_IFREG:
-                if let previous, Self.sameFile(previous.appendingPathComponent(rel).path, st),
-                   link(previous.appendingPathComponent(rel).path, target.path) == 0 {
+            default:
+                let prior = previous.map { $0.appendingPathComponent(rel) }
+                if let previous, let prior, Self.parentsAreRealDirs(of: rel, under: previous),
+                   Self.sameFile(prior.path, st), link(prior.path, target.path) == 0 {
                     // hard-linked
                 } else {
-                    try fm.copyItem(at: url, to: target)
-                    try fm.setAttributes([.modificationDate: Date(timeIntervalSince1970:
-                        TimeInterval(st.st_mtimespec.tv_sec) + TimeInterval(st.st_mtimespec.tv_nsec) / 1e9)],
-                                         ofItemAtPath: target.path)
+                    // copyItem preserves the nanosecond mtime; do not rewrite it through a Date (loses precision).
+                    try fm.copyItem(at: src, to: target)
                 }
                 bytes += Int(st.st_size); files += 1
-            default:
-                continue
             }
         }
+        if skipped > 0 { log.notice("backup skipped \(skipped) unsafe entr\(skipped == 1 ? "y" : "ies")") }
         return (bytes, files)
+    }
+
+    /// True when no directory above `rel` (inside `root`) is a symlink or missing.
+    private static func parentsAreRealDirs(of rel: String, under root: URL) -> Bool {
+        var cur = root
+        for c in rel.split(separator: "/").dropLast() {
+            cur = cur.appendingPathComponent(String(c))
+            var st = stat()
+            guard lstat(cur.path, &st) == 0, (st.st_mode & S_IFMT) == S_IFDIR else { return false }
+        }
+        return true
+    }
+
+    /// A symlink is kept only when its destination is relative and never climbs above the tree root.
+    private static func symlinkStaysInside(_ dest: String, at parent: [String]) -> Bool {
+        if dest.hasPrefix("/") || dest.isEmpty { return false }
+        var depth = parent.count
+        for c in dest.split(separator: "/") {
+            if c == ".." { depth -= 1; if depth < 0 { return false } }
+            else if c != "." { depth += 1 }
+        }
+        return true
     }
 
     private static func sameFile(_ path: String, _ src: stat) -> Bool {

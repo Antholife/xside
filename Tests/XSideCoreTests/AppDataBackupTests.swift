@@ -102,3 +102,51 @@ private func snap(_ store: AppDataBackup, _ src: URL, retention: Int = 3, at t: 
     #expect(await store.snapshot(s.id) == s)
     #expect(await store.snapshot("nope") == nil)
 }
+
+private func setNanoMTime(_ u: URL, sec: Int, nsec: Int) {
+    var ts = [timespec(tv_sec: sec, tv_nsec: nsec), timespec(tv_sec: sec, tv_nsec: nsec)]
+    #expect(utimensat(AT_FDCWD, u.path, &ts, 0) == 0)
+}
+
+@Test func createSnapshot_hardLinksFilesWithNanosecondMTime_acrossThreeSnapshots() async throws {
+    let store = makeStore()
+    let src = try makeTree(["n.txt": "nano"])
+    setNanoMTime(src.appendingPathComponent("n.txt"), sec: 1_700_000_000, nsec: 123_456_789)
+    let a = try await snap(store, src, at: 1_800_000_000)
+    let b = try await snap(store, src, at: 1_800_000_100)
+    let c = try await snap(store, src, at: 1_800_000_200)
+    let ia = try inode(await store.snapshotDir(a).appendingPathComponent("n.txt"))
+    #expect(try inode(await store.snapshotDir(b).appendingPathComponent("n.txt")) == ia)
+    #expect(try inode(await store.snapshotDir(c).appendingPathComponent("n.txt")) == ia)
+}
+
+@Test func createSnapshot_skipsEscapingSymlinks_andWritesNothingOutside() async throws {
+    let fm = FileManager.default
+    let store = makeStore()
+    let outside = TestTemp.root.appendingPathComponent("outside-\(UUID().uuidString)", isDirectory: true)
+    try fm.createDirectory(at: outside, withIntermediateDirectories: true)
+    try Data("secret".utf8).write(to: outside.appendingPathComponent("x"))
+    let src = try makeTree(["ok.txt": "fine", "d/inner.txt": "in"])
+    try fm.createSymbolicLink(atPath: src.appendingPathComponent("esc").path, withDestinationPath: "../../etc/x")
+    try fm.createSymbolicLink(atPath: src.appendingPathComponent("abs").path, withDestinationPath: "/etc/hosts")
+    try fm.createSymbolicLink(atPath: src.appendingPathComponent("dirlink").path, withDestinationPath: outside.path)
+    try fm.createSymbolicLink(atPath: src.appendingPathComponent("d/up").path, withDestinationPath: "../../..")
+    try fm.createSymbolicLink(atPath: src.appendingPathComponent("rel").path, withDestinationPath: "d/inner.txt")
+    let before = try fm.contentsOfDirectory(atPath: outside.path)
+    let s1 = try await snap(store, src, at: 1_800_000_000)
+    let s2 = try await snap(store, src, at: 1_800_000_100)
+    for s in [s1, s2] {
+        let dir = await store.snapshotDir(s)
+        #expect(fm.fileExists(atPath: dir.appendingPathComponent("ok.txt").path))
+        #expect(fm.fileExists(atPath: dir.appendingPathComponent("d/inner.txt").path))
+        for bad in ["esc", "abs", "dirlink", "d/up"] {
+            #expect((try? fm.destinationOfSymbolicLink(atPath: dir.appendingPathComponent(bad).path)) == nil)
+        }
+        #expect((try? fm.destinationOfSymbolicLink(atPath: dir.appendingPathComponent("rel").path)) == "d/inner.txt")
+        #expect(s.fileCount == 2)
+    }
+    #expect(try fm.contentsOfDirectory(atPath: outside.path) == before)
+    // Nothing escaped the store: only the backups folder was created under the library root.
+    let libRoot = await store.snapshotDir(s1).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    #expect(try fm.contentsOfDirectory(atPath: libRoot.path) == ["backups"])
+}
