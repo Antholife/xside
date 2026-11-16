@@ -358,6 +358,10 @@ struct OptionsDraft: Equatable {
     var updateSourceURL = ""
     var updateMode: UpdateMode = .notify
     var updateVariant: VariantSelector?
+    /// The repo and file name `updateVariant` was derived from: the variant is only valid for that
+    /// repo (`UpdateSourceSection` clears all three when the link points elsewhere).
+    var updateVariantSource: GitHubSource?
+    var updateVariantName: String?
 
     init() {}
 

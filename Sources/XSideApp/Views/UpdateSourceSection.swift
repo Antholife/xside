@@ -15,7 +15,10 @@ struct UpdateSourceSection: View {
         case found([String])
     }
     @State private var check = Check.idle
-    @State private var chosenName: String?
+    /// The file the variant was derived from, only while it belongs to the repo now in the field.
+    private var chosenName: String? {
+        flow.draft.updateVariant != nil && flow.draft.updateVariantSource == parsed ? flow.draft.updateVariantName : nil
+    }
 
     private var parsed: GitHubSource? { GitHubSource.parse(flow.draft.updateSourceURL) }
     private var isEmpty: Bool { flow.draft.updateSourceURL.trimmingCharacters(in: .whitespaces).isEmpty }
@@ -64,11 +67,13 @@ struct UpdateSourceSection: View {
         }
         // A new link (or a valid one first typed) is looked at once the typing pauses.
         .task(id: flow.draft.updateSourceURL) {
-            // The view rebuilt with a variant already chosen (not a new link): keep it, don't ask again.
-            if chosenName == nil, flow.draft.updateVariant != nil, parsed != nil { return }
+            // A variant already chosen for this very repo (the view was rebuilt): keep it.
+            if chosenName != nil { return }
+            // Otherwise the variant belongs to another repo (or none): drop it.
             check = .idle
-            chosenName = nil
             flow.draft.updateVariant = nil
+            flow.draft.updateVariantSource = nil
+            flow.draft.updateVariantName = nil
             guard parsed != nil else { return }
             try? await Task.sleep(for: .milliseconds(800))
             guard !Task.isCancelled else { return }
@@ -92,7 +97,8 @@ struct UpdateSourceSection: View {
         if parsed != nil {
             Group {
                 switch check {
-                case .idle: EmptyView()
+                case .idle:
+                    if let chosenName { note(L("update.source.tracking", chosenName), symbol: "checkmark.seal.fill", orange: false) }
                 case .checking:
                     HStack(spacing: 6) { ProgressView().controlSize(.mini); Text(L("update.source.checking")) }
                 case .failed:
@@ -141,12 +147,8 @@ struct UpdateSourceSection: View {
             guard let newest = all.first?.tag else { check = .none; return }
             let names = all.filter { $0.tag == newest }.map(\.asset.name)
             check = .found(names)
-            if names.count == 1 {
-                chosenName = names[0]
-                flow.draft.updateVariant = VariantSelector.make(chosen: names[0], others: [])
-            } else {
-                choose(from: names)
-            }
+            // One file: followed silently. Several: the person opens the choice ("Choisir").
+            if names.count == 1 { adopt(names[0], of: names, repo: repo) }
         } catch {
             guard !Task.isCancelled else { return }
             check = .failed
@@ -156,8 +158,13 @@ struct UpdateSourceSection: View {
     private func choose(from names: [String]) {
         guard let picked = UpdateSourceAlerts.chooseVariant(app: flow.appDisplayName, names: names,
                                                             current: chosenName) else { return }
-        chosenName = picked
-        flow.draft.updateVariant = VariantSelector.make(chosen: picked, others: names.filter { $0 != picked })
+        if let repo = parsed { adopt(picked, of: names, repo: repo) }
+    }
+
+    private func adopt(_ name: String, of names: [String], repo: GitHubSource) {
+        flow.draft.updateVariant = VariantSelector.make(chosen: name, others: names.filter { $0 != name })
+        flow.draft.updateVariantSource = repo
+        flow.draft.updateVariantName = name
     }
 }
 

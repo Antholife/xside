@@ -27,13 +27,14 @@ public struct GitHubSource: Codable, Equatable, Hashable, Sendable {
         }
         if s.contains("://") { return nil }
         if let q = s.firstIndex(where: { $0 == "?" || $0 == "#" }) { s = String(s[..<q]) }
-        let parts = s.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        var parts = s.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        if parts.count > 3, parts.last == "" { parts.removeLast() } // one trailing slash
         guard parts.count >= 3, ["github.com", "www.github.com"].contains(parts[0].lowercased()) else { return nil }
         let owner = parts[1]
         var repo = parts[2]
         if repo.lowercased().hasSuffix(".git") { repo = String(repo.dropLast(4)) }
         // Whatever follows the repo must be a plain path (/releases, /releases/tag/v1).
-        if parts.dropFirst(3).contains(where: { $0.isEmpty }), parts.count > 4 { return nil }
+        if parts.dropFirst(3).contains(where: { $0.isEmpty }) { return nil }
         func valid(_ part: String, dots: Bool) -> Bool {
             !part.isEmpty && part != "." && part != ".."
                 && part.unicodeScalars.allSatisfy { c in
