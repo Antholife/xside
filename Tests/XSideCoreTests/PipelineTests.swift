@@ -207,7 +207,8 @@ private struct SpyBackup: DataBackingUp {
     var restoreError: (any Error)?
     var snapshot: BackupSnapshot?
     func backUp(signedBundleID: String, deviceID: String, deviceName: String, appVersion: String?,
-                includeCaches: Bool, cycleStartedAt: Date?, retention: Int, onlyIfChanged: Bool) async throws -> BackupSnapshot? {
+                includeCaches: Bool, cycleStartedAt: Date?, retention: Int, onlyIfChanged: Bool,
+                progress: @escaping @Sendable (Int, Int, Int64, Int64) -> Void) async throws -> BackupSnapshot? {
         retentions?.add(retention)
         cycles?.add(cycleStartedAt)
         await log.backup(signedBundleID, deviceID, deviceName, appVersion, includeCaches, onlyIfChanged)

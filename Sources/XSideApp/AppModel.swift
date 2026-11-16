@@ -170,6 +170,8 @@ final class AppModel {
     private(set) var jobs: [JobKey: JobStage] = [:]
     /// Entries (`AppEntry.id`) with a backup, restore or import running: the fiche shows a spinner.
     private(set) var dataBusy: Set<JobKey> = []
+    /// A running manual/pre-update backup's progress (0...1) per row; absent while the total is unknown.
+    private(set) var backupFraction: [JobKey: Double] = [:]
     private(set) var pairing: Set<String> = []
     private(set) var pairErrors: [String: String] = [:]
     /// Settings > Mes apps: why the last tweak files added to an installation couldn't be
@@ -1895,7 +1897,7 @@ final class AppModel {
     fileprivate func setStepPercent(_ percent: Int, for key: JobKey) {
         // Only unpacking (the welcome step) and signing report progress: a report arriving after
         // they ended (they hop to the main actor separately) must not show "100 %" on the transfer.
-        guard jobs[key] == .step(.welcome) || jobs[key] == .step(.signing), stepPercent[key] != percent else { return }
+        guard jobs[key] == .step(.welcome) || jobs[key] == .step(.signing) || jobs[key] == .step(.backingUp), stepPercent[key] != percent else { return }
         stepPercent[key] = percent
         updateDockBadge()
     }
@@ -2820,8 +2822,17 @@ final class AppModel {
     /// Backs the app's data up now; identical data to the latest snapshot creates no new version.
     @discardableResult
     func backUpNow(_ entry: AppEntry) async -> BackupOutcome {
-        dataBusy.insert(entry.id)
-        defer { dataBusy.remove(entry.id) }
+        let key = entry.id
+        dataBusy.insert(key)
+        defer { dataBusy.remove(key); backupFraction[key] = nil }
+        // Called off the main actor, once per pulled file: hop to main, and drop a late report.
+        let report: @Sendable (Int, Int, Int64, Int64) -> Void = { [weak self] done, total, bytes, bytesTotal in
+            let f = BackupProgress.fraction(filesDone: done, filesTotal: total, bytesDone: bytes, bytesTotal: bytesTotal)
+            Task { @MainActor in
+                guard let self, self.dataBusy.contains(key) else { return }
+                self.backupFraction[key] = f
+            }
+        }
         // The live record and installation: the entry's own copy predates a toggle, or a reinstall
         // (new installedAt / cycle), done since the fiche opened.
         let liveRecord = records.first { $0.id == entry.record.id }
@@ -2835,7 +2846,8 @@ final class AppModel {
                                                appVersion: liveRecord?.version ?? entry.record.version,
                                                includeCaches: opts.backupCaches != false,
                                                cycleStartedAt: install.firstInstalledAt ?? install.installedAt,
-                                               retention: Self.backupRetention, onlyIfChanged: true)
+                                               retention: Self.backupRetention, onlyIfChanged: true,
+                                               progress: report)
             }
             return snap == nil ? .unchanged : .saved(version: snap?.appVersion)
         } catch {

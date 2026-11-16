@@ -147,8 +147,20 @@ struct AppDataTab: View {
                     run(.importData) { await AppDataActions.importData(entry, appName: appName, deviceName: deviceName, model: model) }
                 }
                 if working {
-                    ProgressView().controlSize(.small)
-                    Text(workingText).font(.caption).foregroundStyle(.secondary)
+                    // A backup of known size shows a real bar; otherwise the spinner.
+                    if action == .backup, let fraction = model.backupFraction[entry.id] {
+                        ProgressView(value: fraction, total: 1)
+                            .progressViewStyle(.linear)
+                            .tint(Theme.violet)
+                            .controlSize(.small)
+                            .frame(width: 110)
+                            .animation(.smooth(duration: 0.4), value: fraction)
+                        Text("\(workingText) \(percentText(Int((fraction * 100).rounded(.down))))")
+                            .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                    } else {
+                        ProgressView().controlSize(.small)
+                        Text(workingText).font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 Spacer(minLength: 0)
             }

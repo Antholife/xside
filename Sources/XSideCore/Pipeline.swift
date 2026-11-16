@@ -608,7 +608,13 @@ public actor SideloadPipeline {
                     let snapshot = try await backup.backUp(signedBundleID: bundleID, deviceID: device.id, deviceName: device.name,
                                                 appVersion: record.version, includeCaches: record.options.backupCaches != false,
                                                 cycleStartedAt: previous.flatMap { $0.firstInstalledAt ?? $0.installedAt },
-                                                retention: retention(), onlyIfChanged: true)
+                                                retention: retention(), onlyIfChanged: true,
+                                                progress: { done, total, bytes, bytesTotal in
+                        // The install window's backup step shows a real percentage.
+                        if let f = BackupProgress.fraction(filesDone: done, filesTotal: total, bytesDone: bytes, bytesTotal: bytesTotal) {
+                            StepProgress.report?(f)
+                        }
+                    })
                     if snapshot != nil { await dataBackedUp(true) }
                 } catch {
                     Self.logger.error("\(what): data backup failed: \(String(describing: type(of: error)))")
