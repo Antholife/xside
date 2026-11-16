@@ -324,6 +324,8 @@ final class AppModel {
             // Leftovers of jobs interrupted by a quit or a crash (extracted apps, template builds).
             // No job can be running yet.
             try? FileManager.default.removeItem(at: paths.work)
+            // Backup folders a hard quit left behind (old ones only: XSide-debug shares the folder).
+            Task.detached(priority: .utility) { BackupService.sweepStaleTemps() }
             // Crash-log folders a killed fetch left behind (only old ones: XSide and XSide-debug
             // share the temporary folder).
             Task.detached(priority: .utility) { CrashLogFetcher.sweepLeftovers() }
@@ -2819,7 +2821,7 @@ final class AppModel {
         devices.first { $0.id == id }?.name ?? cachedNames[id] ?? id
     }
 
-    enum BackupOutcome { case saved(version: String?), unchanged, failed }
+    enum BackupOutcome { case saved(version: String?), unchanged, cancelled, failed }
 
     /// Backs the app's data up now; identical data to the latest snapshot creates no new version.
     @discardableResult
@@ -2852,6 +2854,8 @@ final class AppModel {
                                                progress: report)
             }
             return snap == nil ? .unchanged : .saved(version: snap?.appVersion)
+        } catch is CancellationError {
+            return .cancelled
         } catch {
             Self.logger.error("backup failed: \(String(describing: type(of: error)))")
             return .failed

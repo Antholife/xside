@@ -44,6 +44,20 @@ public struct BackupService: DataBackingUp {
         self.container = container
     }
 
+    /// Removes `xside-backup-*` folders a backup left behind when the app was killed mid-way. Only
+    /// those untouched for `olderThan` seconds: XSide and XSide-debug share the temporary folder, so
+    /// a backup running in the other one must survive. Best effort.
+    public static func sweepStaleTemps(in root: URL = FileManager.default.temporaryDirectory, olderThan age: TimeInterval = 6 * 3600) {
+        let fm = FileManager.default
+        guard let names = try? fm.contentsOfDirectory(atPath: root.path) else { return }
+        let limit = Date().addingTimeInterval(-age)
+        for name in names where name.hasPrefix("xside-backup-") {
+            let url = root.appendingPathComponent(name)
+            guard let modified = (try? fm.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date, modified < limit else { continue }
+            try? fm.removeItem(at: url)
+        }
+    }
+
     public func backUp(signedBundleID: String, deviceID: String, deviceName: String, appVersion: String?,
                        includeCaches: Bool, cycleStartedAt: Date? = nil, retention: Int = 3, onlyIfChanged: Bool = true,
                        progress: @escaping @Sendable (Int, Int, Int64, Int64) -> Void = { _, _, _, _ in }) async throws -> BackupSnapshot? {
@@ -59,6 +73,7 @@ public struct BackupService: DataBackingUp {
             let bytesTotal = paths.reduce(Int64(0)) { $0 + (sizes[$1] ?? 0) }
             var bytesDone: Int64 = 0
             for (i, path) in paths.enumerated() {
+                try Task.checkCancellation() // Cancel stops between files; the defer removes the temp
                 let dest = temp.appendingPathComponent(path)
                 try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try await container.pull(signedBundleID: signedBundleID, deviceID: deviceID, relativePath: path, to: dest)

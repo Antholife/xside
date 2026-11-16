@@ -11,6 +11,7 @@ import XSideCore
             model.showToast(BackupSnapshot.versionLabel(version).map { L("toast.backedUp.version", $0) } ?? L("toast.backedUp"))
             return true
         case .unchanged: model.showToast(L("toast.backedUp.unchanged")); return true
+        case .cancelled: model.showToast(L("toast.backupCancelled")); return false
         case .failed: alert(L("fiche.data.backUpNow.failed")); return false
         }
     }
@@ -92,11 +93,14 @@ struct AppDataTab: View {
     private enum Action { case backup, export, importData, restore }
     @State private var busy = false
     @State private var action: Action = .backup
+    @State private var backupTask: Task<Void, Never>?
 
     private var options: InstallOptions {
         model.records.first { $0.id == entry.record.id }?.options ?? entry.record.options
     }
     private var backupOn: Bool { options.backupData != false }
+    /// The action buttons are off while busy; the Cancel button, beside them, stays live.
+    private var actionsOff: Bool { working || !model.canManage(entry) }
     private var working: Bool { busy || model.dataBusy.contains(entry.id) }
     private var workingText: String {
         switch action {
@@ -140,12 +144,14 @@ struct AppDataTab: View {
             HStack(spacing: 8) {
                 Button(L("fiche.data.backUpNow")) { run(.backup) { await AppDataActions.backUpNow(entry, model: model) } }
                     .buttonStyle(.borderedProminent)
+                    .disabled(actionsOff)
                 Button(L("fiche.data.export")) { run(.export) { await AppDataActions.exportLatest(entry, model: model) } }
-                    .disabled(snaps.isEmpty)
+                    .disabled(snaps.isEmpty || actionsOff)
                     .help(L("fiche.data.export.help"))
                 Button(L("fiche.data.import")) {
                     run(.importData) { await AppDataActions.importData(entry, appName: appName, deviceName: deviceName, model: model) }
                 }
+                .disabled(actionsOff)
                 if working {
                     // A backup of known size shows a real bar; otherwise the spinner.
                     if action == .backup, let fraction = model.backupFraction[entry.id] {
@@ -157,14 +163,15 @@ struct AppDataTab: View {
                             .animation(.smooth(duration: 0.4), value: fraction)
                         Text("\(workingText) \(percentText(Int((fraction * 100).rounded(.down))))")
                             .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                        cancelButton
                     } else {
                         ProgressView().controlSize(.small)
                         Text(workingText).font(.caption).foregroundStyle(.secondary)
+                        if action == .backup { cancelButton }
                     }
                 }
                 Spacer(minLength: 0)
             }
-            .disabled(working || !model.canManage(entry))
             .help(model.manageBlockedReason(entry) ?? "")
             Text(L("fiche.data.onlineNote")).font(.system(size: 11)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -261,14 +268,23 @@ struct AppDataTab: View {
         }
     }
 
+    /// Stops the running backup: the task's cancellation ends devicectl and the pull loop, and the
+    /// backup throws before the archive step, so no snapshot is made and the temp folder goes.
+    private var cancelButton: some View {
+        Button(L("fiche.data.backUpNow.cancel")) { backupTask?.cancel() }
+            .controlSize(.small)
+    }
+
     private func run(_ kind: Action, _ work: @escaping () async -> Bool) {
         action = kind
         busy = true
-        Task {
+        let task = Task {
             _ = await work()
             await reload()
             busy = false
+            backupTask = nil
         }
+        backupTask = kind == .backup ? task : nil
     }
 
     private func reload() async {

@@ -1379,6 +1379,7 @@
 "fiche.data.withCaches" = "with caches";
 "fiche.data.empty" = "No backup yet — one will be made at the next refresh.";
 "fiche.data.emptyOff" = "Backups are turned off for this app.";
+"fiche.data.backUpNow.cancel" = "Cancel";
 "fiche.data.backUpNow.failed" = "The backup failed. Check that the device is connected or reachable.";
 "fiche.data.import.title" = "Import data into %@?";
 "fiche.data.import.note" = "Warning: the current data of %@ on %@ will be OVERWRITTEN by the chosen file (its files replace their counterparts; others are left untouched).";
@@ -1436,6 +1437,7 @@
 
 "toast.backedUp" = "Backup done";
 "toast.backedUp.version" = "Backup done (%@)";
+"toast.backupCancelled" = "Backup cancelled";
 "toast.backedUp.unchanged" = "Already up to date — no new backup";
 "toast.exported" = "Exported";
 "toast.imported" = "Imported";

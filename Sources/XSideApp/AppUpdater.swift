@@ -135,7 +135,7 @@ extension AppModel {
                                                      backupData: live.options.backupData),
               let installation = live.installations.first(where: { $0.deviceID == device.id }) else { return }
         switch await backUpNow(AppEntry(record: live, installation: installation)) {
-        case .saved, .unchanged: break
+        case .saved, .unchanged, .cancelled: break
         case .failed:
             Self.updateLogger.notice("pre-update backup failed for \(live.displayName, privacy: .public); updating anyway")
             if userInitiated { showToast(L("toast.backupBeforeUpdateFailed")) }

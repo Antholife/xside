@@ -1379,6 +1379,7 @@
 "fiche.data.withCaches" = "avec les caches";
 "fiche.data.empty" = "Aucune sauvegarde pour l'instant — elle se fera au prochain rafraîchissement.";
 "fiche.data.emptyOff" = "La sauvegarde est désactivée pour cette app.";
+"fiche.data.backUpNow.cancel" = "Annuler";
 "fiche.data.backUpNow.failed" = "La sauvegarde a échoué. Vérifie que l'appareil est branché ou joignable.";
 "fiche.data.import.title" = "Importer des données dans %@ ?";
 "fiche.data.import.note" = "Attention : les données actuelles de %@ sur %@ seront REMPLACÉES par celles du fichier choisi (ses fichiers écrasent leurs homologues ; les autres ne sont pas touchés).";
@@ -1436,6 +1437,7 @@
 
 "toast.backedUp" = "Sauvegarde terminée";
 "toast.backedUp.version" = "Sauvegarde terminée (%@)";
+"toast.backupCancelled" = "Sauvegarde annulée";
 "toast.backedUp.unchanged" = "Déjà à jour — aucune nouvelle sauvegarde";
 "toast.exported" = "Export terminé";
 "toast.imported" = "Import terminé";
