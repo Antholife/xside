@@ -97,3 +97,20 @@ public enum AppUpdateLimits {
 extension ReleaseKind {
     public var maxBytes: Int { self == .ipa ? AppUpdateLimits.maxIPABytes : DebLimits.maxDebBytes }
 }
+
+
+extension ReleaseFinder {
+    /// Fetches the repo's releases list (api.github.com only, size-capped) and returns its
+    /// installable assets of `kind`, newest first. Throws when the list can't be fetched or read.
+    public static func fetchInstallableAssets(source: GitHubSource, kind: ReleaseKind, fetcher: HTTPFetching,
+                                              workDir: URL) async throws
+        -> [(tag: String, isPrerelease: Bool, asset: ReleaseAsset)] {
+        let fm = FileManager.default
+        try fm.createDirectory(at: workDir, withIntermediateDirectories: true)
+        let file = workDir.appendingPathComponent("releases-\(UUID().uuidString).json")
+        defer { try? fm.removeItem(at: file) }
+        _ = try await fetcher.fetch(source.api, maxBytes: AuthorReleases.maxListBytes, to: file,
+                                    stayingOn: AuthorReleases.apiOrigin)
+        return try installableAssets(try Data(contentsOf: file), source: source, kind: kind)
+    }
+}

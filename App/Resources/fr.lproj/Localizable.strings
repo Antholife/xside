@@ -1439,3 +1439,24 @@
 
 "notification.appUpdate.title" = "%@ : mise à jour disponible";
 "notification.appUpdate.body" = "La version %2$@ de %1$@ est disponible. Ouvre XSide pour la mettre à jour.";
+
+"update.source.title" = "Source de mise à jour";
+"update.source.link" = "Lien GitHub";
+"update.source.link.note" = "Page du dépôt ou des releases : les deux marchent. Facultatif.";
+"update.source.placeholder" = "https://github.com/auteur/depot";
+"update.source.recognized" = "dépôt reconnu";
+"update.source.invalid" = "URL GitHub invalide";
+"update.source.checking" = "Lecture des releases…";
+"update.source.noAsset" = "Aucune version installable trouvée";
+"update.source.failed" = "Impossible de lire les releases. Vérifie le lien et ta connexion.";
+"update.source.tracking" = "Suivi : %@";
+"update.source.multiple" = "Ce dépôt propose plusieurs fichiers installables. Choisis celui que tu installes.";
+"update.source.choose" = "Choisir";
+"update.mode.title" = "Quand une version sort";
+"update.mode.note" = "Auto : seules les versions stables s'installent seules, après un contrôle du contenu.";
+"update.mode.notify" = "Me prévenir";
+"update.mode.auto" = "Installer auto";
+"update.variant.title" = "Quelle variante suivre ?";
+"update.variant.message" = "%@ : plusieurs fichiers correspondent. Choisis celui que tu installes ; XSide suivra la même variante aux prochaines versions.";
+"update.variant.follow" = "Suivre cette variante";
+"update.variant.track" = "XSide reconnaîtra %@ dans les prochains noms, même si le numéro de version change.";

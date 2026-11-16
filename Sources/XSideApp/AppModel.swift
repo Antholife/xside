@@ -2464,7 +2464,7 @@ final class AppModel {
                                        tweaks: flow.runTweaks[deviceID],
                                        restore: flow.runRestoreID.map { RestoreRequest(snapshotID: $0, clearContainer: false) },
                                        importedInto: flow.importedRecordID,
-                                       imported: { flow.importedRecordID = $0 },
+                                       imported: { flow.importedRecordID = $0; self.persistUpdateSource(from: flow.draft, recordID: $0) },
                                        progress: { stage in
                                            flow.lastStage = stage
                                            flow.phase = .running(stage)

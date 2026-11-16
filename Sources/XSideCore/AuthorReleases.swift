@@ -15,6 +15,35 @@ public struct GitHubSource: Codable, Equatable, Hashable, Sendable {
     public var id: String { "github:\(owner)/\(repo)" }
     public var name: String { "GitHub \(owner)/\(repo)" }
     public var page: URL { URL(string: "https://github.com/\(owner)/\(repo)/releases")! }
+    /// `owner/repo` from a pasted GitHub link: the repo page, its `/releases`, a release tag page
+    /// or a `.git` clone URL, with or without the scheme. Anything else (other host, gist, raw,
+    /// a bare owner, junk) is nil.
+    public static func parse(_ string: String) -> GitHubSource? {
+        var s = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = s.lowercased()
+        for scheme in ["https://", "http://"] where lower.hasPrefix(scheme) {
+            s = String(s.dropFirst(scheme.count))
+            break
+        }
+        if s.contains("://") { return nil }
+        if let q = s.firstIndex(where: { $0 == "?" || $0 == "#" }) { s = String(s[..<q]) }
+        let parts = s.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count >= 3, ["github.com", "www.github.com"].contains(parts[0].lowercased()) else { return nil }
+        let owner = parts[1]
+        var repo = parts[2]
+        if repo.lowercased().hasSuffix(".git") { repo = String(repo.dropLast(4)) }
+        // Whatever follows the repo must be a plain path (/releases, /releases/tag/v1).
+        if parts.dropFirst(3).contains(where: { $0.isEmpty }), parts.count > 4 { return nil }
+        func valid(_ part: String, dots: Bool) -> Bool {
+            !part.isEmpty && part != "." && part != ".."
+                && part.unicodeScalars.allSatisfy { c in
+                    (c.isASCII && (CharacterSet.alphanumerics.contains(c) || c == "-" || c == "_")) || (dots && c == ".")
+                }
+        }
+        guard valid(owner, dots: false), valid(repo, dots: true) else { return nil }
+        return GitHubSource(owner: owner, repo: repo)
+    }
+
     var api: URL { URL(string: "https://api.github.com/repos/\(owner)/\(repo)/releases?per_page=30")! }
     /// Every asset URL of the repo's releases starts with this.
     var downloadPrefix: String { "https://github.com/\(owner)/\(repo)/releases/download/" }

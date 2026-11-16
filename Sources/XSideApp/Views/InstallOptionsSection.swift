@@ -12,6 +12,13 @@ struct InstallOptionsSection: View {
     @State private var isExpanded = false
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            optionsCard
+            UpdateSourceSection(model: model, flow: flow)
+        }
+    }
+
+    private var optionsCard: some View {
         VStack(alignment: .leading, spacing: 6) {
             SectionTitle(L("install.optionsTitle"))
             VStack(alignment: .leading, spacing: 0) {
@@ -260,7 +267,7 @@ private struct WrapLayout: Layout {
 }
 
 /// One option line: brand icon tile, title (and a detail line), the control on the right.
-private struct OptionRow<Accessory: View>: View {
+struct OptionRow<Accessory: View>: View {
     let symbol: String
     let title: String
     let detail: String?

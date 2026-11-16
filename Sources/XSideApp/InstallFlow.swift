@@ -352,6 +352,12 @@ struct OptionsDraft: Equatable {
     var backupData = AppModel.setting(AppModel.backupDefaultKey)
     /// Not edited here (the fiche's choice); carried so a reinstall keeps it.
     var backupCaches: Bool?
+    /// "Source de mise à jour" (optional): the GitHub link as typed, what to do when a release
+    /// comes out, and the variant the person follows (set once the repo's files are known). The
+    /// record's `updateSource` is built from these after the import (`AppModel.persistUpdateSource`).
+    var updateSourceURL = ""
+    var updateMode: UpdateMode = .notify
+    var updateVariant: VariantSelector?
 
     init() {}
 
