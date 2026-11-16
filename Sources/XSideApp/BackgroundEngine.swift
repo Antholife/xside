@@ -75,8 +75,11 @@ final class BackgroundEngine {
 
         model.onNeedsEvaluation = { [weak self] in self?.evaluate(reason: "change") }
         model.onAppUpdateAvailable = { [weak self] n in
-            guard let self else { return }
-            Task { await self.notifier.appUpdateAvailable(appName: n.appName, version: n.version, job: n.job, id: n.id) }
+            guard let self, self.model.devicePrefs.notifies(n.job.deviceID) else { return }
+            Task {
+                guard await self.notifier.canDeliver() else { return }
+                await self.notifier.appUpdateAvailable(appName: n.appName, version: n.version, job: n.job, id: n.id)
+            }
         }
         model.onPopoverShown = { [weak self] in self?.checkPresence(interval: PresenceCheck.panelInterval) }
         model.onDeviceRemoved = { [weak self] id in self?.forgetDevice(id) }

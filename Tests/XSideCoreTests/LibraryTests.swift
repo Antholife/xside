@@ -557,6 +557,71 @@ struct LibraryTweakTests {
         #expect(try await lib.changeTweaks(recordID: rec.id, deviceID: "A") { _ in } == false)
     }
 
+    private func source(_ repo: String, trigger: String? = nil) -> UpdateSource {
+        UpdateSource(repo: GitHubSource(owner: "o", repo: repo), variant: VariantSelector(stableTokens: [], excludedTokens: []), mode: .auto, lastSeenTrigger: trigger)
+    }
+
+    private func replacing(_ tmp: URL, newHasOwn: UpdateSource? = nil, otherPackage: Bool = false) async throws -> TweakPackage {
+        let (lib, rec) = try await library(tmp, devices: ["A"])
+        let v1 = try await lib.addTweak(try await tweakDeb(in: tmp, version: "1.0"), recordID: rec.id, deviceIDs: ["A"],
+                                        runner: ProcessRunner(), now: tweakNow).package
+        try await lib.setUpdateSource(source("old", trigger: "v1"), forTweak: v1.id, recordID: rec.id)
+        var next = otherPackage
+            ? try await lib.addTweak(try tweakDylib(in: tmp, "Other.dylib"), recordID: rec.id, deviceIDs: ["A"],
+                                     runner: ProcessRunner(), now: tweakNow).package
+            : try await lib.addTweak(try await tweakDeb(in: tmp, version: "2.0", payload: "new"), recordID: rec.id,
+                                     deviceIDs: ["A"], runner: ProcessRunner(), now: tweakNow).package
+        #expect((next.packageID != v1.packageID) == otherPackage)
+        if let newHasOwn { next.updateSource = newHasOwn }
+        try await lib.replaceTweak(v1.id, with: next, recordID: rec.id)
+        return try #require(try await record(lib).tweaks?.first)
+    }
+
+    @Test func replacingATweakWithANewVersionKeepsItsUpdateSource() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        #expect(try await replacing(tmp).updateSource == source("old", trigger: "v1"))
+    }
+
+    @Test func aReplacingTweakWithItsOwnUpdateSourceKeepsIt() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        #expect(try await replacing(tmp, newHasOwn: source("own")).updateSource == source("own"))
+    }
+
+    @Test func aDifferentPackageDoesNotInheritTheUpdateSource() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        #expect(try await replacing(tmp, otherPackage: true).updateSource == nil)
+    }
+
+    @Test func settingAnUpdateSourceChangesNothingElse() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let (lib, rec) = try await library(tmp, devices: ["A", "B"])
+        let tweak = try await lib.addTweak(try await tweakDeb(in: tmp, version: "1.0"), recordID: rec.id, deviceIDs: ["A"],
+                                           runner: ProcessRunner(), now: tweakNow).package
+        let before = try await record(lib)
+        try await lib.setUpdateSource(source("app"), forRecord: rec.id)
+        var expected = before
+        expected.updateSource = source("app")
+        #expect(try await record(lib) == expected)
+        try await lib.setUpdateSource(source("tw"), forTweak: tweak.id, recordID: rec.id)
+        expected.tweaks?[0].updateSource = source("tw")
+        #expect(try await record(lib) == expected)
+        await #expect(throws: (any Error).self) { try await lib.setUpdateSource(nil, forTweak: "nope", recordID: rec.id) }
+        try await lib.setUpdateSource(nil, forRecord: rec.id)
+        #expect(try await record(lib).updateSource == nil)
+    }
+
+    @Test func aFailedSaveRollsTheUpdateSourceBack() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: tmp.appendingPathComponent("lib").path); try? FileManager.default.removeItem(at: tmp) }
+        let (lib, rec) = try await library(tmp, devices: ["A"])
+        let tweak = try await lib.addTweak(try await tweakDeb(in: tmp, version: "1.0"), recordID: rec.id, deviceIDs: ["A"],
+                                           runner: ProcessRunner(), now: tweakNow).package
+        let before = try await record(lib)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: tmp.appendingPathComponent("lib").path)
+        await #expect(throws: (any Error).self) { try await lib.setUpdateSource(source("x"), forRecord: rec.id) }
+        await #expect(throws: (any Error).self) { try await lib.setUpdateSource(source("x"), forTweak: tweak.id, recordID: rec.id) }
+        #expect(try await record(lib) == before)
+    }
+
     @Test func aNewerVersionOfTheSamePackageIsOfferedNotApplied() async throws {
         let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
         let (lib, rec) = try await library(tmp, devices: ["A", "B"])

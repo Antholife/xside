@@ -34,7 +34,7 @@ extension AppModel {
     private struct UpdateTarget {
         let record: AppRecord
         let tweak: TweakPackage?
-        var source: UpdateSource { (tweak?.updateSource ?? record.updateSource)! }
+        var source: UpdateSource? { tweak?.updateSource ?? record.updateSource }
         var kind: ReleaseKind { tweak == nil ? .ipa : .deb }
         var installedVersion: String? { tweak == nil ? record.version : tweak?.version }
         var name: String {
@@ -63,23 +63,25 @@ extension AppModel {
               UpdateSchedule.isDue(lastChecked: lastUpdateCheck, now: now) else { return }
         let targets = records.flatMap(updateTargets(of:))
         // Nothing to look at is a look done: asked again after a day, not at every tick.
-        lastUpdateCheck = now
-        guard !targets.isEmpty else { return }
+        guard !targets.isEmpty else { lastUpdateCheck = now; return }
         updateCheckRunning = true
         Task { [weak self] in
             guard let self else { return }
             defer { updateCheckRunning = false }
-            _ = await runUpdateChecks(targets, manual: false)
+            let reports = await runUpdateChecks(targets)
+            // Every source failing (offline, rate limited) is no look done: the next tick tries again.
+            let reached = reports.contains { if case .failed = $0.result { false } else { true } }
+            if reached { lastUpdateCheck = now }
         }
     }
 
     /// A manual check of one app and its tweaks (the fiche's button), whatever the schedule says.
     /// Unlike the background pass it reports a variant to choose and every failure.
     func checkUpdatesNow(_ entry: AppEntry) async -> [UpdateCheckReport] {
-        await runUpdateChecks(updateTargets(of: entry.record), manual: true)
+        await runUpdateChecks(updateTargets(of: entry.record))
     }
 
-    private func runUpdateChecks(_ targets: [UpdateTarget], manual: Bool) async -> [UpdateCheckReport] {
+    private func runUpdateChecks(_ targets: [UpdateTarget]) async -> [UpdateCheckReport] {
         let work = libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent("updates-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: work) }
         let checker = UpdateChecker(fetcher: repoFetcher, runner: runner, workDir: work)
@@ -88,7 +90,7 @@ extension AppModel {
         var answers: [String: UpdateOutcome] = [:]
         var reports: [UpdateCheckReport] = []
         for target in targets {
-            let source = target.source
+            guard let source = target.source else { continue }
             let key = "\(source.repo.id)|\(source.variant)|\(target.kind)|\(target.installedVersion ?? "")|\(source.lastSeenTrigger ?? "")"
             let outcome: UpdateOutcome
             if let known = answers[key] {
@@ -97,12 +99,12 @@ extension AppModel {
                 outcome = await checker.check(source: source, kind: target.kind, installedVersion: target.installedVersion)
                 answers[key] = outcome
             }
-            reports.append(UpdateCheckReport(name: target.name, result: await route(outcome, for: target, manual: manual)))
+            reports.append(UpdateCheckReport(name: target.name, result: await route(outcome, for: target)))
         }
         return reports
     }
 
-    private func route(_ outcome: UpdateOutcome, for target: UpdateTarget, manual: Bool) async -> UpdateCheckResult {
+    private func route(_ outcome: UpdateOutcome, for target: UpdateTarget) async -> UpdateCheckResult {
         switch outcome {
         case .upToDate(let trigger):
             await persistTrigger(trigger, for: target)
@@ -116,7 +118,7 @@ extension AppModel {
         case .available(let found, let version, let stable):
             var result = UpdateCheckResult.available(version: version)
             var persist = true
-            let auto = stable && target.source.mode == .auto
+            let auto = stable && target.source?.mode == .auto
             if auto, let device = deviceForAutoUpdate(target.record) {
                 switch await apply(target, device: device, found: found, stable: stable) {
                 case .installed(let installed): return await persisted(found.trigger, target, .installed(version: installed))
@@ -128,6 +130,9 @@ extension AppModel {
                     persist = false // tried again next time
                 }
             }
+            // Auto but no device to install on: announced, and not marked seen, so the install
+            // happens once a device is back.
+            if auto, deviceForAutoUpdate(target.record) == nil { persist = false }
             if case .available(let v) = result { notify(target, version: v) }
             if persist { await persistTrigger(found.trigger, for: target) }
             return result

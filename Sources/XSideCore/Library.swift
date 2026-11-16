@@ -1159,9 +1159,12 @@ extension AppLibrary {
             throw TweakError.unreadable("the stored package is missing")
         }
         let previous = items
-        // The tweak stays tracked: a new package from an update carries its GitHub source over.
+        // The tweak stays tracked: a new version of the same package carries its GitHub source over
+        // (never a different package's, and a source the new one has of its own wins).
         var new = new
-        if new.updateSource == nil { new.updateSource = pool[position].updateSource }
+        if new.updateSource == nil, new.packageID == pool[position].packageID {
+            new.updateSource = pool[position].updateSource
+        }
         pool[position] = new
         pool = pool.enumerated().filter { $0.offset == position || $0.element.id != new.id }.map(\.element)
         items[index].tweaks = pool
