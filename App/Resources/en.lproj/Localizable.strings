@@ -1406,6 +1406,7 @@
 "install.data.other.note" = "%d other version(s) available";
 "install.data.none" = "Don't restore";
 "install.data.overwrite" = "Restoring replaces the app's current data on the device with the backup's.";
+"install.data.versionWarning" = "This backup comes from %@, but you are installing %@. Restoring may cause compatibility issues.";
 "install.data.none.note" = "Adds no backup; the app keeps the data already on the device.";
 "install.data.delete" = "Delete these backups";
 "install.data.delete.note" = "Frees up space";

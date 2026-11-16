@@ -42,6 +42,11 @@ struct DataRestoreStep: View {
                     .font(.system(size: 11.5)).foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if let warning = versionWarning {
+                Text(warning)
+                    .font(.system(size: 11.5)).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             HStack(alignment: .top, spacing: 8) {
                 option(selected: flow.dataChoice == .none, title: L("install.data.none"), tag: nil,
                        note: L("install.data.none.note")) {
@@ -84,10 +89,19 @@ struct DataRestoreStep: View {
         .padding(.leading, 20)
     }
 
+    /// Non-blocking note when the backup being restored comes from another app version than the one installed.
+    private var versionWarning: String? {
+        guard let id = restoringID, let snap = flow.dataSnapshots.first(where: { $0.id == id }),
+              BackupSnapshot.restoreVersionWarning(snapshot: snap.appVersion, installed: flow.info?.version),
+              let from = snap.versionLabel, let to = BackupSnapshot.versionLabel(flow.info?.version) else { return nil }
+        return L("install.data.versionWarning", from, to)
+    }
+
     private func describe(_ snap: BackupSnapshot) -> String {
-        [snap.deviceName,
-         snap.createdAt.formatted(date: .abbreviated, time: .shortened),
-         ByteCountFormatter.string(fromByteCount: Int64(snap.byteSize), countStyle: .file)]
+        ([snap.deviceName,
+          snap.createdAt.formatted(date: .abbreviated, time: .shortened),
+          ByteCountFormatter.string(fromByteCount: Int64(snap.byteSize), countStyle: .file)]
+         + [snap.versionLabel].compactMap { $0 })
             .joined(separator: " · ")
     }
 
