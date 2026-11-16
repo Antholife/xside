@@ -40,13 +40,13 @@ struct AppDataSettingsPage: View {
             Section(L("settings.appData.defaults")) {
                 Toggle(isOn: $backupNew) { labeled(L("settings.appData.backupNew"), L("settings.appData.backupNew.note")) }
                 Toggle(isOn: $backupCaches) { labeled(L("settings.appData.caches"), L("settings.appData.caches.note")) }
-                LabeledContent {
-                    HStack(spacing: 8) {
-                        Text("\(retention)").monospacedDigit().foregroundStyle(.secondary)
-                        Stepper(L("settings.appData.retention"), value: $retention, in: 1...50).labelsHidden()
+                Picker(selection: $retention) {
+                    ForEach([1, 2, 3, 5, 10, 20], id: \.self) { n in
+                        Text(L(n == 1 ? "settings.appData.retention.one" : "settings.appData.retention.many", n)).tag(n)
                     }
                 } label: {
-                    labeled(L("settings.appData.retention"), L("settings.appData.retention.note"))
+                    Text(L("settings.appData.retention"))
+                    Text(L("settings.appData.retention.note"))
                 }
             }
             Section(L("settings.appData.disk")) {

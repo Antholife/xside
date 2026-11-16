@@ -1405,3 +1405,6 @@
 "uninstall.backupFirst.unavailable" = "The device is out of reach: no backup possible.";
 "uninstall.deleteBackups" = "Also delete the backups XSide keeps";
 "uninstall.deleteBackups.note" = "Otherwise they stay on the Mac (restorable on reinstall)";
+
+"settings.appData.retention.one" = "1 version";
+"settings.appData.retention.many" = "%d versions";

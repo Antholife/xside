@@ -1405,3 +1405,6 @@
 "uninstall.backupFirst.unavailable" = "L'appareil est injoignable : aucune sauvegarde possible.";
 "uninstall.deleteBackups" = "Supprimer aussi les sauvegardes gardées par XSide";
 "uninstall.deleteBackups.note" = "Sinon elles restent sur le Mac (récupérables à la réinstallation)";
+
+"settings.appData.retention.one" = "1 version";
+"settings.appData.retention.many" = "%d versions";
