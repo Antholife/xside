@@ -80,6 +80,15 @@ struct InstallProgressView: View {
                     .padding(.leading, 24)
                     .animation(.smooth(duration: 0.4), value: activePercent)
             }
+            // No percentage from the tool (install, data restore/backup, …): an indeterminate
+            // animated bar so the step visibly works instead of looking frozen.
+            if status == .active, activePercent == nil {
+                ProgressView()
+                    .progressViewStyle(.linear)
+                    .tint(Theme.violet)
+                    .controlSize(.mini)
+                    .padding(.leading, 24)
+            }
             // What "XSide features" means, from the start of the install (device feedback 3, E8):
             // greyed until the step runs, ticked once it's done.
             if step == .welcome, !withoutXSideFeatures, status != .skipped {
