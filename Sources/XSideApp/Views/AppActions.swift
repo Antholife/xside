@@ -20,19 +20,35 @@ enum AppActions {
     static func uninstall(_ entry: AppEntry, deviceName: String, model: AppModel, present: @escaping Present,
                           done: @escaping @MainActor () -> Void = {}) {
         let app = name(entry)
-        present {
-            guard AppRowAlerts.confirmUninstall(app: app, device: deviceName) else { return }
-            Task {
-                do {
-                    try await model.uninstall(entry)
-                    // Not uninstalled when the row was busy meanwhile: still listed then.
-                    if model.currentEntry(entry.id) == nil { done() }
-                } catch {
-                    present {
-                        guard AppRowAlerts.uninstallFailed(app: app, device: deviceName, error: error,
-                                                           offerPause: !entry.installation.refreshPaused) else { return }
-                        Task { await model.stopRefreshing(entry) }
-                    }
+        Task {
+            // Said in the prompt, so asked before it shows.
+            let bytes = await model.backupBytes(for: entry)
+            let reachable = model.isReachable(entry)
+            present {
+                confirmed(entry, app: app, deviceName: deviceName, model: model, bytes: bytes, reachable: reachable,
+                          present: present, done: done)
+            }
+        }
+    }
+
+    private static func confirmed(_ entry: AppEntry, app: String, deviceName: String, model: AppModel, bytes: Int,
+                                  reachable: Bool, present: @escaping Present, done: @escaping @MainActor () -> Void) {
+        let backUpDefault = AppManagement.backupFirstDefault(deviceReachable: reachable,
+                                                             backupData: entry.record.options.backupData)
+        guard let choice = AppRowAlerts.confirmUninstall(app: app, device: deviceName, backUpFirstDefault: backUpDefault,
+                                                         canBackUp: reachable, backupBytes: bytes) else { return }
+        Task {
+            do {
+                // The last backup completes before the app is removed (a failed one doesn't block it).
+                if choice.backUpFirst { await model.backUpNow(entry) }
+                try await model.uninstall(entry, deleteBackups: choice.deleteBackups)
+                // Not uninstalled when the row was busy meanwhile: still listed then.
+                if model.currentEntry(entry.id) == nil { done() }
+            } catch {
+                present {
+                    guard AppRowAlerts.uninstallFailed(app: app, device: deviceName, error: error,
+                                                       offerPause: !entry.installation.refreshPaused) else { return }
+                    Task { await model.stopRefreshing(entry) }
                 }
             }
         }

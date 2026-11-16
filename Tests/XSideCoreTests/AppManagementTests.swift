@@ -46,3 +46,15 @@ struct AppManagementTests {
         #expect(AppManagement.selection(afterRemoving: "z", from: ["a", "b"]) == "a")
     }
 }
+
+struct UninstallBackupDefaultTests {
+    @Test func backUpFirstWhenReachableAndBackupsOn() {
+        #expect(AppManagement.backupFirstDefault(deviceReachable: true, backupData: nil))
+        #expect(AppManagement.backupFirstDefault(deviceReachable: true, backupData: true))
+    }
+
+    @Test func notWhenUnreachableOrBackupsOff() {
+        #expect(!AppManagement.backupFirstDefault(deviceReachable: false, backupData: nil))
+        #expect(!AppManagement.backupFirstDefault(deviceReachable: true, backupData: false))
+    }
+}

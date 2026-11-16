@@ -1395,3 +1395,12 @@
 "install.data.delete.note" = "Libère l'espace";
 "install.data.note" = "L'app s'installe d'abord, puis XSide réinjecte les données automatiquement. Fonctionne entre tes appareils (même compte Apple).";
 "install.data.summary" = "Données sauvegardées";
+
+/* Backups: install option and uninstall prompt */
+"install.backupData" = "Sauvegarder les données";
+"install.backupData.note" = "Garde une copie des données de l'app sur le Mac, à chaque rafraîchissement si elles ont changé.";
+"uninstall.backupFirst" = "Sauvegarder les données d'abord";
+"uninstall.backupFirst.note" = "Une dernière sauvegarde avant de supprimer (pour réinstaller plus tard).";
+"uninstall.backupFirst.unavailable" = "L'appareil est injoignable : aucune sauvegarde possible.";
+"uninstall.deleteBackups" = "Supprimer aussi les sauvegardes gardées par XSide";
+"uninstall.deleteBackups.note" = "Sinon elles restent sur le Mac (récupérables à la réinstallation)";

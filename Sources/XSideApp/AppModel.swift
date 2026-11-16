@@ -1648,7 +1648,7 @@ final class AppModel {
     /// Runs on the device's pipeline chain, after any job already queued there; the row stays
     /// claimed meanwhile, so no refresh can start on it. Throws `deviceUnavailable` at once when
     /// the device isn't reachable; on failure nothing is forgotten.
-    func uninstall(_ entry: AppEntry) async throws {
+    func uninstall(_ entry: AppEntry, deleteBackups: Bool = false) async throws {
         let key = entry.id
         guard canManage(entry) else { return }
         guard devices.contains(where: { $0.id == key.deviceID && $0.isAvailable }) else {
@@ -1662,7 +1662,8 @@ final class AppModel {
         }
         let developerDir: @Sendable () async -> URL? = { [weak self] in await self?.lastKnownDeveloperDir }
         do {
-            try await pipeline.uninstall(recordID: key.recordID, deviceID: key.deviceID, developerDir: developerDir)
+            try await pipeline.uninstall(recordID: key.recordID, deviceID: key.deviceID, developerDir: developerDir,
+                                         deleteBackups: deleteBackups)
         } catch XSideError.recordNotFound {
             // Removed meanwhile (device removed from XSide): nothing left to forget.
         }
@@ -2213,7 +2214,7 @@ final class AppModel {
                 flow.appIcon = FileManager.default.fileExists(atPath: icon.path) ? icon : nil
                 let existing = records.first { $0.originalBundleID == info.bundleID }
                 flow.existing = existing
-                flow.draft = OptionsDraft(existing?.options ?? InstallOptions())
+                flow.draft = existing.map { OptionsDraft($0.options) } ?? OptionsDraft()
                 flow.duoDevices = Set(existing?.installations.filter { $0.duoCompatibility == true }.map(\.deviceID) ?? [])
                 flow.iCloudDevices = Set(existing?.installations.filter { $0.iCloudSignedOut == true }.map(\.deviceID) ?? [])
                 prefillTweaks(flow)
@@ -2889,6 +2890,16 @@ final class AppModel {
         var all: [BackupSnapshot] = []
         for bundleID in ids { all += await backupStore.list(signedBundleID: bundleID) }
         return all.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    /// Bytes of the Mac-side backups XSide keeps for the app on that device (the uninstall prompt).
+    func backupBytes(for entry: AppEntry) async -> Int {
+        await backupStore.list(signedBundleID: backupBundleID(entry), deviceID: entry.installation.deviceID)
+            .reduce(0) { $0 + $1.byteSize }
+    }
+
+    func isReachable(_ entry: AppEntry) -> Bool {
+        devices.contains { $0.id == entry.installation.deviceID && $0.isAvailable }
     }
 
     /// Snapshots of apps no longer installed anywhere XSide knows.

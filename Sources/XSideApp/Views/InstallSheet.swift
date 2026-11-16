@@ -654,18 +654,7 @@ private struct FreeASlot: View {
     private func appName(_ entry: AppEntry) -> String { entry.record.options.displayName ?? entry.record.displayName }
 
     private func uninstall(_ entry: AppEntry) {
-        let app = appName(entry)
-        guard AppRowAlerts.confirmUninstall(app: app, device: deviceName) else { return }
-        Task {
-            do {
-                try await model.uninstall(entry)
-            } catch {
-                if AppRowAlerts.uninstallFailed(app: app, device: deviceName, error: error,
-                                                offerPause: !entry.installation.refreshPaused) {
-                    await model.stopRefreshing(entry)
-                }
-            }
-        }
+        AppActions.uninstall(entry, deviceName: deviceName, model: model, present: AppActions.inWindow)
     }
 }
 

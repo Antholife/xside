@@ -431,10 +431,70 @@ private struct RowActions: ViewModifier {
 /// would close with the menu-bar panel, which loses focus as soon as one shows.
 @MainActor
 enum AppRowAlerts {
-    /// True when the user confirmed uninstalling `app` from `device`.
-    static func confirmUninstall(app: String, device: String) -> Bool {
-        run(title: L("popover.app.uninstallTitle", app, device), message: L("popover.app.uninstallMessage"),
-            confirm: L("popover.app.uninstall"), cancel: L("install.cancel"), destructive: true)
+    /// What the user chose when confirming an uninstall (nil from `confirmUninstall`: cancelled).
+    struct UninstallChoice {
+        var backUpFirst: Bool
+        var deleteBackups: Bool
+    }
+
+    /// The uninstall confirmation with its two Mac-side backup boxes (an NSAlert accessory view:
+    /// a SwiftUI alert can't hold checkboxes). `backupBytes`: what XSide keeps for the app, said
+    /// in the second box's hint when there is some.
+    static func confirmUninstall(app: String, device: String, backUpFirstDefault: Bool, canBackUp: Bool,
+                                 backupBytes: Int) -> UninstallChoice? {
+        NSApp.activate()
+        let alert = NSAlert()
+        alert.messageText = L("popover.app.uninstallTitle", app, device)
+        alert.informativeText = L("popover.app.uninstallMessage")
+        alert.alertStyle = .warning
+
+        let first = NSButton(checkboxWithTitle: L("uninstall.backupFirst"), target: nil, action: nil)
+        first.state = backUpFirstDefault && canBackUp ? .on : .off
+        first.isEnabled = canBackUp
+        let firstHint = hint(L(canBackUp ? "uninstall.backupFirst.note" : "uninstall.backupFirst.unavailable"))
+        let second = NSButton(checkboxWithTitle: L("uninstall.deleteBackups"), target: nil, action: nil)
+        second.state = .off
+        var secondNote = L("uninstall.deleteBackups.note")
+        if backupBytes > 0 {
+            secondNote += " · " + ByteCountFormatter.string(fromByteCount: Int64(backupBytes), countStyle: .file)
+        }
+        let secondHint = hint(secondNote)
+
+        let stack = NSStackView(views: [first, firstHint, second, secondHint])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 3
+        stack.setCustomSpacing(12, after: firstHint)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        let width: CGFloat = 300
+        stack.widthAnchor.constraint(equalToConstant: width).isActive = true
+        let size = stack.fittingSize
+        stack.frame = NSRect(x: 0, y: 0, width: width, height: size.height)
+        alert.accessoryView = stack
+
+        let confirm = alert.addButton(withTitle: L("popover.app.uninstall"))
+        confirm.hasDestructiveAction = true
+        alert.addButton(withTitle: L("install.cancel")).keyEquivalent = "\u{1b}"
+        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        return UninstallChoice(backUpFirst: first.state == .on, deleteBackups: second.state == .on)
+    }
+
+    /// A checkbox's grey hint, indented under its label.
+    private static func hint(_ text: String) -> NSView {
+        let label = NSTextField(wrappingLabelWithString: text)
+        label.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        label.textColor = .secondaryLabelColor
+        label.preferredMaxLayoutWidth = 280
+        let box = NSView()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        box.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 20),
+            label.trailingAnchor.constraint(equalTo: box.trailingAnchor),
+            label.topAnchor.constraint(equalTo: box.topAnchor),
+            label.bottomAnchor.constraint(equalTo: box.bottomAnchor),
+        ])
+        return box
     }
 
     /// True when the user confirmed pausing the refreshes of `app` on `device`.

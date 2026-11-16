@@ -48,6 +48,11 @@ struct InstallOptionsSection: View {
                         .padding(.trailing, 12)
                         .padding(.bottom, 10)
                 }
+                Divider().padding(.leading, 48)
+                OptionRow(symbol: "externaldrive.fill", title: L("install.backupData"),
+                          detail: L("install.backupData.note")) {
+                    switchToggle(L("install.backupData"), isOn: $flow.draft.backupData)
+                }
                 // After the install (defaults from Settings > General).
                 Divider().padding(.leading, 48)
                 OptionRow(symbol: "iphone.and.arrow.forward", title: L("settings.openAppAfterInstall"),

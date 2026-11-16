@@ -339,6 +339,10 @@ struct OptionsDraft: Equatable {
     var minOS = ""
     /// The app's own choice (nil: the Mac's default), see `InstallOptions.withoutXSideFeatures`.
     var withoutXSideFeatures: Bool?
+    /// "Back the app's data up" (a new install starts from Settings > Données des apps' default).
+    var backupData = AppModel.setting(AppModel.backupDefaultKey)
+    /// Not edited here (the fiche's choice); carried so a reinstall keeps it.
+    var backupCaches: Bool?
 
     init() {}
 
@@ -353,6 +357,8 @@ struct OptionsDraft: Equatable {
         shareKeychain = o.shareKeychain
         minOS = o.minimumOSVersion ?? ""
         withoutXSideFeatures = o.withoutXSideFeatures
+        backupData = o.backupData ?? true // nil: on, for an app installed before the option
+        backupCaches = o.backupCaches
     }
 
     var options: InstallOptions {
@@ -363,7 +369,8 @@ struct OptionsDraft: Equatable {
         return InstallOptions(displayName: clean(name), customBundleID: clean(bundleID), version: clean(version),
                                iconPath: iconPath, fileSharing: fileSharing, iPadFullScreen: iPadFullScreen,
                                proMotion: proMotion, minimumOSVersion: clean(minOS), shareKeychain: shareKeychain,
-                               withoutXSideFeatures: withoutXSideFeatures)
+                               withoutXSideFeatures: withoutXSideFeatures,
+                               backupData: backupData, backupCaches: backupCaches)
     }
 }
 

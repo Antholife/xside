@@ -2,6 +2,13 @@
 /// zone at the bottom of « Module XSide »): the panel row's own, in the order of the approved
 /// mockup, why they're greyed, and which app the page shows once that one is gone.
 public enum AppManagement {
+    /// The uninstall confirmation's "back up first" box: on when the device can be reached and the
+    /// app's backups aren't turned off (`InstallOptions.backupData == false`); it can't be ticked
+    /// without a reachable device.
+    public static func backupFirstDefault(deviceReachable: Bool, backupData: Bool?) -> Bool {
+        deviceReachable && backupData != false
+    }
+
     public enum Item: Equatable, Sendable {
         case refresh, pause, stop, resume, separator, backUpNow, exportData, importData, ipaContent, removeFromList, uninstall
     }
