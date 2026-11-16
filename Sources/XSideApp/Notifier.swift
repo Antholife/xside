@@ -43,6 +43,9 @@ final class Notifier: NSObject {
     /// Installed by the app: refreshes one app (a notification's "Refresh now").
     static var refreshHandler: (@MainActor (RefreshJob) -> Void)?
     /// Installed by the app: opens the menu-bar panel, on the notification's app if it has one.
+    /// An update notification was tapped: Settings opens on that app's « Mises à jour » tab.
+    static var openUpdateHandler: (@MainActor (RefreshJob) -> Void)?
+    nonisolated static let updateNoticePrefix = "appUpdate."
     static var openPanelHandler: (@MainActor (RefreshJob?) -> Void)?
     /// Causes the user fixes in Xcode itself (its account settings): their notification has
     /// "Open Xcode", and a tap opens Settings.
@@ -473,6 +476,13 @@ extension Notifier: UNUserNotificationCenterDelegate {
             }
         } else if response.actionIdentifier == Self.refreshAction, let job = Self.job(of: response.notification) {
             await MainActor.run { Self.refreshHandler?(job) }
+        } else if response.actionIdentifier == UNNotificationDefaultActionIdentifier,
+                  request.identifier.hasPrefix(Self.updateNoticePrefix), let job = Self.job(of: response.notification) {
+            await MainActor.run {
+                NSApp.activate()
+                Self.openUpdateHandler?(job)
+                Self.openSettings()
+            }
         } else if response.actionIdentifier == Self.openPanelAction
                     || (response.actionIdentifier == UNNotificationDefaultActionIdentifier
                         && request.content.categoryIdentifier == Self.appCategory) {

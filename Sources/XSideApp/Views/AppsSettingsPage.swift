@@ -263,7 +263,7 @@ private struct AppListRow: View {
 
 /// The three tabs of an app's detail (device round 3, R3-1), remembered from one app to the next.
 enum AppSettingsTab: String, CaseIterable {
-    case module, fixes, tweaks, data
+    case module, fixes, tweaks, data, update
 
     static let storageKey = "appSettings.tab"
     var title: String { L("appSettings.tab.\(rawValue)") }
@@ -274,7 +274,7 @@ enum AppSettingsTab: String, CaseIterable {
         case .module: [.xsideModule]
         case .fixes: [.duoCompatibility, .iCloudSignedOut]
         case .tweaks: [.tweaks]
-        case .data: []
+        case .data, .update: []
         }
     }
 }
@@ -319,8 +319,11 @@ private struct AppSettingsContent: View {
                     switch tab {
                     case .module: moduleTab
                     case .fixes: fixesTab
-                    case .tweaks: InstalledTweaksSection(model: model, entry: entry, deviceName: deviceName)
+                    case .tweaks:
+                        InstalledTweaksSection(model: model, entry: entry, deviceName: deviceName)
+                        TweakSourceLines(entry: entry)
                     case .data: AppDataTab(model: model, entry: entry, appName: appName, deviceName: deviceName)
+                    case .update: AppUpdateTab(model: model, entry: entry, appName: appName)
                     }
                 }
                 .padding(16)

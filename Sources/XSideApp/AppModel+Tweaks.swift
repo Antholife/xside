@@ -367,6 +367,14 @@ extension AppModel {
         Task { await addTweaks(urls, for: entry) }
     }
 
+    /// A tapped update notification: Settings > Mes apps on that installation, on its « Mises à jour »
+    /// tab. The caller brings Settings to the front.
+    func openUpdateSection(_ job: RefreshJob) {
+        settingsApp = JobKey(recordID: job.recordID, deviceID: job.deviceID)
+        settingsPane = .apps
+        UserDefaults.standard.set(AppSettingsTab.update.rawValue, forKey: AppSettingsTab.storageKey)
+    }
+
     /// The installation as the library has it now.
     func currentEntry(_ key: JobKey) -> AppEntry? {
         guard let record = records.first(where: { $0.id == key.recordID }),

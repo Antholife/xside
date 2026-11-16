@@ -24,7 +24,7 @@ extension AppModel {
     /// Downloads a found `.deb` of a tracked tweak, checks it is the same tweak, and swaps it into
     /// the app's pool only when the tweak is on auto AND the release is stable with a usable
     /// verdict. Otherwise says why it did not; the engine posts the notification.
-    func applyTweakUpdate(old: TweakPackage, recordID: UUID, device: Device, found: FoundRelease, stable: Bool) async -> TweakUpdateResult {
+    func applyTweakUpdate(old: TweakPackage, recordID: UUID, device: Device, found: FoundRelease, stable: Bool, userApproved: Bool = false) async -> TweakUpdateResult {
         let fm = FileManager.default
         let work = libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent(UUID().uuidString)
         defer { try? fm.removeItem(at: work) }
@@ -51,7 +51,7 @@ extension AppModel {
         // Injected code: its binaries are scanned (from the scratch copy) before anything is written.
         // Fails closed: an incomplete scan counts as a sign.
         let hasSigns = !IPAContentScanner.warningScan(of: checked, in: scratch).isClean
-        guard isAuto, UpdateApply.tweakAutoAllowed(verdict: verdict, stable: stable, hasSigns: hasSigns) else {
+        guard userApproved || (isAuto && UpdateApply.tweakAutoAllowed(verdict: verdict, stable: stable, hasSigns: hasSigns)) else {
             var suspect = hasSigns
             if case .incompatible = verdict { suspect = true }
             let reason: NotifyReason = !stable ? .prerelease : (suspect ? .suspect : .notifyMode)
@@ -73,7 +73,7 @@ extension AppModel {
     /// Downloads a found release of an app, checks it is the same app, and installs it over the
     /// installed one only when the app is on auto AND the release is stable with no warning sign.
     /// Otherwise says why it did not; the engine posts the notification.
-    func applyAppUpdate(record: AppRecord, device: Device, found: FoundRelease, stable: Bool) async -> AppUpdateResult {
+    func applyAppUpdate(record: AppRecord, device: Device, found: FoundRelease, stable: Bool, userApproved: Bool = false) async -> AppUpdateResult {
         let fm = FileManager.default
         let work = libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent(UUID().uuidString)
         defer { try? fm.removeItem(at: work) }
@@ -96,7 +96,7 @@ extension AppModel {
         let version = info.version ?? found.tag
         let isAuto = record.updateSource?.mode == .auto
         let allowed = UpdateApply.autoAllowed(content: info.content, stable: stable)
-        guard isAuto, allowed else {
+        guard userApproved || (isAuto && allowed) else {
             let reason: NotifyReason = !stable ? .prerelease : (isAuto ? .suspect : .notifyMode)
             return .notify(version: version, reason: reason)
         }

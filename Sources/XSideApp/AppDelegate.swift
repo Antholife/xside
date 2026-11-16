@@ -34,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.onDockBadge = { NSApp.dockTile.badgeLabel = $0 }
         Notifier.installUpdateHandler = { model.updater.checkNow() }
         listenToCommandLine(model)
+        Notifier.openUpdateHandler = { job in model.openUpdateSection(job) }
         Notifier.openPanelHandler = { [weak self] job in
             if let job { model.highlight(JobKey(recordID: job.recordID, deviceID: job.deviceID)) }
             self?.popover.show()
