@@ -7,7 +7,9 @@ import XSideCore
     @discardableResult
     static func backUpNow(_ entry: AppEntry, model: AppModel) async -> Bool {
         switch await model.backUpNow(entry) {
-        case .saved: model.showToast(L("toast.backedUp")); return true
+        case .saved(let version):
+            model.showToast(BackupSnapshot.versionLabel(version).map { L("toast.backedUp.version", $0) } ?? L("toast.backedUp"))
+            return true
         case .unchanged: model.showToast(L("toast.backedUp.unchanged")); return true
         case .failed: alert(L("fiche.data.backUpNow.failed")); return false
         }
@@ -208,7 +210,7 @@ struct AppDataTab: View {
 
     private func detail(_ snap: BackupSnapshot) -> String {
         var parts = [Self.size(snap.byteSize)]
-        if let v = snap.appVersion { parts.append("\(appName) \(v)") }
+        if let v = snap.versionLabel { parts.append("\(appName) \(v)") }
         if snap.includedCaches { parts.append(L("fiche.data.withCaches")) }
         return parts.joined(separator: " · ")
     }
@@ -226,7 +228,9 @@ struct AppDataTab: View {
     private func restore(_ snap: BackupSnapshot) {
         let a = NSAlert()
         a.messageText = L("settings.appData.restore.title", appName)
-        a.informativeText = L("settings.appData.restore.note", snap.createdAt.formatted(date: .abbreviated, time: .shortened))
+        let when = snap.createdAt.formatted(date: .abbreviated, time: .shortened)
+        a.informativeText = snap.versionLabel.map { L("settings.appData.restore.noteVersion", when, $0) }
+            ?? L("settings.appData.restore.note", when)
         a.addButton(withTitle: L("settings.appData.restore"))
         a.addButton(withTitle: L("install.cancel"))
         guard a.runModal() == .alertFirstButtonReturn else { return }

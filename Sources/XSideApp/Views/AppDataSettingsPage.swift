@@ -159,7 +159,7 @@ struct AppDataSettingsPage: View {
                         .padding(.horizontal, 7).padding(.vertical, 1)
                         .background(Capsule().fill(.quaternary)).foregroundStyle(.secondary)
                 }
-                Text("\(snap.deviceName) · \(Self.size(snap.byteSize)) · " + L("settings.appData.savedOn", Self.date(snap.createdAt)))
+                Text("\(snap.deviceName) · \(Self.size(snap.byteSize)) · " + (snap.versionLabel.map { "\($0) · " } ?? "") + L("settings.appData.savedOn", Self.date(snap.createdAt)))
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
@@ -173,8 +173,13 @@ struct AppDataSettingsPage: View {
         return "\(device) · " + (snaps.count == 1 ? L("settings.appData.versions.one") : L("settings.appData.versions", snaps.count)) + " · " + Self.size(snaps.reduce(0) { $0 + $1.byteSize })
     }
 
+    private static func restoreNote(_ snap: BackupSnapshot) -> String {
+        snap.versionLabel.map { L("settings.appData.restore.noteVersion", date(snap.createdAt), $0) }
+            ?? L("settings.appData.restore.note", date(snap.createdAt))
+    }
+
     private func detail(_ snap: BackupSnapshot) -> String {
-        [Self.size(snap.byteSize), snap.appVersion.map { "v\($0)" }].compactMap { $0 }.joined(separator: " · ")
+        [Self.size(snap.byteSize), snap.versionLabel].compactMap { $0 }.joined(separator: " · ")
     }
 
     // MARK: Actions
@@ -192,7 +197,7 @@ struct AppDataSettingsPage: View {
             $0.record.id == record.id && $0.installation.deviceID == snap.deviceID
         }) else { return alert(L("settings.appData.restore.noDevice"), nil) }
         let name = record.options.displayName ?? record.displayName
-        guard confirm(L("settings.appData.restore.title", name), L("settings.appData.restore.note", Self.date(snap.createdAt)),
+        guard confirm(L("settings.appData.restore.title", name), Self.restoreNote(snap),
                       L("settings.appData.restore")) else { return }
         run {
             let ok = await model.restore(snap.id, entry)

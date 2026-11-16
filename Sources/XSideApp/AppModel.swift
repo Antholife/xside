@@ -2813,7 +2813,7 @@ final class AppModel {
         devices.first { $0.id == id }?.name ?? cachedNames[id] ?? id
     }
 
-    enum BackupOutcome { case saved, unchanged, failed }
+    enum BackupOutcome { case saved(version: String?), unchanged, failed }
 
     /// Backs the app's data up now; identical data to the latest snapshot creates no new version.
     @discardableResult
@@ -2835,7 +2835,7 @@ final class AppModel {
                                                cycleStartedAt: install.firstInstalledAt ?? install.installedAt,
                                                retention: Self.backupRetention, onlyIfChanged: true)
             }
-            return snap == nil ? .unchanged : .saved
+            return snap == nil ? .unchanged : .saved(version: snap?.appVersion)
         } catch {
             Self.logger.error("backup failed: \(String(describing: type(of: error)))")
             return .failed

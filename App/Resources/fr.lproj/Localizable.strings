@@ -1353,6 +1353,7 @@
 "settings.appData.savedOn" = "sauvegardée le %@";
 "settings.appData.restore.title" = "Restaurer les données de %@ ?";
 "settings.appData.restore.note" = "La sauvegarde du %@ sera copiée par-dessus les données actuelles de l'app : les fichiers de la sauvegarde remplacent leurs homologues, les autres ne sont pas touchés.";
+"settings.appData.restore.noteVersion" = "La sauvegarde du %@ (%@) sera copiée par-dessus les données actuelles de l'app : les fichiers de la sauvegarde remplacent leurs homologues, les autres ne sont pas touchés.";
 "settings.appData.restore.noDevice" = "L'appareil de cette sauvegarde n'a plus cette app installée.";
 "settings.appData.restore.failed" = "La restauration a échoué. Vérifie que l'appareil est branché ou joignable.";
 "settings.appData.export.failed" = "L'export a échoué.";
@@ -1428,6 +1429,7 @@
 "fiche.data.delete.note" = "La sauvegarde du %@ sera supprimée définitivement.";
 
 "toast.backedUp" = "Sauvegarde terminée";
+"toast.backedUp.version" = "Sauvegarde terminée (%@)";
 "toast.backedUp.unchanged" = "Déjà à jour — aucune nouvelle sauvegarde";
 "toast.exported" = "Export terminé";
 "toast.imported" = "Import terminé";

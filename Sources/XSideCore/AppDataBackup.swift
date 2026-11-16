@@ -22,6 +22,13 @@ public struct BackupSnapshot: Codable, Equatable, Sendable {
         self.deviceName = deviceName; self.createdAt = createdAt; self.byteSize = byteSize
         self.fileCount = fileCount; self.includedCaches = includedCaches; self.appVersion = appVersion
     }
+
+    /// « v1.2.0 » for a known app version; nil when unknown or empty, so callers show nothing.
+    public static func versionLabel(_ version: String?) -> String? {
+        guard let version, !version.isEmpty else { return nil }
+        return "v" + version
+    }
+    public var versionLabel: String? { Self.versionLabel(appVersion) }
 }
 
 public struct BackupIndex: Codable, Equatable, Sendable {

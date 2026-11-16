@@ -1353,6 +1353,7 @@
 "settings.appData.savedOn" = "backed up on %@";
 "settings.appData.restore.title" = "Restore %@'s data?";
 "settings.appData.restore.note" = "The backup from %@ will be copied over the app's current data: backed-up files replace their counterparts, other files are left alone.";
+"settings.appData.restore.noteVersion" = "The backup from %@ (%@) will be copied over the app's current data: backed-up files replace their counterparts, other files are left alone.";
 "settings.appData.restore.noDevice" = "This backup's device no longer has the app installed.";
 "settings.appData.restore.failed" = "Restore failed. Check that the device is connected or reachable.";
 "settings.appData.export.failed" = "Export failed.";
@@ -1428,6 +1429,7 @@
 "fiche.data.delete.note" = "The backup from %@ will be permanently deleted.";
 
 "toast.backedUp" = "Backup done";
+"toast.backedUp.version" = "Backup done (%@)";
 "toast.backedUp.unchanged" = "Already up to date — no new backup";
 "toast.exported" = "Exported";
 "toast.imported" = "Imported";
