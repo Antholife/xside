@@ -11,7 +11,60 @@ enum AppUpdateResult: Sendable, Equatable {
     case failed(String)
 }
 
+enum TweakUpdateResult: Sendable, Equatable {
+    case installed(version: String)
+    case notify(version: String, reason: NotifyReason)
+    case incompatible
+    case failed(String)
+}
+
 extension AppModel {
+    /// Downloads a found `.deb` of a tracked tweak, checks it is the same tweak, and swaps it into
+    /// the app's pool only when the tweak is on auto AND the release is stable with a usable
+    /// verdict. Otherwise says why it did not; the engine posts the notification.
+    func applyTweakUpdate(old: TweakPackage, recordID: UUID, device: Device, found: FoundRelease, stable: Bool) async -> TweakUpdateResult {
+        let fm = FileManager.default
+        let work = libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent(UUID().uuidString)
+        defer { try? fm.removeItem(at: work) }
+        let deb = work.appendingPathComponent("update.deb")
+        do {
+            try fm.createDirectory(at: work, withIntermediateDirectories: true)
+            try await UpdateApply.downloadAsset(found.asset, kind: .deb, to: deb, fetcher: repoFetcher)
+        } catch {
+            return .failed("download: \(error)")
+        }
+        // Checked from a scratch copy first: a wrong one never enters the app's pool.
+        let scratch = work.appendingPathComponent("scratch")
+        let checked: TweakPackage
+        do {
+            checked = try await TweakAnalyzer.analyze(deb, into: scratch, runner: runner, now: Date())
+        } catch {
+            return .failed("analyze: \(error)")
+        }
+        guard UpdateApply.packageIDMatches(checked.packageID, oldPackageID: old.packageID) else { return .incompatible }
+        guard let record = records.first(where: { $0.id == recordID }) else { return .failed("the app is gone") }
+        let version = checked.version ?? found.tag
+        let verdict = TweakClassifier.verdict(checked, entryContext(record, old.id, on: device.id))
+        let isAuto = old.updateSource?.mode == .auto
+        guard isAuto, UpdateApply.tweakAutoAllowed(verdict: verdict, stable: stable) else {
+            let suspect: Bool
+            if case .incompatible = verdict { suspect = true } else { suspect = false }
+            let reason: NotifyReason = !stable ? .prerelease : (suspect ? .suspect : .notifyMode)
+            return .notify(version: version, reason: reason)
+        }
+        do {
+            // Same path as the manual replace: store in the pool (comes back as `replacing`), swap.
+            let (package, replacing) = try await library.addTweak(deb, recordID: recordID, deviceIDs: [], runner: runner, now: Date())
+            guard replacing != nil else { return .failed("this version is already in the pool") }
+            try await library.replaceTweak(old.id, with: package, recordID: recordID)
+            await reloadRecords()
+            refreshNow(RefreshJob(recordID: recordID, deviceID: device.id))
+            return .installed(version: version)
+        } catch {
+            return .failed("install: \(error)")
+        }
+    }
+
     /// Downloads a found release of an app, checks it is the same app, and installs it over the
     /// installed one only when the app is on auto AND the release is stable with no warning sign.
     /// Otherwise says why it did not; the engine posts the notification.

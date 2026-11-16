@@ -34,4 +34,23 @@ import Testing
         #expect(UpdateApply.applied(storedVersion: nil, expected: nil))
         #expect(!UpdateApply.applied(storedVersion: "1.0", expected: nil))
     }
+
+    @Test func tweakAutoAllowed_trueOnCompatibleStable() {
+        #expect(UpdateApply.tweakAutoAllowed(verdict: .compatible, stable: true))
+    }
+    @Test func tweakAutoAllowed_trueOnConverted() {
+        #expect(UpdateApply.tweakAutoAllowed(verdict: .converted([]), stable: true))
+    }
+    @Test func tweakAutoAllowed_falseOnIncompatible() {
+        #expect(!UpdateApply.tweakAutoAllowed(verdict: .incompatible(.notForIOS), stable: true))
+    }
+    @Test func tweakAutoAllowed_falseOnPrerelease() {
+        #expect(!UpdateApply.tweakAutoAllowed(verdict: .compatible, stable: false))
+        #expect(!UpdateApply.tweakAutoAllowed(verdict: .converted([]), stable: false))
+    }
+    @Test func packageIDMatches_exact() {
+        #expect(UpdateApply.packageIDMatches("com.a.tweak", oldPackageID: "com.a.tweak"))
+        #expect(!UpdateApply.packageIDMatches("com.a.tweak2", oldPackageID: "com.a.tweak"))
+        #expect(!UpdateApply.packageIDMatches("com.a.Tweak", oldPackageID: "com.a.tweak"))
+    }
 }

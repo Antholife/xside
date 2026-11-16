@@ -2,6 +2,20 @@ import Foundation
 
 /// The decisions behind applying an app update from GitHub, kept pure so they can be tested.
 public enum UpdateApply {
+    /// Auto-install a tweak only from a stable release whose verdict is not `.incompatible`.
+    public static func tweakAutoAllowed(verdict: TweakVerdict, stable: Bool) -> Bool {
+        guard stable else { return false }
+        switch verdict {
+        case .compatible, .converted: return true
+        case .incompatible: return false
+        }
+    }
+
+    /// The downloaded package must be the very tweak being updated (exact package id).
+    public static func packageIDMatches(_ packageID: String, oldPackageID: String) -> Bool {
+        packageID == oldPackageID
+    }
+
     /// Auto-install only a stable release whose content check ran and shows no warning sign.
     /// A missing check (`nil`) or a prerelease is never automatic.
     public static func autoAllowed(content: IPAContent?, stable: Bool) -> Bool {
