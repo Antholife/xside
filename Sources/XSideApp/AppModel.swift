@@ -1898,6 +1898,8 @@ final class AppModel {
         // Only unpacking (the welcome step) and signing report progress: a report arriving after
         // they ended (they hop to the main actor separately) must not show "100 %" on the transfer.
         guard jobs[key] == .step(.welcome) || jobs[key] == .step(.signing) || jobs[key] == .step(.backingUp), stepPercent[key] != percent else { return }
+        // Reports hop to the main actor separately and can arrive out of order: the backup bar never steps back.
+        if jobs[key] == .step(.backingUp), let shown = stepPercent[key], percent < shown { return }
         stepPercent[key] = percent
         updateDockBadge()
     }
@@ -2830,7 +2832,7 @@ final class AppModel {
             let f = BackupProgress.fraction(filesDone: done, filesTotal: total, bytesDone: bytes, bytesTotal: bytesTotal)
             Task { @MainActor in
                 guard let self, self.dataBusy.contains(key) else { return }
-                self.backupFraction[key] = f
+                self.backupFraction[key] = BackupProgress.monotonic(current: self.backupFraction[key], new: f)
             }
         }
         // The live record and installation: the entry's own copy predates a toggle, or a reinstall

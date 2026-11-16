@@ -93,4 +93,11 @@ private final class Ticks: @unchecked Sendable {
         #expect(BackupProgress.fraction(filesDone: 1, filesTotal: 4, bytesDone: 0, bytesTotal: 0) == 0.25)
         #expect(BackupProgress.fraction(filesDone: 0, filesTotal: 0, bytesDone: 0, bytesTotal: 0) == nil)
     }
+
+    @Test func monotonic_neverDecreases_unknownKeepsCurrent() {
+        #expect(BackupProgress.monotonic(current: nil, new: 0.3) == 0.3)
+        #expect(BackupProgress.monotonic(current: 0.5, new: 0.3) == 0.5)
+        #expect(BackupProgress.monotonic(current: 0.5, new: 0.8) == 0.8)
+        #expect(BackupProgress.monotonic(current: 0.5, new: nil) == 0.5)
+    }
 }

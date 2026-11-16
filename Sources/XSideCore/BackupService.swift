@@ -21,6 +21,12 @@ public protocol DataBackingUp: Sendable {
 
 /// Turns the backup's progress counters into a 0...1 fraction.
 public enum BackupProgress {
+    /// The fraction to display: never below the one already shown (reports may arrive out of order).
+    public static func monotonic(current: Double?, new: Double?) -> Double? {
+        guard let new else { return current }
+        return max(current ?? 0, new)
+    }
+
     /// Bytes when their total is known (smoother with uneven files), else files; nil when unknown.
     public static func fraction(filesDone: Int, filesTotal: Int, bytesDone: Int64, bytesTotal: Int64) -> Double? {
         if bytesTotal > 0 { return min(max(Double(bytesDone) / Double(bytesTotal), 0), 1) }
