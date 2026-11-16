@@ -24,21 +24,31 @@ extension AppModel {
         do {
             try fm.createDirectory(at: work, withIntermediateDirectories: true)
             try await UpdateApply.downloadAsset(found.asset, kind: .ipa, to: ipa, fetcher: repoFetcher)
-            info = try await IPAImporter.inspect(ipa: ipa, runner: runner)
         } catch {
             return .failed("download: \(error)")
+        }
+        do {
+            info = try await IPAImporter.inspect(ipa: ipa, runner: runner)
+        } catch {
+            return .failed("inspect: \(error)")
         }
         guard UpdateApply.bundleIDMatches(info.bundleID, originalBundleID: record.originalBundleID) else {
             return .incompatible
         }
         let version = info.version ?? found.tag
+        let isAuto = record.updateSource?.mode == .auto
         let allowed = UpdateApply.autoAllowed(content: info.content, stable: stable)
-        guard record.updateSource?.mode == .auto, allowed else {
-            let reason: NotifyReason = !stable ? .prerelease : (record.updateSource?.mode == .auto ? .suspect : .notifyMode)
+        guard isAuto, allowed else {
+            let reason: NotifyReason = !stable ? .prerelease : (isAuto ? .suspect : .notifyMode)
             return .notify(version: version, reason: reason)
         }
         do {
-            _ = try await importAndInstall(ipa, on: device, importedInto: record.id)
+            // No `importedInto`: that would reinstall the stored (old) IPA. Without it the new IPA is
+            // imported over the record found by bundle id (same id, options and data kept).
+            let updated = try await importAndInstall(ipa, on: device)
+            guard UpdateApply.applied(storedVersion: updated.version, expected: version) else {
+                return .failed("update not applied: stored \(updated.version ?? "nil") != \(version)")
+            }
             return .installed(version: version)
         } catch {
             return .failed("install: \(error)")

@@ -26,4 +26,10 @@ import Testing
         #expect(!UpdateApply.bundleIDMatches("com.a.b", originalBundleID: "com.a.B"))
         #expect(!UpdateApply.bundleIDMatches("com.a.b2", originalBundleID: "com.a.b"))
     }
+
+    @Test func applied_requiresStoredVersionToMatch() {
+        #expect(UpdateApply.applied(storedVersion: "2.0", expected: "2.0"))
+        #expect(!UpdateApply.applied(storedVersion: "1.0", expected: "2.0"))
+        #expect(!UpdateApply.applied(storedVersion: nil, expected: "2.0"))
+    }
 }

@@ -14,6 +14,11 @@ public enum UpdateApply {
         infoBundleID == originalBundleID
     }
 
+    /// After the install, the record must hold the version that was inspected in the download.
+    public static func applied(storedVersion: String?, expected: String) -> Bool {
+        storedVersion == expected
+    }
+
     /// Fetches a release asset with the kind's fixed size cap (not the size the release claims),
     /// then checks it is a regular file of exactly the listed size.
     public static func downloadAsset(_ asset: ReleaseAsset, kind: ReleaseKind, to file: URL,
