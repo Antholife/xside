@@ -160,7 +160,7 @@ struct AppDataTab: View {
             }
             ForEach(Array(BackupSession.group(snaps).enumerated()), id: \.offset) { _, session in
                 HStack(spacing: 6) {
-                    Text(session.installedAt.map { L("fiche.data.cycle", $0.formatted(date: .abbreviated, time: .shortened)) }
+                    Text(session.cycleStartedAt.map { L("fiche.data.cycle", $0.formatted(date: .abbreviated, time: .shortened)) }
                          ?? L("fiche.data.cycle.none"))
                         .font(.system(size: 12, weight: .semibold))
                     if session.isCurrent { tag(L("fiche.data.cycle.current")) }

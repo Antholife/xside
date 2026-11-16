@@ -12,12 +12,12 @@ public struct BackupSnapshot: Codable, Equatable, Sendable {
     public let fileCount: Int
     public let includedCaches: Bool
     public let appVersion: String?
-    /// When the installation this snapshot belongs to was installed (groups the versions by install session).
-    public let installedAt: Date?
+    /// Start of the installation cycle this snapshot belongs to (the installation's firstInstalledAt): groups the versions by cycle.
+    public let cycleStartedAt: Date?
 
     public init(id: String, signedBundleID: String, deviceID: String, deviceName: String, createdAt: Date,
-                byteSize: Int, fileCount: Int, includedCaches: Bool, appVersion: String?, installedAt: Date? = nil) {
-        self.installedAt = installedAt
+                byteSize: Int, fileCount: Int, includedCaches: Bool, appVersion: String?, cycleStartedAt: Date? = nil) {
+        self.cycleStartedAt = cycleStartedAt
         self.id = id; self.signedBundleID = signedBundleID; self.deviceID = deviceID
         self.deviceName = deviceName; self.createdAt = createdAt; self.byteSize = byteSize
         self.fileCount = fileCount; self.includedCaches = includedCaches; self.appVersion = appVersion
@@ -63,7 +63,7 @@ public actor AppDataBackup {
     }
 
     public func createSnapshot(from sourceDir: URL, signedBundleID: String, deviceID: String, deviceName: String,
-                               includedCaches: Bool, appVersion: String?, installedAt: Date? = nil, retention: Int = 3,
+                               includedCaches: Bool, appVersion: String?, cycleStartedAt: Date? = nil, retention: Int = 3,
                                now: Date = Date()) throws -> BackupSnapshot {
         let pair = pairDir(signedBundleID, deviceID)
         try fm.createDirectory(at: pair, withIntermediateDirectories: true)
@@ -92,7 +92,7 @@ public actor AppDataBackup {
 
         let snap = BackupSnapshot(id: id, signedBundleID: signedBundleID, deviceID: deviceID, deviceName: deviceName,
                                   createdAt: now, byteSize: bytes, fileCount: files,
-                                  includedCaches: includedCaches, appVersion: appVersion, installedAt: installedAt)
+                                  includedCaches: includedCaches, appVersion: appVersion, cycleStartedAt: cycleStartedAt)
         index.snapshots.append(snap)
 
         let mine = index.snapshots
@@ -278,26 +278,26 @@ public actor AppDataBackup {
 /// Snapshots grouped by the install session they belong to: the date of a backup says nothing about
 /// progression once the app was reinstalled clean in between.
 public struct BackupSession: Equatable, Sendable {
-    /// Exact install time (the install event); nil for snapshots that predate `installedAt`.
-    public let installedAt: Date?
+    /// Exact install time (the install event); nil for snapshots that predate `cycleStartedAt`.
+    public let cycleStartedAt: Date?
     /// Newest first.
     public let snapshots: [BackupSnapshot]
     /// True for the group with the most recent install date.
     public let isCurrent: Bool
 
-    /// Groups by install event (exact `installedAt`), newest install first; undated snapshots form the last group.
+    /// Groups by install event (exact `cycleStartedAt`), newest install first; undated snapshots form the last group.
     public static func group(_ snaps: [BackupSnapshot], calendar: Calendar = .current) -> [BackupSession] {
         var dated: [Date: [BackupSnapshot]] = [:]
         var undated: [BackupSnapshot] = []
         for s in snaps {
-            if let d = s.installedAt { dated[d, default: []].append(s) } else { undated.append(s) }
+            if let d = s.cycleStartedAt { dated[d, default: []].append(s) } else { undated.append(s) }
         }
         let days = dated.keys.sorted(by: >)
         var out = days.enumerated().map { i, day in
-            BackupSession(installedAt: day, snapshots: dated[day]!.sorted { $0.createdAt > $1.createdAt }, isCurrent: i == 0)
+            BackupSession(cycleStartedAt: day, snapshots: dated[day]!.sorted { $0.createdAt > $1.createdAt }, isCurrent: i == 0)
         }
         if !undated.isEmpty {
-            out.append(BackupSession(installedAt: nil, snapshots: undated.sorted { $0.createdAt > $1.createdAt }, isCurrent: false))
+            out.append(BackupSession(cycleStartedAt: nil, snapshots: undated.sorted { $0.createdAt > $1.createdAt }, isCurrent: false))
         }
         return out
     }

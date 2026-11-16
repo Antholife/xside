@@ -1419,6 +1419,7 @@
 "fiche.data.working.restore" = "Restoring…";
 "fiche.data.export.help" = "Exports the latest version of this installation (export another version from the list below).";
 "install.step.restoring" = "Restoring data";
+"install.step.backingUp" = "Backing up data";
 "menuBar.working.data" = "Backing up…";
 
 "fiche.data.delete" = "Delete";

@@ -162,7 +162,8 @@ struct PendingChangesBar: View {
         let steps = ProgressStep.list(includingWifiCheck: false, includingDuo: installation.duoCompatibility == true,
                                       includingLegacy32: entry.record.legacy32 == true,
                                       includingICloud: installation.iCloudSignedOut == true,
-                                      includingTweaks: !installation.enabledTweakIDs.isEmpty)
+                                      includingTweaks: !installation.enabledTweakIDs.isEmpty,
+                                      includingBackup: entry.record.options.backupData != false)
         let timeline = StepTimeline(steps: steps, stage: stage)
         let percent = model.stepPercent[entry.id]
         let step = stage.label + (percent.map { " " + percentText($0) } ?? "")

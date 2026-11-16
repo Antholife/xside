@@ -192,15 +192,24 @@ private final class RetentionBox: @unchecked Sendable {
     func add(_ v: Int) { lock.lock(); _values.append(v); lock.unlock() }
 }
 
+private final class CycleBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _values: [Date?] = []
+    var values: [Date?] { lock.lock(); defer { lock.unlock() }; return _values }
+    func add(_ v: Date?) { lock.lock(); _values.append(v); lock.unlock() }
+}
+
 private struct SpyBackup: DataBackingUp {
     let log: CallLog
+    var cycles: CycleBox?
     var retentions: RetentionBox?
     var error: (any Error)?
     var restoreError: (any Error)?
     var snapshot: BackupSnapshot?
     func backUp(signedBundleID: String, deviceID: String, deviceName: String, appVersion: String?,
-                includeCaches: Bool, installedAt: Date?, retention: Int, onlyIfChanged: Bool) async throws -> BackupSnapshot? {
+                includeCaches: Bool, cycleStartedAt: Date?, retention: Int, onlyIfChanged: Bool) async throws -> BackupSnapshot? {
         retentions?.add(retention)
+        cycles?.add(cycleStartedAt)
         await log.backup(signedBundleID, deviceID, deviceName, appVersion, includeCaches, onlyIfChanged)
         if let error { throw error }
         return snapshot
@@ -350,6 +359,27 @@ struct PipelineTests {
         #expect(backups.first?.onlyIfChanged == true)
         #expect(await f.log.deviceCalls == ["install:dev-1", "backup:dev-1"])
         #expect(await steps.items.last == .backingUp)
+    }
+
+    @Test func refresh_tagsSnapshotWithFirstInstalledAtNotTheRefreshedInstalledAt() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let first = Date(timeIntervalSince1970: 1_000), signedLast = Date(timeIntervalSince1970: 5_000)
+        try await f.library.upsert(Installation(deviceID: "dev-1", installedAt: signedLast, expiresAt: expiry.addingTimeInterval(-1),
+                                                firstInstalledAt: first), for: f.record.id)
+        let cycles = CycleBox()
+        let pipeline = f.pipeline(backup: SpyBackup(log: f.log, cycles: cycles))
+        _ = try await pipeline.install(recordID: f.record.id, device: device(), env: env, refresh: true) { _ in }
+        #expect(cycles.values == [first])
+    }
+
+    @Test func refresh_fallsBackToInstalledAtWhenNoFirstInstalledAt() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let signed = Date(timeIntervalSince1970: 5_000)
+        try await f.library.upsert(Installation(deviceID: "dev-1", installedAt: signed, expiresAt: expiry.addingTimeInterval(-1)), for: f.record.id)
+        let cycles = CycleBox()
+        let pipeline = f.pipeline(backup: SpyBackup(log: f.log, cycles: cycles))
+        _ = try await pipeline.install(recordID: f.record.id, device: device(), env: env, refresh: true) { _ in }
+        #expect(cycles.values == [signed])
     }
 
     private final class Flag: @unchecked Sendable { var calls: [Bool] = [] }

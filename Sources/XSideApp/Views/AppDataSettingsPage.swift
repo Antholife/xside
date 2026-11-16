@@ -115,7 +115,7 @@ struct AppDataSettingsPage: View {
         if open {
             ForEach(Array(BackupSession.group(snaps).enumerated()), id: \.offset) { _, session in
                 HStack(spacing: 6) {
-                    Text(session.installedAt.map { L("fiche.data.cycle", $0.formatted(date: .abbreviated, time: .shortened)) }
+                    Text(session.cycleStartedAt.map { L("fiche.data.cycle", $0.formatted(date: .abbreviated, time: .shortened)) }
                          ?? L("fiche.data.cycle.none"))
                         .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     if session.isCurrent { Text(L("fiche.data.cycle.current")).font(.caption).foregroundStyle(.tint) }

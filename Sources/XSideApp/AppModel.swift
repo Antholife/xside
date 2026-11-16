@@ -2826,7 +2826,7 @@ final class AppModel {
                                                deviceName: deviceDisplayName(install.deviceID),
                                                appVersion: liveRecord?.version ?? entry.record.version,
                                                includeCaches: opts.backupCaches != false,
-                                               installedAt: install.installedAt,
+                                               cycleStartedAt: install.firstInstalledAt ?? install.installedAt,
                                                retention: Self.backupRetention, onlyIfChanged: true)
             }
             return snap == nil ? .unchanged : .saved
@@ -2902,7 +2902,7 @@ final class AppModel {
             let snap = try await backupStore.createSnapshot(
                 from: contentDir, signedBundleID: backupBundleID(entry), deviceID: installation.deviceID,
                 deviceName: deviceDisplayName(installation.deviceID), includedCaches: manifest?.includedCaches ?? true,
-                appVersion: manifest?.appVersion, installedAt: installation.installedAt,
+                appVersion: manifest?.appVersion, cycleStartedAt: installation.firstInstalledAt ?? installation.installedAt,
                 retention: Self.backupRetention)
             return await restore(snap.id, entry)
         } catch {

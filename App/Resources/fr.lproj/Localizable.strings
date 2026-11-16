@@ -1419,6 +1419,7 @@
 "fiche.data.working.restore" = "Restauration en cours…";
 "fiche.data.export.help" = "Exporte la version la plus récente de cette installation (l’export d’une autre version se fait dans la liste ci-dessous).";
 "install.step.restoring" = "Restauration des données";
+"install.step.backingUp" = "Sauvegarde des données";
 "menuBar.working.data" = "Sauvegarde…";
 
 "fiche.data.delete" = "Supprimer";

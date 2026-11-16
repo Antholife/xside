@@ -6,7 +6,7 @@ public enum RestoreClear: Sendable { case overlay, clearedContainer }
 /// Backs an app's data container up and restores it. A protocol so the pipeline can inject a fake.
 public protocol DataBackingUp: Sendable {
     func backUp(signedBundleID: String, deviceID: String, deviceName: String, appVersion: String?,
-                includeCaches: Bool, installedAt: Date?, retention: Int, onlyIfChanged: Bool) async throws -> BackupSnapshot?
+                includeCaches: Bool, cycleStartedAt: Date?, retention: Int, onlyIfChanged: Bool) async throws -> BackupSnapshot?
     func restore(_ snapshot: BackupSnapshot, toSignedBundleID: String, deviceID: String,
                  executable: String, clear: Bool) async throws -> RestoreClear
     /// Restores the snapshot with this id; nil when no snapshot has it (nothing to restore).
@@ -26,7 +26,7 @@ public struct BackupService: DataBackingUp {
     }
 
     public func backUp(signedBundleID: String, deviceID: String, deviceName: String, appVersion: String?,
-                       includeCaches: Bool, installedAt: Date? = nil, retention: Int = 3, onlyIfChanged: Bool = true) async throws -> BackupSnapshot? {
+                       includeCaches: Bool, cycleStartedAt: Date? = nil, retention: Int = 3, onlyIfChanged: Bool = true) async throws -> BackupSnapshot? {
         let fm = FileManager.default
         let temp = fm.temporaryDirectory.appendingPathComponent("xside-backup-\(UUID().uuidString)", isDirectory: true)
         try fm.createDirectory(at: temp, withIntermediateDirectories: true)
@@ -54,7 +54,7 @@ public struct BackupService: DataBackingUp {
         }
         return try await store.createSnapshot(from: temp, signedBundleID: signedBundleID, deviceID: deviceID,
                                               deviceName: deviceName, includedCaches: includeCaches,
-                                              appVersion: appVersion, installedAt: installedAt, retention: retention)
+                                              appVersion: appVersion, cycleStartedAt: cycleStartedAt, retention: retention)
     }
 
     public func restore(_ snapshot: BackupSnapshot, toSignedBundleID: String, deviceID: String,

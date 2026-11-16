@@ -14,8 +14,9 @@ public enum ProgressStep: Int, CaseIterable, Sendable {
     /// `duo`: adding iPhone Duo compatibility, listed only for a run that asked for it.
     /// `legacy32`: removing the old 32-bit code, listed only for an app that has some.
     /// `icloud`: adding the signed-out iCloud library, listed only for a run that asked for it.
+    /// `backingUp`: the data snapshot after a refresh, listed only when the app's backup is on.
     /// `tweaks`: injecting the device's enabled tweaks, listed only for a device that has some.
-    case preparing, profile, welcome, legacy32, duo, icloud, tweaks, signing, installing, restoring, wifiCheck
+    case preparing, profile, welcome, legacy32, duo, icloud, tweaks, signing, installing, backingUp, restoring, wifiCheck
 
     public init(_ step: InstallStep) {
         switch step {
@@ -26,7 +27,8 @@ public enum ProgressStep: Int, CaseIterable, Sendable {
         case .tweaks: self = .tweaks
         case .legacy32: self = .legacy32
         case .signing: self = .signing
-        case .installing, .backingUp: self = .installing
+        case .installing: self = .installing
+        case .backingUp: self = .backingUp
         case .restoring: self = .restoring
         }
     }
@@ -36,11 +38,13 @@ public enum ProgressStep: Int, CaseIterable, Sendable {
     /// when the device has an enabled tweak.
     public static func list(includingWifiCheck: Bool, includingDuo: Bool = false,
                             includingLegacy32: Bool = false, includingICloud: Bool = false,
-                            includingTweaks: Bool = false, includingRestore: Bool = false) -> [ProgressStep] {
+                            includingTweaks: Bool = false, includingRestore: Bool = false,
+                            includingBackup: Bool = false) -> [ProgressStep] {
         allCases.filter {
             ($0 != .wifiCheck || includingWifiCheck) && ($0 != .duo || includingDuo)
                 && ($0 != .legacy32 || includingLegacy32) && ($0 != .icloud || includingICloud)
                 && ($0 != .tweaks || includingTweaks) && ($0 != .restoring || includingRestore)
+                && ($0 != .backingUp || includingBackup)
         }
     }
 }

@@ -145,7 +145,7 @@ private final class TreeRunner: CommandRunning, @unchecked Sendable {
     private func snap(_ id: String, created: Double, installed: Double?) -> BackupSnapshot {
         BackupSnapshot(id: id, signedBundleID: "a", deviceID: "d", deviceName: "n", createdAt: Date(timeIntervalSince1970: created),
                        byteSize: 1, fileCount: 1, includedCaches: false, appVersion: nil,
-                       installedAt: installed.map { Date(timeIntervalSince1970: $0) })
+                       cycleStartedAt: installed.map { Date(timeIntervalSince1970: $0) })
     }
 
     @Test func groupsByInstallEventNewestFirstAndMarksCurrent() {
@@ -159,7 +159,18 @@ private final class TreeRunner: CommandRunning, @unchecked Sendable {
         #expect(groups.count == 3)
         #expect(groups[0].snapshots.map(\.id) == ["new1"] && groups[0].isCurrent)
         #expect(groups[1].snapshots.map(\.id) == ["old2", "old1"] && !groups[1].isCurrent)
-        #expect(groups[2].installedAt == nil && groups[2].snapshots.map(\.id) == ["none"])
+        #expect(groups[2].cycleStartedAt == nil && groups[2].snapshots.map(\.id) == ["none"])
+    }
+
+    @Test func refreshesInOneCycleStayOneSessionAndReinstallStartsANewOne() {
+        // Snapshots of refreshes share the cycle start (firstInstalledAt); a fresh reinstall has a new one.
+        let groups = BackupSession.group([
+            snap("r1", created: 100, installed: 50), snap("r2", created: 200, installed: 50), snap("r3", created: 300, installed: 50),
+            snap("fresh", created: 400, installed: 350),
+        ], calendar: Calendar(identifier: .gregorian))
+        #expect(groups.count == 2)
+        #expect(groups[0].snapshots.map(\.id) == ["fresh"] && groups[0].isCurrent)
+        #expect(groups[1].snapshots.count == 3)
     }
 
     @Test func twoInstallsOnTheSameDayAreTwoSessions() {

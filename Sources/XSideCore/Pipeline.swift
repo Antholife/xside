@@ -607,7 +607,7 @@ public actor SideloadPipeline {
                 do {
                     let snapshot = try await backup.backUp(signedBundleID: bundleID, deviceID: device.id, deviceName: device.name,
                                                 appVersion: record.version, includeCaches: record.options.backupCaches != false,
-                                                installedAt: previous?.installedAt,
+                                                cycleStartedAt: previous.flatMap { $0.firstInstalledAt ?? $0.installedAt },
                                                 retention: retention(), onlyIfChanged: true)
                     if snapshot != nil { await dataBackedUp(true) }
                 } catch {
