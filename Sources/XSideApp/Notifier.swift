@@ -191,6 +191,25 @@ final class Notifier: NSObject {
         }
     }
 
+    /// A new release of an app (or one of its tweaks) found on its GitHub source, not installed by
+    /// itself. A tap opens the app's panel. `id` is per app/tweak, so a newer one replaces the older.
+    func appUpdateAvailable(appName: String, version: String, job: RefreshJob, id: String) async {
+        let content = UNMutableNotificationContent()
+        content.title = L("notification.appUpdate.title", appName)
+        content.body = L("notification.appUpdate.body", appName, version)
+        content.sound = .default
+        Self.tag(content, with: job)
+        guard let center else {
+            Self.logger.notice("would notify: \(content.title)")
+            return
+        }
+        do {
+            try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+        } catch {
+            Self.logger.error("notification failed: \(String(describing: error))")
+        }
+    }
+
     /// A due app that can't be refreshed because the device is on Wi-Fi only and Wi-Fi refresh is off.
     func needsUSB(appName: String, deviceName: String, date: String, id: String) async -> Bool {
         let content = UNMutableNotificationContent()

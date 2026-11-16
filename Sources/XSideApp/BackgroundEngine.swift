@@ -74,6 +74,10 @@ final class BackgroundEngine {
         #endif
 
         model.onNeedsEvaluation = { [weak self] in self?.evaluate(reason: "change") }
+        model.onAppUpdateAvailable = { [weak self] n in
+            guard let self else { return }
+            Task { await self.notifier.appUpdateAvailable(appName: n.appName, version: n.version, job: n.job, id: n.id) }
+        }
         model.onPopoverShown = { [weak self] in self?.checkPresence(interval: PresenceCheck.panelInterval) }
         model.onDeviceRemoved = { [weak self] id in self?.forgetDevice(id) }
         model.onDeviceNotificationsChanged = { [weak self] in self?.reconcileReminders() }
@@ -139,6 +143,7 @@ final class BackgroundEngine {
     private func pollTick() async {
         // The crash logs' own schedule (every 2 min, 15 s after an install or a check-in).
         model.scanCrashesIfDue()
+        model.checkUpdatesIfDue()
         let interval = DevicePolling.interval(panelOpen: model.isPopoverOpen, myAppsShown: model.isMyAppsShown)
         // Small tolerance so a 60 s poll isn't pushed to 75 s by tick jitter.
         guard ContinuousClock.now - lastPoll >= interval - .seconds(1) else { return }
@@ -189,6 +194,7 @@ final class BackgroundEngine {
         reportMacBeta()
         checkPresence()
         model.scanCrashesIfDue()
+        model.checkUpdatesIfDue()
         reportUnreachable()
         reportNeedsUSB()
         // Environment broken (or not probed yet): nothing can be refreshed. `reportEnvironment`

@@ -602,6 +602,23 @@ public actor AppLibrary {
         do { try save() } catch { items = previous; throw error }
     }
 
+    /// The app's own GitHub update source (nil clears it). Nothing else of the record changes.
+    public func setUpdateSource(_ source: UpdateSource?, forRecord id: UUID) throws {
+        let index = try indexOf(id)
+        let previous = items
+        items[index].updateSource = source
+        do { try save() } catch { items = previous; throw error }
+    }
+
+    /// A pool tweak's GitHub update source (nil clears it). Nothing else of the tweak changes.
+    public func setUpdateSource(_ source: UpdateSource?, forTweak tweakID: String, recordID: UUID) throws {
+        let index = try indexOf(recordID)
+        guard let t = items[index].tweaks?.firstIndex(where: { $0.id == tweakID }) else { throw XSideError.recordNotFound }
+        let previous = items
+        items[index].tweaks?[t].updateSource = source
+        do { try save() } catch { items = previous; throw error }
+    }
+
     public func setOptions(_ options: InstallOptions, for id: UUID) throws {
         let index = try indexOf(id)
         if let custom = options.customBundleID, !custom.isEmpty, !BundleIdentifier.isValid(custom) {
@@ -1142,6 +1159,9 @@ extension AppLibrary {
             throw TweakError.unreadable("the stored package is missing")
         }
         let previous = items
+        // The tweak stays tracked: a new package from an update carries its GitHub source over.
+        var new = new
+        if new.updateSource == nil { new.updateSource = pool[position].updateSource }
         pool[position] = new
         pool = pool.enumerated().filter { $0.offset == position || $0.element.id != new.id }.map(\.element)
         items[index].tweaks = pool

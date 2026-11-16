@@ -1436,3 +1436,6 @@
 "toast.uninstalled" = "%@ désinstallée";
 
 "settings.appData.disk.note" = "Les versions partagent leurs fichiers communs : la place réellement utilisée est inférieure à la somme des tailles affichées par version.";
+
+"notification.appUpdate.title" = "%@ : mise à jour disponible";
+"notification.appUpdate.body" = "La version %2$@ de %1$@ est disponible. Ouvre XSide pour la mettre à jour.";

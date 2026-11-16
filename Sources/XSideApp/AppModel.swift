@@ -289,6 +289,8 @@ final class AppModel {
     var onInstallationRemoved: ((_ job: RefreshJob) -> Void)?
     /// A paused installation is refreshed again: its reminder comes back, and it may be due now.
     var onRefreshResumed: ((_ job: RefreshJob) -> Void)?
+    /// An app or tweak has a new release that was not installed by itself: the engine notifies.
+    var onAppUpdateAvailable: ((_ notice: AppUpdateNotice) -> Void)?
     /// Every pipeline run that ends (install, manual or automatic refresh), with its error if it failed.
     var onJobFinished: ((_ job: RefreshJob, _ error: (any Error)?, _ automatic: Bool,
                                _ wasRefresh: Bool, _ dataBackedUp: Bool) -> Void)?
@@ -3004,6 +3006,11 @@ final class AppModel {
     @ObservationIgnored private var crashScans: Set<String> = []
     /// When each device's crash logs are listed (every 2 min, 15 s after an install or a check-in).
     @ObservationIgnored private var crashSchedule = CrashScanSchedule()
+    /// When the last pass over the GitHub update sources ran (in memory: a restart looks again), and
+    /// whether one runs now. `checkUpdatesIfDue` (the engine's tick) gates on `UpdateSchedule`.
+    @ObservationIgnored var lastUpdateCheck: Date?
+    @ObservationIgnored var updateCheckRunning = false
+
     /// Installations whose crash logs are being read at once (a crash reported, a watch dropped).
     @ObservationIgnored private var crashFastLooks: Set<JobKey> = []
     /// The installation the crash window shows.
