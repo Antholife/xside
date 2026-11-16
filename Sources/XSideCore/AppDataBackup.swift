@@ -198,7 +198,7 @@ public actor AppDataBackup {
                 try fm.createDirectory(at: target, withIntermediateDirectories: false)
             case S_IFLNK:
                 guard let dst = try? fm.destinationOfSymbolicLink(atPath: src.path),
-                      Self.symlinkStaysInside(dst, at: comps.dropLast().map(String.init)) else { skipped += 1; continue }
+                      Self.symlinkStaysInside(dst, parent: src.deletingLastPathComponent()) else { skipped += 1; continue }
                 try fm.createSymbolicLink(atPath: target.path, withDestinationPath: dst)
             default:
                 let prior = previous.map { $0.appendingPathComponent(rel) }
@@ -227,13 +227,17 @@ public actor AppDataBackup {
         return true
     }
 
-    /// A symlink is kept only when its destination is relative and never climbs above the tree root.
-    private static func symlinkStaysInside(_ dest: String, at parent: [String]) -> Bool {
+    /// A symlink is kept only when its destination is relative, has no `..` component, and no intermediate
+    /// component of it (resolved under the link's parent in the source tree) is itself a symlink.
+    private static func symlinkStaysInside(_ dest: String, parent: URL) -> Bool {
         if dest.hasPrefix("/") || dest.isEmpty { return false }
-        var depth = parent.count
-        for c in dest.split(separator: "/") {
-            if c == ".." { depth -= 1; if depth < 0 { return false } }
-            else if c != "." { depth += 1 }
+        let comps = dest.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        if comps.contains("..") || comps.dropLast().contains("") { return false }
+        var cur = parent
+        for c in comps.dropLast() where c != "." {
+            cur = cur.appendingPathComponent(c)
+            var st = stat()
+            guard lstat(cur.path, &st) == 0, (st.st_mode & S_IFMT) == S_IFDIR else { return false }
         }
         return true
     }

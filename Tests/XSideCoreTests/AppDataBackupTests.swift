@@ -150,3 +150,25 @@ private func setNanoMTime(_ u: URL, sec: Int, nsec: Int) {
     let libRoot = await store.snapshotDir(s1).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     #expect(try fm.contentsOfDirectory(atPath: libRoot.path) == ["backups"])
 }
+
+@Test func createSnapshot_rejectsChainedSymlinkBypass_keepsPlainRelativeLink() async throws {
+    let fm = FileManager.default
+    let store = makeStore()
+    let src = try makeTree(["d/inner.txt": "in", "ok.txt": "fine"])
+    func link(_ name: String, _ dest: String) throws {
+        try fm.createSymbolicLink(atPath: src.appendingPathComponent(name).path, withDestinationPath: dest)
+    }
+    try link("a", ".")
+    try link("b", "a/..")          // resolves to the source root's parent
+    try link("c", "a/d/inner.txt") // passes through the symlink "a"
+    try link("plain", "d/inner.txt")
+    let s = try await snap(store, src, at: 1_800_000_000)
+    let dir = await store.snapshotDir(s)
+    func dest(_ n: String) -> String? { try? fm.destinationOfSymbolicLink(atPath: dir.appendingPathComponent(n).path) }
+    #expect(dest("b") == nil)
+    #expect(dest("c") == nil)
+    #expect(dest("plain") == "d/inner.txt")
+    #expect(fm.fileExists(atPath: dir.appendingPathComponent("ok.txt").path))
+    let libRoot = dir.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    #expect(try fm.contentsOfDirectory(atPath: libRoot.path) == ["backups"])
+}
