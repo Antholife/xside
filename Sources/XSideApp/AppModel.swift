@@ -239,6 +239,9 @@ final class AppModel {
     /// One for the app's lifetime: its per-device ordering and its provisioning lock only hold
     /// within one instance. The signing environment is passed per job.
     private let pipeline: SideloadPipeline
+    /// The app-data backups (see `BackupService`): kept at the library root, like the library itself.
+    @ObservationIgnored let backupStore: AppDataBackup
+    @ObservationIgnored let backupService: BackupService
     /// Last environment that probed OK.
     private var lastGoodEnv: SigningEnvironment?
     private var listingDevices = false
@@ -299,6 +302,8 @@ final class AppModel {
             // share the temporary folder).
             Task.detached(priority: .utility) { CrashLogFetcher.sweepLeftovers() }
         }
+        backupStore = AppDataBackup(root: paths.root)
+        backupService = BackupService(store: backupStore, container: AppDataContainer(runner: runner))
         pipeline = SideloadPipeline(
             library: library,
             provisioner: Provisioner(runner: runner, templateDir: paths.template, workDir: paths.provisioningWork,
@@ -319,7 +324,8 @@ final class AppModel {
             installer: Installer(runner: runner),
             workRoot: paths.jobsWork, now: { Date() }, macIsBeta: XcodeLauncher.macIsBeta,
             inAppDefaults: { AppModel.inAppDefaults(at: $0) },
-            withoutXSideFeaturesByDefault: { AppModel.withoutXSideFeaturesByDefault })
+            withoutXSideFeaturesByDefault: { AppModel.withoutXSideFeaturesByDefault },
+            backup: backupService)
         // An update waits while an install or a refresh runs (`release` retries it after).
         updater.isBusy = { [unowned self] in !self.claims.isEmpty || self.install?.isRunning == true }
         if startsServices { Task { await start() } }
@@ -2711,6 +2717,18 @@ final class AppModel {
     /// The notification when XSide forgets an app deleted from its device.
     static let notifyAppRemovedKey = "notifyAppRemoved"
 
+    /// Back an app's data up by default when it is first installed (default on).
+    nonisolated static let backupDefaultKey = "backupNewApps"
+    /// Include the Caches folder in those backups (default on).
+    nonisolated static let backupCachesDefaultKey = "backupCachesNewApps"
+    /// How many backups to keep per app and device (default 3).
+    nonisolated static let backupRetentionKey = "backupRetention"
+
+    /// Snapshots kept per app and device; at least 1.
+    nonisolated static var backupRetention: Int {
+        max(1, UserDefaults.standard.object(forKey: backupRetentionKey) as? Int ?? 3)
+    }
+
     nonisolated static func setting(_ key: String) -> Bool {
         UserDefaults.standard.object(forKey: key) as? Bool ?? true
     }
@@ -2720,6 +2738,125 @@ final class AppModel {
         let sha1 = (try? environment?.get())?.identitySHA1
         UserDefaults.standard.set(sha1 ?? true as Any, forKey: Self.guideKey(deviceID))
     }
+
+    // MARK: App data backups
+
+    private func backupBundleID(_ e: AppEntry) -> String { e.installation.signedBundleID ?? e.record.signedBundleID }
+
+    private func deviceDisplayName(_ id: String) -> String {
+        devices.first { $0.id == id }?.name ?? cachedNames[id] ?? id
+    }
+
+    /// Backs the app's data up now (a manual backup keeps its snapshot even when nothing changed).
+    @discardableResult
+    func backUpNow(_ entry: AppEntry) async -> Bool {
+        do {
+            _ = try await withKnownXcode {
+                try await backupService.backUp(signedBundleID: backupBundleID(entry), deviceID: entry.installation.deviceID,
+                                               deviceName: deviceDisplayName(entry.installation.deviceID),
+                                               appVersion: entry.record.version,
+                                               includeCaches: entry.record.options.backupCaches != false,
+                                               retention: Self.backupRetention, onlyIfChanged: false)
+            }
+            return true
+        } catch {
+            Self.logger.error("backup failed: \(String(describing: type(of: error)))")
+            return false
+        }
+    }
+
+    /// Pushes a snapshot into the app. Always an overlay: the backend cannot clear a container.
+    @discardableResult
+    func restore(_ snapshotID: String, _ entry: AppEntry) async -> Bool {
+        do {
+            let done = try await withKnownXcode {
+                try await backupService.restore(snapshotID: snapshotID, toSignedBundleID: backupBundleID(entry),
+                                                deviceID: entry.installation.deviceID,
+                                                executable: entry.record.executable ?? "", clear: false)
+            }
+            return done != nil
+        } catch {
+            Self.logger.error("restore failed: \(String(describing: type(of: error)))")
+            return false
+        }
+    }
+
+    /// Writes the snapshot as a zip inside a fresh temporary folder: the caller moves the file where
+    /// the user chose, then removes that folder. nil when the snapshot is gone or the export failed.
+    func exportBackup(_ snapshotID: String) async -> URL? {
+        guard let snap = await backupStore.snapshot(snapshotID) else { return nil }
+        let record = records.first { r in
+            r.installations.contains { ($0.signedBundleID ?? r.signedBundleID) == snap.signedBundleID && $0.deviceID == snap.deviceID }
+        }
+        let manifest = BackupManifest(originalBundleID: record?.originalBundleID ?? snap.signedBundleID,
+                                      signedBundleID: snap.signedBundleID, teamID: record?.teamID ?? "",
+                                      deviceID: snap.deviceID, deviceName: snap.deviceName, createdAt: snap.createdAt,
+                                      includedCaches: snap.includedCaches, appVersion: snap.appVersion,
+                                      xsideVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("xside-export-\(UUID().uuidString)", isDirectory: true)
+        let name = "\(record?.displayName ?? snap.signedBundleID)-\(snap.id).zip".replacingOccurrences(of: "/", with: "-")
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let zip = dir.appendingPathComponent(name)
+            try BackupArchive.export(snapshotDir: await backupStore.snapshotDir(snap), manifest: manifest, to: zip)
+            return zip
+        } catch {
+            try? FileManager.default.removeItem(at: dir)
+            Self.logger.error("backup export failed: \(String(describing: type(of: error)))")
+            return nil
+        }
+    }
+
+    /// Restores an exported zip into an installed app. The app is `targetRecordID` when given (the
+    /// UI asks when the zip has no manifest), else the one the manifest names; nothing is pushed
+    /// when neither identifies an app. The zip is also kept as a snapshot of that installation.
+    @discardableResult
+    func importBackup(zip: URL, targetRecordID: UUID?) async -> Bool {
+        let manifest = try? BackupArchive.readManifest(zipURL: zip)
+        let record: AppRecord?
+        if let targetRecordID {
+            record = records.first { $0.id == targetRecordID }
+        } else if let manifest {
+            record = records.first { $0.signedBundleID == manifest.signedBundleID || $0.originalBundleID == manifest.originalBundleID }
+        } else {
+            record = nil
+        }
+        guard let record, let installation = record.installations.first(where: { $0.deviceID == manifest?.deviceID })
+                ?? record.installations.first else { return false }
+        let entry = AppEntry(record: record, installation: installation)
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("xside-import-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        do {
+            let (_, contentDir) = try BackupArchive.unpack(zipURL: zip, to: dir)
+            let snap = try await backupStore.createSnapshot(
+                from: contentDir, signedBundleID: backupBundleID(entry), deviceID: installation.deviceID,
+                deviceName: deviceDisplayName(installation.deviceID), includedCaches: manifest?.includedCaches ?? true,
+                appVersion: manifest?.appVersion, retention: Self.backupRetention)
+            return await restore(snap.id, entry)
+        } catch {
+            Self.logger.error("backup import failed: \(String(describing: type(of: error)))")
+            return false
+        }
+    }
+
+    func deleteBackup(_ id: String) async { try? await backupStore.delete(id) }
+
+    /// The record's snapshots, on every device it is installed on, newest first.
+    func backups(forRecord id: UUID) async -> [BackupSnapshot] {
+        guard let record = records.first(where: { $0.id == id }) else { return [] }
+        var all: [BackupSnapshot] = []
+        for i in record.installations {
+            all += await backupStore.list(signedBundleID: i.signedBundleID ?? record.signedBundleID, deviceID: i.deviceID)
+        }
+        return all.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    /// Snapshots of apps no longer installed anywhere XSide knows.
+    func orphanBackups() async -> [BackupSnapshot] {
+        BackupMatching.orphans(snapshots: await backupStore.list(), records: records)
+    }
+
+    func backupDiskBytes() async -> Int { await backupStore.totalBytes() }
 
     // MARK: Crash diagnosis
 
