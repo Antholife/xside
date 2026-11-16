@@ -1354,6 +1354,7 @@
 "settings.appData.restore.title" = "Restore %@'s data?";
 "settings.appData.restore.note" = "The backup from %@ will be copied over the app's current data: backed-up files replace their counterparts, other files are left alone.";
 "settings.appData.restore.noteVersion" = "The backup from %@ (%@) will be copied over the app's current data: backed-up files replace their counterparts, other files are left alone.";
+"settings.appData.restore.versionWarning" = "Warning: this backup comes from %@, but the installed app is %@. Restoring may not work properly.";
 "settings.appData.restore.noDevice" = "This backup's device no longer has the app installed.";
 "settings.appData.restore.failed" = "Restore failed. Check that the device is connected or reachable.";
 "settings.appData.export.failed" = "Export failed.";

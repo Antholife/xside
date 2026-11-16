@@ -1354,6 +1354,7 @@
 "settings.appData.restore.title" = "Restaurer les données de %@ ?";
 "settings.appData.restore.note" = "La sauvegarde du %@ sera copiée par-dessus les données actuelles de l'app : les fichiers de la sauvegarde remplacent leurs homologues, les autres ne sont pas touchés.";
 "settings.appData.restore.noteVersion" = "La sauvegarde du %@ (%@) sera copiée par-dessus les données actuelles de l'app : les fichiers de la sauvegarde remplacent leurs homologues, les autres ne sont pas touchés.";
+"settings.appData.restore.versionWarning" = "Attention : ces données viennent de la %@, mais l'app installée est en %@. La restauration peut mal se passer.";
 "settings.appData.restore.noDevice" = "L'appareil de cette sauvegarde n'a plus cette app installée.";
 "settings.appData.restore.failed" = "La restauration a échoué. Vérifie que l'appareil est branché ou joignable.";
 "settings.appData.export.failed" = "L'export a échoué.";

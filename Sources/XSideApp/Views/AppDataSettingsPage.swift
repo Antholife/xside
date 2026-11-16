@@ -173,9 +173,14 @@ struct AppDataSettingsPage: View {
         return "\(device) · " + (snaps.count == 1 ? L("settings.appData.versions.one") : L("settings.appData.versions", snaps.count)) + " · " + Self.size(snaps.reduce(0) { $0 + $1.byteSize })
     }
 
-    private static func restoreNote(_ snap: BackupSnapshot) -> String {
-        snap.versionLabel.map { L("settings.appData.restore.noteVersion", date(snap.createdAt), $0) }
+    private static func restoreNote(_ snap: BackupSnapshot, installedVersion: String?) -> String {
+        var note = snap.versionLabel.map { L("settings.appData.restore.noteVersion", date(snap.createdAt), $0) }
             ?? L("settings.appData.restore.note", date(snap.createdAt))
+        if BackupSnapshot.restoreVersionWarning(snapshot: snap.appVersion, installed: installedVersion),
+           let from = snap.versionLabel, let to = BackupSnapshot.versionLabel(installedVersion) {
+            note += "\n\n" + L("settings.appData.restore.versionWarning", from, to)
+        }
+        return note
     }
 
     private func detail(_ snap: BackupSnapshot) -> String {
@@ -197,7 +202,7 @@ struct AppDataSettingsPage: View {
             $0.record.id == record.id && $0.installation.deviceID == snap.deviceID
         }) else { return alert(L("settings.appData.restore.noDevice"), nil) }
         let name = record.options.displayName ?? record.displayName
-        guard confirm(L("settings.appData.restore.title", name), Self.restoreNote(snap),
+        guard confirm(L("settings.appData.restore.title", name), Self.restoreNote(snap, installedVersion: entry.record.version),
                       L("settings.appData.restore")) else { return }
         run {
             let ok = await model.restore(snap.id, entry)

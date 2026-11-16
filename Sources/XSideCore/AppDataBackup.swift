@@ -29,6 +29,12 @@ public struct BackupSnapshot: Codable, Equatable, Sendable {
         return "v" + version
     }
     public var versionLabel: String? { Self.versionLabel(appVersion) }
+
+    /// True only when both versions are known (non-nil, non-empty) and differ: the restore then warns.
+    public static func restoreVersionWarning(snapshot: String?, installed: String?) -> Bool {
+        guard let snapshot, !snapshot.isEmpty, let installed, !installed.isEmpty else { return false }
+        return snapshot != installed
+    }
 }
 
 public struct BackupIndex: Codable, Equatable, Sendable {

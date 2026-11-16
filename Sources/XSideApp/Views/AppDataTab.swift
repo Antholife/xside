@@ -231,6 +231,10 @@ struct AppDataTab: View {
         let when = snap.createdAt.formatted(date: .abbreviated, time: .shortened)
         a.informativeText = snap.versionLabel.map { L("settings.appData.restore.noteVersion", when, $0) }
             ?? L("settings.appData.restore.note", when)
+        if BackupSnapshot.restoreVersionWarning(snapshot: snap.appVersion, installed: entry.record.version),
+           let from = snap.versionLabel, let to = BackupSnapshot.versionLabel(entry.record.version) {
+            a.informativeText += "\n\n" + L("settings.appData.restore.versionWarning", from, to)
+        }
         a.addButton(withTitle: L("settings.appData.restore"))
         a.addButton(withTitle: L("install.cancel"))
         guard a.runModal() == .alertFirstButtonReturn else { return }
