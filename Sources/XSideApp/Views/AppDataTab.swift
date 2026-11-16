@@ -6,7 +6,8 @@ import XSideCore
 @MainActor enum AppDataActions {
     /// Starts a cancellable backup held by the model (cancel with `model.cancelBackup`), toasts its
     /// outcome, then runs `then`.
-    static func startBackUp(_ entry: AppEntry, model: AppModel, then: @escaping () async -> Void = {}) {
+    @discardableResult
+    static func startBackUp(_ entry: AppEntry, model: AppModel, then: @escaping () async -> Void = {}) -> Bool {
         model.startBackup(entry) { outcome in
             report(outcome, model: model)
             await then()
@@ -152,8 +153,7 @@ struct AppDataTab: View {
             HStack(spacing: 8) {
                 Button(L("fiche.data.backUpNow")) {
                     action = .backup
-                    busy = true
-                    AppDataActions.startBackUp(entry, model: model) { await reload(); busy = false }
+                    if AppDataActions.startBackUp(entry, model: model, then: { await reload(); busy = false }) { busy = true }
                 }
                     .buttonStyle(.borderedProminent)
                     .disabled(actionsOff)

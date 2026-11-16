@@ -2830,15 +2830,17 @@ final class AppModel {
     func isBackingUp(_ id: JobKey) -> Bool { backupTasks[id] != nil }
 
     /// Starts a backup in a model-held task and calls `onFinish` with its outcome. No-op if one runs.
-    func startBackup(_ entry: AppEntry, onFinish: @escaping (BackupOutcome) async -> Void = { _ in }) {
+    @discardableResult
+    func startBackup(_ entry: AppEntry, onFinish: @escaping (BackupOutcome) async -> Void = { _ in }) -> Bool {
         let key = entry.id
-        guard backupTasks[key] == nil, !dataBusy.contains(key) else { return }
+        guard backupTasks[key] == nil, !dataBusy.contains(key) else { return false }
         backupTasks[key] = Task { [weak self] in
             guard let self else { return }
             let outcome = await self.backUpNow(entry)
             self.backupTasks[key] = nil
             await onFinish(outcome)
         }
+        return true
     }
 
     /// Stops the app's running backup: no snapshot is made and the temp folder goes.
