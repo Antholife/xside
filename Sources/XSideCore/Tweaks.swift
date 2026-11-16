@@ -86,6 +86,8 @@ public struct TweakPackage: Codable, Equatable, Sendable, Identifiable {
     /// A `.deb`'s `Description` (`TweakDescription.clean`): "" when it has none, nil when not
     /// known (a dropped `.dylib`, or stored before XSide kept it). Show `shownSummary`.
     public var summary: String?
+    /// The GitHub repo this tweak is updated from. nil: none set (and in older state).
+    public var updateSource: UpdateSource?
 
     public var entries: [TweakBinary] { binaries.filter(\.isEntry) }
     /// A `.deb` with nothing to load by itself: signed in only when an enabled tweak relies on it.

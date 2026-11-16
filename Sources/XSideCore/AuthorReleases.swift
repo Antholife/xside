@@ -2,7 +2,7 @@ import Foundation
 import CryptoKit
 
 /// A GitHub repo whose releases publish a dependency's `.deb` (its author's own).
-public struct GitHubSource: Equatable, Hashable, Sendable {
+public struct GitHubSource: Codable, Equatable, Hashable, Sendable {
     public let owner: String
     public let repo: String
 

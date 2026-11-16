@@ -310,6 +310,8 @@ public struct AppRecord: Codable, Identifiable, Equatable, Sendable {
     /// What the kept .ipa holds besides the original app (`IPAContentScanner`), read at import.
     /// nil in older state, or when damaged: read again from the .ipa when needed.
     public var content: IPAContent?
+    /// The GitHub repo this app is updated from. nil: none set (and in older state).
+    public var updateSource: UpdateSource?
 
     public init(id: UUID, displayName: String, originalBundleID: String, signedBundleID: String,
                 ipaPath: String, options: InstallOptions, installations: [Installation], teamID: String,
@@ -351,6 +353,7 @@ public struct AppRecord: Codable, Identifiable, Equatable, Sendable {
         tweaks = (try? c.decodeIfPresent([LossyTweak].self, forKey: .tweaks))?.compactMap(\.package)
         pendingTweakUses = try? c.decodeIfPresent([String: [TweakUse]].self, forKey: .pendingTweakUses)
         content = try? c.decodeIfPresent(IPAContent.self, forKey: .content)
+        updateSource = try? c.decodeIfPresent(UpdateSource.self, forKey: .updateSource)
     }
 
     private struct LossyTweak: Decodable {
