@@ -3012,6 +3012,8 @@ final class AppModel {
     /// When the last pass over the GitHub update sources ran (in memory: a restart looks again), and
     /// whether one runs now. `checkUpdatesIfDue` (the engine's tick) gates on `UpdateSchedule`.
     @ObservationIgnored var lastUpdateCheck: Date?
+    /// When the last pass failed entirely (backoff before the next try).
+    @ObservationIgnored var lastUpdateFailure: Date?
     @ObservationIgnored var updateCheckRunning = false
 
     /// Installations whose crash logs are being read at once (a crash reported, a watch dropped).

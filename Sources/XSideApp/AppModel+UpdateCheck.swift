@@ -67,7 +67,7 @@ extension AppModel {
     func checkUpdatesIfDue() {
         let now = Date()
         guard hasLoadedRecords, !updateCheckRunning,
-              UpdateSchedule.isDue(lastChecked: lastUpdateCheck, now: now) else { return }
+              UpdateSchedule.isDue(lastChecked: lastUpdateCheck, lastFailure: lastUpdateFailure, now: now) else { return }
         let targets = records.flatMap(updateTargets(of:))
         // Nothing to look at is a look done: asked again after a day, not at every tick.
         guard !targets.isEmpty else { lastUpdateCheck = now; return }
@@ -76,9 +76,10 @@ extension AppModel {
             guard let self else { return }
             defer { updateCheckRunning = false }
             let reports = await runUpdateChecks(targets)
-            // Every source failing (offline, rate limited) is no look done: the next tick tries again.
+            // Every source failing (offline, rate limited) is no look done: tried again after
+            // `UpdateSchedule.failureInterval`, not at the next tick (that would burn the rate limit).
             let reached = reports.contains { if case .failed = $0.result { false } else { true } }
-            if reached { lastUpdateCheck = now }
+            if reached { lastUpdateCheck = now; lastUpdateFailure = nil } else { lastUpdateFailure = now }
         }
     }
 
