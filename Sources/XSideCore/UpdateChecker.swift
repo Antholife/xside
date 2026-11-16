@@ -58,14 +58,20 @@ public struct UpdateChecker: Sendable {
         }
         if found.trigger == source.lastSeenTrigger { return .upToDate(trigger: found.trigger) }
 
+        // Defence in depth: the finder already drops these.
+        guard found.asset.size > 0, found.asset.size <= kind.maxBytes else { return .upToDate(trigger: found.trigger) }
         let ext = kind == .ipa ? "ipa" : "deb"
         let asset = workDir.appendingPathComponent("asset-\(UUID().uuidString).\(ext)")
         defer { try? fm.removeItem(at: asset) }
         do {
-            _ = try await fetcher.fetch(found.asset.url, maxBytes: found.asset.size, to: asset,
+            _ = try await fetcher.fetch(found.asset.url, maxBytes: kind.maxBytes, to: asset,
                                         redirectingWithin: AuthorReleases.assetHosts)
         } catch {
             return .failed("download: \(error)")
+        }
+        var st = stat()
+        guard lstat(asset.path, &st) == 0, st.st_mode & S_IFMT == S_IFREG, Int(st.st_size) == found.asset.size else {
+            return .failed("download: not the \(found.asset.size) bytes the release lists")
         }
         guard let real = await readVersion(asset, kind) else { return .upToDate(trigger: found.trigger) }
         if Self.isNewer(real, than: installedVersion) == true {
@@ -86,7 +92,7 @@ public struct UpdateChecker: Sendable {
     }
 
     private static func parts(_ s: String) -> [Int]? {
-        let pieces = s.trimmingCharacters(in: .whitespaces).split(separator: ".", omittingEmptySubsequences: false)
+        let pieces = s.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: ".", omittingEmptySubsequences: false)
         guard !pieces.isEmpty else { return nil }
         var out: [Int] = []
         for p in pieces {

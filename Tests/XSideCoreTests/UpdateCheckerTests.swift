@@ -14,7 +14,7 @@ import Foundation
         -> (UpdateChecker, FakeFetcher, URL) {
         let fetcher = FakeFetcher()
         if let json { fetcher.serve(source.api.absoluteString, json) }
-        fetcher.serve(found.asset.url.absoluteString, Data("x".utf8))
+        fetcher.serve(found.asset.url.absoluteString, Data(repeating: 0x78, count: 1000))
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("uc-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let checker = UpdateChecker(fetcher: fetcher, runner: NoRunner(), workDir: dir, readVersion: { _, _ in version })
@@ -56,7 +56,7 @@ import Foundation
         let json = ReleaseFinderTests.json([ReleaseFinderTests.release("v2", pre: true, [ReleaseFinderTests.asset("v2", ReleaseFinderTests.ipa)])])
         let (c, f, _) = Self.make(json)
         let url = "\(ReleaseFinderTests.base)/v2/\(ReleaseFinderTests.ipa)"
-        f.serve(url, Data("x".utf8))
+        f.serve(url, Data(repeating: 0x78, count: 1000))
         let r = await c.check(source: src(), kind: .ipa, installedVersion: "1.0")
         guard case .available(let rel, let v, let stable) = r else { Issue.record("\(r)"); return }
         #expect(rel.tag == "v2"); #expect(v == "1.1.8"); #expect(stable == false)
@@ -66,6 +66,34 @@ import Foundation
         let (c, _, _) = Self.make(version: "1.1.8")
         let r = await c.check(source: src(last: "old|trigger"), kind: .ipa, installedVersion: "1.1.8")
         #expect(r == .upToDate(trigger: Self.found.trigger))
+    }
+
+    @Test func check_rejectsAssetOverCap() async {
+        let big = AppUpdateLimits.maxIPABytes + 1
+        let json = ReleaseFinderTests.json([ReleaseFinderTests.release("v2", [ReleaseFinderTests.asset("v2", ReleaseFinderTests.ipa, size: big)])])
+        let (c, f, _) = Self.make(json)
+        let r = await c.check(source: src(last: "old"), kind: .ipa, installedVersion: "1.0")
+        #expect(r == .upToDate(trigger: "old"))
+        #expect(f.fetched == [Self.source.api])
+    }
+
+    @Test func finder_dropsOverCapAsset() throws {
+        let json = ReleaseFinderTests.json([ReleaseFinderTests.release("v2", [
+            ReleaseFinderTests.asset("v2", ReleaseFinderTests.ipa, size: AppUpdateLimits.maxIPABytes + 1),
+            ReleaseFinderTests.asset("v2", ReleaseFinderTests.ipa16, size: 10)])])
+        let a = try ReleaseFinder.installableAssets(json, source: Self.source, kind: .ipa)
+        #expect(a.map(\.asset.name) == [ReleaseFinderTests.ipa16])
+    }
+
+    @Test func check_failedOnSizeMismatch() async {
+        let (c, f, _) = Self.make(version: "9.9")
+        f.serve(Self.found.asset.url.absoluteString, Data("xx".utf8))
+        let r = await c.check(source: src(), kind: .ipa, installedVersion: "1.0")
+        guard case .failed = r else { Issue.record("\(r)"); return }
+    }
+
+    @Test func isNewer_trimsNewline() {
+        #expect(UpdateChecker.isNewer("1.2.0\n", than: "1.1") == true)
     }
 
     @Test func check_upToDateWhenNonComparable() async {

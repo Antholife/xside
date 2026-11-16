@@ -78,7 +78,7 @@ public enum ReleaseFinder {
             for case let asset as [String: Any] in (release["assets"] as? [Any] ?? []).prefix(AuthorReleases.maxAssets) {
                 guard let name = asset["name"] as? String, name.utf8.count <= 256,
                       name.lowercased().hasSuffix(suffix),
-                      let size = (asset["size"] as? NSNumber).flatMap({ Int(exactly: $0.doubleValue) }), size > 0,
+                      let size = (asset["size"] as? NSNumber).flatMap({ Int(exactly: $0.doubleValue) }), size > 0, size <= kind.maxBytes,
                       let link = asset["browser_download_url"] as? String,
                       let url = AuthorReleaseClient.assetURL(link, of: source) else { continue }
                 let updated = asset["updated_at"] as? String ?? ""
@@ -87,4 +87,13 @@ public enum ReleaseFinder {
         }
         return out
     }
+}
+
+/// Fixed download caps: the size a release lists is attacker-controlled, so it never sets the limit.
+public enum AppUpdateLimits {
+    public static let maxIPABytes = 600 * 1024 * 1024
+}
+
+extension ReleaseKind {
+    public var maxBytes: Int { self == .ipa ? AppUpdateLimits.maxIPABytes : DebLimits.maxDebBytes }
 }
