@@ -50,6 +50,11 @@ private actor CallLog {
     private(set) var deviceCalls: [String] = []
     func install(_ app: URL, _ id: String) { installs.append((app, id)); deviceCalls.append("install:\(id)") }
     func uninstall(_ bundleID: String, _ id: String) { uninstalls.append((bundleID, id)); deviceCalls.append("uninstall:\(id)") }
+    private(set) var backups: [(signedBundleID: String, deviceID: String, deviceName: String, appVersion: String?,
+                               includeCaches: Bool, onlyIfChanged: Bool)] = []
+    func backup(_ bundleID: String, _ id: String, _ name: String, _ version: String?, _ caches: Bool, _ onlyIfChanged: Bool) {
+        backups.append((bundleID, id, name, version, caches, onlyIfChanged)); deviceCalls.append("backup:\(id)")
+    }
     var total: Int { provisionUDIDs.count + resignArgs.count + installs.count + uninstalls.count }
 }
 
@@ -173,6 +178,20 @@ private struct FakeInstaller: Installing {
 
 private struct OpaqueError: Error {}
 
+/// Records `backUp` calls into the shared log; can be told to fail.
+private struct SpyBackup: DataBackingUp {
+    let log: CallLog
+    var error: (any Error)?
+    func backUp(signedBundleID: String, deviceID: String, deviceName: String, appVersion: String?,
+                includeCaches: Bool, retention: Int, onlyIfChanged: Bool) async throws -> BackupSnapshot? {
+        await log.backup(signedBundleID, deviceID, deviceName, appVersion, includeCaches, onlyIfChanged)
+        if let error { throw error }
+        return nil
+    }
+    func restore(_ snapshot: BackupSnapshot, toSignedBundleID: String, deviceID: String,
+                 executable: String, clear: Bool) async throws -> RestoreClear { .overlay }
+}
+
 /// Its first call times out (a hung xcodebuild); later calls succeed.
 private struct FirstCallTimesOut: Provisioning {
     let log: CallLog
@@ -240,7 +259,7 @@ private struct Fixture {
                   duoApplied: Bool = true, iCloudApplied: Bool = true,
                   iCloudSkip: ICloudOutcome = .failed, duoModule: Bool = false,
                   tweakResult: (@Sendable (TweakSigningItem) -> TweakResult)? = nil,
-                  embeddedDependencies: [String] = []) -> SideloadPipeline {
+                  embeddedDependencies: [String] = [], backup: (any DataBackingUp)? = nil) -> SideloadPipeline {
         SideloadPipeline(library: library,
                          provisioner: provisioner ?? FakeProvisioner(log: log),
                          resigner: FakeResigner(log: log, libraryAdded: libraryAdded, duoApplied: duoApplied,
@@ -249,7 +268,7 @@ private struct Fixture {
                          installer: installer ?? FakeInstaller(log: log),
                          workRoot: workRoot, now: now,
                          inAppDefaults: inAppDefaults ?? { InAppSettings.defaults(reminder: true, at: $0) },
-                         withoutXSideFeaturesByDefault: { withoutFeaturesByDefault })
+                         withoutXSideFeaturesByDefault: { withoutFeaturesByDefault }, backup: backup)
     }
 
     func cleanup() { try? FileManager.default.removeItem(at: tmp) }
@@ -281,6 +300,52 @@ struct PipelineTests {
         #expect(stored.deviceID == "dev-1")
         #expect(stored.expiresAt == expiry)
         #expect(stored.lastErrorKey == nil)
+    }
+
+    private func seedInstallation(_ f: Fixture, options: InstallOptions? = nil) async throws {
+        try await f.library.upsert(Installation(deviceID: "dev-1", installedAt: fixedNow,
+                                                expiresAt: expiry.addingTimeInterval(-1)), for: f.record.id)
+        if let options { try await f.library.setOptions(options, for: f.record.id) }
+    }
+
+    @Test func refresh_takesSnapshotWhenEnabled() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        try await seedInstallation(f)
+        let steps = StepLog()
+        let pipeline = f.pipeline(backup: SpyBackup(log: f.log))
+        _ = try await pipeline.install(recordID: f.record.id, device: device(), env: env, refresh: true) { await steps.add($0) }
+        let backups = await f.log.backups
+        #expect(backups.count == 1)
+        #expect(backups.first?.deviceID == "dev-1")
+        #expect(backups.first?.deviceName == "Test")
+        #expect(backups.first?.includeCaches == true)
+        #expect(backups.first?.onlyIfChanged == true)
+        #expect(await f.log.deviceCalls == ["install:dev-1", "backup:dev-1"])
+        #expect(await steps.items.last == .backingUp)
+    }
+
+    @Test func refresh_skipsSnapshotWhenDisabled() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        try await seedInstallation(f, options: InstallOptions(backupData: false))
+        let pipeline = f.pipeline(backup: SpyBackup(log: f.log))
+        _ = try await pipeline.install(recordID: f.record.id, device: device(), env: env, refresh: true)
+        #expect(await f.log.backups.isEmpty)
+    }
+
+    @Test func install_firstTime_doesNotSnapshot() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let pipeline = f.pipeline(backup: SpyBackup(log: f.log))
+        _ = try await pipeline.install(recordID: f.record.id, device: device(), env: env)
+        #expect(await f.log.backups.isEmpty)
+    }
+
+    @Test func refresh_backupFailureDoesNotFailRefresh() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        try await seedInstallation(f)
+        let pipeline = f.pipeline(backup: SpyBackup(log: f.log, error: OpaqueError()))
+        let result = try await pipeline.install(recordID: f.record.id, device: device(), env: env, refresh: true)
+        #expect(result.lastErrorKey == nil)
+        #expect(await f.log.backups.count == 1)
     }
 
     @Test func reportsStepsInOrder() async throws {

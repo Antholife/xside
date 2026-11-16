@@ -72,6 +72,8 @@ public enum InstallStep: Int, CaseIterable, Sendable {
     /// `icloud`: adding the signed-out iCloud library, only when it was asked for.
     /// `tweaks`: injecting the device's enabled tweaks, only when it has some.
     case profile, welcome, legacy32, duo, icloud, tweaks, signing, installing
+    /// `backingUp`: snapshotting the app's data after a successful refresh, unless turned off for the app.
+    case backingUp
 }
 
 /// How the job's signed-out iCloud step went, from the resigner's callback.
@@ -227,11 +229,16 @@ public actor SideloadPipeline {
     /// and for its own job, so a job cancelled while queued never lets a later one skip ahead.
     private var tails: [String: (token: UUID, task: Task<Void, Never>)] = [:]
 
+    /// Snapshots an app's data after a successful refresh; nil: no snapshots.
+    private let backup: (any DataBackingUp)?
+
     public init(library: AppLibrary, provisioner: any Provisioning, resigner: any Resigning,
                 installer: any Installing, workRoot: URL,
                 now: @escaping @Sendable () -> Date, macIsBeta: Bool = false,
                 inAppDefaults: @escaping @Sendable (Date) -> InAppSettings = { InAppSettings.defaults(reminder: true, at: $0) },
-                withoutXSideFeaturesByDefault: @escaping @Sendable () -> Bool = { false }) {
+                withoutXSideFeaturesByDefault: @escaping @Sendable () -> Bool = { false },
+                backup: (any DataBackingUp)? = nil) {
+        self.backup = backup
         self.inAppDefaults = inAppDefaults
         self.withoutXSideFeaturesByDefault = withoutXSideFeaturesByDefault
         self.library = library
@@ -558,6 +565,19 @@ public actor SideloadPipeline {
             Self.logger.info("\(what): installing")
             try await CommandEnvironment.withDeveloperDir(current.developerDir) { [installer] in
                 try await installer.install(app: app, deviceID: device.id)
+            }
+
+            // A safety net, not part of the install: a refresh keeps the app's data, so snapshot it now.
+            // Its failure never fails the refresh.
+            if refresh, previous != nil, record.options.backupData != false, let backup {
+                await progress(.backingUp)
+                do {
+                    _ = try await backup.backUp(signedBundleID: bundleID, deviceID: device.id, deviceName: device.name,
+                                                appVersion: record.version, includeCaches: record.options.backupCaches != false,
+                                                retention: 3, onlyIfChanged: true)
+                } catch {
+                    Self.logger.error("\(what): data backup failed: \(String(describing: type(of: error)))")
+                }
             }
 
             let skippedICloud = await iCloudSkip.value

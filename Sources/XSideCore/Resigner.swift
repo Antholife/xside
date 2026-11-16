@@ -32,11 +32,17 @@ public struct InstallOptions: Codable, Equatable, Sendable {
     /// sets it when the signing team is paid and the app declares iCloud (the app's options
     /// themselves leave it nil); nil signs without iCloud, as with a free team.
     public var paidTeamICloud: ICloudRequest?
+    /// Snapshot the app's data after each successful refresh. nil: on (the default).
+    public var backupData: Bool?
+    /// Include the Caches and tmp folders in those snapshots. nil: on (the default).
+    public var backupCaches: Bool?
     public init(displayName: String? = nil, customBundleID: String? = nil, version: String? = nil,
                 iconPath: String? = nil, fileSharing: Bool = false, iPadFullScreen: Bool = false,
                 proMotion: Bool = false, minimumOSVersion: String? = nil, shareKeychain: Bool = false,
                 withoutXSideFeatures: Bool? = nil, duoCompatibility: Bool? = nil, iCloudSignedOut: Bool? = nil,
-                tweaks: TweakJob? = nil) {
+                tweaks: TweakJob? = nil, backupData: Bool? = nil, backupCaches: Bool? = nil) {
+        self.backupData = backupData
+        self.backupCaches = backupCaches
         self.tweaks = tweaks
         self.duoCompatibility = duoCompatibility
         self.iCloudSignedOut = iCloudSignedOut
@@ -67,6 +73,8 @@ public struct InstallOptions: Codable, Equatable, Sendable {
         withoutXSideFeatures = try c.decodeIfPresent(Bool.self, forKey: .withoutXSideFeatures)
         duoCompatibility = try c.decodeIfPresent(Bool.self, forKey: .duoCompatibility)
         iCloudSignedOut = try c.decodeIfPresent(Bool.self, forKey: .iCloudSignedOut)
+        backupData = try c.decodeIfPresent(Bool.self, forKey: .backupData)
+        backupCaches = try c.decodeIfPresent(Bool.self, forKey: .backupCaches)
         tweaks = (try? c.decodeIfPresent(TweakJob.self, forKey: .tweaks)) ?? nil
         paidTeamICloud = (try? c.decodeIfPresent(ICloudRequest.self, forKey: .paidTeamICloud)) ?? nil
     }
