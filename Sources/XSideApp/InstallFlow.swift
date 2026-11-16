@@ -82,13 +82,44 @@ final class InstallFlow {
 
     init(ipa: URL) { self.ipa = ipa }
 
-    /// Steps of the install window, in order.
-    static let stepCount = 4
+    /// What to do with the app's saved data (the conditional last step "Données").
+    enum DataChoice: Equatable {
+        /// Restore this snapshot after the install.
+        case restore(String)
+        case none
+        /// Delete the listed backups; nothing is restored.
+        case delete
+    }
+
+    /// Backups of this app across every device of the account; loaded once the app is known.
+    var dataSnapshots: [BackupSnapshot] = [] {
+        didSet { if step >= stepCount { step = stepCount - 1 } }
+    }
+    /// The step "Données" exists only when there is something to restore.
+    var hasRestorableBackup: Bool { !dataSnapshots.isEmpty }
+    /// Set when the backups arrive: the most recent one, restored by default.
+    var dataChoice: DataChoice = .none
+    /// Snapshot the last run restores (nil: none), reused by "Retry failed".
+    var runRestoreID: String?
+
+    /// Steps of the install window, in order: the four fixed ones, plus "Données" when there is a backup.
+    static func stepCount(hasBackup: Bool) -> Int { hasBackup ? 5 : 4 }
+    var stepCount: Int { Self.stepCount(hasBackup: hasRestorableBackup) }
+    /// Index of the conditional "Données" step (always last, so 0-3 never move).
+    static let dataStep = 4
+    var isDataStep: Bool { hasRestorableBackup && step == Self.dataStep }
+
+    /// Stores the backups found for the app and preselects the most recent.
+    func setDataSnapshots(_ snapshots: [BackupSnapshot]) {
+        let sorted = snapshots.sorted { $0.createdAt > $1.createdAt }
+        dataSnapshots = sorted
+        dataChoice = sorted.first.map { .restore($0.id) } ?? .none
+    }
 
     /// Shows step `index`; from the summary, editing turns the steps on.
     func go(to index: Int) {
         reviewsSteps = true
-        step = min(max(index, 0), Self.stepCount - 1)
+        step = min(max(index, 0), stepCount - 1)
     }
 
     /// The app gets no XSide features: its own choice, else the Mac's default.

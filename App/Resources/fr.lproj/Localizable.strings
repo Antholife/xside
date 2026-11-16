@@ -1379,3 +1379,19 @@
 "menu.exportData" = "Exporter les données…";
 "menu.importData" = "Importer des données…";
 "fiche.data.section.versions" = "Versions";
+
+/* Task 10: conditional "Données" install step */
+"install.steps.data" = "Données";
+"install.data.title" = "Données trouvées pour %@";
+"install.data.lead" = "XSide a des sauvegardes de cette app (ton compte Apple, tous tes appareils). Tu peux les restaurer après l'installation.";
+"install.data.restore" = "Restaurer";
+"install.data.recommended" = "recommandé";
+"install.data.mostRecent" = "la plus récente";
+"install.data.other" = "Restaurer une autre version…";
+"install.data.other.note" = "%d autre(s) version(s) disponible(s)";
+"install.data.none" = "Ne rien restaurer";
+"install.data.none.note" = "Install propre";
+"install.data.delete" = "Supprimer ces sauvegardes";
+"install.data.delete.note" = "Libère l'espace";
+"install.data.note" = "L'app s'installe d'abord, puis XSide réinjecte les données automatiquement. Fonctionne entre tes appareils (même compte Apple).";
+"install.data.summary" = "Données sauvegardées";

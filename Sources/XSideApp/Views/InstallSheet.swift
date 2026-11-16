@@ -321,6 +321,10 @@ struct InstallSheet: View {
             case 2:
                 // Always there, even empty, so people find it (device test 2026-11-09).
                 InstallTweaksSection(model: model, flow: flow)
+            case InstallFlow.dataStep where flow.hasRestorableBackup:
+                DataRestoreStep(flow: flow)
+                BlockedNotice(model: model, flow: flow)
+                PreflightNotes(warnings: model.preflightWarnings(for: flow), model: model, flow: flow)
             default:
                 InAppStep(model: model, flow: flow)
                 // Everything that may fail, where Install is pressed (Developer Mode off disables it).
@@ -477,7 +481,7 @@ struct InstallSheet: View {
                     }
                 }
                 // Install only at the last step (or on the summary).
-                if flow.reviewsSteps && flow.step < InstallFlow.stepCount - 1 {
+                if flow.reviewsSteps && flow.step < flow.stepCount - 1 {
                     Button(L("install.next")) { withAnimation(.smooth(duration: 0.2)) { flow.go(to: flow.step + 1) } }
                         .buttonStyle(GradientButtonStyle())
                         .controlSize(.large)

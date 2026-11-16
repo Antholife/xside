@@ -6,13 +6,16 @@ import XSideCore
 struct StepBar: View {
     let flow: InstallFlow
 
-    private static var titles: [String] {
-        [L("install.steps.devices"), L("install.steps.options"), L("install.steps.tweaks"), L("install.steps.inApp")]
+    /// The four fixed steps, plus "Données" last when the app has a backup to restore.
+    private var titles: [String] {
+        var all = [L("install.steps.devices"), L("install.steps.options"), L("install.steps.tweaks"), L("install.steps.inApp")]
+        if flow.hasRestorableBackup { all.append(L("install.steps.data")) }
+        return all
     }
 
     var body: some View {
         HStack(spacing: 4) {
-            ForEach(Array(Self.titles.enumerated()), id: \.offset) { index, title in
+            ForEach(Array(titles.enumerated()), id: \.offset) { index, title in
                 if index > 0 {
                     Capsule()
                         .fill(index <= flow.step ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(Color.primary.opacity(0.12)))
@@ -45,7 +48,7 @@ struct StepBar: View {
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(L("install.steps.a11y", index + 1, Self.titles.count, title))
+                .accessibilityLabel(L("install.steps.a11y", index + 1, titles.count, title))
                 .accessibilityAddTraits(index == flow.step ? .isSelected : [])
             }
         }
@@ -122,6 +125,7 @@ struct InstallSummaryView: View {
             if !lines.fixes.isEmpty { group(L("fixes.section"), lines.fixes, step: 1) }
             if !lines.tweaks.isEmpty { group(L("tweaks.section"), lines.tweaks, step: 2) }
             group(L("install.steps.inApp"), lines.inApp, step: 3)
+            if flow.hasRestorableBackup { dataGroup }
             Text(L("install.summary.note", info?.name ?? ""))
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
@@ -158,6 +162,42 @@ struct InstallSummaryView: View {
                 .accessibilityElement(children: .combine)
             }
             .padding(.vertical, 2)
+        }
+        .padding(.bottom, 4)
+        .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    /// The "Données" choice, with "Modifier" to its step.
+    private var dataGroup: some View {
+        let value: String = switch flow.dataChoice {
+        case .restore(let id):
+            flow.dataSnapshots.first { $0.id == id }
+                .map { "\($0.deviceName) · " + $0.createdAt.formatted(date: .abbreviated, time: .shortened) }
+                ?? L("install.data.restore")
+        case .none: L("install.data.none")
+        case .delete: L("install.data.delete")
+        }
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text(L("install.steps.data")).font(.system(size: 12, weight: .semibold))
+                Spacer()
+                Button(L("install.summary.edit")) {
+                    withAnimation(.smooth(duration: 0.2)) { flow.go(to: InstallFlow.dataStep) }
+                }
+                .buttonStyle(.link)
+                .font(.system(size: 12))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            Divider()
+            HStack(alignment: .firstTextBaseline) {
+                Text(L("install.data.summary")).font(.system(size: 12))
+                Spacer(minLength: 12)
+                Text(value).font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .accessibilityElement(children: .combine)
         }
         .padding(.bottom, 4)
         .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))

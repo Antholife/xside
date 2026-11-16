@@ -1123,7 +1123,7 @@ final class AppModel {
     @discardableResult
     func importAndInstall(_ ipa: URL, on device: Device, options: InstallOptions? = nil,
                           inApp: InAppDraft? = nil, duoCompatibility: Bool? = nil, iCloudSignedOut: Bool? = nil,
-                          tweaks: [TweakUse]? = nil,
+                          tweaks: [TweakUse]? = nil, restore: RestoreRequest? = nil,
                           importedInto recordID: UUID? = nil,
                           imported: @MainActor (UUID) -> Void = { _ in },
                           progress: @escaping @MainActor @Sendable (JobStage) -> Void = { _ in },
@@ -1165,7 +1165,8 @@ final class AppModel {
         progress(jobs[key] ?? .waiting) // never replaces a real step another holder already reported
         do {
             try await run(key: key, device: device, inApp: inApp, duoCompatibility: duoCompatibility,
-                          iCloudSignedOut: iCloudSignedOut, tweaks: tweaks, progress: progress, duoOutcome: duoOutcome)
+                          iCloudSignedOut: iCloudSignedOut, tweaks: tweaks, restore: restore,
+                          progress: progress, duoOutcome: duoOutcome)
         } catch {
             if !held.isEmpty { await library.releaseTweaks(held, recordID: record.id) }
             throw error
@@ -2118,7 +2119,7 @@ final class AppModel {
     /// The caller must hold a claim on `key`. `refresh`: see `SideloadPipeline.install`.
     private func run(key: JobKey, device: Device, refresh: Bool = false,
                      automatic: Bool = false, inApp: InAppDraft? = nil, duoCompatibility: Bool? = nil,
-                     iCloudSignedOut: Bool? = nil, tweaks: [TweakUse]? = nil,
+                     iCloudSignedOut: Bool? = nil, tweaks: [TweakUse]? = nil, restore: RestoreRequest? = nil,
                      progress: @escaping @MainActor @Sendable (JobStage) -> Void = { _ in },
                      duoOutcome: @escaping @MainActor @Sendable (DuoOutcome) -> Void = { _ in }) async throws {
         let job = RefreshJob(recordID: key.recordID, deviceID: key.deviceID)
@@ -2139,7 +2140,8 @@ final class AppModel {
                 try await pipeline.install(recordID: key.recordID, device: device, environment: environment,
                                            refresh: refresh, inApp: inApp,
                                            duoCompatibility: duoCompatibility,
-                                           iCloudSignedOut: iCloudSignedOut, tweaks: tweaks) { step in
+                                           iCloudSignedOut: iCloudSignedOut, tweaks: tweaks,
+                                           progress: { step in
                     await MainActor.run {
                         self.jobs[key] = .step(step)
                         self.stepPercent[key] = nil // a new step starts from nothing
@@ -2147,9 +2149,9 @@ final class AppModel {
                         self.updateDockBadge()
                         progress(.step(step))
                     }
-                } duoOutcome: { outcome in
+                }, duoOutcome: { outcome in
                     await MainActor.run { duoOutcome(outcome) }
-                }
+                }, restore: restore)
             }
         } catch {
             await reloadRecords()
@@ -2219,6 +2221,10 @@ final class AppModel {
                 // automatic refresh starts on.
                 if let used = existing.flatMap({ InAppSettings.lastUsed(in: $0.installations) }) {
                     flow.inApp = used.setting(\.autoRefresh, to: true, at: Date(), by: .mac)
+                }
+                if let existing {
+                    let found = await allBackups(forRecord: existing.id)
+                    if install === flow { flow.setDataSnapshots(found) }
                 }
                 let installed = existing?.installations.isEmpty == false
                 flow.reviewsSteps = !installed || Self.setting(Self.reviewInstallOptionsKey)
@@ -2297,6 +2303,18 @@ final class AppModel {
         flow.runLegacy32 = flow.info?.hasLegacy32 == true
         flow.runDuo = flow.duoDevices.filter { duoState(for: $0, app: flow.info?.duo).canTurnOn }
         flow.runICloud = flow.iCloudDevices
+        // The "Données" choice: restore after the install (overlay only), or delete the backups now.
+        flow.runRestoreID = nil
+        if flow.hasRestorableBackup {
+            switch flow.dataChoice {
+            case .restore(let id): flow.runRestoreID = id
+            case .delete:
+                let ids = flow.dataSnapshots.map(\.id)
+                flow.setDataSnapshots([]) // step gone, wizard back to four steps
+                Task { for id in ids { await deleteBackup(id) } }
+            case .none: break
+            }
+        }
         flow.runTweaks = Dictionary(uniqueKeysWithValues: targets.map { id in (id, flow.tweaks.compactMap { $0.use(on: id) }) })
         // A new run imports again (the options may have changed); only its later devices reuse it.
         flow.importedRecordID = nil
@@ -2397,6 +2415,7 @@ final class AppModel {
                                        inApp: flow.runInApp, duoCompatibility: flow.runDuo.contains(deviceID),
                                        iCloudSignedOut: flow.runICloud.contains(deviceID),
                                        tweaks: flow.runTweaks[deviceID],
+                                       restore: flow.runRestoreID.map { RestoreRequest(snapshotID: $0, clearContainer: false) },
                                        importedInto: flow.importedRecordID,
                                        imported: { flow.importedRecordID = $0 },
                                        progress: { stage in
@@ -2858,6 +2877,17 @@ final class AppModel {
         for i in record.installations {
             all += await backupStore.list(signedBundleID: i.signedBundleID ?? record.signedBundleID, deviceID: i.deviceID)
         }
+        return all.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    /// The record's snapshots from EVERY device of the account (a device the app isn't installed on
+    /// yet included: Duo -> iPhone 17 migration), newest first.
+    func allBackups(forRecord id: UUID) async -> [BackupSnapshot] {
+        guard let record = records.first(where: { $0.id == id }) else { return [] }
+        var ids = Set([record.signedBundleID])
+        for i in record.installations { if let s = i.signedBundleID { ids.insert(s) } }
+        var all: [BackupSnapshot] = []
+        for bundleID in ids { all += await backupStore.list(signedBundleID: bundleID) }
         return all.sorted { $0.createdAt > $1.createdAt }
     }
 
