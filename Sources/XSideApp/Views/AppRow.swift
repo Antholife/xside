@@ -29,6 +29,8 @@ struct AppRow: View {
     let onPause: (Date) -> Void
     let onResume: () -> Void
     let onRemoveFromList: () -> Void
+    /// « Sauvegarder les données maintenant » (the data's other actions live in the fiche).
+    var onBackUpNow: () -> Void = {}
     /// Opens Settings > Mes apps on this app and device.
     let onXSideSettings: () -> Void
     /// XSide found the app stopped (at launch, or while in use): a red box under the row, across
@@ -112,6 +114,8 @@ struct AppRow: View {
         } else {
             Button(L("popover.refreshNow"), systemImage: "arrow.clockwise", action: onRefresh)
                 .disabled(!canRefresh)
+            Button(L("menu.backUpNow"), systemImage: "externaldrive.badge.timemachine", action: onBackUpNow)
+                .disabled(!canManage)
             Divider()
             Button(L("popover.app.uninstallFrom", deviceName), systemImage: "trash", role: .destructive,
                    action: onUninstall)

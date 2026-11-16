@@ -6,12 +6,12 @@ import Testing
 struct AppManagementTests {
     @Test func menuOffersPauseAndStopWhileRefreshing() {
         #expect(AppManagement.menu(isPaused: false)
-                == [.refresh, .pause, .stop, .separator, .ipaContent, .separator, .removeFromList, .uninstall])
+                == [.refresh, .pause, .stop, .separator, .backUpNow, .exportData, .importData, .separator, .ipaContent, .separator, .removeFromList, .uninstall])
     }
 
     @Test func menuOffersResumeOnceStoppedOrPaused() {
         #expect(AppManagement.menu(isPaused: true)
-                == [.refresh, .resume, .separator, .ipaContent, .separator, .removeFromList, .uninstall])
+                == [.refresh, .resume, .separator, .backUpNow, .exportData, .importData, .separator, .ipaContent, .separator, .removeFromList, .uninstall])
     }
 
     @Test func nothingBlocksAnIdleRow() {

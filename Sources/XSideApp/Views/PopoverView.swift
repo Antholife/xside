@@ -202,6 +202,7 @@ private struct PopoverContent: View {
                                    onPause: { until in AppActions.pause(entry, until: until, model: model) },
                                    onResume: { resume(entry) },
                                    onRemoveFromList: { removeFromList(entry, deviceName: group.name) },
+                                   onBackUpNow: { Task { await AppDataActions.backUpNow(entry, model: model) } },
                                    onXSideSettings: {
                                        // Settings > Mes apps, on this app.
                                        model.settingsApp = entry.id

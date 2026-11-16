@@ -2834,6 +2834,21 @@ final class AppModel {
         }
     }
 
+    /// Per-app switches (nil = on): « Sauvegarder les données » and « Inclure les caches ».
+    func setBackupData(_ on: Bool, for entry: AppEntry) async { await updateOptions(entry) { $0.backupData = on } }
+    func setBackupCaches(_ on: Bool, for entry: AppEntry) async { await updateOptions(entry) { $0.backupCaches = on } }
+
+    private func updateOptions(_ entry: AppEntry, _ change: (inout InstallOptions) -> Void) async {
+        guard var options = records.first(where: { $0.id == entry.record.id })?.options else { return }
+        change(&options)
+        do {
+            try await library.setOptions(options, for: entry.record.id)
+        } catch {
+            Self.logger.error("backup option failed: \(String(describing: error))")
+        }
+        await reloadRecords()
+    }
+
     func deleteBackup(_ id: String) async { try? await backupStore.delete(id) }
 
     /// The record's snapshots, on every device it is installed on, newest first.

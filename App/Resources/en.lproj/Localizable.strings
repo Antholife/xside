@@ -1356,3 +1356,26 @@
 "settings.appData.export.failed" = "Export failed.";
 "settings.appData.delete.title" = "Delete this backup?";
 "settings.appData.delete.note" = "The backup from %@ will be permanently deleted.";
+
+"appSettings.tab.data" = "Data";
+"fiche.data.section" = "Backup";
+"fiche.data.backup" = "Back up data";
+"fiche.data.backup.note" = "At each refresh, if it has changed.";
+"fiche.data.caches" = "Include caches";
+"fiche.data.caches.note" = "More complete, but heavier (see the size below).";
+"fiche.data.backUpNow" = "Back up now";
+"fiche.data.export" = "Export…";
+"fiche.data.import" = "Import…";
+"fiche.data.versions" = "Versions · %d · %@ in total";
+"fiche.data.withCaches" = "with caches";
+"fiche.data.empty" = "No backup yet — one will be made at the next refresh.";
+"fiche.data.emptyOff" = "Backups are turned off for this app.";
+"fiche.data.backUpNow.failed" = "The backup failed. Check that the device is connected or reachable.";
+"fiche.data.import.title" = "Import data into %@?";
+"fiche.data.import.note" = "The chosen file will be copied over %@'s current data on %@: its files replace their counterparts, other files are left alone.";
+"fiche.data.import.choose" = "Choose a backup…";
+"fiche.data.import.mismatch" = "This backup is for another app (or could not be imported): nothing was changed.";
+"menu.backUpNow" = "Back up data now";
+"menu.exportData" = "Export data…";
+"menu.importData" = "Import data…";
+"fiche.data.section.versions" = "Versions";

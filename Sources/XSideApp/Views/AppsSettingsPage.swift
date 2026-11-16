@@ -263,7 +263,7 @@ private struct AppListRow: View {
 
 /// The three tabs of an app's detail (device round 3, R3-1), remembered from one app to the next.
 enum AppSettingsTab: String, CaseIterable {
-    case module, fixes, tweaks
+    case module, fixes, tweaks, data
 
     static let storageKey = "appSettings.tab"
     var title: String { L("appSettings.tab.\(rawValue)") }
@@ -274,6 +274,7 @@ enum AppSettingsTab: String, CaseIterable {
         case .module: [.xsideModule]
         case .fixes: [.duoCompatibility, .iCloudSignedOut]
         case .tweaks: [.tweaks]
+        case .data: []
         }
     }
 }
@@ -319,6 +320,7 @@ private struct AppSettingsContent: View {
                     case .module: moduleTab
                     case .fixes: fixesTab
                     case .tweaks: InstalledTweaksSection(model: model, entry: entry, deviceName: deviceName)
+                    case .data: AppDataTab(model: model, entry: entry, appName: appName, deviceName: deviceName)
                     }
                 }
                 .padding(16)
@@ -578,6 +580,24 @@ private struct AppSettingsContent: View {
                 .help(blockedReason ?? "")
         case .separator:
             Divider()
+        case .backUpNow:
+            Button(L("menu.backUpNow"), systemImage: "externaldrive.badge.timemachine") {
+                Task { await AppDataActions.backUpNow(entry, model: model) }
+            }
+            .disabled(!canManage)
+            .help(blockedReason ?? "")
+        case .exportData:
+            Button(L("menu.exportData"), systemImage: "square.and.arrow.up") {
+                Task { await AppDataActions.exportLatest(entry, model: model) }
+            }
+            .disabled(!canManage)
+            .help(blockedReason ?? "")
+        case .importData:
+            Button(L("menu.importData"), systemImage: "square.and.arrow.down") {
+                Task { await AppDataActions.importData(entry, appName: appName, deviceName: deviceName, model: model) }
+            }
+            .disabled(!canManage)
+            .help(blockedReason ?? "")
         case .ipaContent:
             // Read only: never greyed.
             Button(L("ipaContent.menu"), systemImage: "doc.text.magnifyingglass") {

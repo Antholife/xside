@@ -1356,3 +1356,26 @@
 "settings.appData.export.failed" = "L'export a échoué.";
 "settings.appData.delete.title" = "Supprimer cette sauvegarde ?";
 "settings.appData.delete.note" = "La sauvegarde du %@ sera supprimée définitivement.";
+
+"appSettings.tab.data" = "Données";
+"fiche.data.section" = "Sauvegarde";
+"fiche.data.backup" = "Sauvegarder les données";
+"fiche.data.backup.note" = "À chaque rafraîchissement, si elles ont changé.";
+"fiche.data.caches" = "Inclure les caches";
+"fiche.data.caches.note" = "Plus complet, mais plus lourd (voir la taille ci-dessous).";
+"fiche.data.backUpNow" = "Sauvegarder maintenant";
+"fiche.data.export" = "Exporter…";
+"fiche.data.import" = "Importer…";
+"fiche.data.versions" = "Versions · %d · %@ au total";
+"fiche.data.withCaches" = "avec les caches";
+"fiche.data.empty" = "Aucune sauvegarde pour l'instant — elle se fera au prochain rafraîchissement.";
+"fiche.data.emptyOff" = "La sauvegarde est désactivée pour cette app.";
+"fiche.data.backUpNow.failed" = "La sauvegarde a échoué. Vérifie que l'appareil est branché ou joignable.";
+"fiche.data.import.title" = "Importer des données dans %@ ?";
+"fiche.data.import.note" = "Le fichier choisi sera copié par-dessus les données actuelles de %@ sur %@ : ses fichiers remplacent leurs homologues, les autres ne sont pas touchés.";
+"fiche.data.import.choose" = "Choisir une sauvegarde…";
+"fiche.data.import.mismatch" = "Cette sauvegarde est pour une autre app (ou n'a pas pu être importée) : rien n'a été modifié.";
+"menu.backUpNow" = "Sauvegarder les données maintenant";
+"menu.exportData" = "Exporter les données…";
+"menu.importData" = "Importer des données…";
+"fiche.data.section.versions" = "Versions";
