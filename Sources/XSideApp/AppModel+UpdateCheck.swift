@@ -20,6 +20,8 @@ enum UpdateCheckResult: Sendable, Equatable {
     case available(version: String, reason: NotifyReason, tag: String, asset: String)
     /// Several files fit the variant: the person picks (only a manual check says so).
     case needsVariantChoice
+    /// The release changed between the card and the click: nothing was installed; check again.
+    case changed
     case failed(String)
 }
 
@@ -132,7 +134,7 @@ extension AppModel {
         case .available(let found, let version, let stable):
             // The release changed since the card: nothing installs under the earlier approval.
             guard found.tag == expectedTag, found.asset.name == expectedAsset else {
-                return .available(version: version, reason: stable ? .notifyMode : .prerelease, tag: found.tag, asset: found.asset.name)
+                return .changed
             }
             switch await apply(target, device: device, found: found, stable: stable, userInitiated: true, approved: approved) {
             case .installed(let v):

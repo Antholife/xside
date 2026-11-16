@@ -15,7 +15,9 @@ struct AppUpdateTab: View {
     @State private var checking = false
     @State private var busy: Set<String> = [] // `tweakPackageID ?? "app"` of the report being installed
     /// What the person acknowledged per card; a beta that is also suspect needs both, one card at a time.
-    @State private var approvals: [String: Set<NotifyReason>] = [:]
+    @State private var approvals: [String: Approval] = [:]
+    /// Reasons acknowledged for one exact release only.
+    private struct Approval { var tag: String; var asset: String; var reasons: Set<NotifyReason> }
     @State private var editing = false
     @State private var urlText = ""
     @State private var saving = false
@@ -204,6 +206,9 @@ struct AppUpdateTab: View {
             stateCard(symbol: "exclamationmark.triangle.fill", tone: .red, title: prefix + L("update.state.variant"),
                       detail: L("update.state.variant.note"), report: report,
                       actions: report.tweakPackageID == nil ? [.examineVariant] : [.view])
+        case .changed:
+            stateCard(symbol: "arrow.triangle.2.circlepath", tone: .orange, title: prefix + L("update.state.changed"),
+                      detail: L("update.state.changed.note"), report: report, actions: [])
         case .failed:
             Label(prefix + L("update.state.failed"), systemImage: "wifi.exclamationmark")
                 .font(.system(size: 11))
@@ -286,14 +291,24 @@ struct AppUpdateTab: View {
         guard case .available(_, let reason, let tag, let asset) = report.result else { return }
         // « Installer » acknowledges nothing: a beta or a suspect content comes back as its own card.
         let key = report.tweakPackageID ?? "app"
-        if confirm, reason != .notifyMode { approvals[key, default: []].insert(reason) }
-        let approved = approvals[key] ?? []
+        // An approval holds only for the release it was given for.
+        if approvals[key].map({ $0.tag != tag || $0.asset != asset }) == true { approvals[key] = nil }
+        if confirm, reason != .notifyMode {
+            var a = approvals[key] ?? Approval(tag: tag, asset: asset, reasons: [])
+            a.reasons.insert(reason)
+            approvals[key] = a
+        }
+        let approved = approvals[key]?.reasons ?? []
         busy.insert(key)
         defer { busy.remove(key) }
         let result = await model.installUpdateNow(entry, tweakPackageID: report.tweakPackageID, expectedTag: tag,
                                                   expectedAsset: asset, approved: approved)
         guard var all = reports, let i = all.firstIndex(where: { ($0.tweakPackageID ?? "app") == key }) else { return }
-        if case .installed = result { approvals[key] = nil }
+        switch result {
+        case .available(_, _, let t, let a):
+            if let ap = approvals[key], ap.tag != t || ap.asset != a { approvals[key] = nil }
+        default: approvals[key] = nil
+        }
         all[i] = UpdateCheckReport(name: report.name, result: result, tweakPackageID: report.tweakPackageID)
         reports = all
     }

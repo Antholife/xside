@@ -1495,3 +1495,5 @@
 "update.remove.title" = "Ne plus suivre les mises à jour de %@ ?";
 "update.remove.message" = "XSide ne cherchera plus de nouvelles versions sur GitHub. L'app installée n'est pas touchée.";
 "update.tweak.line" = "%@ : %@ (%@)";
+"update.state.changed" = "La version a changé";
+"update.state.changed.note" = "Revérifie avant d'installer.";
