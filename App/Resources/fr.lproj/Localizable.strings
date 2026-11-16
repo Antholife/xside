@@ -1332,6 +1332,10 @@
 "settings.appData.defaults" = "Nouvelles installations · valeurs par défaut";
 "settings.appData.backupNew" = "Sauvegarder les données";
 "settings.appData.backupNew.note" = "À chaque rafraîchissement, si les données ont changé. Décochable par app.";
+"settings.appData.beforeUpdate" = "Sauvegarder avant une mise à jour";
+"settings.appData.beforeUpdate.note" = "Sauvegarde d'abord les données de l'app quand une mise à jour de l'app va s'installer.";
+"fiche.data.beforeUpdate.note" = "Sauvegarde les données de cette app juste avant l'installation d'une mise à jour. Remplace le réglage par défaut.";
+"toast.backupBeforeUpdateFailed" = "La sauvegarde avant la mise à jour a échoué ; la mise à jour a continué.";
 "settings.appData.caches" = "Inclure les caches";
 "settings.appData.caches.note" = "Plus lourd, mais complet. Certaines apps rangent de vraies données dans les caches.";
 "settings.appData.retention" = "Versions gardées";

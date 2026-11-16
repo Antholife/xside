@@ -1332,6 +1332,10 @@
 "settings.appData.defaults" = "New installations · defaults";
 "settings.appData.backupNew" = "Back up data";
 "settings.appData.backupNew.note" = "At each refresh, if the data changed. Can be turned off per app.";
+"settings.appData.beforeUpdate" = "Back up before an update";
+"settings.appData.beforeUpdate.note" = "Saves the app's data first when an app update is about to install.";
+"fiche.data.beforeUpdate.note" = "Saves this app's data just before an update installs. Overrides the default in Settings.";
+"toast.backupBeforeUpdateFailed" = "Backup before the update failed; the update went ahead.";
 "settings.appData.caches" = "Include caches";
 "settings.appData.caches.note" = "Heavier but complete. Some apps keep real data in caches.";
 "settings.appData.retention" = "Versions kept";

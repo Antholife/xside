@@ -35,7 +35,7 @@ struct UpdateCheckReport: Sendable, Equatable {
 }
 
 extension AppModel {
-    private static let updateLogger = Logger(subsystem: "app.xside", category: "updates")
+    static let updateLogger = Logger(subsystem: "app.xside", category: "updates")
 
     /// One thing to look at: an app (`.ipa`) or one of its pool tweaks (`.deb`).
     private struct UpdateTarget {

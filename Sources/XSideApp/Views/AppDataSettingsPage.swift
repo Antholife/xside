@@ -8,6 +8,7 @@ import XSideCore
 struct AppDataSettingsPage: View {
     let model: AppModel
     @AppStorage(AppModel.backupDefaultKey) private var backupNew = true
+    @AppStorage(AppModel.backupBeforeUpdateDefaultKey) private var backupBeforeUpdate = true
     @AppStorage(AppModel.backupCachesDefaultKey) private var backupCaches = true
     @AppStorage(AppModel.backupRetentionKey) private var retention = 3
 
@@ -39,6 +40,7 @@ struct AppDataSettingsPage: View {
             }
             Section(L("settings.appData.defaults")) {
                 Toggle(isOn: $backupNew) { labeled(L("settings.appData.backupNew"), L("settings.appData.backupNew.note")) }
+                Toggle(isOn: $backupBeforeUpdate) { labeled(L("settings.appData.beforeUpdate"), L("settings.appData.beforeUpdate.note")) }
                 Toggle(isOn: $backupCaches) { labeled(L("settings.appData.caches"), L("settings.appData.caches.note")) }
                 Picker(selection: $retention) {
                     ForEach([1, 2, 3, 5, 10, 20], id: \.self) { n in

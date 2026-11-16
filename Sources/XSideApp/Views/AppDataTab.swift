@@ -106,7 +106,7 @@ struct AppDataTab: View {
         case .restore: L("fiche.data.working.restore")
         }
     }
-    private var reloadID: String { "\(entry.id)/\(model.jobs[entry.id] == nil)/\(model.dataBusy.contains(entry.id))/\(options.backupData.map(String.init(describing:)) ?? "")" }
+    private var reloadID: String { "\(entry.id)/\(model.jobs[entry.id] == nil)/\(model.dataBusy.contains(entry.id))/\(options.backupData.map(String.init(describing:)) ?? "")/\(options.backupBeforeUpdate.map(String.init(describing:)) ?? "")" }
 
     /// A boxed row: title + explanation on the left, switch on the right (like the Correctifs tab).
     @ViewBuilder private func toggleBox(_ title: String, _ note: String, isOn: Binding<Bool>, enabled: Bool = true) -> some View {
@@ -133,6 +133,9 @@ struct AppDataTab: View {
             toggleBox(L("fiche.data.caches"), L("fiche.data.caches.note"),
                       isOn: Binding(get: { options.backupCaches != false }, set: { v in Task { await model.setBackupCaches(v, for: entry) } }),
                       enabled: backupOn)
+            toggleBox(L("settings.appData.beforeUpdate"), L("fiche.data.beforeUpdate.note"),
+                      isOn: Binding(get: { options.backupBeforeUpdate ?? AppModel.setting(AppModel.backupBeforeUpdateDefaultKey) },
+                                    set: { v in Task { await model.setBackupBeforeUpdate(v, for: entry) } }))
             HStack(spacing: 8) {
                 Button(L("fiche.data.backUpNow")) { run(.backup) { await AppDataActions.backUpNow(entry, model: model) } }
                     .buttonStyle(.borderedProminent)

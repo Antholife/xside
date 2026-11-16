@@ -2787,6 +2787,8 @@ final class AppModel {
     nonisolated static let backupDefaultKey = "backupNewApps"
     /// Include the Caches folder in those backups (default on).
     nonisolated static let backupCachesDefaultKey = "backupCachesNewApps"
+    /// Snapshot an app just before an app update installs (default on; per-app override).
+    nonisolated static let backupBeforeUpdateDefaultKey = "backupBeforeUpdate"
     /// How many backups to keep per app and device (default 3).
     nonisolated static let backupRetentionKey = "backupRetention"
 
@@ -2923,6 +2925,7 @@ final class AppModel {
 
     /// Per-app switches (nil = on): « Sauvegarder les données » and « Inclure les caches ».
     func setBackupData(_ on: Bool, for entry: AppEntry) async { await updateOptions(entry) { $0.backupData = on } }
+    func setBackupBeforeUpdate(_ on: Bool, for entry: AppEntry) async { await updateOptions(entry) { $0.backupBeforeUpdate = on } }
     func setBackupCaches(_ on: Bool, for entry: AppEntry) async { await updateOptions(entry) { $0.backupCaches = on } }
 
     private func updateOptions(_ entry: AppEntry, _ change: (inout InstallOptions) -> Void) async {

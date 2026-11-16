@@ -110,6 +110,8 @@ extension AppModel {
             let reason: NotifyReason = !stable ? .prerelease : (isAuto ? .suspect : .notifyMode)
             return .notify(version: version, reason: reason)
         }
+        // Safety snapshot of the version installed NOW, before the update replaces it. Best-effort.
+        await backUpBeforeUpdate(record: record, device: device, userInitiated: userInitiated)
         do {
             // No `importedInto`: that would reinstall the stored (old) IPA. Without it the new IPA is
             // imported over the record found by bundle id (same id, options and data kept).
@@ -120,6 +122,22 @@ extension AppModel {
             return .installed(version: version)
         } catch {
             return .failed("install: \(error)")
+        }
+    }
+
+    /// Runs the existing backup of the currently installed version before an app update. Skipped when
+    /// the setting is off or the device has no installation of the app yet (nothing to save). A
+    /// failure never blocks the update: it is logged, and shown as a toast when the person clicked.
+    private func backUpBeforeUpdate(record: AppRecord, device: Device, userInitiated: Bool) async {
+        let live = records.first(where: { $0.id == record.id }) ?? record
+        guard AppManagement.shouldBackUpBeforeUpdate(override: live.options.backupBeforeUpdate,
+                                                     default: Self.setting(Self.backupBeforeUpdateDefaultKey)),
+              let installation = live.installations.first(where: { $0.deviceID == device.id }) else { return }
+        switch await backUpNow(AppEntry(record: live, installation: installation)) {
+        case .saved, .unchanged: break
+        case .failed:
+            Self.updateLogger.notice("pre-update backup failed for \(live.displayName, privacy: .public); updating anyway")
+            if userInitiated { showToast(L("toast.backupBeforeUpdateFailed")) }
         }
     }
 }

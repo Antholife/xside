@@ -36,11 +36,14 @@ public struct InstallOptions: Codable, Equatable, Sendable {
     public var backupData: Bool?
     /// Include the Caches and tmp folders in those snapshots. nil: on (the default).
     public var backupCaches: Bool?
+    /// Snapshot the app's data just before an app update installs. nil: the global default (on).
+    public var backupBeforeUpdate: Bool?
     public init(displayName: String? = nil, customBundleID: String? = nil, version: String? = nil,
                 iconPath: String? = nil, fileSharing: Bool = false, iPadFullScreen: Bool = false,
                 proMotion: Bool = false, minimumOSVersion: String? = nil, shareKeychain: Bool = false,
                 withoutXSideFeatures: Bool? = nil, duoCompatibility: Bool? = nil, iCloudSignedOut: Bool? = nil,
-                tweaks: TweakJob? = nil, backupData: Bool? = nil, backupCaches: Bool? = nil) {
+                tweaks: TweakJob? = nil, backupData: Bool? = nil, backupCaches: Bool? = nil, backupBeforeUpdate: Bool? = nil) {
+        self.backupBeforeUpdate = backupBeforeUpdate
         self.backupData = backupData
         self.backupCaches = backupCaches
         self.tweaks = tweaks
@@ -75,6 +78,7 @@ public struct InstallOptions: Codable, Equatable, Sendable {
         iCloudSignedOut = try c.decodeIfPresent(Bool.self, forKey: .iCloudSignedOut)
         backupData = try c.decodeIfPresent(Bool.self, forKey: .backupData)
         backupCaches = try c.decodeIfPresent(Bool.self, forKey: .backupCaches)
+        backupBeforeUpdate = try c.decodeIfPresent(Bool.self, forKey: .backupBeforeUpdate)
         tweaks = (try? c.decodeIfPresent(TweakJob.self, forKey: .tweaks)) ?? nil
         paidTeamICloud = (try? c.decodeIfPresent(ICloudRequest.self, forKey: .paidTeamICloud)) ?? nil
     }
