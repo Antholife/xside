@@ -84,16 +84,31 @@ struct AppDataTab: View {
     private var backupOn: Bool { options.backupData != false }
     private var reloadID: String { "\(entry.id)/\(model.jobs[entry.id] == nil)/\(options.backupData.map(String.init(describing:)) ?? "")" }
 
+    /// A boxed row: title + explanation on the left, switch on the right (like the Correctifs tab).
+    @ViewBuilder private func toggleBox(_ title: String, _ note: String, isOn: Binding<Bool>, enabled: Bool = true) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.system(size: 13))
+                Text(note).font(.system(size: 11)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            Toggle("", isOn: isOn).labelsHidden().toggleStyle(.xside).controlSize(.small).disabled(!enabled)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 9)
+        .background(Color(nsColor: .controlBackgroundColor),
+                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .opacity(enabled ? 1 : 0.6)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             sectionTitle(L("fiche.data.section"))
-            Toggle(isOn: Binding(get: { backupOn }, set: { v in Task { await model.setBackupData(v, for: entry) } })) {
-                labeled(L("fiche.data.backup"), L("fiche.data.backup.note"))
-            }
-            Toggle(isOn: Binding(get: { options.backupCaches != false }, set: { v in Task { await model.setBackupCaches(v, for: entry) } })) {
-                labeled(L("fiche.data.caches"), L("fiche.data.caches.note"))
-            }
-            .disabled(!backupOn)
+            toggleBox(L("fiche.data.backup"), L("fiche.data.backup.note"),
+                      isOn: Binding(get: { backupOn }, set: { v in Task { await model.setBackupData(v, for: entry) } }))
+            toggleBox(L("fiche.data.caches"), L("fiche.data.caches.note"),
+                      isOn: Binding(get: { options.backupCaches != false }, set: { v in Task { await model.setBackupCaches(v, for: entry) } }),
+                      enabled: backupOn)
             HStack(spacing: 8) {
                 Button(L("fiche.data.backUpNow")) { run { await AppDataActions.backUpNow(entry, model: model) } }
                     .buttonStyle(.borderedProminent)
