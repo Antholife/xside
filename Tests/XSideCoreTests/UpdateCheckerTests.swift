@@ -37,6 +37,44 @@ import Foundation
         #expect(UpdateChecker.isNewer("1.0", than: nil) == nil)
     }
 
+    @Test func isNewer_kindAware() {
+        #expect(UpdateChecker.isNewer("1.1.9-1", than: "1.1.8", kind: .deb))
+        #expect(UpdateChecker.isNewer("1.1.8-2", than: "1.1.8-1", kind: .deb))
+        #expect(UpdateChecker.isNewer("1.0", than: "1.0~beta", kind: .deb))
+        #expect(!UpdateChecker.isNewer("1.1.8-1", than: "1.1.8-1", kind: .deb))
+        #expect(!UpdateChecker.isNewer("1.0~beta", than: "1.0", kind: .deb))
+        #expect(!UpdateChecker.isNewer("1.1.9", than: nil, kind: .deb))
+        #expect(!UpdateChecker.isNewer("garbage:", than: "1.0", kind: .deb))
+        // ipa keeps the dotted-integer logic: non-comparable stays "not newer"
+        #expect(UpdateChecker.isNewer("1.1.9", than: "1.1.8", kind: .ipa))
+        #expect(!UpdateChecker.isNewer("1.1.9-1", than: "1.1.8", kind: .ipa))
+    }
+
+    func debCheck(real: String, installed: String?) async -> UpdateOutcome {
+        let (_, f, dir) = Self.make()
+        let debURL = URL(string: "\(ReleaseFinderTests.base)/v1.1.8/\(ReleaseFinderTests.rootless)")!
+        f.serve(debURL.absoluteString, Data(repeating: 0x78, count: 1000))
+        let c = UpdateChecker(fetcher: f, runner: NoRunner(), workDir: dir, readVersion: { _, _ in real })
+        let variant = VariantSelector.make(chosen: ReleaseFinderTests.rootless, others: [ReleaseFinderTests.roothide])
+        let s = UpdateSource(repo: Self.source, variant: variant, mode: .notify, lastSeenTrigger: nil)
+        return await c.check(source: s, kind: .deb, installedVersion: installed)
+    }
+
+    @Test func check_deb_revisionBumpIsUpdate() async {
+        for (real, inst) in [("1.1.9-1", "1.1.8"), ("1.1.8-2", "1.1.8-1")] {
+            let r = await debCheck(real: real, installed: inst)
+            guard case .available(_, let v, _) = r else { Issue.record("\(real) vs \(inst): \(r)"); continue }
+            #expect(v == real)
+        }
+    }
+
+    @Test func check_deb_notNewerIsUpToDate() async {
+        for (real, inst) in [("1.1.8-1", "1.1.8-1"), ("1.0~beta", "1.0"), ("1.1.8", nil)] as [(String, String?)] {
+            let r = await debCheck(real: real, installed: inst)
+            guard case .upToDate = r else { Issue.record("\(real) vs \(String(describing: inst)): \(r)"); continue }
+        }
+    }
+
     @Test func check_upToDateWhenTriggerUnchanged() async {
         let (c, f, _) = Self.make()
         let r = await c.check(source: src(last: Self.found.trigger), kind: .ipa, installedVersion: "1.0")

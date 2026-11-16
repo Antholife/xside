@@ -74,10 +74,21 @@ public struct UpdateChecker: Sendable {
             return .failed("download: not the \(found.asset.size) bytes the release lists")
         }
         guard let real = await readVersion(asset, kind) else { return .upToDate(trigger: found.trigger) }
-        if Self.isNewer(real, than: installedVersion) == true {
+        if Self.isNewer(real, than: installedVersion, kind: kind) {
             return .available(found, version: real, stable: !found.isPrerelease)
         }
         return .upToDate(trigger: found.trigger)
+    }
+
+    /// Kind-aware "is the release newer": `.ipa` uses the dotted-integer rule, `.deb` the dpkg rule.
+    /// No installed version, or a non-comparable one, is never newer (no false updates).
+    public static func isNewer(_ candidate: String, than installed: String?, kind: ReleaseKind) -> Bool {
+        switch kind {
+        case .ipa: return isNewer(candidate, than: installed) == true
+        case .deb:
+            guard let installed else { return false }
+            return DebVersion.compare(candidate, installed) == .orderedDescending
+        }
     }
 
     /// Dotted numbers only (`1.10.2`); missing parts count as 0. Anything else (`v3.0`, `1.0-beta`),
