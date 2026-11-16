@@ -1433,3 +1433,5 @@
 "toast.restored" = "Restored";
 "toast.deleted" = "Backup deleted";
 "toast.uninstalled" = "%@ uninstalled";
+
+"settings.appData.disk.note" = "Versions share their common files: the space actually used is less than the sum of the per-version sizes.";

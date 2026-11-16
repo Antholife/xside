@@ -61,6 +61,9 @@ struct AppDataSettingsPage: View {
                         Text(L("settings.appData.diskUsed", Self.size(diskBytes)))
                     } icon: { Image(systemName: "internaldrive.fill").foregroundStyle(.secondary) }
                 }
+                Text(L("settings.appData.disk.note"))
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Section(L("settings.appData.backups", listed.count)) {
                 if listed.isEmpty {
