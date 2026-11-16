@@ -2258,11 +2258,15 @@ final class AppModel {
                         found = await backupStore.list(signedBundleID: prospective)
                     }
                 }
-                if install === flow { flow.setDataSnapshots(found.sorted { $0.createdAt > $1.createdAt }) }
+                autoselectDevice() // the default now depends on where the app is installed
+                // Restore by default only onto a device without the app (empty container); a reinstall
+                // keeps the live data, which an older backup would overlay.
+                if install === flow {
+                    flow.setDataSnapshots(found.sorted { $0.createdAt > $1.createdAt }, defaultRestore: !flow.targetHasApp)
+                }
                 let installed = existing?.installations.isEmpty == false
                 flow.reviewsSteps = !installed || Self.setting(Self.reviewInstallOptionsKey)
                 flow.phase = .editing(error: nil)
-                autoselectDevice() // the default now depends on where the app is installed
                 #if DEBUG
                 // Debug-only: XSIDE_FAKE_RUNNING=1 shows the window mid-install (signing), to look at it.
                 if ProcessInfo.processInfo.environment["XSIDE_FAKE_RUNNING"] == "1", let device = devices.first {
@@ -2841,10 +2845,14 @@ final class AppModel {
     func restore(_ snapshotID: String, _ entry: AppEntry) async -> Bool {
         dataBusy.insert(entry.id)
         defer { dataBusy.remove(entry.id) }
+        // The live record and installation, as in backUpNow: the entry's copy may be stale.
+        let liveRecord = records.first { $0.id == entry.record.id }
+        let install = liveRecord?.installations.first { $0.deviceID == entry.installation.deviceID } ?? entry.installation
+        let target = install.signedBundleID ?? liveRecord?.signedBundleID ?? backupBundleID(entry)
         do {
             let done = try await withKnownXcode {
-                try await backupService.restore(snapshotID: snapshotID, toSignedBundleID: backupBundleID(entry),
-                                                deviceID: entry.installation.deviceID,
+                try await backupService.restore(snapshotID: snapshotID, toSignedBundleID: target,
+                                                deviceID: install.deviceID,
                                                 executable: entry.record.executable ?? "", clear: false)
             }
             return done != nil

@@ -1397,6 +1397,7 @@
 "install.data.other" = "Restaurer une autre version…";
 "install.data.other.note" = "%d autre(s) version(s) disponible(s)";
 "install.data.none" = "Ne rien restaurer";
+"install.data.overwrite" = "Restaurer remplacera les données actuelles de l'app sur l'appareil par celles de la sauvegarde.";
 "install.data.none.note" = "N'ajoute aucune sauvegarde ; l'app garde les données déjà présentes sur l'appareil.";
 "install.data.delete" = "Supprimer ces sauvegardes";
 "install.data.delete.note" = "Libère l'espace";

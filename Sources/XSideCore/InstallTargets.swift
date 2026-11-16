@@ -9,6 +9,12 @@ public enum InstallTargets {
         return installed.isEmpty ? Array(available.prefix(1)) : installed
     }
 
+    /// True when any selected device already has the app (its data container is populated), so a
+    /// restore would overlay live data. False for a fresh install or a device without the app.
+    public static func targetHasApp(selected: [String], installedOn: Set<String>) -> Bool {
+        selected.contains(where: installedOn.contains)
+    }
+
     /// The selection after the device list changed. Untouched by the user, it follows the default
     /// (keeping a still-available single choice). Edited, it keeps the user's order and only drops
     /// the devices no longer available; if that leaves nothing, the default applies again (a

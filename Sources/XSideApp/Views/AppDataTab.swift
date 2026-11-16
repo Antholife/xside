@@ -223,13 +223,6 @@ struct AppDataTab: View {
         Text(t.uppercased()).font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
     }
 
-    private func labeled(_ title: String, _ note: String) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(title)
-            Text(note).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
     private func restore(_ snap: BackupSnapshot) {
         let a = NSAlert()
         a.messageText = L("settings.appData.restore.title", appName)

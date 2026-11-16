@@ -111,11 +111,17 @@ final class InstallFlow {
     static let dataStep = 4
     var isDataStep: Bool { hasRestorableBackup && step == Self.dataStep }
 
-    /// Stores the backups found for the app and preselects the most recent.
-    func setDataSnapshots(_ snapshots: [BackupSnapshot]) {
+    /// True when a selected device already has the app: restoring would overlay its live data.
+    var targetHasApp: Bool {
+        InstallTargets.targetHasApp(selected: deviceIDs, installedOn: Set(existing?.installations.map(\.deviceID) ?? []))
+    }
+
+    /// Stores the backups found for the app. The most recent is preselected only when
+    /// `defaultRestore` (the target has no copy of the app); otherwise nothing is restored by default.
+    func setDataSnapshots(_ snapshots: [BackupSnapshot], defaultRestore: Bool = true) {
         let sorted = snapshots.sorted { $0.createdAt > $1.createdAt }
         dataSnapshots = sorted
-        dataChoice = sorted.first.map { .restore($0.id) } ?? .none
+        dataChoice = defaultRestore ? (sorted.first.map { .restore($0.id) } ?? .none) : .none
     }
 
     /// Shows step `index`; from the summary, editing turns the steps on.

@@ -2,6 +2,12 @@ import Testing
 @testable import XSideCore
 
 @Suite struct InstallTargetsTests {
+    @Test func restoreDefaultsOnlyWhenNoSelectedDeviceHasTheApp() {
+        #expect(InstallTargets.targetHasApp(selected: ["A"], installedOn: ["A", "B"]))
+        #expect(!InstallTargets.targetHasApp(selected: ["C"], installedOn: ["A", "B"]))
+        #expect(!InstallTargets.targetHasApp(selected: ["A"], installedOn: []))
+    }
+
     @Test func defaultsToDevicesThatHaveTheApp() {
         #expect(InstallTargets.defaultSelection(available: ["A", "B", "C"], installedOn: ["C", "A", "X"]) == ["A", "C"])
     }

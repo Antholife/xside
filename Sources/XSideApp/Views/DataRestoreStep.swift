@@ -37,6 +37,11 @@ struct DataRestoreStep: View {
                 }
                 if listOpen || restoringOther { versions }
             }
+            if flow.targetHasApp {
+                Text(L("install.data.overwrite"))
+                    .font(.system(size: 11.5)).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             HStack(alignment: .top, spacing: 8) {
                 option(selected: flow.dataChoice == .none, title: L("install.data.none"), tag: nil,
                        note: L("install.data.none.note")) {
