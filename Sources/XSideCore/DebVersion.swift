@@ -1,73 +1,69 @@
 import Foundation
 
-/// Debian version comparison (`[epoch:]upstream[-revision]`), a port of dpkg's `verrevcmp`.
-/// Used for `.deb` tweak updates, whose versions (`1.1.8-1`, `2:1.0`, `1.0~beta`) the dotted-integer
-/// `UpdateChecker.isNewer(_:than:)` cannot compare.
+/// Debian version ordering (Debian policy 5.6.12): `[epoch:]upstream[-revision]`, digit runs
+/// compared numerically, letters before other characters, `~` before everything (even the end).
+/// Works on arbitrary untrusted strings in linear time: no integer parsing, so no overflow.
 public enum DebVersion {
-    /// nil only when either string cannot be parsed (empty, non-numeric epoch, empty upstream or revision).
-    public static func compare(_ a: String, _ b: String) -> ComparisonResult? {
-        guard let x = parse(a), let y = parse(b) else { return nil }
-        if x.epoch != y.epoch { return x.epoch < y.epoch ? .orderedAscending : .orderedDescending }
-        let up = verrevcmp(x.upstream, y.upstream)
-        if up != .orderedSame { return up }
-        return verrevcmp(x.revision, y.revision)
+    public static func compare(_ a: String, _ b: String) -> ComparisonResult {
+        let x = split(a), y = split(b)
+        let e = compareDigits(x.epoch, y.epoch)
+        if e != .orderedSame { return e }
+        let u = compareParts(x.upstream, y.upstream)
+        if u != .orderedSame { return u }
+        return compareParts(x.revision, y.revision)
     }
 
-    private struct Parts { let epoch: Int; let upstream: [UInt8]; let revision: [UInt8] }
-
-    private static func parse(_ s: String) -> Parts? {
-        var rest = Substring(s.trimmingCharacters(in: .whitespacesAndNewlines))
-        guard !rest.isEmpty else { return nil }
-        var epoch = 0
-        if let colon = rest.firstIndex(of: ":") {
-            let e = rest[..<colon]
-            guard !e.isEmpty, e.allSatisfy({ $0.isASCII && $0.isNumber }), let n = Int(e) else { return nil }
-            epoch = n
-            rest = rest[rest.index(after: colon)...]
+    private static func split(_ v: String) -> (epoch: [UInt8], upstream: [UInt8], revision: [UInt8]) {
+        var bytes = Array(v.utf8)
+        var epoch: [UInt8] = []
+        if let colon = bytes.firstIndex(of: UInt8(ascii: ":")), colon > 0,
+           bytes[..<colon].allSatisfy({ isDigit($0) }) {
+            epoch = Array(bytes[..<colon])
+            bytes.removeSubrange(...colon)
         }
-        var upstream = rest, revision = Substring("")
-        if let dash = rest.lastIndex(of: "-") {
-            upstream = rest[..<dash]
-            revision = rest[rest.index(after: dash)...]
-            guard !revision.isEmpty else { return nil }
+        var revision: [UInt8] = []
+        if let dash = bytes.lastIndex(of: UInt8(ascii: "-")) {
+            revision = Array(bytes[(dash + 1)...])
+            bytes.removeSubrange(dash...)
         }
-        guard !upstream.isEmpty else { return nil }
-        let allowed = { (c: Character) in c.isASCII && (c.isLetter || c.isNumber || ".+-~:".contains(c)) }
-        guard upstream.allSatisfy(allowed), revision.allSatisfy(allowed) else { return nil }
-        return Parts(epoch: epoch, upstream: Array(upstream.utf8), revision: Array(revision.utf8))
+        return (epoch, bytes, revision)
     }
 
     private static func isDigit(_ c: UInt8) -> Bool { c >= 48 && c <= 57 }
     private static func isAlpha(_ c: UInt8) -> Bool { (c >= 65 && c <= 90) || (c >= 97 && c <= 122) }
 
-    /// `~` -1, end/digit 0, letter ASCII, other ASCII + 256.
-    private static func order(_ s: [UInt8], _ i: Int) -> Int {
-        guard i < s.count else { return 0 }
-        let c = s[i]
+    private static func order(_ c: UInt8?) -> Int {
+        guard let c else { return 0 }
         if isDigit(c) { return 0 }
         if isAlpha(c) { return Int(c) }
-        if c == 126 { return -1 }
+        if c == UInt8(ascii: "~") { return -1 }
         return Int(c) + 256
     }
 
-    private static func verrevcmp(_ a: [UInt8], _ b: [UInt8]) -> ComparisonResult {
+    /// Numeric comparison of two digit strings of any length (leading zeros ignored).
+    private static func compareDigits(_ a: [UInt8], _ b: [UInt8]) -> ComparisonResult {
+        let x = a.drop { $0 == 48 }, y = b.drop { $0 == 48 }
+        if x.count != y.count { return x.count < y.count ? .orderedAscending : .orderedDescending }
+        for (p, q) in zip(x, y) where p != q { return p < q ? .orderedAscending : .orderedDescending }
+        return .orderedSame
+    }
+
+    private static func compareParts(_ a: [UInt8], _ b: [UInt8]) -> ComparisonResult {
         var i = 0, j = 0
         while i < a.count || j < b.count {
+            // non-digit prefix
             while (i < a.count && !isDigit(a[i])) || (j < b.count && !isDigit(b[j])) {
-                let ac = order(a, i), bc = order(b, j)
-                if ac != bc { return ac < bc ? .orderedAscending : .orderedDescending }
-                i += 1; j += 1
+                let oa = order(i < a.count && !isDigit(a[i]) ? a[i] : nil)
+                let ob = order(j < b.count && !isDigit(b[j]) ? b[j] : nil)
+                if oa != ob { return oa < ob ? .orderedAscending : .orderedDescending }
+                if i < a.count && !isDigit(a[i]) { i += 1 }
+                if j < b.count && !isDigit(b[j]) { j += 1 }
             }
-            while i < a.count && a[i] == 48 { i += 1 }
-            while j < b.count && b[j] == 48 { j += 1 }
-            var firstDiff = 0
-            while i < a.count && isDigit(a[i]) && j < b.count && isDigit(b[j]) {
-                if firstDiff == 0 { firstDiff = Int(a[i]) - Int(b[j]) }
-                i += 1; j += 1
-            }
-            if i < a.count && isDigit(a[i]) { return .orderedDescending }
-            if j < b.count && isDigit(b[j]) { return .orderedAscending }
-            if firstDiff != 0 { return firstDiff < 0 ? .orderedAscending : .orderedDescending }
+            let si = i, sj = j
+            while i < a.count && isDigit(a[i]) { i += 1 }
+            while j < b.count && isDigit(b[j]) { j += 1 }
+            let d = compareDigits(Array(a[si..<i]), Array(b[sj..<j]))
+            if d != .orderedSame { return d }
         }
         return .orderedSame
     }

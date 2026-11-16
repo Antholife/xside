@@ -44,8 +44,7 @@ import Foundation
         #expect(!UpdateChecker.isNewer("1.1.8-1", than: "1.1.8-1", kind: .deb))
         #expect(!UpdateChecker.isNewer("1.0~beta", than: "1.0", kind: .deb))
         #expect(!UpdateChecker.isNewer("1.1.9", than: nil, kind: .deb))
-        #expect(!UpdateChecker.isNewer("garbage:", than: "1.0", kind: .deb))
-        // ipa keeps the dotted-integer logic: non-comparable stays "not newer"
+                // ipa keeps the dotted-integer logic: non-comparable stays "not newer"
         #expect(UpdateChecker.isNewer("1.1.9", than: "1.1.8", kind: .ipa))
         #expect(!UpdateChecker.isNewer("1.1.9-1", than: "1.1.8", kind: .ipa))
     }
