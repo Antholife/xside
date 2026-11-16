@@ -138,6 +138,7 @@ struct AppDataSettingsPage: View {
                     Spacer()
                     Button(L("settings.appData.restore")) { restore(snap, in: record) }
                     Button(L("settings.appData.export")) { export(snap) }
+                    Button(L("settings.appData.delete"), role: .destructive) { delete(snap) }
                 }
                 .padding(.leading, 28)
                 }

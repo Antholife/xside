@@ -1420,3 +1420,7 @@
 "fiche.data.export.help" = "Exports the latest version of this installation (export another version from the list below).";
 "install.step.restoring" = "Restoring data";
 "menuBar.working.data" = "Backing up…";
+
+"fiche.data.delete" = "Delete";
+"fiche.data.delete.title" = "Delete this backup?";
+"fiche.data.delete.note" = "The backup from %@ will be permanently deleted.";

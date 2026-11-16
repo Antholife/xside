@@ -1420,3 +1420,7 @@
 "fiche.data.export.help" = "Exporte la version la plus récente de cette installation (l’export d’une autre version se fait dans la liste ci-dessous).";
 "install.step.restoring" = "Restauration des données";
 "menuBar.working.data" = "Sauvegarde…";
+
+"fiche.data.delete" = "Supprimer";
+"fiche.data.delete.title" = "Supprimer cette sauvegarde ?";
+"fiche.data.delete.note" = "La sauvegarde du %@ sera supprimée définitivement.";

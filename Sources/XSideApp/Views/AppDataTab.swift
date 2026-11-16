@@ -189,8 +189,19 @@ struct AppDataTab: View {
             Spacer(minLength: 0)
             Button(L("settings.appData.restore")) { restore(snap) }
             Button(L("settings.appData.export")) { run(.export) { await AppDataActions.export(snap, model: model) } }
+            Button(L("fiche.data.delete"), role: .destructive) { deleteSnap(snap) }
         }
         .disabled(working)
+    }
+
+    private func deleteSnap(_ snap: BackupSnapshot) {
+        let a = NSAlert()
+        a.messageText = L("fiche.data.delete.title")
+        a.informativeText = L("fiche.data.delete.note", snap.createdAt.formatted(date: .abbreviated, time: .shortened))
+        a.addButton(withTitle: L("fiche.data.delete"))
+        a.addButton(withTitle: L("install.cancel"))
+        guard a.runModal() == .alertFirstButtonReturn else { return }
+        Task { _ = await model.deleteBackup(snap.id); await reload() }
     }
 
     private func detail(_ snap: BackupSnapshot) -> String {
