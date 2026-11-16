@@ -88,6 +88,25 @@ extension AppModel {
         await runUpdateChecks(updateTargets(of: entry.record))
     }
 
+    /// The row menu's « Vérifier les mises à jour »: the check, then a toast when there is nothing
+    /// to look at (up to date, installed by itself, failed). True when something waits for the
+    /// person, so the caller opens the app's Mises à jour tab.
+    func checkUpdatesFromMenu(_ entry: AppEntry) async -> Bool {
+        let reports = await checkUpdatesNow(entry)
+        var failure: String?
+        var needsLook = false
+        for report in reports {
+            switch report.result {
+            case .upToDate, .installed: break
+            case .failed(let message): failure = failure ?? message
+            case .available, .needsVariantChoice, .changed: needsLook = true
+            }
+        }
+        if needsLook { return true }
+        showToast(failure.map { L("update.toast.failed", $0) } ?? L("update.toast.upToDate"))
+        return false
+    }
+
     private func runUpdateChecks(_ targets: [UpdateTarget]) async -> [UpdateCheckReport] {
         let work = libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent("updates-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: work) }

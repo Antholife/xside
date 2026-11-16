@@ -213,6 +213,16 @@ private struct PopoverContent: View {
                                        NSApp.activate()
                                        openSettings()
                                    },
+                                   onUpdateAction: {
+                                       let showSection = {
+                                           model.openUpdateSection(entry.job)
+                                           dismiss()
+                                           NSApp.activate()
+                                           openSettings()
+                                       }
+                                       if entry.record.updateSource == nil { showSection(); return }
+                                       Task { if await model.checkUpdatesFromMenu(entry) { showSection() } }
+                                   },
                                    crash: model.crashFlag(for: entry.id),
                                    onWhyCrash: {
                                        dismiss()

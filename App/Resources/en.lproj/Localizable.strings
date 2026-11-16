@@ -1504,3 +1504,8 @@
 "update.tweak.line" = "%@: %@ (%@)";
 "update.state.changed" = "The release changed";
 "update.state.changed.note" = "Check again before installing.";
+
+"update.menu.check" = "Check for updates";
+"update.menu.addSource" = "Add an update source…";
+"update.toast.upToDate" = "Up to date";
+"update.toast.failed" = "Update check failed: %@";

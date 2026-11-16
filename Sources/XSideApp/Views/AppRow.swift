@@ -35,6 +35,9 @@ struct AppRow: View {
     var onBackUpNow: () -> Void = {}
     /// Opens Settings > Mes apps on this app and device.
     let onXSideSettings: () -> Void
+    /// « Vérifier les mises à jour » (the app has an update source) or « Ajouter une source… »
+    /// (it has none): the panel runs the check or opens the app's Mises à jour tab.
+    var onUpdateAction: () -> Void = {}
     /// XSide found the app stopped (at launch, or while in use): a red box under the row, across
     /// its whole width, and a badge on its icon, until dismissed or the notice ends by itself.
     var crash: CrashFlag?
@@ -95,6 +98,7 @@ struct AppRow: View {
                              onRemoveFromList: onRemoveFromList))
         .accessibilityAction(named: L("popover.app.xsideSettings", appName), onXSideSettings)
         .accessibilityAction(named: L("popover.app.whyCrash"), onWhyCrash)
+        .accessibilityAction(named: L(entry.record.updateSource != nil ? "update.menu.check" : "update.menu.addSource"), onUpdateAction)
         .modifier(CrashDismissAction(hasCrash: crash != nil, onDismiss: onDismissCrash))
     }
 
@@ -103,6 +107,11 @@ struct AppRow: View {
     @ViewBuilder private var actions: some View {
         Button(L("popover.app.xsideSettings", appName), systemImage: "slider.horizontal.3", action: onXSideSettings)
         Button(L("popover.app.whyCrash"), systemImage: "stethoscope", action: onWhyCrash)
+        if entry.record.updateSource != nil {
+            Button(L("update.menu.check"), systemImage: "arrow.triangle.2.circlepath", action: onUpdateAction)
+        } else {
+            Button(L("update.menu.addSource"), systemImage: "link.badge.plus", action: onUpdateAction)
+        }
         Divider()
         if isPaused {
             Button(L("popover.app.resumeRefreshing"), systemImage: "play.circle", action: onResume)

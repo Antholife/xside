@@ -1504,3 +1504,8 @@
 "update.tweak.line" = "%@ : %@ (%@)";
 "update.state.changed" = "La version a changé";
 "update.state.changed.note" = "Revérifie avant d'installer.";
+
+"update.menu.check" = "Vérifier les mises à jour";
+"update.menu.addSource" = "Ajouter une source de mise à jour…";
+"update.toast.upToDate" = "À jour";
+"update.toast.failed" = "Vérification impossible : %@";
