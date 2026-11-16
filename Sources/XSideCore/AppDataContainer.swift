@@ -76,20 +76,42 @@ public struct AppDataContainer: Sendable {
                         "--source", src.path, "--destination", relativePath])
     }
 
-    /// Stops the app; an app that isn't running is no failure.
-    public func terminate(signedBundleID: String, deviceID: String) async throws {
-        let result = try await runner.run("/usr/bin/xcrun",
-                                          ["devicectl", "device", "process", "terminate", "--device", deviceID, signedBundleID],
+    /// Stops the app (`executable` is its main executable's name). The device's process list is
+    /// read first: an app that isn't in it isn't running, nothing to stop. A list that can't be
+    /// read throws.
+    public func terminate(executable: String, deviceID: String) async throws {
+        let file = scratchRoot.appendingPathComponent("xside-processes-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let listed = try await runner.run("/usr/bin/xcrun",
+                                          ["devicectl", "device", "info", "processes", "--device", deviceID,
+                                           "--json-output", file.path],
                                           cwd: nil, timeout: CommandTimeout.deviceQuery)
-        guard result.status != 0 else { return }
-        let output = String(decoding: result.stdout, as: UTF8.self) + "\n" + result.stderr
-        let mapped = Installer.mapError(output)
-        if case .deviceUnavailable = mapped { throw mapped }
-        let lower = output.lowercased()
-        let notRunning = ["not running", "no process", "process not found", "not found", "no such process", "could not find"]
-        if notRunning.contains(where: { lower.contains($0) }) { return }
-        if case .commandFailed = mapped { throw XSideError.commandFailed(tool: "devicectl", status: result.status) }
-        throw mapped
+        try Self.check(listed)
+        guard let data = try? Data(contentsOf: file),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let processes = (root["result"] as? [String: Any])?["runningProcesses"] as? [Any] else {
+            throw XSideError.commandFailed(tool: "devicectl", status: listed.status)
+        }
+        let pid = processes.compactMap { item -> Int? in
+            guard let p = item as? [String: Any], let text = p["executable"] as? String,
+                  let url = URL(string: text) ?? URL(string: text.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""),
+                  url.path.contains("/Bundle/Application/"), url.lastPathComponent == executable,
+                  url.deletingLastPathComponent().pathExtension == "app" else { return nil }
+            return (p["processIdentifier"] as? NSNumber)?.intValue
+        }.first
+        guard let pid else { return }
+        let result = try await runner.run("/usr/bin/xcrun",
+                                          ["devicectl", "device", "process", "terminate", "--device", deviceID, "--pid", String(pid)],
+                                          cwd: nil, timeout: CommandTimeout.deviceQuery)
+        try Self.check(result)
+    }
+
+    private static func check(_ result: CommandResult) throws {
+        guard result.status == 0 else {
+            let mapped = Installer.mapError(String(decoding: result.stdout, as: UTF8.self) + "\n" + result.stderr)
+            if case .commandFailed = mapped { throw XSideError.commandFailed(tool: "devicectl", status: result.status) }
+            throw mapped
+        }
     }
 
     private func copy(_ arguments: [String]) async throws {

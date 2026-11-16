@@ -6,6 +6,8 @@ import Foundation
 private final class ContainerRunner: CommandRunning, @unchecked Sendable {
     var listing: Data?
     var result = CommandResult(status: 0, stdout: Data(), stderr: "")
+    var processesResult = CommandResult(status: 0, stdout: Data(), stderr: "")
+    var processes = Data()
     private let lock = NSLock()
     private(set) var calls: [[String]] = []
 
@@ -17,6 +19,13 @@ private final class ContainerRunner: CommandRunning, @unchecked Sendable {
                 try listing.write(to: URL(fileURLWithPath: arguments[i + 1]))
             }
             return result
+        }
+        if arguments.starts(with: ["devicectl", "device", "info", "processes"]) {
+            guard processesResult.status == 0 else { return processesResult }
+            if let i = arguments.firstIndex(of: "--json-output") {
+                try processes.write(to: URL(fileURLWithPath: arguments[i + 1]))
+            }
+            return processesResult
         }
         return result
     }
@@ -74,16 +83,36 @@ private final class ContainerRunner: CommandRunning, @unchecked Sendable {
         }
     }
 
-    @Test func terminate_buildsArgsAndToleratesNotRunning() async throws {
-        let runner = ContainerRunner()
-        runner.result = CommandResult(status: 1, stdout: Data(), stderr: "ERROR: Failed to terminate process: no process found with bundle identifier b.T (CoreDeviceError 1)")
-        try await container(runner).terminate(signedBundleID: "b.T", deviceID: "D1")
-        #expect(runner.calls == [["devicectl", "device", "process", "terminate", "--device", "D1", "b.T"]])
+    private func processList(_ items: [(String, Int)]) -> Data {
+        let list = items.map { ["executable": $0.0, "processIdentifier": $0.1] as [String: Any] }
+        return try! JSONSerialization.data(withJSONObject: ["result": ["runningProcesses": list]])
     }
 
-    @Test func terminate_toleratesNotRunning() async throws {
+    @Test func terminate_terminatesMatchingPIDWhenRunning() async throws {
         let runner = ContainerRunner()
-        runner.result = CommandResult(status: 1, stdout: Data(), stderr: "ERROR: process not found")
-        try await container(runner).terminate(signedBundleID: "b.T", deviceID: "D1")
+        runner.processes = processList([
+            ("file:///private/var/containers/Bundle/Application/Y/Other.app/PlugIns/W.appex/Demo", 5),
+            ("file:///private/var/containers/Bundle/Application/X/Demo%20App.app/Demo%20App", 4242),
+        ])
+        try await container(runner).terminate(executable: "Demo App", deviceID: "D1")
+        #expect(runner.calls.count == 2)
+        #expect(runner.calls[1] == ["devicectl", "device", "process", "terminate", "--device", "D1", "--pid", "4242"])
+    }
+
+    @Test func terminate_noMatchingProcess_doesNotTerminateOrThrow() async throws {
+        let runner = ContainerRunner()
+        runner.processes = processList([("file:///private/var/containers/Bundle/Application/Y/Other.app/Other", 7)])
+        try await container(runner).terminate(executable: "Demo", deviceID: "D1")
+        #expect(runner.calls.count == 1)
+        #expect(runner.calls[0].starts(with: ["devicectl", "device", "info", "processes"]))
+    }
+
+    @Test func terminate_throwsWhenProcessListingFails() async {
+        let runner = ContainerRunner()
+        runner.processesResult = CommandResult(status: 1, stdout: Data(), stderr: "ERROR: The device is not currently reachable")
+        await #expect(throws: XSideError.self) {
+            try await container(runner).terminate(executable: "Demo", deviceID: "D1")
+        }
+        #expect(runner.calls.count == 1)
     }
 }
