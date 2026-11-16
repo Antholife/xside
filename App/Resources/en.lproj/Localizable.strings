@@ -1425,6 +1425,7 @@
 "fiche.data.delete.note" = "The backup from %@ will be permanently deleted.";
 
 "toast.backedUp" = "Backup done";
+"toast.backedUp.unchanged" = "Already up to date — no new backup";
 "toast.exported" = "Exported";
 "toast.imported" = "Imported";
 "toast.restored" = "Restored";

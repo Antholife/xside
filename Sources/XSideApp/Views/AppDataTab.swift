@@ -6,9 +6,11 @@ import XSideCore
 @MainActor enum AppDataActions {
     @discardableResult
     static func backUpNow(_ entry: AppEntry, model: AppModel) async -> Bool {
-        let ok = await model.backUpNow(entry)
-        if ok { model.showToast(L("toast.backedUp")) } else { alert(L("fiche.data.backUpNow.failed")) }
-        return ok
+        switch await model.backUpNow(entry) {
+        case .saved: model.showToast(L("toast.backedUp")); return true
+        case .unchanged: model.showToast(L("toast.backedUp.unchanged")); return true
+        case .failed: alert(L("fiche.data.backUpNow.failed")); return false
+        }
     }
 
     /// Exports the newest snapshot of this installation through a save panel.
@@ -158,7 +160,7 @@ struct AppDataTab: View {
             }
             ForEach(Array(BackupSession.group(snaps).enumerated()), id: \.offset) { _, session in
                 HStack(spacing: 6) {
-                    Text(session.installDay.map { L("fiche.data.cycle", $0.formatted(.dateTime.day().month(.abbreviated))) }
+                    Text(session.installedAt.map { L("fiche.data.cycle", $0.formatted(date: .abbreviated, time: .shortened)) }
                          ?? L("fiche.data.cycle.none"))
                         .font(.system(size: 12, weight: .semibold))
                     if session.isCurrent { tag(L("fiche.data.cycle.current")) }

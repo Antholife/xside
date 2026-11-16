@@ -159,6 +159,18 @@ private final class TreeRunner: CommandRunning, @unchecked Sendable {
         #expect(groups.count == 3)
         #expect(groups[0].snapshots.map(\.id) == ["new1"] && groups[0].isCurrent)
         #expect(groups[1].snapshots.map(\.id) == ["old2", "old1"] && !groups[1].isCurrent)
-        #expect(groups[2].installDay == nil && groups[2].snapshots.map(\.id) == ["none"])
+        #expect(groups[2].installedAt == nil && groups[2].snapshots.map(\.id) == ["none"])
+    }
+
+    @Test func twoInstallsOnTheSameDayAreTwoSessions() {
+        let day = 86_400.0
+        let groups = BackupSession.group([
+            snap("a", created: 10 * day + 100, installed: 10 * day + 3_600),
+            snap("b", created: 10 * day + 9_000, installed: 10 * day + 7_200),
+            snap("c", created: 10 * day + 9_100, installed: 10 * day + 7_200),
+        ], calendar: Calendar(identifier: .gregorian))
+        #expect(groups.count == 2)
+        #expect(groups[0].snapshots.map(\.id) == ["c", "b"] && groups[0].isCurrent)
+        #expect(groups[1].snapshots.map(\.id) == ["a"] && !groups[1].isCurrent)
     }
 }

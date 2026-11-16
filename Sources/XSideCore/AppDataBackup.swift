@@ -278,26 +278,26 @@ public actor AppDataBackup {
 /// Snapshots grouped by the install session they belong to: the date of a backup says nothing about
 /// progression once the app was reinstalled clean in between.
 public struct BackupSession: Equatable, Sendable {
-    /// Start of the install day; nil for snapshots that predate `installedAt`.
-    public let installDay: Date?
+    /// Exact install time (the install event); nil for snapshots that predate `installedAt`.
+    public let installedAt: Date?
     /// Newest first.
     public let snapshots: [BackupSnapshot]
     /// True for the group with the most recent install date.
     public let isCurrent: Bool
 
-    /// Groups by install day, newest install first; undated snapshots form the last group.
+    /// Groups by install event (exact `installedAt`), newest install first; undated snapshots form the last group.
     public static func group(_ snaps: [BackupSnapshot], calendar: Calendar = .current) -> [BackupSession] {
         var dated: [Date: [BackupSnapshot]] = [:]
         var undated: [BackupSnapshot] = []
         for s in snaps {
-            if let d = s.installedAt { dated[calendar.startOfDay(for: d), default: []].append(s) } else { undated.append(s) }
+            if let d = s.installedAt { dated[d, default: []].append(s) } else { undated.append(s) }
         }
         let days = dated.keys.sorted(by: >)
         var out = days.enumerated().map { i, day in
-            BackupSession(installDay: day, snapshots: dated[day]!.sorted { $0.createdAt > $1.createdAt }, isCurrent: i == 0)
+            BackupSession(installedAt: day, snapshots: dated[day]!.sorted { $0.createdAt > $1.createdAt }, isCurrent: i == 0)
         }
         if !undated.isEmpty {
-            out.append(BackupSession(installDay: nil, snapshots: undated.sorted { $0.createdAt > $1.createdAt }, isCurrent: false))
+            out.append(BackupSession(installedAt: nil, snapshots: undated.sorted { $0.createdAt > $1.createdAt }, isCurrent: false))
         }
         return out
     }

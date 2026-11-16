@@ -1425,6 +1425,7 @@
 "fiche.data.delete.note" = "La sauvegarde du %@ sera supprimée définitivement.";
 
 "toast.backedUp" = "Sauvegarde terminée";
+"toast.backedUp.unchanged" = "Déjà à jour — aucune nouvelle sauvegarde";
 "toast.exported" = "Export terminé";
 "toast.imported" = "Import terminé";
 "toast.restored" = "Restauration terminée";

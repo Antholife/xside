@@ -2806,9 +2806,11 @@ final class AppModel {
         devices.first { $0.id == id }?.name ?? cachedNames[id] ?? id
     }
 
-    /// Backs the app's data up now (a manual backup keeps its snapshot even when nothing changed).
+    enum BackupOutcome { case saved, unchanged, failed }
+
+    /// Backs the app's data up now; identical data to the latest snapshot creates no new version.
     @discardableResult
-    func backUpNow(_ entry: AppEntry) async -> Bool {
+    func backUpNow(_ entry: AppEntry) async -> BackupOutcome {
         dataBusy.insert(entry.id)
         defer { dataBusy.remove(entry.id) }
         // The live record and installation: the entry's own copy predates a toggle, or a reinstall
@@ -2817,19 +2819,19 @@ final class AppModel {
         let opts = liveRecord?.options ?? entry.record.options
         let install = liveRecord?.installations.first { $0.deviceID == entry.installation.deviceID } ?? entry.installation
         do {
-            _ = try await withKnownXcode {
+            let snap = try await withKnownXcode {
                 try await backupService.backUp(signedBundleID: install.signedBundleID ?? liveRecord?.signedBundleID ?? entry.record.signedBundleID,
                                                deviceID: install.deviceID,
                                                deviceName: deviceDisplayName(install.deviceID),
                                                appVersion: liveRecord?.version ?? entry.record.version,
                                                includeCaches: opts.backupCaches != false,
                                                installedAt: install.installedAt,
-                                               retention: Self.backupRetention, onlyIfChanged: false)
+                                               retention: Self.backupRetention, onlyIfChanged: true)
             }
-            return true
+            return snap == nil ? .unchanged : .saved
         } catch {
             Self.logger.error("backup failed: \(String(describing: type(of: error)))")
-            return false
+            return .failed
         }
     }
 
