@@ -101,6 +101,8 @@ final class InstallFlow {
     var dataChoice: DataChoice = .none
     /// Snapshot the last run restores (nil: none), reused by "Retry failed".
     var runRestoreID: String?
+    /// Snapshots to delete once the install succeeded ("Supprimer ces sauvegardes").
+    var runDeleteBackupIDs: [String] = []
 
     /// Steps of the install window, in order: the four fixed ones, plus "Données" when there is a backup.
     static func stepCount(hasBackup: Bool) -> Int { hasBackup ? 5 : 4 }

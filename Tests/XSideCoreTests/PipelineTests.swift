@@ -185,12 +185,21 @@ private struct FakeInstaller: Installing {
 private struct OpaqueError: Error {}
 
 /// Records `backUp` calls into the shared log; can be told to fail.
+private final class RetentionBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _values: [Int] = []
+    var values: [Int] { lock.lock(); defer { lock.unlock() }; return _values }
+    func add(_ v: Int) { lock.lock(); _values.append(v); lock.unlock() }
+}
+
 private struct SpyBackup: DataBackingUp {
     let log: CallLog
+    var retentions: RetentionBox?
     var error: (any Error)?
     var restoreError: (any Error)?
     func backUp(signedBundleID: String, deviceID: String, deviceName: String, appVersion: String?,
                 includeCaches: Bool, retention: Int, onlyIfChanged: Bool) async throws -> BackupSnapshot? {
+        retentions?.add(retention)
         await log.backup(signedBundleID, deviceID, deviceName, appVersion, includeCaches, onlyIfChanged)
         if let error { throw error }
         return nil
@@ -275,7 +284,8 @@ private struct Fixture {
                   duoApplied: Bool = true, iCloudApplied: Bool = true,
                   iCloudSkip: ICloudOutcome = .failed, duoModule: Bool = false,
                   tweakResult: (@Sendable (TweakSigningItem) -> TweakResult)? = nil,
-                  embeddedDependencies: [String] = [], backup: (any DataBackingUp)? = nil) -> SideloadPipeline {
+                  embeddedDependencies: [String] = [], backup: (any DataBackingUp)? = nil,
+                  retention: @escaping @Sendable () -> Int = { 3 }) -> SideloadPipeline {
         SideloadPipeline(library: library,
                          provisioner: provisioner ?? FakeProvisioner(log: log),
                          resigner: FakeResigner(log: log, libraryAdded: libraryAdded, duoApplied: duoApplied,
@@ -284,7 +294,8 @@ private struct Fixture {
                          installer: installer ?? FakeInstaller(log: log),
                          workRoot: workRoot, now: now,
                          inAppDefaults: inAppDefaults ?? { InAppSettings.defaults(reminder: true, at: $0) },
-                         withoutXSideFeaturesByDefault: { withoutFeaturesByDefault }, backup: backup)
+                         withoutXSideFeaturesByDefault: { withoutFeaturesByDefault }, backup: backup,
+                         retention: retention)
     }
 
     func cleanup() { try? FileManager.default.removeItem(at: tmp) }
@@ -338,6 +349,15 @@ struct PipelineTests {
         #expect(backups.first?.onlyIfChanged == true)
         #expect(await f.log.deviceCalls == ["install:dev-1", "backup:dev-1"])
         #expect(await steps.items.last == .backingUp)
+    }
+
+    @Test func refresh_snapshotUsesInjectedRetention() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        try await seedInstallation(f)
+        let box = RetentionBox()
+        let pipeline = f.pipeline(backup: SpyBackup(log: f.log, retentions: box), retention: { 17 })
+        _ = try await pipeline.install(recordID: f.record.id, device: device(), env: env, refresh: true) { _ in }
+        #expect(box.values == [17])
     }
 
     @Test func install_withRestore_injectsAfterInstall() async throws {

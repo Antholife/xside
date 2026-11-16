@@ -325,7 +325,8 @@ final class AppModel {
             workRoot: paths.jobsWork, now: { Date() }, macIsBeta: XcodeLauncher.macIsBeta,
             inAppDefaults: { AppModel.inAppDefaults(at: $0) },
             withoutXSideFeaturesByDefault: { AppModel.withoutXSideFeaturesByDefault },
-            backup: backupService)
+            backup: backupService,
+            retention: { AppModel.backupRetention })
         // An update waits while an install or a refresh runs (`release` retries it after).
         updater.isBusy = { [unowned self] in !self.claims.isEmpty || self.install?.isRunning == true }
         if startsServices { Task { await start() } }
@@ -2306,13 +2307,13 @@ final class AppModel {
         flow.runICloud = flow.iCloudDevices
         // The "Données" choice: restore after the install (overlay only), or delete the backups now.
         flow.runRestoreID = nil
+        flow.runDeleteBackupIDs = []
         if flow.hasRestorableBackup {
             switch flow.dataChoice {
             case .restore(let id): flow.runRestoreID = id
             case .delete:
-                let ids = flow.dataSnapshots.map(\.id)
-                flow.setDataSnapshots([]) // step gone, wizard back to four steps
-                Task { for id in ids { await deleteBackup(id) } }
+                // Only after a successful install (see `runInstall`): a failed one keeps them.
+                flow.runDeleteBackupIDs = flow.dataSnapshots.map(\.id)
             case .none: break
             }
         }
@@ -2367,6 +2368,14 @@ final class AppModel {
                 if let recordID { release(JobKey(recordID: recordID, deviceID: id)) }
             }
             flow.runTask = nil
+            if !flow.runDeleteBackupIDs.isEmpty {
+                let ids = flow.runDeleteBackupIDs
+                flow.runDeleteBackupIDs = []
+                if flow.runs.contains(where: { if case .succeeded = $0.status { return true } else { return false } }) {
+                    flow.setDataSnapshots([]) // step gone, wizard back to four steps
+                    for id in ids { await deleteBackup(id) }
+                }
+            }
             flow.wasCancelled = flow.runs.contains { $0.status == .cancelled }
             if flow.wasCancelled { dropCancelledImport(flow) }
             if !flow.isMultiDevice, case .failed(let failure)? = flow.runs.first?.status {

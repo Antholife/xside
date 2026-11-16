@@ -130,6 +130,7 @@
 "error.recordNotFound" = "Cette app est introuvable dans XSide.";
 "error.profileNotRenewed" = "Xcode a renvoyé le même profil de provisionnement : l'app n'a pas été renouvelée. Ouvre Xcode, vérifie ton compte dans Settings (réglages) > Apple Accounts (comptes Apple), puis réessaie.";
 "error.generic" = "Une erreur inattendue est survenue. Réessaie.";
+"error.restoreFailed" = "L'app est installée, mais ses données n'ont pas pu être restaurées. Réessaie la restauration depuis sa fiche.";
 
 /* Services menu / Open With */
 "services.noIPA" = "Aucun fichier .ipa";
@@ -1390,7 +1391,7 @@
 "install.data.other" = "Restaurer une autre version…";
 "install.data.other.note" = "%d autre(s) version(s) disponible(s)";
 "install.data.none" = "Ne rien restaurer";
-"install.data.none.note" = "Install propre";
+"install.data.none.note" = "N'ajoute aucune sauvegarde ; l'app garde les données déjà présentes sur l'appareil.";
 "install.data.delete" = "Supprimer ces sauvegardes";
 "install.data.delete.note" = "Libère l'espace";
 "install.data.note" = "L'app s'installe d'abord, puis XSide réinjecte les données automatiquement. Fonctionne entre tes appareils (même compte Apple).";

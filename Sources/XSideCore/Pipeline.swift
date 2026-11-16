@@ -243,14 +243,18 @@ public actor SideloadPipeline {
 
     /// Snapshots an app's data after a successful refresh; nil: no snapshots.
     private let backup: (any DataBackingUp)?
+    /// How many snapshots to keep per app and device (the user's setting), asked at each snapshot.
+    private let retention: @Sendable () -> Int
 
     public init(library: AppLibrary, provisioner: any Provisioning, resigner: any Resigning,
                 installer: any Installing, workRoot: URL,
                 now: @escaping @Sendable () -> Date, macIsBeta: Bool = false,
                 inAppDefaults: @escaping @Sendable (Date) -> InAppSettings = { InAppSettings.defaults(reminder: true, at: $0) },
                 withoutXSideFeaturesByDefault: @escaping @Sendable () -> Bool = { false },
-                backup: (any DataBackingUp)? = nil) {
+                backup: (any DataBackingUp)? = nil,
+                retention: @escaping @Sendable () -> Int = { 3 }) {
         self.backup = backup
+        self.retention = retention
         self.inAppDefaults = inAppDefaults
         self.withoutXSideFeaturesByDefault = withoutXSideFeaturesByDefault
         self.library = library
@@ -598,7 +602,7 @@ public actor SideloadPipeline {
                 do {
                     _ = try await backup.backUp(signedBundleID: bundleID, deviceID: device.id, deviceName: device.name,
                                                 appVersion: record.version, includeCaches: record.options.backupCaches != false,
-                                                retention: 3, onlyIfChanged: true)
+                                                retention: retention(), onlyIfChanged: true)
                 } catch {
                     Self.logger.error("\(what): data backup failed: \(String(describing: type(of: error)))")
                 }

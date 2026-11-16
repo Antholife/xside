@@ -130,6 +130,7 @@
 "error.recordNotFound" = "This app can't be found in XSide.";
 "error.profileNotRenewed" = "Xcode returned the same provisioning profile, so the app wasn't renewed. Open Xcode, check your account in Settings > Apple Accounts, then try again.";
 "error.generic" = "Something went wrong. Please try again.";
+"error.restoreFailed" = "The app is installed, but its data couldn't be restored. Try restoring again from its page.";
 
 /* Services menu / Open With */
 "services.noIPA" = "No .ipa file";
@@ -1390,7 +1391,7 @@
 "install.data.other" = "Restore another version…";
 "install.data.other.note" = "%d other version(s) available";
 "install.data.none" = "Don't restore";
-"install.data.none.note" = "Clean install";
+"install.data.none.note" = "Adds no backup; the app keeps the data already on the device.";
 "install.data.delete" = "Delete these backups";
 "install.data.delete.note" = "Frees up space";
 "install.data.note" = "The app installs first, then XSide puts the data back automatically. Works between your devices (same Apple account).";

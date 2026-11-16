@@ -448,12 +448,16 @@ enum AppRowAlerts {
         alert.informativeText = L("popover.app.uninstallMessage")
         alert.alertStyle = .warning
 
-        let first = NSButton(checkboxWithTitle: L("uninstall.backupFirst"), target: nil, action: nil)
+        let guardian = UninstallBoxGuard()
+        let first = NSButton(checkboxWithTitle: L("uninstall.backupFirst"), target: guardian, action: #selector(UninstallBoxGuard.toggle(_:)))
         first.state = backUpFirstDefault && canBackUp ? .on : .off
         first.isEnabled = canBackUp
         let firstHint = hint(L(canBackUp ? "uninstall.backupFirst.note" : "uninstall.backupFirst.unavailable"))
-        let second = NSButton(checkboxWithTitle: L("uninstall.deleteBackups"), target: nil, action: nil)
+        let second = NSButton(checkboxWithTitle: L("uninstall.deleteBackups"), target: guardian, action: #selector(UninstallBoxGuard.toggle(_:)))
         second.state = .off
+        guardian.first = first
+        guardian.second = second
+        guardian.canBackUp = canBackUp
         var secondNote = L("uninstall.deleteBackups.note")
         if backupBytes > 0 {
             secondNote += " · " + ByteCountFormatter.string(fromByteCount: Int64(backupBytes), countStyle: .file)
@@ -476,7 +480,22 @@ enum AppRowAlerts {
         confirm.hasDestructiveAction = true
         alert.addButton(withTitle: L("install.cancel")).keyEquivalent = "\u{1b}"
         guard alert.runModal() == .alertFirstButtonReturn else { return nil }
-        return UninstallChoice(backUpFirst: first.state == .on, deleteBackups: second.state == .on)
+        let deleting = second.state == .on
+        return UninstallChoice(backUpFirst: !deleting && first.state == .on, deleteBackups: deleting)
+    }
+
+    /// Keeps "back up first" and "delete backups" exclusive: a final backup followed by deleting
+    /// them all would wipe the one just made.
+    private final class UninstallBoxGuard: NSObject {
+        var first: NSButton?
+        var second: NSButton?
+        var canBackUp = true
+        @objc func toggle(_ sender: NSButton) {
+            guard let first, let second else { return }
+            if sender === second, second.state == .on { first.state = .off }
+            if sender === first, first.state == .on { second.state = .off }
+            first.isEnabled = canBackUp && second.state == .off
+        }
     }
 
     /// A checkbox's grey hint, indented under its label.
