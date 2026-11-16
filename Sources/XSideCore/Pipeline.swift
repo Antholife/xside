@@ -296,7 +296,8 @@ public actor SideloadPipeline {
                         iCloudSignedOut: Bool? = nil, tweaks: [TweakUse]? = nil,
                         progress: @escaping @Sendable (InstallStep) async -> Void = { _ in },
                         duoOutcome: @escaping @Sendable (DuoOutcome) async -> Void = { _ in },
-                        restore: RestoreRequest? = nil) async throws -> Installation {
+                        restore: RestoreRequest? = nil,
+                        dataBackedUp: @escaping @Sendable (Bool) async -> Void = { _ in }) async throws -> Installation {
         let previous = tails[device.id]?.task
         let token = UUID()
         let job = Task<Installation, Error> {
@@ -305,7 +306,8 @@ public actor SideloadPipeline {
             return try await self.perform(recordID: recordID, device: device, environment: environment,
                                           refresh: refresh, inApp: inApp, duo: duoCompatibility,
                                           iCloud: iCloudSignedOut, tweaks: tweaks, progress: progress,
-                                          duoOutcome: duoOutcome, restore: restore)
+                                          duoOutcome: duoOutcome, restore: restore,
+                                          dataBackedUp: dataBackedUp)
         }
         // The chain waits for the previous job too: one cancelled while queued ends at once, and a
         // job queued after it must still wait for the one running.
@@ -391,11 +393,12 @@ public actor SideloadPipeline {
                         tweaks: [TweakUse]? = nil,
                         progress: @escaping @Sendable (InstallStep) async -> Void = { _ in },
                         duoOutcome: @escaping @Sendable (DuoOutcome) async -> Void = { _ in },
-                        restore: RestoreRequest? = nil) async throws -> Installation {
+                        restore: RestoreRequest? = nil,
+                        dataBackedUp: @escaping @Sendable (Bool) async -> Void = { _ in }) async throws -> Installation {
         try await install(recordID: recordID, device: device, environment: { env }, refresh: refresh, inApp: inApp,
                           duoCompatibility: duoCompatibility, iCloudSignedOut: iCloudSignedOut, tweaks: tweaks,
                           progress: progress,
-                          duoOutcome: duoOutcome, restore: restore)
+                          duoOutcome: duoOutcome, restore: restore, dataBackedUp: dataBackedUp)
     }
 
     /// Thrown inside the provisioning lock when `environment` fails, to tell it from a job failure.
@@ -428,7 +431,8 @@ public actor SideloadPipeline {
                                      tweaks asked: [TweakUse]?,
                                      progress: @escaping @Sendable (InstallStep) async -> Void,
                                      duoOutcome: @escaping @Sendable (DuoOutcome) async -> Void,
-                                     restore: RestoreRequest?) async throws -> Installation {
+                                     restore: RestoreRequest?,
+                                     dataBackedUp: @escaping @Sendable (Bool) async -> Void) async throws -> Installation {
         guard let record = await library.records().first(where: { $0.id == recordID }) else {
             throw XSideError.recordNotFound
         }
@@ -440,7 +444,7 @@ public actor SideloadPipeline {
             let installation = try await perform(record: record, previous: previous, device: device,
                                                  environment: environment, refresh: refresh, inApp: draft, duo: duo,
                                                  iCloud: iCloud, tweaks: tweaks, progress: progress, duoOutcome: duoOutcome,
-                                                 restore: restore)
+                                                 restore: restore, dataBackedUp: dataBackedUp)
             await library.releaseTweaks(held, recordID: recordID)
             return installation
         } catch {
@@ -455,7 +459,8 @@ public actor SideloadPipeline {
                                      tweaks: (uses: [TweakUse]?, job: TweakJob?),
                                      progress: @escaping @Sendable (InstallStep) async -> Void,
                                      duoOutcome: @escaping @Sendable (DuoOutcome) async -> Void,
-                                     restore: RestoreRequest?) async throws -> Installation {
+                                     restore: RestoreRequest?,
+                                     dataBackedUp: @escaping @Sendable (Bool) async -> Void) async throws -> Installation {
         let recordID = record.id
         let previousBundleID = previous.map { $0.signedBundleID ?? record.signedBundleID }
         let bundleID = refresh ? previousBundleID ?? record.signedBundleID : record.signedBundleID
@@ -600,10 +605,11 @@ public actor SideloadPipeline {
             if refresh, previous != nil, record.options.backupData != false, let backup {
                 await progress(.backingUp)
                 do {
-                    _ = try await backup.backUp(signedBundleID: bundleID, deviceID: device.id, deviceName: device.name,
+                    let snapshot = try await backup.backUp(signedBundleID: bundleID, deviceID: device.id, deviceName: device.name,
                                                 appVersion: record.version, includeCaches: record.options.backupCaches != false,
                                                 installedAt: previous?.installedAt,
                                                 retention: retention(), onlyIfChanged: true)
+                    if snapshot != nil { await dataBackedUp(true) }
                 } catch {
                     Self.logger.error("\(what): data backup failed: \(String(describing: type(of: error)))")
                 }

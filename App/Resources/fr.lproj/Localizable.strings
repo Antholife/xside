@@ -137,6 +137,7 @@
 
 "notification.refreshed.title" = "%@ rafraîchie";
 "notification.refreshed.body" = "Sur %@ · valable jusqu'au %@";
+"notification.refreshed.backedUp" = " · données sauvegardées";
 "notification.appRemoved.title" = "%@ n'est plus rafraîchie";
 "notification.appRemoved.body" = "Elle a été supprimée de %@ : XSide l'a retirée de sa liste. Réinstalle-la pour la retrouver.";
 "notification.refreshed.genericDevice" = "ton appareil";

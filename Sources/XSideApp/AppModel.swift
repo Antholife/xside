@@ -291,7 +291,7 @@ final class AppModel {
     var onRefreshResumed: ((_ job: RefreshJob) -> Void)?
     /// Every pipeline run that ends (install, manual or automatic refresh), with its error if it failed.
     var onJobFinished: ((_ job: RefreshJob, _ error: (any Error)?, _ automatic: Bool,
-                               _ wasRefresh: Bool) -> Void)?
+                               _ wasRefresh: Bool, _ dataBackedUp: Bool) -> Void)?
     /// XSide found a crash it hadn't told about (a new row flag): the engine notifies it.
     var onCrashFound: ((_ key: JobKey, _ flag: CrashFlag) -> Void)?
     /// True while the menu-bar popover is on screen (drives the device polling rate).
@@ -2150,6 +2150,7 @@ final class AppModel {
         // A refresh renews an existing installation; a first install is shown by the install window.
         let wasRefresh = records.first { $0.id == key.recordID }?
             .installations.contains { $0.deviceID == key.deviceID } ?? false
+        let backedUp = BackedUpFlag()
         do {
             let environment: @Sendable () async throws -> SigningEnvironment = { [weak self] in
                 guard let self else { throw CancellationError() }
@@ -2175,12 +2176,12 @@ final class AppModel {
                     }
                 }, duoOutcome: { outcome in
                     await MainActor.run { duoOutcome(outcome) }
-                }, restore: restore)
+                }, restore: restore, dataBackedUp: { backedUp.set($0) })
             }
         } catch {
             await reloadRecords()
             if wasRefresh { refreshResults[key] = .failed(Self.refreshFailureText(error, deviceName: deviceName(key.deviceID))) }
-            onJobFinished?(job, error, automatic, wasRefresh)
+            onJobFinished?(job, error, automatic, wasRefresh, false)
             // Deleted from the device: the pipeline dropped the installation; its reminder and
             // notification state go too (after the notification above, which reads the record).
             if error as? XSideError == .appRemovedFromDevice { await installationRemoved(key) }
@@ -2192,7 +2193,7 @@ final class AppModel {
         changeCrashWatch { $0.installed(recordID: key.recordID, deviceID: key.deviceID, at: Date()) }
         // Just installed (and opened, for an install from the window): a crash is most likely now.
         crashSchedule.boost(deviceID: key.deviceID, now: Date())
-        onJobFinished?(job, nil, automatic, wasRefresh)
+        onJobFinished?(job, nil, automatic, wasRefresh, backedUp.value)
         await updateAppIDCounter()
     }
 
@@ -3567,4 +3568,12 @@ extension AppModel {
         guard let first = items.first else { return nil }
         return items.count > 1 ? L("menuBar.working.more", first, items.count - 1) : first
     }
+}
+
+/// Set from the pipeline's `dataBackedUp` callback (any thread), read once the job is done.
+private final class BackedUpFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var flag = false
+    func set(_ v: Bool) { lock.lock(); flag = v; lock.unlock() }
+    var value: Bool { lock.lock(); defer { lock.unlock() }; return flag }
 }

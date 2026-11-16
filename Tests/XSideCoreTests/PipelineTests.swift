@@ -197,12 +197,13 @@ private struct SpyBackup: DataBackingUp {
     var retentions: RetentionBox?
     var error: (any Error)?
     var restoreError: (any Error)?
+    var snapshot: BackupSnapshot?
     func backUp(signedBundleID: String, deviceID: String, deviceName: String, appVersion: String?,
                 includeCaches: Bool, installedAt: Date?, retention: Int, onlyIfChanged: Bool) async throws -> BackupSnapshot? {
         retentions?.add(retention)
         await log.backup(signedBundleID, deviceID, deviceName, appVersion, includeCaches, onlyIfChanged)
         if let error { throw error }
-        return nil
+        return snapshot
     }
     func restore(_ snapshot: BackupSnapshot, toSignedBundleID: String, deviceID: String,
                  executable: String, clear: Bool) async throws -> RestoreClear { .overlay }
@@ -349,6 +350,28 @@ struct PipelineTests {
         #expect(backups.first?.onlyIfChanged == true)
         #expect(await f.log.deviceCalls == ["install:dev-1", "backup:dev-1"])
         #expect(await steps.items.last == .backingUp)
+    }
+
+    private final class Flag: @unchecked Sendable { var calls: [Bool] = [] }
+
+    @Test func refresh_reportsDataBackedUpWhenSnapshotMade() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        try await seedInstallation(f)
+        let flag = Flag()
+        let snap = BackupSnapshot(id: "s", signedBundleID: "a", deviceID: "dev-1", deviceName: "Test", createdAt: fixedNow,
+                                  byteSize: 1, fileCount: 1, includedCaches: false, appVersion: nil)
+        _ = try await f.pipeline(backup: SpyBackup(log: f.log, snapshot: snap))
+            .install(recordID: f.record.id, device: device(), env: env, refresh: true, dataBackedUp: { flag.calls.append($0) })
+        #expect(flag.calls == [true])
+    }
+
+    @Test func refresh_doesNotReportWhenNothingChanged() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        try await seedInstallation(f)
+        let flag = Flag()
+        _ = try await f.pipeline(backup: SpyBackup(log: f.log))
+            .install(recordID: f.record.id, device: device(), env: env, refresh: true, dataBackedUp: { flag.calls.append($0) })
+        #expect(flag.calls.isEmpty)
     }
 
     @Test func refresh_snapshotUsesInjectedRetention() async throws {

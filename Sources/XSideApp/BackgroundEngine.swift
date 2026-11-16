@@ -82,8 +82,8 @@ final class BackgroundEngine {
         // Allowed only now (journey, Settings): the reminders couldn't be scheduled before.
         NotificationPermission.onBecameAuthorized = { [weak self] in self?.reconcileReminders() }
         model.onCrashFound = { [weak self] key, flag in self?.notifyCrash(key, flag: flag) }
-        model.onJobFinished = { [weak self] job, error, automatic, wasRefresh in
-            self?.jobFinished(job, error: error, automatic: automatic, wasRefresh: wasRefresh)
+        model.onJobFinished = { [weak self] job, error, automatic, wasRefresh, dataBackedUp in
+            self?.jobFinished(job, error: error, automatic: automatic, wasRefresh: wasRefresh, dataBackedUp: dataBackedUp)
         }
 
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -441,14 +441,15 @@ final class BackgroundEngine {
             ?? model.cachedNames[deviceID] ?? L("notification.refreshed.genericDevice")
     }
 
-    private func jobFinished(_ job: RefreshJob, error: (any Error)?, automatic: Bool, wasRefresh: Bool) {
+    private func jobFinished(_ job: RefreshJob, error: (any Error)?, automatic: Bool, wasRefresh: Bool,
+                             dataBackedUp: Bool = false) {
         guard let error else {
             // Any success (install, manual or automatic refresh) re-arms notifications for the row.
             Self.logger.notice("refresh succeeded \(job.recordID.uuidString)")
             var updated = gate
             updated.reset(recordID: job.recordID, deviceID: job.deviceID)
             if updated != gate { gate = updated; persistGate() }
-            notifySuccess(job, wasRefresh: wasRefresh)
+            notifySuccess(job, wasRefresh: wasRefresh, dataBackedUp: dataBackedUp)
             scheduleReminder(job)
             if wasRefresh { model.updater.checkSoon("after a refresh") }
             return
@@ -496,7 +497,7 @@ final class BackgroundEngine {
 
     /// Success of a refresh of an existing installation (automatic or manual), unless disabled in
     /// Settings. At most one per (app, device, expiresAt).
-    private func notifySuccess(_ job: RefreshJob, wasRefresh: Bool) {
+    private func notifySuccess(_ job: RefreshJob, wasRefresh: Bool, dataBackedUp: Bool) {
         guard wasRefresh, model.devicePrefs.notifies(job.deviceID), UserDefaults.standard.object(forKey: Notifier.notifyRefreshSuccessKey) as? Bool ?? true,
               let record = model.records.first(where: { $0.id == job.recordID }),
               let installation = record.installations.first(where: { $0.deviceID == job.deviceID }) else { return }
@@ -509,7 +510,8 @@ final class BackgroundEngine {
                 Date.FormatStyle(date: .abbreviated, time: .omitted).locale(appLocale))
             let posted = await notifier.refreshSucceeded(
                 appName: Self.appName(record), deviceName: deviceName, date: date,
-                id: "refreshed.\(job.recordID.uuidString).\(job.deviceID)")
+                id: "refreshed.\(job.recordID.uuidString).\(job.deviceID)",
+                backedUp: dataBackedUp)
             if !posted { successGate.forget(recordID: job.recordID, deviceID: job.deviceID) }
         }
     }

@@ -256,10 +256,12 @@ final class Notifier: NSObject {
     nonisolated static let notifyRefreshSuccessKey = "notifyRefreshSuccess"
 
     /// A successful refresh: plain notification (no "Open Xcode" action). False when refused.
-    func refreshSucceeded(appName: String, deviceName: String, date: String, id: String) async -> Bool {
+    func refreshSucceeded(appName: String, deviceName: String, date: String, id: String,
+                          backedUp: Bool = false) async -> Bool {
         let content = UNMutableNotificationContent()
         content.title = L("notification.refreshed.title", appName)
         content.body = L("notification.refreshed.body", deviceName, date)
+            + (backedUp ? L("notification.refreshed.backedUp") : "")
         guard let center else {
             Self.logger.notice("would notify: \(content.title)")
             return true
