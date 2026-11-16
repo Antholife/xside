@@ -102,6 +102,13 @@ public struct UpdateChecker: Sendable {
         return false
     }
 
+    /// True only when both versions are known and comparable and the installed one is strictly newer
+    /// than the one about to be installed.
+    public static func isDowngrade(installed: String?, candidate: String?) -> Bool {
+        guard let installed, let candidate, !installed.isEmpty, !candidate.isEmpty else { return false }
+        return isNewer(installed, than: candidate) == true
+    }
+
     private static func parts(_ s: String) -> [Int]? {
         let pieces = s.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: ".", omittingEmptySubsequences: false)
         guard !pieces.isEmpty else { return nil }

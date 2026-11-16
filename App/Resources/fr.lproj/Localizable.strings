@@ -63,6 +63,7 @@
 "install.done" = "Terminé";
 "install.success" = "Installée sur %@";
 "install.noAvailableDevice" = "L'appareil choisi n'est plus joignable.";
+"install.downgrade" = "Downgrade : la v%@ est installée, tu installes la v%@.";
 "install.queued" = "Ensuite : %@";
 "install.devices" = "Appareils";
 "install.successMany" = "Installée sur %d appareils";

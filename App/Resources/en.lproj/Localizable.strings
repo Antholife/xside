@@ -63,6 +63,7 @@
 "install.done" = "Done";
 "install.success" = "Installed on %@";
 "install.noAvailableDevice" = "The chosen device can't be reached anymore.";
+"install.downgrade" = "Downgrade: v%@ is installed, you are installing v%@.";
 "install.queued" = "Next: %@";
 "install.devices" = "Devices";
 "install.successMany" = "Installed on %d devices";

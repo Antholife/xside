@@ -247,6 +247,14 @@ struct InstallSheet: View {
                 } else if flow.wasCancelled {
                     CancelledNote()
                 }
+                // Installing an older version over a newer one is allowed, just flagged.
+                if let installed = flow.existing?.version, let new = flow.info?.version,
+                   UpdateChecker.isDowngrade(installed: installed, candidate: new) {
+                    Label(L("install.downgrade", installed, new), systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color(nsColor: .systemOrange))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 editingStep
             case .finished:
                 if flow.isMultiDevice {
