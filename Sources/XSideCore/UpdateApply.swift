@@ -2,9 +2,9 @@ import Foundation
 
 /// The decisions behind applying an app update from GitHub, kept pure so they can be tested.
 public enum UpdateApply {
-    /// Auto-install a tweak only from a stable release whose verdict is not `.incompatible`.
-    public static func tweakAutoAllowed(verdict: TweakVerdict, stable: Bool) -> Bool {
-        guard stable else { return false }
+    /// Auto-install a tweak only from a stable release whose verdict is not `.incompatible` and whose binaries show no warning sign.
+    public static func tweakAutoAllowed(verdict: TweakVerdict, stable: Bool, hasSigns: Bool) -> Bool {
+        guard stable, !hasSigns else { return false }
         switch verdict {
         case .compatible, .converted: return true
         case .incompatible: return false

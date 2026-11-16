@@ -36,17 +36,27 @@ import Testing
     }
 
     @Test func tweakAutoAllowed_trueOnCompatibleStable() {
-        #expect(UpdateApply.tweakAutoAllowed(verdict: .compatible, stable: true))
+        #expect(UpdateApply.tweakAutoAllowed(verdict: .compatible, stable: true, hasSigns: false))
     }
     @Test func tweakAutoAllowed_trueOnConverted() {
-        #expect(UpdateApply.tweakAutoAllowed(verdict: .converted([]), stable: true))
+        #expect(UpdateApply.tweakAutoAllowed(verdict: .converted([]), stable: true, hasSigns: false))
     }
     @Test func tweakAutoAllowed_falseOnIncompatible() {
-        #expect(!UpdateApply.tweakAutoAllowed(verdict: .incompatible(.notForIOS), stable: true))
+        #expect(!UpdateApply.tweakAutoAllowed(verdict: .incompatible(.notForIOS), stable: true, hasSigns: false))
     }
     @Test func tweakAutoAllowed_falseOnPrerelease() {
-        #expect(!UpdateApply.tweakAutoAllowed(verdict: .compatible, stable: false))
-        #expect(!UpdateApply.tweakAutoAllowed(verdict: .converted([]), stable: false))
+        #expect(!UpdateApply.tweakAutoAllowed(verdict: .compatible, stable: false, hasSigns: false))
+        #expect(!UpdateApply.tweakAutoAllowed(verdict: .converted([]), stable: false, hasSigns: false))
+    }
+    @Test func tweakAutoAllowed_falseWhenSigns() {
+        #expect(!UpdateApply.tweakAutoAllowed(verdict: .compatible, stable: true, hasSigns: true))
+        #expect(!UpdateApply.tweakAutoAllowed(verdict: .converted([]), stable: true, hasSigns: true))
+    }
+    @Test func tweakWarningSigns_scanOfMachO() {
+        let bad = ContentMachO.build(imports: ["_MSHookMessageEx"], strings: ["https://discord.com/api/webhooks/1"], signed: false)
+        #expect(IPAContentScanner.warningSigns(machO: bad) == [.discordWebhook])
+        let clean = ContentMachO.build(imports: ["_MSHookMessageEx"], signed: false)
+        #expect(IPAContentScanner.warningSigns(machO: clean).isEmpty)
     }
     @Test func packageIDMatches_exact() {
         #expect(UpdateApply.packageIDMatches("com.a.tweak", oldPackageID: "com.a.tweak"))

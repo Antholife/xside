@@ -13,6 +13,8 @@ enum AppUpdateResult: Sendable, Equatable {
 
 enum TweakUpdateResult: Sendable, Equatable {
     case installed(version: String)
+    /// The downloaded package is byte-identical to the one in the pool: nothing to do, not a failure.
+    case upToDate(version: String)
     case notify(version: String, reason: NotifyReason)
     case incompatible
     case failed(String)
@@ -46,16 +48,18 @@ extension AppModel {
         let version = checked.version ?? found.tag
         let verdict = TweakClassifier.verdict(checked, entryContext(record, old.id, on: device.id))
         let isAuto = old.updateSource?.mode == .auto
-        guard isAuto, UpdateApply.tweakAutoAllowed(verdict: verdict, stable: stable) else {
-            let suspect: Bool
-            if case .incompatible = verdict { suspect = true } else { suspect = false }
+        // Injected code: its binaries are scanned (from the scratch copy) before anything is written.
+        let hasSigns = !IPAContentScanner.warningSigns(of: checked, in: scratch).isEmpty
+        guard isAuto, UpdateApply.tweakAutoAllowed(verdict: verdict, stable: stable, hasSigns: hasSigns) else {
+            var suspect = hasSigns
+            if case .incompatible = verdict { suspect = true }
             let reason: NotifyReason = !stable ? .prerelease : (suspect ? .suspect : .notifyMode)
             return .notify(version: version, reason: reason)
         }
         do {
             // Same path as the manual replace: store in the pool (comes back as `replacing`), swap.
             let (package, replacing) = try await library.addTweak(deb, recordID: recordID, deviceIDs: [], runner: runner, now: Date())
-            guard replacing != nil else { return .failed("this version is already in the pool") }
+            guard replacing != nil else { return .upToDate(version: version) }
             try await library.replaceTweak(old.id, with: package, recordID: recordID)
             await reloadRecords()
             refreshNow(RefreshJob(recordID: recordID, deviceID: device.id))

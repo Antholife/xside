@@ -448,6 +448,24 @@ public enum IPAContentScanner {
         return contains(text, "/Library/MobileSubstrate/") || contains(text, "/var/jb/")
     }
 
+    /// The warning signs of ONE tweak Mach-O (same scan as for a tweak found in an IPA).
+    public static func warningSigns(machO data: Data) -> [WarningSign] {
+        let imports = MachOImports.importedSymbols(in: data, wanted: wantedImports)
+        return signs(text: data.prefix(maxScanBytes), imports: imports, kind: .tweak)
+    }
+
+    /// The union of the signs of every binary of an analyzed package stored under `storage/<id>`.
+    /// A binary that cannot be read counts as a sign-less file here: the analyzer already read it.
+    public static func warningSigns(of package: TweakPackage, in storage: URL) -> [WarningSign] {
+        let folder = storage.appendingPathComponent(package.id)
+        var found = Set<WarningSign>()
+        for binary in package.binaries {
+            guard let data = try? Data(contentsOf: folder.appendingPathComponent(binary.path)) else { continue }
+            found.formUnion(warningSigns(machO: data))
+        }
+        return WarningSign.allCases.filter(found.contains)
+    }
+
     static func signs(text: Data, imports: Set<String>, kind: IPAAddition.Kind) -> [WarningSign] {
         var found: [WarningSign] = []
         if contains(text, "discord.com/api/webhooks") || contains(text, "discordapp.com/api/webhooks") { found.append(.discordWebhook) }
