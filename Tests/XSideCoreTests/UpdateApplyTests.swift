@@ -31,5 +31,7 @@ import Testing
         #expect(UpdateApply.applied(storedVersion: "2.0", expected: "2.0"))
         #expect(!UpdateApply.applied(storedVersion: "1.0", expected: "2.0"))
         #expect(!UpdateApply.applied(storedVersion: nil, expected: "2.0"))
+        #expect(UpdateApply.applied(storedVersion: nil, expected: nil))
+        #expect(!UpdateApply.applied(storedVersion: "1.0", expected: nil))
     }
 }

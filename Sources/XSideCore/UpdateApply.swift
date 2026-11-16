@@ -15,7 +15,7 @@ public enum UpdateApply {
     }
 
     /// After the install, the record must hold the version that was inspected in the download.
-    public static func applied(storedVersion: String?, expected: String) -> Bool {
+    public static func applied(storedVersion: String?, expected: String?) -> Bool {
         storedVersion == expected
     }
 
