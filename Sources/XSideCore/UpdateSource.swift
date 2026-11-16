@@ -41,6 +41,8 @@ public struct VariantSelector: Codable, Equatable, Sendable {
     }
 
     public func matches(_ assetName: String) -> Bool {
+        // No stable token: nothing identifies the variant, so never a confident match.
+        guard !stableTokens.isEmpty else { return false }
         let t = Self.tokens(assetName)
         return t.isSuperset(of: stableTokens) && t.isDisjoint(with: excludedTokens)
     }

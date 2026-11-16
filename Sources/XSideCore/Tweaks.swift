@@ -113,6 +113,33 @@ public struct TweakPackage: Codable, Equatable, Sendable, Identifiable {
         self.notes = notes
         self.addedAt = addedAt
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, kind, origin, packageID, provides, name, version, author, architecture, depends,
+             files, binaries, notes, addedAt, summary, updateSource
+    }
+
+    /// As the synthesized decoder would, except `updateSource`: unreadable (damaged or newer) → nil,
+    /// so the tweak itself survives.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        kind = try c.decode(TweakKind.self, forKey: .kind)
+        origin = try c.decode(TweakOrigin.self, forKey: .origin)
+        packageID = try c.decode(String.self, forKey: .packageID)
+        provides = try c.decode([String].self, forKey: .provides)
+        name = try c.decode(String.self, forKey: .name)
+        version = try c.decodeIfPresent(String.self, forKey: .version)
+        author = try c.decodeIfPresent(String.self, forKey: .author)
+        architecture = try c.decodeIfPresent(String.self, forKey: .architecture)
+        depends = try c.decode([[DebDependency]].self, forKey: .depends)
+        files = try c.decode([String].self, forKey: .files)
+        binaries = try c.decode([TweakBinary].self, forKey: .binaries)
+        notes = try c.decode([TweakNote].self, forKey: .notes)
+        addedAt = try c.decode(Date.self, forKey: .addedAt)
+        summary = try c.decodeIfPresent(String.self, forKey: .summary)
+        updateSource = try? c.decodeIfPresent(UpdateSource.self, forKey: .updateSource)
+    }
 }
 
 extension TweakPackage {
