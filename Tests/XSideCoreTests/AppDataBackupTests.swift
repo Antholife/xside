@@ -95,6 +95,33 @@ private func snap(_ store: AppDataBackup, _ src: URL, retention: Int = 3, at t: 
     #expect(!AppDataBackup.contentUnchanged(a, b))
 }
 
+@Test func contentUnchanged_trueWhenSameContentDifferentMtime_falseOnContentEdit() throws {
+    let a = try makeTree(["a.txt": "same", "s/b.txt": "more"])
+    let b = try makeTree(["a.txt": "same", "s/b.txt": "more"], mtime: Date(timeIntervalSince1970: 1_600_000_000))
+    #expect(AppDataBackup.contentUnchanged(a, b))
+    try Data("sane".utf8).write(to: b.appendingPathComponent("a.txt")) // same size, different bytes
+    #expect(!AppDataBackup.contentUnchanged(a, b))
+}
+
+@Test func folderName_isAppData() {
+    #expect(AppDataBackup.folderName == "app-data")
+}
+
+@Test func dedup_hardLinksIdenticalContentDespiteDifferentMtimes() async throws {
+    let store = makeStore()
+    let src = try makeTree(["n.txt": "nano", "m.txt": "other"])
+    let a = try await snap(store, src, at: 1_800_000_000)
+    setNanoMTime(src.appendingPathComponent("n.txt"), sec: 1_650_000_000, nsec: 5)
+    let b = try await snap(store, src, at: 1_800_000_100)
+    #expect(try inode(await store.snapshotDir(a).appendingPathComponent("n.txt"))
+            == inode(await store.snapshotDir(b).appendingPathComponent("n.txt")))
+    // same size, different content: not linked
+    try Data("NANO".utf8).write(to: src.appendingPathComponent("n.txt"))
+    let c = try await snap(store, src, at: 1_800_000_200)
+    #expect(try inode(await store.snapshotDir(b).appendingPathComponent("n.txt"))
+            != inode(await store.snapshotDir(c).appendingPathComponent("n.txt")))
+}
+
 @Test func snapshot_findsByID_nilWhenAbsent() async throws {
     let store = makeStore()
     let src = try makeTree(["a.txt": "x"])
@@ -148,7 +175,7 @@ private func setNanoMTime(_ u: URL, sec: Int, nsec: Int) {
     #expect(try fm.contentsOfDirectory(atPath: outside.path) == before)
     // Nothing escaped the store: only the backups folder was created under the library root.
     let libRoot = await store.snapshotDir(s1).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-    #expect(try fm.contentsOfDirectory(atPath: libRoot.path) == ["backups"])
+    #expect(try fm.contentsOfDirectory(atPath: libRoot.path) == [AppDataBackup.folderName])
 }
 
 @Test func createSnapshot_rejectsChainedSymlinkBypass_keepsPlainRelativeLink() async throws {
@@ -170,5 +197,5 @@ private func setNanoMTime(_ u: URL, sec: Int, nsec: Int) {
     #expect(dest("plain") == "d/inner.txt")
     #expect(fm.fileExists(atPath: dir.appendingPathComponent("ok.txt").path))
     let libRoot = dir.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-    #expect(try fm.contentsOfDirectory(atPath: libRoot.path) == ["backups"])
+    #expect(try fm.contentsOfDirectory(atPath: libRoot.path) == [AppDataBackup.folderName])
 }

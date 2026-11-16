@@ -52,7 +52,7 @@ struct AppDataSettingsPage: View {
             Section(L("settings.appData.disk")) {
                 LabeledContent {
                     Button(L("settings.appData.reveal")) {
-                        let dir = model.libraryRoot.appendingPathComponent("backups", isDirectory: true)
+                        let dir = model.libraryRoot.appendingPathComponent(AppDataBackup.folderName, isDirectory: true)
                         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
                         NSWorkspace.shared.activateFileViewerSelecting([dir])
                     }

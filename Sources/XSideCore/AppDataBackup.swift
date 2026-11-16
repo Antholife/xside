@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// One backed-up copy of an app's data container.
 public struct BackupSnapshot: Codable, Equatable, Sendable {
@@ -25,8 +26,8 @@ public struct BackupIndex: Codable, Equatable, Sendable {
     public init(snapshots: [BackupSnapshot] = []) { self.snapshots = snapshots }
 }
 
-/// On-disk snapshot store under `<library root>/backups/<signedBundleID>/<deviceID>/<id>/`.
-/// Unchanged files (same relative path, size, mtime) are hard-linked from the newest prior snapshot of the pair.
+/// On-disk snapshot store under `<library root>/app-data/<signedBundleID>/<deviceID>/<id>/`.
+/// Unchanged files (same relative path, size and content; mtimes are ignored) are hard-linked from the newest prior snapshot of the pair.
 /// Snapshot contents are the user's private data: only counts, sizes and ids are ever reported.
 public actor AppDataBackup {
     private let base: URL
@@ -34,9 +35,12 @@ public actor AppDataBackup {
     private let fm = FileManager.default
     private let log = Log("backup")
 
-    /// `root` is the library root; the store lives in `root/backups`.
+    /// Name of the store's subfolder under the library root.
+    public static let folderName = "app-data"
+
+    /// `root` is the library root; the store lives in `root/app-data`.
     public init(root: URL) {
-        self.base = root.appendingPathComponent("backups", isDirectory: true)
+        self.base = root.appendingPathComponent(Self.folderName, isDirectory: true)
     }
 
     public func list() -> [BackupSnapshot] {
@@ -128,10 +132,16 @@ public actor AppDataBackup {
         return total
     }
 
-    /// True when both trees hold the same files with the same sizes and modification times.
+    /// True when both trees hold the same regular files (by relative path) with equal size and content.
+    /// Modification times are ignored: `devicectl` does not preserve them.
     static func contentUnchanged(_ a: URL, _ b: URL) -> Bool {
-        let ma = fileSignatures(a), mb = fileSignatures(b)
-        return ma == mb
+        let ma = fileSizes(a), mb = fileSizes(b)
+        guard ma == mb else { return false }
+        for (rel, _) in ma {
+            guard let ha = sha256(a.appendingPathComponent(rel).path),
+                  let hb = sha256(b.appendingPathComponent(rel).path), ha == hb else { return false }
+        }
+        return true
     }
 
     // MARK: - Internals
@@ -163,18 +173,30 @@ public actor AppDataBackup {
         return f.string(from: date).replacingOccurrences(of: ":", with: "-")
     }
 
-    private struct Signature: Equatable { let size: Int; let mtime: TimeInterval }
-
-    private static func fileSignatures(_ root: URL) -> [String: Signature] {
-        var out: [String: Signature] = [:]
+    private static func fileSizes(_ root: URL) -> [String: Int] {
+        var out: [String: Int] = [:]
         guard let e = FileManager.default.enumerator(atPath: root.path) else { return out }
         for case let rel as String in e {
             var st = stat()
             guard lstat(root.appendingPathComponent(rel).path, &st) == 0, (st.st_mode & S_IFMT) == S_IFREG else { continue }
-            out[rel] = Signature(size: Int(st.st_size),
-                                 mtime: TimeInterval(st.st_mtimespec.tv_sec) + TimeInterval(st.st_mtimespec.tv_nsec) / 1e9)
+            out[rel] = Int(st.st_size)
         }
         return out
+    }
+
+    /// Streamed SHA-256 of a file's bytes; nil when unreadable.
+    private static func sha256(_ path: String) -> SHA256.Digest? {
+        guard let h = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? h.close() }
+        var hasher = SHA256()
+        while true {
+            // read(upToCount:) returns nil (not empty Data) at EOF.
+            let chunk: Data
+            do { chunk = try h.read(upToCount: 1 << 20) ?? Data() } catch { return nil }
+            if chunk.isEmpty { break }
+            hasher.update(data: chunk)
+        }
+        return hasher.finalize()
     }
 
     /// Copies `source` into `dest` (which exists), linking files unchanged vs `previous`. Returns (bytes, files).
@@ -203,10 +225,9 @@ public actor AppDataBackup {
             default:
                 let prior = previous.map { $0.appendingPathComponent(rel) }
                 if let previous, let prior, Self.parentsAreRealDirs(of: rel, under: previous),
-                   Self.sameFile(prior.path, st), link(prior.path, target.path) == 0 {
+                   Self.sameFile(prior.path, src.path, st), link(prior.path, target.path) == 0 {
                     // hard-linked
                 } else {
-                    // copyItem preserves the nanosecond mtime; do not rewrite it through a Date (loses precision).
                     try fm.copyItem(at: src, to: target)
                 }
                 bytes += Int(st.st_size); files += 1
@@ -242,11 +263,11 @@ public actor AppDataBackup {
         return true
     }
 
-    private static func sameFile(_ path: String, _ src: stat) -> Bool {
+    /// Same size, then same content (SHA-256); mtime is never consulted.
+    private static func sameFile(_ path: String, _ srcPath: String, _ src: stat) -> Bool {
         var p = stat()
-        guard lstat(path, &p) == 0, (p.st_mode & S_IFMT) == S_IFREG else { return false }
-        return p.st_size == src.st_size
-            && p.st_mtimespec.tv_sec == src.st_mtimespec.tv_sec
-            && p.st_mtimespec.tv_nsec == src.st_mtimespec.tv_nsec
+        guard lstat(path, &p) == 0, (p.st_mode & S_IFMT) == S_IFREG, p.st_size == src.st_size else { return false }
+        guard let a = sha256(path), let b = sha256(srcPath) else { return false }
+        return a == b
     }
 }
