@@ -31,6 +31,8 @@ public struct BackupManifest: Codable, Equatable, Sendable {
 
 public enum BackupArchiveError: Error, Equatable, Sendable {
     case toolFailed(tool: String, status: Int32)
+    /// The archive holds a symlink, an absolute path, a `..` component, or extracted outside the target.
+    case unsafeArchive
 }
 
 /// Packs a backup snapshot plus a manifest into a `.zip` and reads one back.
@@ -53,28 +55,68 @@ public enum BackupArchive {
         try encoder().encode(manifest).write(to: staging.appendingPathComponent(manifestName))
         try? fm.removeItem(at: zipURL)  // zip would otherwise append to an existing archive
         try fm.createDirectory(at: zipURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let r = try run("/usr/bin/zip", ["-q", "-r", "-y", "-X", zipURL.path, "."], cwd: staging)
+        let r = try run("/usr/bin/zip", ["-q", "-r", "-X", zipURL.path, "--", "."], cwd: staging)
         guard r.status == 0 else { throw BackupArchiveError.toolFailed(tool: "zip", status: r.status) }
     }
 
     /// nil when the archive has no `xside-backup.json` or it is not valid manifest JSON.
     public static func readManifest(zipURL: URL) throws -> BackupManifest? {
-        let r = try run("/usr/bin/unzip", ["-p", zipURL.path, manifestName], cwd: nil)
+        let r = try run("/usr/bin/unzip", ["-p", "--", zipURL.path, manifestName], cwd: nil)
         guard r.status == 0 else { return nil }  // 11 = entry not found
         return try? decoder().decode(BackupManifest.self, from: r.output)
     }
 
     public static func unpack(zipURL: URL, to dir: URL) throws -> (manifest: BackupManifest?, contentDir: URL) {
         let fm = FileManager.default
+        try vet(zipURL: zipURL)
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
-        let r = try run("/usr/bin/unzip", ["-q", "-o", zipURL.path, "-d", dir.path], cwd: nil)
-        guard r.status == 0 else { throw BackupArchiveError.toolFailed(tool: "unzip", status: r.status) }
-        let manifest = (try? Data(contentsOf: dir.appendingPathComponent(manifestName)))
+        // Extract into a fresh empty subdirectory so nothing pre-existing can be overwritten.
+        let target = dir.appendingPathComponent("extract-\(UUID().uuidString)", isDirectory: true)
+        try fm.createDirectory(at: target, withIntermediateDirectories: false)
+        do {
+            let r = try run("/usr/bin/unzip", ["-q", "-d", target.path, "--", zipURL.path], cwd: nil)
+            guard r.status == 0 else { throw BackupArchiveError.toolFailed(tool: "unzip", status: r.status) }
+            try verifyExtracted(target)
+        } catch {
+            try? fm.removeItem(at: target)
+            throw error
+        }
+        let manifest = (try? Data(contentsOf: target.appendingPathComponent(manifestName)))
             .flatMap { try? decoder().decode(BackupManifest.self, from: $0) }
-        let tree = dir.appendingPathComponent(treeName, isDirectory: true)
+        let tree = target.appendingPathComponent(treeName, isDirectory: true)
         var isDir: ObjCBool = false
         let hasTree = manifest != nil && fm.fileExists(atPath: tree.path, isDirectory: &isDir) && isDir.boolValue
-        return (manifest, hasTree ? tree : dir)
+        return (manifest, hasTree ? tree : target)
+    }
+
+    /// Rejects symlink entries, absolute paths and `..` components before anything is extracted.
+    private static func vet(zipURL: URL) throws {
+        let names = try run("/usr/bin/unzip", ["-Z1", "--", zipURL.path], cwd: nil)
+        guard names.status == 0 else { throw BackupArchiveError.toolFailed(tool: "unzip", status: names.status) }
+        for line in String(decoding: names.output, as: UTF8.self).split(separator: "\n") {
+            if line.hasPrefix("/") || line.split(separator: "/", omittingEmptySubsequences: false).contains("..") {
+                throw BackupArchiveError.unsafeArchive
+            }
+        }
+        let modes = try run("/usr/bin/unzip", ["-Z", "--", zipURL.path], cwd: nil)
+        guard modes.status == 0 else { throw BackupArchiveError.toolFailed(tool: "unzip", status: modes.status) }
+        for line in String(decoding: modes.output, as: UTF8.self).split(separator: "\n") where line.hasPrefix("l") {
+            throw BackupArchiveError.unsafeArchive
+        }
+    }
+
+    /// Belt and braces: no symlink anywhere in the extracted tree, nothing resolving outside it.
+    private static func verifyExtracted(_ root: URL) throws {
+        let fm = FileManager.default
+        let rootPath = root.resolvingSymlinksInPath().path
+        guard let en = fm.enumerator(at: root, includingPropertiesForKeys: [.isSymbolicLinkKey]) else { return }
+        for case let url as URL in en {
+            if (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true {
+                throw BackupArchiveError.unsafeArchive
+            }
+            let p = url.resolvingSymlinksInPath().path
+            if p != rootPath && !p.hasPrefix(rootPath + "/") { throw BackupArchiveError.unsafeArchive }
+        }
     }
 
     private static func encoder() -> JSONEncoder {
