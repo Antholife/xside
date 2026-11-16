@@ -2807,22 +2807,17 @@ final class AppModel {
         }
     }
 
-    /// Restores an exported zip into an installed app. The app is `targetRecordID` when given (the
-    /// UI asks when the zip has no manifest), else the one the manifest names; nothing is pushed
-    /// when neither identifies an app. The zip is also kept as a snapshot of that installation.
+    /// Restores an exported zip INTO the given app on the given device (explicit target, never
+    /// guessed). false, nothing pushed, when the device isn't an installation of that app or the
+    /// zip's manifest (untrusted, only used to validate) names a different app. The zip is also kept
+    /// as a snapshot of that installation.
     @discardableResult
-    func importBackup(zip: URL, targetRecordID: UUID?) async -> Bool {
+    func importBackup(zip: URL, intoRecordID: UUID, deviceID: String) async -> Bool {
+        guard let record = records.first(where: { $0.id == intoRecordID }),
+              let installation = record.installations.first(where: { $0.deviceID == deviceID }) else { return false }
         let manifest = try? BackupArchive.readManifest(zipURL: zip)
-        let record: AppRecord?
-        if let targetRecordID {
-            record = records.first { $0.id == targetRecordID }
-        } else if let manifest {
-            record = records.first { $0.signedBundleID == manifest.signedBundleID || $0.originalBundleID == manifest.originalBundleID }
-        } else {
-            record = nil
-        }
-        guard let record, let installation = record.installations.first(where: { $0.deviceID == manifest?.deviceID })
-                ?? record.installations.first else { return false }
+        guard BackupMatching.manifestAllows(manifest, targetSignedBundleID: installation.signedBundleID ?? record.signedBundleID)
+        else { return false }
         let entry = AppEntry(record: record, installation: installation)
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("xside-import-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: dir) }

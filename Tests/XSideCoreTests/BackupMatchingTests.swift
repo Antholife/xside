@@ -21,4 +21,14 @@ import Foundation
         let result = BackupMatching.orphans(snapshots: [installed, removedDevice, removedApp], records: [record])
         #expect(result.map(\.id) == ["2", "3"])
     }
+
+    @Test func importTarget_refusesManifestMismatch() {
+        func manifest(_ id: String) -> BackupManifest {
+            BackupManifest(originalBundleID: "com.a", signedBundleID: id, teamID: "T", deviceID: "D1", deviceName: "x",
+                           createdAt: Date(timeIntervalSince1970: 0), includedCaches: false, appVersion: nil, xsideVersion: "1")
+        }
+        #expect(BackupMatching.manifestAllows(manifest("com.a.T"), targetSignedBundleID: "com.a.T"))
+        #expect(!BackupMatching.manifestAllows(manifest("com.b.T"), targetSignedBundleID: "com.a.T"))
+        #expect(BackupMatching.manifestAllows(nil, targetSignedBundleID: "com.a.T"))
+    }
 }
