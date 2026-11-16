@@ -2,11 +2,10 @@
 /// zone at the bottom of « Module XSide »): the panel row's own, in the order of the approved
 /// mockup, why they're greyed, and which app the page shows once that one is gone.
 public enum AppManagement {
-    /// Whether to snapshot an app's data just before an app update installs. An explicit per-app
-    /// opt-in (`backupBeforeUpdate == true`) wins; else the app's master data-backup opt-out
-    /// (`backupData == false`) skips it; else the app's own choice, else the global default.
+    /// Whether to snapshot an app's data just before an app update installs. The app's master
+    /// data-backup opt-out (`backupData == false`) always suppresses it; else the app's own
+    /// choice, else the global default.
     public static func shouldBackUpBeforeUpdate(override: Bool?, default defaultOn: Bool, backupData: Bool?) -> Bool {
-        if override == true { return true }
         if backupData == false { return false }
         return override ?? defaultOn
     }
