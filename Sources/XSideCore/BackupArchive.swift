@@ -51,7 +51,7 @@ public enum BackupArchive {
         let staging = fm.temporaryDirectory.appendingPathComponent("xside-export-\(UUID().uuidString)", isDirectory: true)
         try fm.createDirectory(at: staging, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: staging) }
-        try fm.copyItem(at: snapshotDir, to: staging.appendingPathComponent(treeName, isDirectory: true))
+        try copyWithoutSymlinks(from: snapshotDir, to: staging.appendingPathComponent(treeName, isDirectory: true))
         try encoder().encode(manifest).write(to: staging.appendingPathComponent(manifestName))
         try? fm.removeItem(at: zipURL)  // zip would otherwise append to an existing archive
         try fm.createDirectory(at: zipURL.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -87,6 +87,26 @@ public enum BackupArchive {
         var isDir: ObjCBool = false
         let hasTree = manifest != nil && fm.fileExists(atPath: tree.path, isDirectory: &isDir) && isDir.boolValue
         return (manifest, hasTree ? tree : target)
+    }
+
+    /// Copies regular files and directories only; symlinks are skipped so archives never contain any
+    /// (and zip has nothing to follow, e.g. a cyclic `a -> .`).
+    private static func copyWithoutSymlinks(from src: URL, to dst: URL) throws {
+        let fm = FileManager.default
+        try fm.createDirectory(at: dst, withIntermediateDirectories: true)
+        let base = src.standardizedFileURL.path
+        guard let en = fm.enumerator(at: src, includingPropertiesForKeys: [.isSymbolicLinkKey, .isDirectoryKey]) else { return }
+        for case let url as URL in en {
+            let v = try url.resourceValues(forKeys: [.isSymbolicLinkKey, .isDirectoryKey])
+            if v.isSymbolicLink == true { continue }  // enumerator does not descend into symlinks
+            let rel = String(url.standardizedFileURL.path.dropFirst(base.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            let target = dst.appendingPathComponent(rel, isDirectory: v.isDirectory == true)
+            if v.isDirectory == true {
+                try fm.createDirectory(at: target, withIntermediateDirectories: true)
+            } else {
+                try fm.copyItem(at: url, to: target)
+            }
+        }
     }
 
     /// Rejects symlink entries, absolute paths and `..` components before anything is extracted.

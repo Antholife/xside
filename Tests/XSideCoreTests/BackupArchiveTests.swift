@@ -108,4 +108,22 @@ import Testing
             #expect(try BackupArchive.readManifest(zipURL: zip) == nil)
         }
     }
+
+    @Test func export_dropsSymlinksSoArchiveIsSymlinkFree() async throws {
+        try await withTemporaryDirectory("archive") { dir in
+            let tree = try makeTree(dir)
+            let fm = FileManager.default
+            try fm.createSymbolicLink(atPath: tree.appendingPathComponent("a").path, withDestinationPath: ".")
+            try fm.createSymbolicLink(atPath: tree.appendingPathComponent("link").path, withDestinationPath: "b.txt")
+            let zip = dir.appendingPathComponent("out.zip")
+            try BackupArchive.export(snapshotDir: tree, manifest: Self.manifest, to: zip)
+            let dest = dir.appendingPathComponent("dest", isDirectory: true)
+            let result = try BackupArchive.unpack(zipURL: zip, to: dest)
+            #expect(fm.fileExists(atPath: result.contentDir.appendingPathComponent("b.txt").path))
+            #expect(fm.fileExists(atPath: result.contentDir.appendingPathComponent("Documents/a.txt").path))
+            #expect((try? fm.destinationOfSymbolicLink(atPath: result.contentDir.appendingPathComponent("a").path)) == nil)
+            #expect(!fm.fileExists(atPath: result.contentDir.appendingPathComponent("a").path))
+            #expect(!fm.fileExists(atPath: result.contentDir.appendingPathComponent("link").path))
+        }
+    }
 }
