@@ -2791,15 +2791,19 @@ final class AppModel {
     func backUpNow(_ entry: AppEntry) async -> Bool {
         dataBusy.insert(entry.id)
         defer { dataBusy.remove(entry.id) }
-        // The live record: the entry's own copy predates a switch toggled since the fiche opened.
-        let opts = records.first { $0.id == entry.record.id }?.options ?? entry.record.options
+        // The live record and installation: the entry's own copy predates a toggle, or a reinstall
+        // (new installedAt / cycle), done since the fiche opened.
+        let liveRecord = records.first { $0.id == entry.record.id }
+        let opts = liveRecord?.options ?? entry.record.options
+        let install = liveRecord?.installations.first { $0.deviceID == entry.installation.deviceID } ?? entry.installation
         do {
             _ = try await withKnownXcode {
-                try await backupService.backUp(signedBundleID: backupBundleID(entry), deviceID: entry.installation.deviceID,
-                                               deviceName: deviceDisplayName(entry.installation.deviceID),
-                                               appVersion: entry.record.version,
+                try await backupService.backUp(signedBundleID: install.signedBundleID ?? liveRecord?.signedBundleID ?? entry.record.signedBundleID,
+                                               deviceID: install.deviceID,
+                                               deviceName: deviceDisplayName(install.deviceID),
+                                               appVersion: liveRecord?.version ?? entry.record.version,
                                                includeCaches: opts.backupCaches != false,
-                                               installedAt: entry.installation.installedAt,
+                                               installedAt: install.installedAt,
                                                retention: Self.backupRetention, onlyIfChanged: false)
             }
             return true
