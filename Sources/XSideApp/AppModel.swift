@@ -2823,6 +2823,28 @@ final class AppModel {
 
     enum BackupOutcome { case saved(version: String?), unchanged, cancelled, failed }
 
+    /// The running manual backup of each app, so any surface (panel, menu, fiche) can cancel it.
+    private var backupTasks: [JobKey: Task<Void, Never>] = [:]
+
+    /// A cancellable backup is running for this app (a restore or import, also `dataBusy`, is not).
+    func isBackingUp(_ id: JobKey) -> Bool { backupTasks[id] != nil }
+
+    /// Starts a backup in a model-held task and calls `onFinish` with its outcome. No-op if one runs.
+    func startBackup(_ entry: AppEntry, onFinish: @escaping (BackupOutcome) async -> Void = { _ in }) {
+        let key = entry.id
+        guard backupTasks[key] == nil, !dataBusy.contains(key) else { return }
+        backupTasks[key] = Task { [weak self] in
+            guard let self else { return }
+            let outcome = await self.backUpNow(entry)
+            self.backupTasks[key] = nil
+            await onFinish(outcome)
+        }
+    }
+
+    /// Stops the app's running backup: no snapshot is made and the temp folder goes.
+    func cancelBackup(_ entry: AppEntry) { cancelBackup(entry.id) }
+    func cancelBackup(_ id: JobKey) { backupTasks[id]?.cancel() }
+
     /// Backs the app's data up now; identical data to the latest snapshot creates no new version.
     @discardableResult
     func backUpNow(_ entry: AppEntry) async -> BackupOutcome {

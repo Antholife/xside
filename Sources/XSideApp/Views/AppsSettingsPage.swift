@@ -585,7 +585,7 @@ private struct AppSettingsContent: View {
             Divider()
         case .backUpNow:
             Button(L("menu.backUpNow"), systemImage: "externaldrive.badge.timemachine") {
-                Task { await AppDataActions.backUpNow(entry, model: model) }
+                AppDataActions.startBackUp(entry, model: model)
             }
             .disabled(!canManage)
             .help(blockedReason ?? "")

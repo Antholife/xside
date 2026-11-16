@@ -204,7 +204,9 @@ private struct PopoverContent: View {
                                    onPause: { until in AppActions.pause(entry, until: until, model: model) },
                                    onResume: { resume(entry) },
                                    onRemoveFromList: { removeFromList(entry, deviceName: group.name) },
-                                   onBackUpNow: { Task { await AppDataActions.backUpNow(entry, model: model) } },
+                                   onBackUpNow: { AppDataActions.startBackUp(entry, model: model) },
+                                   backupFraction: model.isBackingUp(entry.id) ? (model.backupFraction[entry.id] ?? -1) : nil,
+                                   onCancelBackup: { model.cancelBackup(entry) },
                                    onXSideSettings: {
                                        // Settings > Mes apps, on this app.
                                        model.settingsApp = entry.id

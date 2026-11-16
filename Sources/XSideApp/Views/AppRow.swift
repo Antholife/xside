@@ -33,6 +33,9 @@ struct AppRow: View {
     let onRemoveFromList: () -> Void
     /// « Sauvegarder les données maintenant » (the data's other actions live in the fiche).
     var onBackUpNow: () -> Void = {}
+    /// A manual backup is running: its fraction, or -1 while the size is unknown. Nil otherwise.
+    var backupFraction: Double?
+    var onCancelBackup: () -> Void = {}
     /// Opens Settings > Mes apps on this app and device.
     let onXSideSettings: () -> Void
     /// « Vérifier les mises à jour » (the app has an update source) or « Ajouter une source… »
@@ -146,10 +149,31 @@ struct AppRow: View {
     private func row(validity: Validity, now: Date) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             mainRow(validity: validity, now: now)
+            if let backupFraction { backupBar(backupFraction) }
             if step == nil, let crash {
                 CrashRowBox(flag: crash, appName: appName, onWhy: onWhyCrash, onDismiss: onDismissCrash)
             }
         }
+    }
+
+    /// Compact backup progress under the row, in its own spot (apart from the install/refresh step).
+    private func backupBar(_ fraction: Double) -> some View {
+        HStack(spacing: 8) {
+            if fraction >= 0 {
+                ProgressView(value: fraction, total: 1)
+                    .progressViewStyle(.linear).tint(Theme.violet).controlSize(.small)
+                    .animation(.smooth(duration: 0.4), value: fraction)
+                Text(percentText(Int((fraction * 100).rounded(.down))))
+                    .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+            } else {
+                ProgressView().controlSize(.small)
+                Text(L("fiche.data.working")).font(.caption).foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+            Button(L("fiche.data.backUpNow.cancel"), action: onCancelBackup)
+                .controlSize(.small)
+        }
+        .padding(.leading, 38)
     }
 
     private func mainRow(validity: Validity, now: Date) -> some View {

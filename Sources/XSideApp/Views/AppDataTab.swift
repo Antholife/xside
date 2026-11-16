@@ -4,9 +4,18 @@ import XSideCore
 
 /// The fiche's data actions, shared by the « Données » tab and the header's « ⋯ » menu.
 @MainActor enum AppDataActions {
+    /// Starts a cancellable backup held by the model (cancel with `model.cancelBackup`), toasts its
+    /// outcome, then runs `then`.
+    static func startBackUp(_ entry: AppEntry, model: AppModel, then: @escaping () async -> Void = {}) {
+        model.startBackup(entry) { outcome in
+            report(outcome, model: model)
+            await then()
+        }
+    }
+
     @discardableResult
-    static func backUpNow(_ entry: AppEntry, model: AppModel) async -> Bool {
-        switch await model.backUpNow(entry) {
+    private static func report(_ outcome: AppModel.BackupOutcome, model: AppModel) -> Bool {
+        switch outcome {
         case .saved(let version):
             model.showToast(BackupSnapshot.versionLabel(version).map { L("toast.backedUp.version", $0) } ?? L("toast.backedUp"))
             return true
@@ -93,7 +102,6 @@ struct AppDataTab: View {
     private enum Action { case backup, export, importData, restore }
     @State private var busy = false
     @State private var action: Action = .backup
-    @State private var backupTask: Task<Void, Never>?
 
     private var options: InstallOptions {
         model.records.first { $0.id == entry.record.id }?.options ?? entry.record.options
@@ -142,7 +150,11 @@ struct AppDataTab: View {
                                     set: { v in Task { await model.setBackupBeforeUpdate(v, for: entry) } }),
                       enabled: backupOn)
             HStack(spacing: 8) {
-                Button(L("fiche.data.backUpNow")) { run(.backup) { await AppDataActions.backUpNow(entry, model: model) } }
+                Button(L("fiche.data.backUpNow")) {
+                    action = .backup
+                    busy = true
+                    AppDataActions.startBackUp(entry, model: model) { await reload(); busy = false }
+                }
                     .buttonStyle(.borderedProminent)
                     .disabled(actionsOff)
                 Button(L("fiche.data.export")) { run(.export) { await AppDataActions.exportLatest(entry, model: model) } }
@@ -271,20 +283,18 @@ struct AppDataTab: View {
     /// Stops the running backup: the task's cancellation ends devicectl and the pull loop, and the
     /// backup throws before the archive step, so no snapshot is made and the temp folder goes.
     private var cancelButton: some View {
-        Button(L("fiche.data.backUpNow.cancel")) { backupTask?.cancel() }
+        Button(L("fiche.data.backUpNow.cancel")) { model.cancelBackup(entry) }
             .controlSize(.small)
     }
 
     private func run(_ kind: Action, _ work: @escaping () async -> Bool) {
         action = kind
         busy = true
-        let task = Task {
+        Task {
             _ = await work()
             await reload()
             busy = false
-            backupTask = nil
         }
-        backupTask = kind == .backup ? task : nil
     }
 
     private func reload() async {
