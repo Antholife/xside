@@ -1373,13 +1373,19 @@
 "fiche.data.emptyOff" = "Backups are turned off for this app.";
 "fiche.data.backUpNow.failed" = "The backup failed. Check that the device is connected or reachable.";
 "fiche.data.import.title" = "Import data into %@?";
-"fiche.data.import.note" = "The chosen file will be copied over %@'s current data on %@: its files replace their counterparts, other files are left alone.";
+"fiche.data.import.note" = "Warning: the current data of %@ on %@ will be OVERWRITTEN by the chosen file (its files replace their counterparts; others are left untouched).";
 "fiche.data.import.choose" = "Choose a backup…";
 "fiche.data.import.mismatch" = "This backup is for another app (or could not be imported): nothing was changed.";
 "menu.backUpNow" = "Back up data now";
 "menu.exportData" = "Export data…";
 "menu.importData" = "Import data…";
 "fiche.data.section.versions" = "Versions";
+"fiche.data.working" = "Working…";
+"fiche.data.done" = "Done";
+"fiche.data.cycle" = "Installed on %@";
+"fiche.data.cycle.current" = "(current cycle)";
+"fiche.data.cycle.none" = "Backups";
+"fiche.data.onlineNote" = "Backs up the data stored on the device. Progress tied to an online account isn't covered.";
 
 /* Task 10: conditional "Data" install step */
 "install.steps.data" = "Data";

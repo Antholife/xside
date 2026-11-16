@@ -602,6 +602,7 @@ public actor SideloadPipeline {
                 do {
                     _ = try await backup.backUp(signedBundleID: bundleID, deviceID: device.id, deviceName: device.name,
                                                 appVersion: record.version, includeCaches: record.options.backupCaches != false,
+                                                installedAt: previous?.installedAt,
                                                 retention: retention(), onlyIfChanged: true)
                 } catch {
                     Self.logger.error("\(what): data backup failed: \(String(describing: type(of: error)))")

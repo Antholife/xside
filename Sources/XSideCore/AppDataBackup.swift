@@ -12,9 +12,12 @@ public struct BackupSnapshot: Codable, Equatable, Sendable {
     public let fileCount: Int
     public let includedCaches: Bool
     public let appVersion: String?
+    /// When the installation this snapshot belongs to was installed (groups the versions by install session).
+    public let installedAt: Date?
 
     public init(id: String, signedBundleID: String, deviceID: String, deviceName: String, createdAt: Date,
-                byteSize: Int, fileCount: Int, includedCaches: Bool, appVersion: String?) {
+                byteSize: Int, fileCount: Int, includedCaches: Bool, appVersion: String?, installedAt: Date? = nil) {
+        self.installedAt = installedAt
         self.id = id; self.signedBundleID = signedBundleID; self.deviceID = deviceID
         self.deviceName = deviceName; self.createdAt = createdAt; self.byteSize = byteSize
         self.fileCount = fileCount; self.includedCaches = includedCaches; self.appVersion = appVersion
@@ -60,7 +63,7 @@ public actor AppDataBackup {
     }
 
     public func createSnapshot(from sourceDir: URL, signedBundleID: String, deviceID: String, deviceName: String,
-                               includedCaches: Bool, appVersion: String?, retention: Int = 3,
+                               includedCaches: Bool, appVersion: String?, installedAt: Date? = nil, retention: Int = 3,
                                now: Date = Date()) throws -> BackupSnapshot {
         let pair = pairDir(signedBundleID, deviceID)
         try fm.createDirectory(at: pair, withIntermediateDirectories: true)
@@ -89,7 +92,7 @@ public actor AppDataBackup {
 
         let snap = BackupSnapshot(id: id, signedBundleID: signedBundleID, deviceID: deviceID, deviceName: deviceName,
                                   createdAt: now, byteSize: bytes, fileCount: files,
-                                  includedCaches: includedCaches, appVersion: appVersion)
+                                  includedCaches: includedCaches, appVersion: appVersion, installedAt: installedAt)
         index.snapshots.append(snap)
 
         let mine = index.snapshots
@@ -269,5 +272,33 @@ public actor AppDataBackup {
         guard lstat(path, &p) == 0, (p.st_mode & S_IFMT) == S_IFREG, p.st_size == src.st_size else { return false }
         guard let a = sha256(path), let b = sha256(srcPath) else { return false }
         return a == b
+    }
+}
+
+/// Snapshots grouped by the install session they belong to: the date of a backup says nothing about
+/// progression once the app was reinstalled clean in between.
+public struct BackupSession: Equatable, Sendable {
+    /// Start of the install day; nil for snapshots that predate `installedAt`.
+    public let installDay: Date?
+    /// Newest first.
+    public let snapshots: [BackupSnapshot]
+    /// True for the group with the most recent install date.
+    public let isCurrent: Bool
+
+    /// Groups by install day, newest install first; undated snapshots form the last group.
+    public static func group(_ snaps: [BackupSnapshot], calendar: Calendar = .current) -> [BackupSession] {
+        var dated: [Date: [BackupSnapshot]] = [:]
+        var undated: [BackupSnapshot] = []
+        for s in snaps {
+            if let d = s.installedAt { dated[calendar.startOfDay(for: d), default: []].append(s) } else { undated.append(s) }
+        }
+        let days = dated.keys.sorted(by: >)
+        var out = days.enumerated().map { i, day in
+            BackupSession(installDay: day, snapshots: dated[day]!.sorted { $0.createdAt > $1.createdAt }, isCurrent: i == 0)
+        }
+        if !undated.isEmpty {
+            out.append(BackupSession(installDay: nil, snapshots: undated.sorted { $0.createdAt > $1.createdAt }, isCurrent: false))
+        }
+        return out
     }
 }

@@ -113,7 +113,16 @@ struct AppDataSettingsPage: View {
         }
         .buttonStyle(.plain)
         if open {
-            ForEach(Array(snaps.enumerated()), id: \.element.id) { index, snap in
+            ForEach(Array(BackupSession.group(snaps).enumerated()), id: \.offset) { _, session in
+                HStack(spacing: 6) {
+                    Text(session.installDay.map { L("fiche.data.cycle", $0.formatted(.dateTime.day().month(.abbreviated))) }
+                         ?? L("fiche.data.cycle.none"))
+                        .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    if session.isCurrent { Text(L("fiche.data.cycle.current")).font(.caption).foregroundStyle(.tint) }
+                }
+                .padding(.leading, 28)
+                ForEach(session.snapshots, id: \.id) { snap in
+                let index = snap.id == snaps.first?.id ? 0 : 1
                 HStack(spacing: 8) {
                     VStack(alignment: .leading, spacing: 1) {
                         HStack(spacing: 6) {
@@ -131,6 +140,7 @@ struct AppDataSettingsPage: View {
                     Button(L("settings.appData.export")) { export(snap) }
                 }
                 .padding(.leading, 28)
+                }
             }
         }
     }

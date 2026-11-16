@@ -148,6 +148,8 @@ final class AppModel {
     private(set) var appIDReleases: [Date] = []
     /// Current step of each running install/refresh, per app row.
     private(set) var jobs: [JobKey: JobStage] = [:]
+    /// Entries (`AppEntry.id`) with a backup, restore or import running: the fiche shows a spinner.
+    private(set) var dataBusy: Set<JobKey> = []
     private(set) var pairing: Set<String> = []
     private(set) var pairErrors: [String: String] = [:]
     /// Settings > Mes apps: why the last tweak files added to an installation couldn't be
@@ -2224,10 +2226,18 @@ final class AppModel {
                 if let used = existing.flatMap({ InAppSettings.lastUsed(in: $0.installations) }) {
                     flow.inApp = used.setting(\.autoRefresh, to: true, at: Date(), by: .mac)
                 }
-                if let existing {
-                    let found = await allBackups(forRecord: existing.id)
-                    if install === flow { flow.setDataSnapshots(found) }
+                var found: [BackupSnapshot] = []
+                if let existing { found = await allBackups(forRecord: existing.id) }
+                if found.isEmpty {
+                    // The record was removed on uninstall: its backups are orphaned under the signed id
+                    // this IPA would get.
+                    let teamID = existing?.teamID ?? { if case .success(let env) = environment { env.teamID } else { nil } }()
+                    if let teamID {
+                        let prospective = BundleIdentifier.defaultSigned(original: info.bundleID, teamID: teamID)
+                        found = await backupStore.list(signedBundleID: prospective)
+                    }
                 }
+                if install === flow { flow.setDataSnapshots(found.sorted { $0.createdAt > $1.createdAt }) }
                 let installed = existing?.installations.isEmpty == false
                 flow.reviewsSteps = !installed || Self.setting(Self.reviewInstallOptionsKey)
                 flow.phase = .editing(error: nil)
@@ -2779,12 +2789,17 @@ final class AppModel {
     /// Backs the app's data up now (a manual backup keeps its snapshot even when nothing changed).
     @discardableResult
     func backUpNow(_ entry: AppEntry) async -> Bool {
+        dataBusy.insert(entry.id)
+        defer { dataBusy.remove(entry.id) }
+        // The live record: the entry's own copy predates a switch toggled since the fiche opened.
+        let opts = records.first { $0.id == entry.record.id }?.options ?? entry.record.options
         do {
             _ = try await withKnownXcode {
                 try await backupService.backUp(signedBundleID: backupBundleID(entry), deviceID: entry.installation.deviceID,
                                                deviceName: deviceDisplayName(entry.installation.deviceID),
                                                appVersion: entry.record.version,
-                                               includeCaches: entry.record.options.backupCaches != false,
+                                               includeCaches: opts.backupCaches != false,
+                                               installedAt: entry.installation.installedAt,
                                                retention: Self.backupRetention, onlyIfChanged: false)
             }
             return true
@@ -2797,6 +2812,8 @@ final class AppModel {
     /// Pushes a snapshot into the app. Always an overlay: the backend cannot clear a container.
     @discardableResult
     func restore(_ snapshotID: String, _ entry: AppEntry) async -> Bool {
+        dataBusy.insert(entry.id)
+        defer { dataBusy.remove(entry.id) }
         do {
             let done = try await withKnownXcode {
                 try await backupService.restore(snapshotID: snapshotID, toSignedBundleID: backupBundleID(entry),
@@ -2844,6 +2861,9 @@ final class AppModel {
     func importBackup(zip: URL, intoRecordID: UUID, deviceID: String) async -> Bool {
         guard let record = records.first(where: { $0.id == intoRecordID }),
               let installation = record.installations.first(where: { $0.deviceID == deviceID }) else { return false }
+        let busyID = AppEntry(record: record, installation: installation).id
+        dataBusy.insert(busyID)
+        defer { dataBusy.remove(busyID) }
         let manifest = try? BackupArchive.readManifest(zipURL: zip)
         guard BackupMatching.manifestAllows(manifest, targetSignedBundleID: installation.signedBundleID ?? record.signedBundleID)
         else { return false }
@@ -2855,7 +2875,8 @@ final class AppModel {
             let snap = try await backupStore.createSnapshot(
                 from: contentDir, signedBundleID: backupBundleID(entry), deviceID: installation.deviceID,
                 deviceName: deviceDisplayName(installation.deviceID), includedCaches: manifest?.includedCaches ?? true,
-                appVersion: manifest?.appVersion, retention: Self.backupRetention)
+                appVersion: manifest?.appVersion, installedAt: installation.installedAt,
+                retention: Self.backupRetention)
             return await restore(snap.id, entry)
         } catch {
             Self.logger.error("backup import failed: \(String(describing: type(of: error)))")

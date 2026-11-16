@@ -77,12 +77,14 @@ struct AppDataTab: View {
     let deviceName: String
     @State private var snaps: [BackupSnapshot] = []
     @State private var busy = false
+    @State private var justDone = false
 
     private var options: InstallOptions {
         model.records.first { $0.id == entry.record.id }?.options ?? entry.record.options
     }
     private var backupOn: Bool { options.backupData != false }
-    private var reloadID: String { "\(entry.id)/\(model.jobs[entry.id] == nil)/\(options.backupData.map(String.init(describing:)) ?? "")" }
+    private var working: Bool { busy || model.dataBusy.contains(entry.id) }
+    private var reloadID: String { "\(entry.id)/\(model.jobs[entry.id] == nil)/\(model.dataBusy.contains(entry.id))/\(options.backupData.map(String.init(describing:)) ?? "")" }
 
     /// A boxed row: title + explanation on the left, switch on the right (like the Correctifs tab).
     @ViewBuilder private func toggleBox(_ title: String, _ note: String, isOn: Binding<Bool>, enabled: Bool = true) -> some View {
@@ -117,10 +119,19 @@ struct AppDataTab: View {
                 Button(L("fiche.data.import")) {
                     run { await AppDataActions.importData(entry, appName: appName, deviceName: deviceName, model: model) }
                 }
+                if working {
+                    ProgressView().controlSize(.small)
+                    Text(L("fiche.data.working")).font(.caption).foregroundStyle(.secondary)
+                } else if justDone {
+                    Label(L("fiche.data.done"), systemImage: "checkmark.circle.fill")
+                        .font(.caption).foregroundStyle(.green)
+                }
                 Spacer(minLength: 0)
             }
-            .disabled(busy || !model.canManage(entry))
+            .disabled(working || !model.canManage(entry))
             .help(model.manageBlockedReason(entry) ?? "")
+            Text(L("fiche.data.onlineNote")).font(.system(size: 11)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
             sectionTitle(snaps.isEmpty ? L("fiche.data.section.versions")
                          : L("fiche.data.versions", snaps.count, Self.size(snaps.reduce(0) { $0 + $1.byteSize })))
@@ -129,13 +140,26 @@ struct AppDataTab: View {
                 Text(backupOn ? L("fiche.data.empty") : L("fiche.data.emptyOff"))
                     .font(.system(size: 12.5)).foregroundStyle(.secondary)
             }
-            ForEach(Array(snaps.enumerated()), id: \.element.id) { index, snap in
-                Divider()
-                versionRow(snap, latest: index == 0)
+            ForEach(Array(BackupSession.group(snaps).enumerated()), id: \.offset) { _, session in
+                HStack(spacing: 6) {
+                    Text(session.installDay.map { L("fiche.data.cycle", $0.formatted(.dateTime.day().month(.abbreviated))) }
+                         ?? L("fiche.data.cycle.none"))
+                        .font(.system(size: 12, weight: .semibold))
+                    if session.isCurrent { tag(L("fiche.data.cycle.current")) }
+                }
+                .padding(.top, 4)
+                ForEach(session.snapshots, id: \.id) { snap in
+                    Divider()
+                    versionRow(snap, latest: snap.id == snaps.first?.id)
+                }
             }
         }
         .toggleStyle(.xside)
         .task(id: reloadID) { await reload() }
+        .onChange(of: model.dataBusy.contains(entry.id)) { was, now in
+            guard was, !now else { return }
+            flashDone()
+        }
     }
 
     private func versionRow(_ snap: BackupSnapshot, latest: Bool) -> some View {
@@ -151,7 +175,7 @@ struct AppDataTab: View {
             Button(L("settings.appData.restore")) { restore(snap) }
             Button(L("settings.appData.export")) { run { await AppDataActions.export(snap, model: model) } }
         }
-        .disabled(busy)
+        .disabled(working)
     }
 
     private func detail(_ snap: BackupSnapshot) -> String {
@@ -196,6 +220,15 @@ struct AppDataTab: View {
             await work()
             await reload()
             busy = false
+            flashDone()
+        }
+    }
+
+    private func flashDone() {
+        justDone = true
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            justDone = false
         }
     }
 

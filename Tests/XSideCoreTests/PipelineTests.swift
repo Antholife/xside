@@ -198,7 +198,7 @@ private struct SpyBackup: DataBackingUp {
     var error: (any Error)?
     var restoreError: (any Error)?
     func backUp(signedBundleID: String, deviceID: String, deviceName: String, appVersion: String?,
-                includeCaches: Bool, retention: Int, onlyIfChanged: Bool) async throws -> BackupSnapshot? {
+                includeCaches: Bool, installedAt: Date?, retention: Int, onlyIfChanged: Bool) async throws -> BackupSnapshot? {
         retentions?.add(retention)
         await log.backup(signedBundleID, deviceID, deviceName, appVersion, includeCaches, onlyIfChanged)
         if let error { throw error }

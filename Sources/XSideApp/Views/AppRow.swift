@@ -12,6 +12,8 @@ struct AppRow: View {
     /// No job runs on the row: it can be uninstalled, paused, resumed or removed from the list.
     let canManage: Bool
     let isUninstalling: Bool
+    /// A data backup, restore or import is running for this row.
+    var isDataBusy = false
     /// Wi-Fi refresh is off and the device is only on Wi-Fi.
     let needsUSB: Bool
     let deviceName: String
@@ -143,7 +145,7 @@ struct AppRow: View {
 
     private func mainRow(validity: Validity, now: Date) -> some View {
         HStack(spacing: 10) {
-            AppIconView(icon: icon, isBusy: step != nil || isUninstalling, isPaused: looksPaused,
+            AppIconView(icon: icon, isBusy: step != nil || isUninstalling || isDataBusy, isPaused: looksPaused,
                         hasCrash: crash != nil && step == nil)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
@@ -210,7 +212,7 @@ struct AppRow: View {
             }
             Spacer(minLength: 4)
             // Refreshing is in the … menu (and the row's context menu and VoiceOver actions).
-            RingView(validity: validity, isPaused: looksPaused, isBusy: step != nil || isUninstalling, size: 28)
+            RingView(validity: validity, isPaused: looksPaused, isBusy: step != nil || isUninstalling || isDataBusy, size: 28)
             Menu { actions } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 12, weight: .semibold))
@@ -234,6 +236,7 @@ struct AppRow: View {
 
     private func subtitle(validity: Validity, now: Date) -> String {
         if isUninstalling { return L("popover.app.uninstalling") }
+        if isDataBusy { return L("fiche.data.working") }
         if let step { return percent.map { "\(step.rowText) \(percentText($0))" } ?? step.rowText }
         // A pause of a while names its end, unless the app expired meanwhile (mega review U11).
         if isPaused, let end = entry.installation.pausedUntil, end > now, !validity.isExpired {
@@ -449,10 +452,11 @@ enum AppRowAlerts {
         alert.alertStyle = .warning
 
         let guardian = UninstallBoxGuard()
+        let width: CGFloat = 380
         let first = NSButton(checkboxWithTitle: L("uninstall.backupFirst"), target: guardian, action: #selector(UninstallBoxGuard.toggle(_:)))
         first.state = backUpFirstDefault && canBackUp ? .on : .off
         first.isEnabled = canBackUp
-        let firstHint = hint(L(canBackUp ? "uninstall.backupFirst.note" : "uninstall.backupFirst.unavailable"))
+        let firstHint = hint(L(canBackUp ? "uninstall.backupFirst.note" : "uninstall.backupFirst.unavailable"), width: width)
         let second = NSButton(checkboxWithTitle: L("uninstall.deleteBackups"), target: guardian, action: #selector(UninstallBoxGuard.toggle(_:)))
         second.state = .off
         guardian.first = first
@@ -462,7 +466,14 @@ enum AppRowAlerts {
         if backupBytes > 0 {
             secondNote += " · " + ByteCountFormatter.string(fromByteCount: Int64(backupBytes), countStyle: .file)
         }
-        let secondHint = hint(secondNote)
+        let secondHint = hint(secondNote, width: width)
+        for box in [first, second] {
+            box.lineBreakMode = .byWordWrapping
+            box.cell?.wraps = true
+            box.cell?.lineBreakMode = .byWordWrapping
+            box.translatesAutoresizingMaskIntoConstraints = false
+            box.widthAnchor.constraint(equalToConstant: width).isActive = true
+        }
 
         let stack = NSStackView(views: [first, firstHint, second, secondHint])
         stack.orientation = .vertical
@@ -470,7 +481,6 @@ enum AppRowAlerts {
         stack.spacing = 3
         stack.setCustomSpacing(12, after: firstHint)
         stack.translatesAutoresizingMaskIntoConstraints = false
-        let width: CGFloat = 300
         stack.widthAnchor.constraint(equalToConstant: width).isActive = true
         let size = stack.fittingSize
         stack.frame = NSRect(x: 0, y: 0, width: width, height: size.height)
@@ -499,12 +509,14 @@ enum AppRowAlerts {
     }
 
     /// A checkbox's grey hint, indented under its label.
-    private static func hint(_ text: String) -> NSView {
+    private static func hint(_ text: String, width: CGFloat) -> NSView {
         let label = NSTextField(wrappingLabelWithString: text)
         label.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
         label.textColor = .secondaryLabelColor
-        label.preferredMaxLayoutWidth = 280
+        label.preferredMaxLayoutWidth = width - 20
         let box = NSView()
+        box.translatesAutoresizingMaskIntoConstraints = false
+        box.widthAnchor.constraint(equalToConstant: width).isActive = true
         label.translatesAutoresizingMaskIntoConstraints = false
         box.addSubview(label)
         NSLayoutConstraint.activate([

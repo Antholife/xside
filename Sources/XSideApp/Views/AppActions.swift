@@ -34,7 +34,7 @@ enum AppActions {
     private static func confirmed(_ entry: AppEntry, app: String, deviceName: String, model: AppModel, bytes: Int,
                                   reachable: Bool, present: @escaping Present, done: @escaping @MainActor () -> Void) {
         let backUpDefault = AppManagement.backupFirstDefault(deviceReachable: reachable,
-                                                             backupData: entry.record.options.backupData)
+                                                             backupData: model.records.first { $0.id == entry.record.id }?.options.backupData ?? entry.record.options.backupData)
         guard let choice = AppRowAlerts.confirmUninstall(app: app, device: deviceName, backUpFirstDefault: backUpDefault,
                                                          canBackUp: reachable, backupBytes: bytes) else { return }
         Task {

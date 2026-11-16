@@ -1373,13 +1373,19 @@
 "fiche.data.emptyOff" = "La sauvegarde est désactivée pour cette app.";
 "fiche.data.backUpNow.failed" = "La sauvegarde a échoué. Vérifie que l'appareil est branché ou joignable.";
 "fiche.data.import.title" = "Importer des données dans %@ ?";
-"fiche.data.import.note" = "Le fichier choisi sera copié par-dessus les données actuelles de %@ sur %@ : ses fichiers remplacent leurs homologues, les autres ne sont pas touchés.";
+"fiche.data.import.note" = "Attention : les données actuelles de %@ sur %@ seront REMPLACÉES par celles du fichier choisi (ses fichiers écrasent leurs homologues ; les autres ne sont pas touchés).";
 "fiche.data.import.choose" = "Choisir une sauvegarde…";
 "fiche.data.import.mismatch" = "Cette sauvegarde est pour une autre app (ou n'a pas pu être importée) : rien n'a été modifié.";
 "menu.backUpNow" = "Sauvegarder les données maintenant";
 "menu.exportData" = "Exporter les données…";
 "menu.importData" = "Importer des données…";
 "fiche.data.section.versions" = "Versions";
+"fiche.data.working" = "Sauvegarde en cours…";
+"fiche.data.done" = "Terminé";
+"fiche.data.cycle" = "Installée le %@";
+"fiche.data.cycle.current" = "(cycle actuel)";
+"fiche.data.cycle.none" = "Sauvegardes";
+"fiche.data.onlineNote" = "Sauvegarde les données enregistrées sur l'appareil. Une progression liée à un compte en ligne n'est pas concernée.";
 
 /* Task 10: conditional "Données" install step */
 "install.steps.data" = "Données";

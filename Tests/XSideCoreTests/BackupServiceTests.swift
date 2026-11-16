@@ -140,3 +140,25 @@ private final class TreeRunner: CommandRunning, @unchecked Sendable {
         #expect(result == .overlay)
     }
 }
+
+@Suite struct BackupSessionTests {
+    private func snap(_ id: String, created: Double, installed: Double?) -> BackupSnapshot {
+        BackupSnapshot(id: id, signedBundleID: "a", deviceID: "d", deviceName: "n", createdAt: Date(timeIntervalSince1970: created),
+                       byteSize: 1, fileCount: 1, includedCaches: false, appVersion: nil,
+                       installedAt: installed.map { Date(timeIntervalSince1970: $0) })
+    }
+
+    @Test func groupsByInstallDayNewestFirstAndMarksCurrent() {
+        let day = 86_400.0
+        let groups = BackupSession.group([
+            snap("old1", created: 10 * day + 100, installed: 10 * day),
+            snap("new1", created: 20 * day + 100, installed: 20 * day),
+            snap("old2", created: 11 * day, installed: 10 * day + 50),
+            snap("none", created: 30 * day, installed: nil),
+        ], calendar: Calendar(identifier: .gregorian))
+        #expect(groups.count == 3)
+        #expect(groups[0].snapshots.map(\.id) == ["new1"] && groups[0].isCurrent)
+        #expect(groups[1].snapshots.map(\.id) == ["old2", "old1"] && !groups[1].isCurrent)
+        #expect(groups[2].installDay == nil && groups[2].snapshots.map(\.id) == ["none"])
+    }
+}
