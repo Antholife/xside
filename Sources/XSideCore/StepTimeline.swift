@@ -26,7 +26,7 @@ public enum ProgressStep: Int, CaseIterable, Sendable {
         case .tweaks: self = .tweaks
         case .legacy32: self = .legacy32
         case .signing: self = .signing
-        case .installing, .backingUp: self = .installing
+        case .installing, .backingUp, .restoring: self = .installing
         }
     }
 

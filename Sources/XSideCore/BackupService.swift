@@ -9,6 +9,11 @@ public protocol DataBackingUp: Sendable {
                 includeCaches: Bool, retention: Int, onlyIfChanged: Bool) async throws -> BackupSnapshot?
     func restore(_ snapshot: BackupSnapshot, toSignedBundleID: String, deviceID: String,
                  executable: String, clear: Bool) async throws -> RestoreClear
+    /// Restores the snapshot with this id; nil when no snapshot has it (nothing to restore).
+    func restore(snapshotID: String, toSignedBundleID: String, deviceID: String,
+                 executable: String, clear: Bool) async throws -> RestoreClear?
+    /// Forgets every snapshot of this app on this device.
+    func deleteBackups(signedBundleID: String, deviceID: String) async
 }
 
 public struct BackupService: DataBackingUp {
@@ -60,6 +65,17 @@ public struct BackupService: DataBackingUp {
         try await container.push(signedBundleID: toSignedBundleID, deviceID: deviceID,
                                  from: await store.snapshotDir(snapshot), relativePath: "/")
         return .overlay
+    }
+
+    public func restore(snapshotID: String, toSignedBundleID: String, deviceID: String,
+                        executable: String, clear: Bool) async throws -> RestoreClear? {
+        guard let snapshot = await store.snapshot(snapshotID) else { return nil }
+        return try await restore(snapshot, toSignedBundleID: toSignedBundleID, deviceID: deviceID,
+                                 executable: executable, clear: clear)
+    }
+
+    public func deleteBackups(signedBundleID: String, deviceID: String) async {
+        try? await store.deleteAll(signedBundleID: signedBundleID, deviceID: deviceID)
     }
 
     static func excludedPrefixes(includeCaches: Bool) -> [String] {

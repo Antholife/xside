@@ -74,6 +74,18 @@ public enum InstallStep: Int, CaseIterable, Sendable {
     case profile, welcome, legacy32, duo, icloud, tweaks, signing, installing
     /// `backingUp`: snapshotting the app's data after a successful refresh, unless turned off for the app.
     case backingUp
+    /// `restoring`: pushing a chosen backup into the freshly installed app's container.
+    case restoring
+}
+
+/// A backup to inject into the app right after it is installed.
+public struct RestoreRequest: Sendable {
+    public let snapshotID: String
+    public let clearContainer: Bool
+    public init(snapshotID: String, clearContainer: Bool) {
+        self.snapshotID = snapshotID
+        self.clearContainer = clearContainer
+    }
 }
 
 /// How the job's signed-out iCloud step went, from the resigner's callback.
@@ -279,7 +291,8 @@ public actor SideloadPipeline {
                         refresh: Bool = false, inApp: InAppDraft? = nil, duoCompatibility: Bool? = nil,
                         iCloudSignedOut: Bool? = nil, tweaks: [TweakUse]? = nil,
                         progress: @escaping @Sendable (InstallStep) async -> Void = { _ in },
-                        duoOutcome: @escaping @Sendable (DuoOutcome) async -> Void = { _ in }) async throws -> Installation {
+                        duoOutcome: @escaping @Sendable (DuoOutcome) async -> Void = { _ in },
+                        restore: RestoreRequest? = nil) async throws -> Installation {
         let previous = tails[device.id]?.task
         let token = UUID()
         let job = Task<Installation, Error> {
@@ -288,7 +301,7 @@ public actor SideloadPipeline {
             return try await self.perform(recordID: recordID, device: device, environment: environment,
                                           refresh: refresh, inApp: inApp, duo: duoCompatibility,
                                           iCloud: iCloudSignedOut, tweaks: tweaks, progress: progress,
-                                          duoOutcome: duoOutcome)
+                                          duoOutcome: duoOutcome, restore: restore)
         }
         // The chain waits for the previous job too: one cancelled while queued ends at once, and a
         // job queued after it must still wait for the one running.
@@ -319,13 +332,15 @@ public actor SideloadPipeline {
     /// environment: nil leaves `DEVELOPER_DIR` to the runner. Throws `recordNotFound` when the
     /// installation is gone (removed meanwhile); on failure the library is left untouched.
     public func uninstall(recordID: UUID, deviceID: String,
-                          developerDir: @escaping @Sendable () async -> URL?) async throws {
+                          developerDir: @escaping @Sendable () async -> URL?,
+                          deleteBackups: Bool = false) async throws {
         let previous = tails[deviceID]?.task
         let token = UUID()
         let job = Task<Void, Error> {
             try await waitCancellably(for: previous)
             try Task.checkCancellation()
-            try await self.performUninstall(recordID: recordID, deviceID: deviceID, developerDir: developerDir)
+            try await self.performUninstall(recordID: recordID, deviceID: deviceID, developerDir: developerDir,
+                                            deleteBackups: deleteBackups)
         }
         tails[deviceID] = (token, Task {
             await previous?.value
@@ -340,7 +355,8 @@ public actor SideloadPipeline {
     }
 
     private nonisolated func performUninstall(recordID: UUID, deviceID: String,
-                                              developerDir: @Sendable () async -> URL?) async throws {
+                                              developerDir: @Sendable () async -> URL?,
+                                              deleteBackups: Bool) async throws {
         guard let record = await library.records().first(where: { $0.id == recordID }),
               let installation = record.installations.first(where: { $0.deviceID == deviceID }) else {
             throw XSideError.recordNotFound
@@ -359,6 +375,10 @@ public actor SideloadPipeline {
         do {
             try await library.removeInstallation(recordID: recordID, deviceID: deviceID)
         } catch XSideError.recordNotFound {}
+        // The caller's choice (a final backup, if wanted, was its job, before this call).
+        if deleteBackups, let backup {
+            await backup.deleteBackups(signedBundleID: bundleID, deviceID: deviceID)
+        }
     }
 
     /// A fixed environment (tests, callers that just probed).
@@ -366,11 +386,12 @@ public actor SideloadPipeline {
                         inApp: InAppDraft? = nil, duoCompatibility: Bool? = nil, iCloudSignedOut: Bool? = nil,
                         tweaks: [TweakUse]? = nil,
                         progress: @escaping @Sendable (InstallStep) async -> Void = { _ in },
-                        duoOutcome: @escaping @Sendable (DuoOutcome) async -> Void = { _ in }) async throws -> Installation {
+                        duoOutcome: @escaping @Sendable (DuoOutcome) async -> Void = { _ in },
+                        restore: RestoreRequest? = nil) async throws -> Installation {
         try await install(recordID: recordID, device: device, environment: { env }, refresh: refresh, inApp: inApp,
                           duoCompatibility: duoCompatibility, iCloudSignedOut: iCloudSignedOut, tweaks: tweaks,
                           progress: progress,
-                          duoOutcome: duoOutcome)
+                          duoOutcome: duoOutcome, restore: restore)
     }
 
     /// Thrown inside the provisioning lock when `environment` fails, to tell it from a job failure.
@@ -402,7 +423,8 @@ public actor SideloadPipeline {
                                      refresh: Bool, inApp draft: InAppDraft?, duo: Bool?, iCloud: Bool?,
                                      tweaks asked: [TweakUse]?,
                                      progress: @escaping @Sendable (InstallStep) async -> Void,
-                                     duoOutcome: @escaping @Sendable (DuoOutcome) async -> Void) async throws -> Installation {
+                                     duoOutcome: @escaping @Sendable (DuoOutcome) async -> Void,
+                                     restore: RestoreRequest?) async throws -> Installation {
         guard let record = await library.records().first(where: { $0.id == recordID }) else {
             throw XSideError.recordNotFound
         }
@@ -413,7 +435,8 @@ public actor SideloadPipeline {
         do {
             let installation = try await perform(record: record, previous: previous, device: device,
                                                  environment: environment, refresh: refresh, inApp: draft, duo: duo,
-                                                 iCloud: iCloud, tweaks: tweaks, progress: progress, duoOutcome: duoOutcome)
+                                                 iCloud: iCloud, tweaks: tweaks, progress: progress, duoOutcome: duoOutcome,
+                                                 restore: restore)
             await library.releaseTweaks(held, recordID: recordID)
             return installation
         } catch {
@@ -427,7 +450,8 @@ public actor SideloadPipeline {
                                      refresh: Bool, inApp draft: InAppDraft?, duo: Bool?, iCloud: Bool?,
                                      tweaks: (uses: [TweakUse]?, job: TweakJob?),
                                      progress: @escaping @Sendable (InstallStep) async -> Void,
-                                     duoOutcome: @escaping @Sendable (DuoOutcome) async -> Void) async throws -> Installation {
+                                     duoOutcome: @escaping @Sendable (DuoOutcome) async -> Void,
+                                     restore: RestoreRequest?) async throws -> Installation {
         let recordID = record.id
         let previousBundleID = previous.map { $0.signedBundleID ?? record.signedBundleID }
         let bundleID = refresh ? previousBundleID ?? record.signedBundleID : record.signedBundleID
@@ -580,6 +604,27 @@ public actor SideloadPipeline {
                 }
             }
 
+            // A restore the person asked for. The app is already installed, so a failure must not undo
+            // the install (a first install would be left unrecorded): it is kept as the installation's
+            // lastErrorKey, which the UI shows, instead of throwing.
+            var restoreErrorKey: String?
+            if let restore, let backup {
+                await progress(.restoring)
+                Self.logger.info("\(what): restoring a backup")
+                do {
+                    try await CommandEnvironment.withDeveloperDir(current.developerDir) {
+                        _ = try await backup.restore(snapshotID: restore.snapshotID, toSignedBundleID: bundleID,
+                                                     deviceID: device.id, executable: record.executable ?? "",
+                                                     clear: restore.clearContainer)
+                    }
+                } catch where error is CancellationError || Task.isCancelled {
+                    throw CancellationError()
+                } catch {
+                    Self.logger.error("\(what): restore failed: \(String(describing: type(of: error)))")
+                    restoreErrorKey = (error as? XSideError)?.key ?? "restoreFailed"
+                }
+            }
+
             let skippedICloud = await iCloudSkip.value
             // Only now: had the install failed, the app on the device would have the previous ones.
             let report = tweaks.job == nil ? nil : await tweakReport.value
@@ -590,7 +635,7 @@ public actor SideloadPipeline {
             // failed, the app still on the device would hold the previous one, which is kept.
             let signed = Installation(deviceID: device.id, installedAt: date,
                                       expiresAt: provisioned.profile.expirationDate,
-                                      lastAttempt: date, lastErrorKey: nil, signedBundleID: bundleID,
+                                      lastAttempt: date, lastErrorKey: restoreErrorKey, signedBundleID: bundleID,
                                       signingIdentitySHA1: current.identitySHA1, teamID: current.teamID,
                                       appVersion: facts.appVersion, inApp: facts.inApp,
                                       firstInstalledAt: facts.firstInstalledAt,

@@ -52,6 +52,12 @@ private actor CallLog {
     func uninstall(_ bundleID: String, _ id: String) { uninstalls.append((bundleID, id)); deviceCalls.append("uninstall:\(id)") }
     private(set) var backups: [(signedBundleID: String, deviceID: String, deviceName: String, appVersion: String?,
                                includeCaches: Bool, onlyIfChanged: Bool)] = []
+    private(set) var restores: [(snapshotID: String, bundleID: String, deviceID: String, executable: String, clear: Bool)] = []
+    func restore(_ snapshotID: String, _ bundleID: String, _ id: String, _ executable: String, _ clear: Bool) {
+        restores.append((snapshotID, bundleID, id, executable, clear)); deviceCalls.append("restore:\(id)")
+    }
+    private(set) var deletedBackups: [(bundleID: String, deviceID: String)] = []
+    func deleteBackups(_ bundleID: String, _ id: String) { deletedBackups.append((bundleID, id)) }
     func backup(_ bundleID: String, _ id: String, _ name: String, _ version: String?, _ caches: Bool, _ onlyIfChanged: Bool) {
         backups.append((bundleID, id, name, version, caches, onlyIfChanged)); deviceCalls.append("backup:\(id)")
     }
@@ -182,6 +188,7 @@ private struct OpaqueError: Error {}
 private struct SpyBackup: DataBackingUp {
     let log: CallLog
     var error: (any Error)?
+    var restoreError: (any Error)?
     func backUp(signedBundleID: String, deviceID: String, deviceName: String, appVersion: String?,
                 includeCaches: Bool, retention: Int, onlyIfChanged: Bool) async throws -> BackupSnapshot? {
         await log.backup(signedBundleID, deviceID, deviceName, appVersion, includeCaches, onlyIfChanged)
@@ -190,6 +197,15 @@ private struct SpyBackup: DataBackingUp {
     }
     func restore(_ snapshot: BackupSnapshot, toSignedBundleID: String, deviceID: String,
                  executable: String, clear: Bool) async throws -> RestoreClear { .overlay }
+    func restore(snapshotID: String, toSignedBundleID: String, deviceID: String,
+                 executable: String, clear: Bool) async throws -> RestoreClear? {
+        await log.restore(snapshotID, toSignedBundleID, deviceID, executable, clear)
+        if let restoreError { throw restoreError }
+        return clear ? .clearedContainer : .overlay
+    }
+    func deleteBackups(signedBundleID: String, deviceID: String) async {
+        await log.deleteBackups(signedBundleID, deviceID)
+    }
 }
 
 /// Its first call times out (a hung xcodebuild); later calls succeed.
@@ -322,6 +338,58 @@ struct PipelineTests {
         #expect(backups.first?.onlyIfChanged == true)
         #expect(await f.log.deviceCalls == ["install:dev-1", "backup:dev-1"])
         #expect(await steps.items.last == .backingUp)
+    }
+
+    @Test func install_withRestore_injectsAfterInstall() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let steps = StepLog()
+        let pipeline = f.pipeline(backup: SpyBackup(log: f.log))
+        _ = try await pipeline.install(recordID: f.record.id, device: device(), env: env,
+                                       progress: { await steps.add($0) },
+                                       restore: RestoreRequest(snapshotID: "snap-1", clearContainer: true))
+        let restores = await f.log.restores
+        #expect(restores.count == 1)
+        #expect(restores.first?.snapshotID == "snap-1")
+        #expect(restores.first?.bundleID == "com.example.demo.TEAM123456")
+        #expect(restores.first?.deviceID == "dev-1")
+        #expect(restores.first?.executable == "Demo")
+        #expect(restores.first?.clear == true)
+        #expect(await f.log.deviceCalls == ["install:dev-1", "restore:dev-1"])
+        #expect(await steps.items.last == .restoring)
+    }
+
+    @Test func install_withoutRestore_doesNotInject() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        _ = try await f.pipeline(backup: SpyBackup(log: f.log)).install(recordID: f.record.id, device: device(), env: env)
+        #expect(await f.log.restores.isEmpty)
+    }
+
+    @Test func install_restoreFailure_keepsInstallAndRecordsErrorKey() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        let pipeline = f.pipeline(backup: SpyBackup(log: f.log, restoreError: OpaqueError()))
+        let result = try await pipeline.install(recordID: f.record.id, device: device(), env: env,
+                                                restore: RestoreRequest(snapshotID: "snap-1", clearContainer: false))
+        #expect(result.lastErrorKey == "restoreFailed")
+        #expect(try await f.library.records().first?.installations.count == 1)
+    }
+
+    @Test func uninstall_deleteBackupsTrue_removesSnapshots() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        try await f.library.upsert(Installation(deviceID: "dev-1", installedAt: fixedNow, expiresAt: expiry,
+                                                signedBundleID: "com.custom.demo"), for: f.record.id)
+        try await f.pipeline(backup: SpyBackup(log: f.log))
+            .uninstall(recordID: f.record.id, deviceID: "dev-1", developerDir: { nil }, deleteBackups: true)
+        let deleted = await f.log.deletedBackups
+        #expect(deleted.map(\.bundleID) == ["com.custom.demo"])
+        #expect(deleted.map(\.deviceID) == ["dev-1"])
+    }
+
+    @Test func uninstall_deleteBackupsFalse_keepsThem() async throws {
+        let f = try await Fixture(); defer { f.cleanup() }
+        try await f.library.upsert(Installation(deviceID: "dev-1", installedAt: fixedNow, expiresAt: expiry), for: f.record.id)
+        try await f.pipeline(backup: SpyBackup(log: f.log))
+            .uninstall(recordID: f.record.id, deviceID: "dev-1") { nil }
+        #expect(await f.log.deletedBackups.isEmpty)
     }
 
     @Test func refresh_skipsSnapshotWhenDisabled() async throws {
