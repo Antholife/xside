@@ -1323,3 +1323,37 @@
 "ipaContent.sheet.reading" = "Reading the IPA XSide kept…";
 "ipaContent.sheet.failed" = "XSide couldn't read the IPA it kept for this app.";
 "ipaContent.sheet.close" = "Close";
+
+/* Settings > App data */
+"settings.pane.appData" = "App data";
+"settings.appData.lead" = "XSide can back up an app's progress and settings, and restore them on any of your devices (same Apple account).";
+"settings.appData.defaults" = "New installations · defaults";
+"settings.appData.backupNew" = "Back up data";
+"settings.appData.backupNew.note" = "At each refresh, if the data changed. Can be turned off per app.";
+"settings.appData.caches" = "Include caches";
+"settings.appData.caches.note" = "Heavier but complete. Some apps keep real data in caches.";
+"settings.appData.retention" = "Versions kept";
+"settings.appData.retention.note" = "History per app and per device. Older ones are deleted beyond that.";
+"settings.appData.disk" = "Disk space";
+"settings.appData.diskUsed" = "%@ used by backups";
+"settings.appData.reveal" = "Reveal in Finder";
+"settings.appData.backups" = "Backups · %d";
+"settings.appData.empty" = "No backups yet.";
+"settings.appData.latest" = "latest";
+"settings.appData.versions" = "%d versions";
+"settings.appData.restore" = "Restore…";
+"settings.appData.export" = "Export…";
+"settings.appData.delete" = "Delete";
+"settings.appData.orphans" = "Uninstalled apps · %d";
+"settings.appData.orphans.note" = "Backups kept for apps you no longer have installed. Reinstall the app to restore them, or delete them to free space.";
+"settings.appData.uninstalled" = "uninstalled";
+"settings.appData.savedOn" = "backed up on %@";
+"settings.appData.restore.title" = "Restore %@'s data?";
+"settings.appData.restore.note" = "The backup from %@ will be copied over the app's current data: backed-up files replace their counterparts, other files are left alone.";
+"settings.appData.restore.noDevice" = "This backup's device no longer has the app installed.";
+"settings.appData.restore.failed" = "Restore failed. Check that the device is connected or reachable.";
+"settings.appData.orphan.restore.title" = "Reinstall the app first";
+"settings.appData.orphan.restore.note" = "This app is no longer installed: reinstall it with XSide, then restore its backup from this page.";
+"settings.appData.export.failed" = "Export failed.";
+"settings.appData.delete.title" = "Delete this backup?";
+"settings.appData.delete.note" = "The backup from %@ will be permanently deleted.";

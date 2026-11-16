@@ -1323,3 +1323,37 @@
 "ipaContent.sheet.reading" = "Lecture de l'IPA gardée par XSide…";
 "ipaContent.sheet.failed" = "XSide n'a pas pu relire l'IPA qu'il a gardée pour cette app.";
 "ipaContent.sheet.close" = "Fermer";
+
+/* Settings > App data */
+"settings.pane.appData" = "Données des apps";
+"settings.appData.lead" = "XSide peut sauvegarder la progression et les réglages d'une app, et les restaurer sur n'importe lequel de tes appareils (même compte Apple).";
+"settings.appData.defaults" = "Nouvelles installations · valeurs par défaut";
+"settings.appData.backupNew" = "Sauvegarder les données";
+"settings.appData.backupNew.note" = "À chaque rafraîchissement, si les données ont changé. Décochable par app.";
+"settings.appData.caches" = "Inclure les caches";
+"settings.appData.caches.note" = "Plus lourd, mais complet. Certaines apps rangent de vraies données dans les caches.";
+"settings.appData.retention" = "Versions gardées";
+"settings.appData.retention.note" = "Historique par app et par appareil. Les plus anciennes sont supprimées au-delà.";
+"settings.appData.disk" = "Espace disque";
+"settings.appData.diskUsed" = "%@ utilisés par les sauvegardes";
+"settings.appData.reveal" = "Révéler dans le Finder";
+"settings.appData.backups" = "Sauvegardes · %d";
+"settings.appData.empty" = "Aucune sauvegarde pour l'instant.";
+"settings.appData.latest" = "la plus récente";
+"settings.appData.versions" = "%d versions";
+"settings.appData.restore" = "Restaurer…";
+"settings.appData.export" = "Exporter…";
+"settings.appData.delete" = "Supprimer";
+"settings.appData.orphans" = "Apps non installées · %d";
+"settings.appData.orphans.note" = "Sauvegardes gardées pour des apps que tu n'as plus installées. Réinstalle l'app pour les restaurer, ou supprime-les pour récupérer de l'espace.";
+"settings.appData.uninstalled" = "désinstallée";
+"settings.appData.savedOn" = "sauvegardée le %@";
+"settings.appData.restore.title" = "Restaurer les données de %@ ?";
+"settings.appData.restore.note" = "La sauvegarde du %@ sera copiée par-dessus les données actuelles de l'app : les fichiers de la sauvegarde remplacent leurs homologues, les autres ne sont pas touchés.";
+"settings.appData.restore.noDevice" = "L'appareil de cette sauvegarde n'a plus cette app installée.";
+"settings.appData.restore.failed" = "La restauration a échoué. Vérifie que l'appareil est branché ou joignable.";
+"settings.appData.orphan.restore.title" = "Réinstalle d'abord l'app";
+"settings.appData.orphan.restore.note" = "Cette app n'est plus installée : réinstalle-la avec XSide, puis restaure sa sauvegarde depuis cette page.";
+"settings.appData.export.failed" = "L'export a échoué.";
+"settings.appData.delete.title" = "Supprimer cette sauvegarde ?";
+"settings.appData.delete.note" = "La sauvegarde du %@ sera supprimée définitivement.";

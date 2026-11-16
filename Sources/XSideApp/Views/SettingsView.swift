@@ -16,7 +16,7 @@ enum AppLinks {
 
 /// The pages of the Settings window.
 enum SettingsPane: String, CaseIterable, Identifiable {
-    case general, refresh, install, inApp, apps, tweaks, notifications, signing, updates, logs, build, about
+    case general, refresh, install, inApp, apps, tweaks, appData, notifications, signing, updates, logs, build, about
     var id: String { rawValue }
 
     var title: String {
@@ -27,6 +27,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .inApp: L("settings.pane.inApp")
         case .apps: L("settings.pane.apps")
         case .tweaks: L("settings.pane.tweaks")
+        case .appData: L("settings.pane.appData")
         case .signing: L("settings.signing")
         case .notifications: L("settings.notifications")
         case .updates: L("updates.title")
@@ -44,6 +45,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .inApp: "apps.iphone"
         case .apps: "square.grid.2x2.fill"
         case .tweaks: "puzzlepiece.extension.fill"
+        case .appData: "externaldrive.fill"
         case .signing: "hammer.fill"
         case .notifications: "bell.badge.fill"
         case .updates: "arrow.triangle.2.circlepath"
@@ -79,7 +81,7 @@ private struct ReportsPaneHeight: ViewModifier {
     }
 }
 
-private struct ReportsFormHeight: ViewModifier {
+struct ReportsFormHeight: ViewModifier {
     @Environment(\.reportPaneHeight) private var report
 
     func body(content: Content) -> some View {
@@ -160,6 +162,7 @@ struct SettingsView: View {
                 if model.settingsPane == .apps { AppsSettingsPage(model: model) }
                 else if model.settingsPane == .build { BuildSettingsPage() }
                 else if model.settingsPane == .tweaks { TweaksSettingsPage(model: model) }
+                else if model.settingsPane == .appData { AppDataSettingsPage(model: model) }
                 else { SettingsPage(model: model, pane: model.settingsPane) }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -258,7 +261,7 @@ private struct SettingsPage: View {
             case .refresh: refreshPage
             case .install: installPage
             case .inApp: InAppDefaultsPage()
-            case .apps, .build, .tweaks: EmptyView() // shown by SettingsView (AppsSettingsPage, BuildSettingsPage, TweaksSettingsPage)
+            case .apps, .build, .tweaks, .appData: EmptyView() // shown by SettingsView (AppsSettingsPage, BuildSettingsPage, TweaksSettingsPage)
             case .signing:
                 Section { SigningHero(model: model) }
                 SigningSettingsSection(model: model)
