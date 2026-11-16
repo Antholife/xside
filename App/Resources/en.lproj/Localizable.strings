@@ -1381,7 +1381,6 @@
 "menu.importData" = "Import data…";
 "fiche.data.section.versions" = "Versions";
 "fiche.data.working" = "Backing up…";
-"fiche.data.done" = "Done";
 "fiche.data.cycle" = "Installed on %@";
 "fiche.data.cycle.current" = "(current cycle)";
 "fiche.data.cycle.none" = "Backups";
@@ -1424,3 +1423,10 @@
 "fiche.data.delete" = "Delete";
 "fiche.data.delete.title" = "Delete this backup?";
 "fiche.data.delete.note" = "The backup from %@ will be permanently deleted.";
+
+"toast.backedUp" = "Backup done";
+"toast.exported" = "Exported";
+"toast.imported" = "Imported";
+"toast.restored" = "Restored";
+"toast.deleted" = "Backup deleted";
+"toast.uninstalled" = "%@ uninstalled";

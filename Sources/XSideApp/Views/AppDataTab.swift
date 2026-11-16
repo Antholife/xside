@@ -7,7 +7,7 @@ import XSideCore
     @discardableResult
     static func backUpNow(_ entry: AppEntry, model: AppModel) async -> Bool {
         let ok = await model.backUpNow(entry)
-        if !ok { alert(L("fiche.data.backUpNow.failed")) }
+        if ok { model.showToast(L("toast.backedUp")) } else { alert(L("fiche.data.backUpNow.failed")) }
         return ok
     }
 
@@ -35,6 +35,7 @@ import XSideCore
                 try FileManager.default.copyItem(at: zip, to: dest)
             }
         } catch { alert(L("settings.appData.export.failed")); return false }
+        model.showToast(L("toast.exported"))
         return true
     }
 
@@ -54,7 +55,7 @@ import XSideCore
         a.addButton(withTitle: L("install.cancel"))
         guard a.runModal() == .alertFirstButtonReturn else { return false }
         let ok = await model.importBackup(zip: zip, intoRecordID: entry.record.id, deviceID: entry.installation.deviceID)
-        if !ok { alert(L("fiche.data.import.mismatch")) }
+        if ok { model.showToast(L("toast.imported")) } else { alert(L("fiche.data.import.mismatch")) }
         return ok
     }
 
@@ -87,7 +88,6 @@ struct AppDataTab: View {
     private enum Action { case backup, export, importData, restore }
     @State private var busy = false
     @State private var action: Action = .backup
-    @State private var justDone = false
 
     private var options: InstallOptions {
         model.records.first { $0.id == entry.record.id }?.options ?? entry.record.options
@@ -141,9 +141,6 @@ struct AppDataTab: View {
                 if working {
                     ProgressView().controlSize(.small)
                     Text(workingText).font(.caption).foregroundStyle(.secondary)
-                } else if justDone {
-                    Label(L("fiche.data.done"), systemImage: "checkmark.circle.fill")
-                        .font(.caption).foregroundStyle(.green)
                 }
                 Spacer(minLength: 0)
             }
@@ -201,7 +198,10 @@ struct AppDataTab: View {
         a.addButton(withTitle: L("fiche.data.delete"))
         a.addButton(withTitle: L("install.cancel"))
         guard a.runModal() == .alertFirstButtonReturn else { return }
-        Task { _ = await model.deleteBackup(snap.id); await reload() }
+        Task {
+            if await model.deleteBackup(snap.id) { model.showToast(L("toast.deleted")) }
+            await reload()
+        }
     }
 
     private func detail(_ snap: BackupSnapshot) -> String {
@@ -237,7 +237,7 @@ struct AppDataTab: View {
         guard a.runModal() == .alertFirstButtonReturn else { return }
         run(.restore) {
             let ok = await model.restore(snap.id, entry)
-            if !ok { AppDataActions.alert(L("settings.appData.restore.failed")) }
+            if ok { model.showToast(L("toast.restored")) } else { AppDataActions.alert(L("settings.appData.restore.failed")) }
             return ok
         }
     }
@@ -246,18 +246,9 @@ struct AppDataTab: View {
         action = kind
         busy = true
         Task {
-            let ok = await work()
+            _ = await work()
             await reload()
             busy = false
-            if ok { flashDone() }
-        }
-    }
-
-    private func flashDone() {
-        justDone = true
-        Task {
-            try? await Task.sleep(for: .seconds(3))
-            justDone = false
         }
     }
 

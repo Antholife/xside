@@ -62,9 +62,29 @@ struct DeviceGroup: Identifiable {
     var canRemove = true
 }
 
+struct ToastMessage: Identifiable, Equatable {
+    let id = UUID()
+    let text: String
+}
+
 @MainActor @Observable
 final class AppModel {
     static let logger = Log("model")
+
+    /// The brief success banner (`appToast`), cleared by itself after a few seconds.
+    private(set) var toast: ToastMessage?
+    @ObservationIgnored private var toastClear: Task<Void, Never>?
+
+    func showToast(_ text: String) {
+        let message = ToastMessage(text: text)
+        toast = message
+        toastClear?.cancel()
+        toastClear = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled, self?.toast == message else { return }
+            self?.toast = nil
+        }
+    }
 
     private(set) var environment: Result<SigningEnvironment, XSideError>? {
         didSet {
@@ -2903,7 +2923,10 @@ final class AppModel {
         await reloadRecords()
     }
 
-    func deleteBackup(_ id: String) async { try? await backupStore.delete(id) }
+    @discardableResult
+    func deleteBackup(_ id: String) async -> Bool {
+        do { try await backupStore.delete(id); return true } catch { return false }
+    }
 
     /// The record's snapshots, on every device it is installed on, newest first.
     func backups(forRecord id: UUID) async -> [BackupSnapshot] {

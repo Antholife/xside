@@ -193,7 +193,7 @@ struct AppDataSettingsPage: View {
                       L("settings.appData.restore")) else { return }
         run {
             let ok = await model.restore(snap.id, entry)
-            if !ok { alert(L("settings.appData.restore.failed"), nil) }
+            if ok { model.showToast(L("toast.restored")) } else { alert(L("settings.appData.restore.failed"), nil) }
         }
     }
 
@@ -208,14 +208,15 @@ struct AppDataSettingsPage: View {
             do {
                 if FileManager.default.fileExists(atPath: dest.path) { _ = try FileManager.default.replaceItemAt(dest, withItemAt: zip, backupItemName: nil, options: []) }
                 else { try FileManager.default.copyItem(at: zip, to: dest) }
-            } catch { alert(L("settings.appData.export.failed"), nil) }
+            } catch { return alert(L("settings.appData.export.failed"), nil) }
+            model.showToast(L("toast.exported"))
         }
     }
 
     private func delete(_ snap: BackupSnapshot) {
         guard confirm(L("settings.appData.delete.title"), L("settings.appData.delete.note", Self.date(snap.createdAt)),
                       L("settings.appData.delete")) else { return }
-        run { await model.deleteBackup(snap.id) }
+        run { if await model.deleteBackup(snap.id) { model.showToast(L("toast.deleted")) } }
     }
 
     private func run(_ work: @escaping () async -> Void) {

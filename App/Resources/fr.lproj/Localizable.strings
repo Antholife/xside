@@ -1381,7 +1381,6 @@
 "menu.importData" = "Importer des données…";
 "fiche.data.section.versions" = "Versions";
 "fiche.data.working" = "Sauvegarde en cours…";
-"fiche.data.done" = "Terminé";
 "fiche.data.cycle" = "Installée le %@";
 "fiche.data.cycle.current" = "(cycle actuel)";
 "fiche.data.cycle.none" = "Sauvegardes";
@@ -1424,3 +1423,10 @@
 "fiche.data.delete" = "Supprimer";
 "fiche.data.delete.title" = "Supprimer cette sauvegarde ?";
 "fiche.data.delete.note" = "La sauvegarde du %@ sera supprimée définitivement.";
+
+"toast.backedUp" = "Sauvegarde terminée";
+"toast.exported" = "Export terminé";
+"toast.imported" = "Import terminé";
+"toast.restored" = "Restauration terminée";
+"toast.deleted" = "Sauvegarde supprimée";
+"toast.uninstalled" = "%@ désinstallée";

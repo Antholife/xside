@@ -175,6 +175,7 @@ struct SettingsView: View {
             if abs((paneHeights[pane]?[part] ?? 0) - value) >= 2 { paneHeights[pane, default: [:]][part] = value }
         }
         .navigationTitle(model.settingsPane.title)
+        .appToast(model)
         .id(language)
         // While something fails, re-check every 5 s so a fix in Xcode shows up here by itself.
         .task {

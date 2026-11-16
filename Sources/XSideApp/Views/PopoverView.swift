@@ -11,6 +11,7 @@ struct PopoverView: View {
     var body: some View {
         PopoverContent(model: model)
             .id(language)
+            .appToast(model)
     }
 }
 

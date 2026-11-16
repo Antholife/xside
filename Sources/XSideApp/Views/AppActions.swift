@@ -42,6 +42,7 @@ enum AppActions {
                 // The last backup completes before the app is removed (a failed one doesn't block it).
                 if choice.backUpFirst { await model.backUpNow(entry) }
                 try await model.uninstall(entry, deleteBackups: choice.deleteBackups)
+                model.showToast(L("toast.uninstalled", app))
                 // Not uninstalled when the row was busy meanwhile: still listed then.
                 if model.currentEntry(entry.id) == nil { done() }
             } catch {
