@@ -23,6 +23,11 @@ struct AppDataSettingsPage: View {
         return model.deviceGroups.flatMap(\.apps).compactMap { seen.insert($0.record.id).inserted ? $0.record : nil }
     }
 
+    /// Changes when the installed apps do, so the list fills in when they load after the pane opens.
+    private var reloadID: [String] {
+        model.deviceGroups.flatMap(\.apps).map { "\($0.record.id)/\($0.installation.deviceID)" }
+    }
+
     private var listed: [(record: AppRecord, snaps: [BackupSnapshot])] {
         records.compactMap { r in perRecord[r.id].flatMap { $0.isEmpty ? nil : (r, $0) } }
     }
@@ -74,7 +79,7 @@ struct AppDataSettingsPage: View {
         .toggleStyle(.xside)
         .modifier(ReportsFormHeight())
         .disabled(busy)
-        .task { await reload() }
+        .task(id: reloadID) { await reload() }
     }
 
     // MARK: Rows
@@ -141,7 +146,6 @@ struct AppDataSettingsPage: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Button(L("settings.appData.restore")) { restoreOrphan() }
             Button(L("settings.appData.export")) { export(snap) }
             Button(L("settings.appData.delete"), role: .destructive) { delete(snap) }
         }
@@ -149,7 +153,7 @@ struct AppDataSettingsPage: View {
 
     private func summary(_ snaps: [BackupSnapshot]) -> String {
         let device = Set(snaps.map(\.deviceName)).sorted().joined(separator: ", ")
-        return "\(device) · " + L("settings.appData.versions", snaps.count) + " · " + Self.size(snaps.reduce(0) { $0 + $1.byteSize })
+        return "\(device) · " + (snaps.count == 1 ? L("settings.appData.versions.one") : L("settings.appData.versions", snaps.count)) + " · " + Self.size(snaps.reduce(0) { $0 + $1.byteSize })
     }
 
     private func detail(_ snap: BackupSnapshot) -> String {
@@ -179,21 +183,18 @@ struct AppDataSettingsPage: View {
         }
     }
 
-    /// An app that isn't installed has nowhere to be restored to: reinstall it first.
-    private func restoreOrphan() {
-        alert(L("settings.appData.orphan.restore.title"), L("settings.appData.orphan.restore.note"))
-    }
-
     private func export(_ snap: BackupSnapshot) {
         run {
             guard let zip = await model.exportBackup(snap.id) else { return alert(L("settings.appData.export.failed"), nil) }
-            defer { try? FileManager.default.removeItem(at: zip.deletingLastPathComponent()) }
+            defer { Self.cleanUp(zip) }
             let panel = NSSavePanel()
             panel.nameFieldStringValue = zip.lastPathComponent
             panel.allowedContentTypes = [.zip]
             guard panel.runModal() == .OK, let dest = panel.url else { return }
-            try? FileManager.default.removeItem(at: dest)
-            do { try FileManager.default.moveItem(at: zip, to: dest) } catch { alert(L("settings.appData.export.failed"), nil) }
+            do {
+                if FileManager.default.fileExists(atPath: dest.path) { _ = try FileManager.default.replaceItemAt(dest, withItemAt: zip, backupItemName: nil, options: []) }
+                else { try FileManager.default.copyItem(at: zip, to: dest) }
+            } catch { alert(L("settings.appData.export.failed"), nil) }
         }
     }
 
@@ -226,6 +227,18 @@ struct AppDataSettingsPage: View {
         a.messageText = title
         if let text { a.informativeText = text }
         a.runModal()
+    }
+
+    /// Removes the temporary zip, and its folder only when that folder is a direct child of the
+    /// temporary directory (the one `exportBackup` created); never any other directory.
+    private static func cleanUp(_ zip: URL) {
+        let fm = FileManager.default
+        try? fm.removeItem(at: zip)
+        let parent = zip.deletingLastPathComponent().standardizedFileURL.resolvingSymlinksInPath()
+        let temp = fm.temporaryDirectory.standardizedFileURL.resolvingSymlinksInPath()
+        if parent.deletingLastPathComponent() == temp, parent.lastPathComponent.hasPrefix("xside-export-") {
+            try? fm.removeItem(at: parent)
+        }
     }
 
     private static func size(_ bytes: Int) -> String {

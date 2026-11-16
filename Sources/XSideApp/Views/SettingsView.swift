@@ -261,7 +261,7 @@ private struct SettingsPage: View {
             case .refresh: refreshPage
             case .install: installPage
             case .inApp: InAppDefaultsPage()
-            case .apps, .build, .tweaks, .appData: EmptyView() // shown by SettingsView (AppsSettingsPage, BuildSettingsPage, TweaksSettingsPage)
+            case .apps, .build, .tweaks, .appData: EmptyView() // shown by SettingsView (AppsSettingsPage, BuildSettingsPage, TweaksSettingsPage, AppDataSettingsPage)
             case .signing:
                 Section { SigningHero(model: model) }
                 SigningSettingsSection(model: model)
