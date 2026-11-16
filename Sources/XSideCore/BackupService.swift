@@ -55,6 +55,7 @@ public struct BackupService: DataBackingUp {
     public func restore(_ snapshot: BackupSnapshot, toSignedBundleID: String, deviceID: String,
                         executable: String, clear: Bool) async throws -> RestoreClear {
         try await container.terminate(executable: executable, deviceID: deviceID)
+        _ = clear // intentionally unused: see below
         // devicectl has no verified way to empty a container, so a restore is always an overlay.
         try await container.push(signedBundleID: toSignedBundleID, deviceID: deviceID,
                                  from: await store.snapshotDir(snapshot), relativePath: "/")
@@ -65,21 +66,10 @@ public struct BackupService: DataBackingUp {
         AppDataContainer.excludedPrefixes + (includeCaches ? [] : [AppDataContainer.cachesPrefix])
     }
 
-    /// The smallest set of paths covering the listing without touching an excluded prefix: a
-    /// directory holding an excluded descendant is split into its children.
+    /// Every file of the listing outside the excluded prefixes. Derived from file entries only, so
+    /// it doesn't depend on the listing carrying directory entries.
     static func pullPaths(_ entries: [ContainerEntry], excluded: [String]) -> [String] {
-        func parent(_ p: String) -> String { p.contains("/") ? String(p[..<p.lastIndex(of: "/")!]) : "" }
-        func isExcluded(_ p: String) -> Bool { excluded.contains { (p + "/").hasPrefix($0) } }
-        func holdsExcluded(_ p: String) -> Bool { excluded.contains { $0.hasPrefix(p + "/") } }
-        let byParent = Dictionary(grouping: entries.map(\.relativePath), by: parent)
-        let dirs = Set(entries.filter(\.isDirectory).map(\.relativePath))
-        func walk(_ dir: String) -> [String] {
-            (byParent[dir] ?? []).sorted().flatMap { child -> [String] in
-                if isExcluded(child) { return [] }
-                if dirs.contains(child), holdsExcluded(child) { return walk(child) }
-                return [child]
-            }
-        }
-        return walk("")
+        entries.filter { !$0.isDirectory && !excluded.contains(where: $0.relativePath.hasPrefix) }
+            .map(\.relativePath).sorted()
     }
 }

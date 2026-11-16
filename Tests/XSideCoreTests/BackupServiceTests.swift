@@ -7,6 +7,7 @@ import Foundation
 private final class TreeRunner: CommandRunning, @unchecked Sendable {
     var tree: [String: String] = [:]
     var listable = true
+    var fileOnly = false
     private let lock = NSLock()
     private(set) var calls: [[String]] = []
     private(set) var pulled: [String] = []
@@ -18,7 +19,7 @@ private final class TreeRunner: CommandRunning, @unchecked Sendable {
             guard listable, let i = arguments.firstIndex(of: "--json-output") else { return CommandResult(status: 1, stdout: Data(), stderr: "nope") }
             var dirs = Set<String>()
             for p in tree.keys { var c = p; while c.contains("/") { c = String(c[..<c.lastIndex(of: "/")!]); dirs.insert(c) } }
-            let files = dirs.map { ["relativePath": $0, "resources": ["isDirectory": true], "metadata": [:]] as [String: Any] }
+            let files = (fileOnly ? [] : dirs.map { ["relativePath": $0, "resources": ["isDirectory": true], "metadata": [:]] as [String: Any] })
                 + tree.map { ["relativePath": $0.key, "resources": ["isDirectory": false], "metadata": ["size": $0.value.count]] as [String: Any] }
             try JSONSerialization.data(withJSONObject: ["result": ["files": files]]).write(to: URL(fileURLWithPath: arguments[i + 1]))
             return ok
@@ -33,6 +34,10 @@ private final class TreeRunner: CommandRunning, @unchecked Sendable {
             let src = arguments[arguments.firstIndex(of: "--source")! + 1]
             let dest = URL(fileURLWithPath: arguments[arguments.firstIndex(of: "--destination")! + 1])
             lock.withLock { pulled.append(src) }
+            // Like devicectl, the destination's parent must already exist.
+            guard FileManager.default.fileExists(atPath: dest.deletingLastPathComponent().path) else {
+                return CommandResult(status: 1, stdout: Data(), stderr: "no such destination directory")
+            }
             for (p, content) in tree where src == "/" || p == src || p.hasPrefix(src + "/") {
                 let rel = src == "/" ? p : (p == src ? "" : String(p.dropFirst(src.count + 1)))
                 let target = rel.isEmpty ? dest : dest.appendingPathComponent(rel)
@@ -75,6 +80,17 @@ private final class TreeRunner: CommandRunning, @unchecked Sendable {
         #expect(files(onDir) == ["Documents/f", "Library/Prefs/p", "Library/Caches/c"])
     }
 
+    @Test func backUp_fileOnlyListingKeepsPreferencesDropsCachesAndTmp() async throws {
+        let runner = TreeRunner()
+        runner.fileOnly = true
+        runner.tree = ["Documents/save.dat": "1", "Library/Preferences/app.plist": "2", "Library/Caches/img.bin": "3", "tmp/scratch": "4"]
+        let (service, store, root) = make(runner)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let s = try #require(try await service.backUp(signedBundleID: "b.T", deviceID: "D", deviceName: "n", appVersion: nil, includeCaches: false))
+        let dir = await store.snapshotDir(s)
+        #expect(files(dir) == ["Documents/save.dat", "Library/Preferences/app.plist"])
+    }
+
     @Test func backUp_returnsNilWhenUnchanged() async throws {
         let runner = TreeRunner()
         runner.tree = ["Documents/f": "1"]
@@ -106,11 +122,9 @@ private final class TreeRunner: CommandRunning, @unchecked Sendable {
         defer { try? FileManager.default.removeItem(at: root) }
         let s = try #require(try await service.backUp(signedBundleID: "b.T", deviceID: "D", deviceName: "n", appVersion: nil, includeCaches: false))
         _ = try await service.restore(s, toSignedBundleID: "b.T", deviceID: "D", executable: "App", clear: false)
-        let kinds = runner.calls.compactMap { $0.count > 2 ? $0[2] : nil }
         let processes = try #require(runner.calls.firstIndex { $0.starts(with: ["devicectl", "device", "info", "processes"]) })
         let push = try #require(runner.calls.firstIndex { $0.starts(with: ["devicectl", "device", "copy", "to"]) })
         #expect(processes < push)
-        #expect(!kinds.isEmpty)
         let call = runner.calls[push]
         let dir = await store.snapshotDir(s)
         #expect(call[call.firstIndex(of: "--source")! + 1] == dir.path)
