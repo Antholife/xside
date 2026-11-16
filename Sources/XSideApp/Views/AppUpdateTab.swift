@@ -13,7 +13,9 @@ struct AppUpdateTab: View {
 
     @State private var reports: [UpdateCheckReport]?
     @State private var checking = false
-    @State private var busy: Set<String> = [] // `name` of the report being installed
+    @State private var busy: Set<String> = [] // `tweakPackageID ?? "app"` of the report being installed
+    /// What the person acknowledged per card; a beta that is also suspect needs both, one card at a time.
+    @State private var approvals: [String: Set<NotifyReason>] = [:]
     @State private var editing = false
     @State private var urlText = ""
     @State private var saving = false
@@ -164,7 +166,7 @@ struct AppUpdateTab: View {
     private var checkArea: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let reports {
-                ForEach(reports, id: \.name) { card(for: $0) }
+                ForEach(reports, id: \.key) { card(for: $0) }
             }
             HStack(spacing: 10) {
                 Button(L("update.tab.check")) { Task { await check() } }
@@ -186,14 +188,14 @@ struct AppUpdateTab: View {
             stateCard(symbol: "checkmark.circle.fill", tone: .green, title: prefix + L("update.state.upToDate"), detail: nil, report: report, actions: [])
         case .installed(let v):
             stateCard(symbol: "checkmark.circle.fill", tone: .green, title: prefix + L("update.state.installed", v), detail: nil, report: report, actions: [])
-        case .available(let v, let reason):
+        case .available(let v, let reason, _, _):
             switch reason {
             case .prerelease:
                 stateCard(symbol: "flask.fill", tone: .orange, title: prefix + L("update.state.beta", v),
                           detail: L("update.state.beta.note"), report: report, actions: [.installAnyway, .view])
             case .suspect:
                 stateCard(symbol: "exclamationmark.triangle.fill", tone: .red, title: prefix + L("update.state.suspect", v),
-                          detail: L("update.state.suspect.note"), report: report, actions: [.view, .installAnyway])
+                          detail: L("update.state.suspect.note"), report: report, actions: [.examineSuspect])
             case .notifyMode:
                 stateCard(symbol: "arrow.up.circle.fill", tone: .green, title: prefix + L("update.state.available", v),
                           detail: L("update.state.available.note"), report: report, actions: [.install, .view])
@@ -209,7 +211,7 @@ struct AppUpdateTab: View {
         }
     }
 
-    private enum CardAction { case install, installAnyway, view, examineVariant }
+    private enum CardAction { case install, installAnyway, view, examineVariant, examineSuspect }
 
     private func stateCard(symbol: String, tone: Tone, title: String, detail: String?, report: UpdateCheckReport,
                            actions: [CardAction]) -> some View {
@@ -231,7 +233,7 @@ struct AppUpdateTab: View {
                 }
             }
             Spacer(minLength: 8)
-            if busy.contains(report.name) {
+            if busy.contains(report.tweakPackageID ?? "app") {
                 ProgressView().controlSize(.small)
             } else {
                 ForEach(Array(actions.enumerated()), id: \.offset) { _, a in
@@ -254,6 +256,9 @@ struct AppUpdateTab: View {
                 .controlSize(.small).disabled(!canManage)
         case .view:
             Button(L("update.action.view")) { view(report) }.controlSize(.small)
+        case .examineSuspect:
+            Button(L("update.action.examine")) { view(report); Task { await install(report, confirm: true) } }
+                .controlSize(.small).disabled(!canManage)
         case .examineVariant:
             Button(L("update.action.examine")) { if let source { Task { await repickVariant(source) } } }.controlSize(.small)
         }
@@ -264,6 +269,7 @@ struct AppUpdateTab: View {
     private func check() async {
         checking = true
         defer { checking = false }
+        approvals = [:]
         reports = await model.checkUpdatesNow(entry)
     }
 
@@ -277,10 +283,17 @@ struct AppUpdateTab: View {
             alert.addButton(withTitle: L("install.cancel")).keyEquivalent = "\u{1b}"
             guard alert.runModal() == .alertFirstButtonReturn else { return }
         }
-        busy.insert(report.name)
-        defer { busy.remove(report.name) }
-        let result = await model.installUpdateNow(entry, tweakPackageID: report.tweakPackageID)
-        guard var all = reports, let i = all.firstIndex(where: { $0.name == report.name }) else { return }
+        guard case .available(_, let reason, let tag, let asset) = report.result else { return }
+        // « Installer » acknowledges nothing: a beta or a suspect content comes back as its own card.
+        let key = report.tweakPackageID ?? "app"
+        if confirm, reason != .notifyMode { approvals[key, default: []].insert(reason) }
+        let approved = approvals[key] ?? []
+        busy.insert(key)
+        defer { busy.remove(key) }
+        let result = await model.installUpdateNow(entry, tweakPackageID: report.tweakPackageID, expectedTag: tag,
+                                                  expectedAsset: asset, approved: approved)
+        guard var all = reports, let i = all.firstIndex(where: { ($0.tweakPackageID ?? "app") == key }) else { return }
+        if case .installed = result { approvals[key] = nil }
         all[i] = UpdateCheckReport(name: report.name, result: result, tweakPackageID: report.tweakPackageID)
         reports = all
     }

@@ -24,7 +24,7 @@ extension AppModel {
     /// Downloads a found `.deb` of a tracked tweak, checks it is the same tweak, and swaps it into
     /// the app's pool only when the tweak is on auto AND the release is stable with a usable
     /// verdict. Otherwise says why it did not; the engine posts the notification.
-    func applyTweakUpdate(old: TweakPackage, recordID: UUID, device: Device, found: FoundRelease, stable: Bool, userApproved: Bool = false) async -> TweakUpdateResult {
+    func applyTweakUpdate(old: TweakPackage, recordID: UUID, device: Device, found: FoundRelease, stable: Bool, userInitiated: Bool = false, approved: Set<NotifyReason> = []) async -> TweakUpdateResult {
         let fm = FileManager.default
         let work = libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent(UUID().uuidString)
         defer { try? fm.removeItem(at: work) }
@@ -51,9 +51,13 @@ extension AppModel {
         // Injected code: its binaries are scanned (from the scratch copy) before anything is written.
         // Fails closed: an incomplete scan counts as a sign.
         let hasSigns = !IPAContentScanner.warningScan(of: checked, in: scratch).isClean
-        guard userApproved || (isAuto && UpdateApply.tweakAutoAllowed(verdict: verdict, stable: stable, hasSigns: hasSigns)) else {
-            var suspect = hasSigns
-            if case .incompatible = verdict { suspect = true }
+        var suspect = hasSigns
+        if case .incompatible = verdict { suspect = true }
+        if userInitiated {
+            // The click is the mode's approval; a prerelease and a suspect content each need their own.
+            if !stable && !approved.contains(.prerelease) { return .notify(version: version, reason: .prerelease) }
+            if suspect && !approved.contains(.suspect) { return .notify(version: version, reason: .suspect) }
+        } else if !(isAuto && UpdateApply.tweakAutoAllowed(verdict: verdict, stable: stable, hasSigns: hasSigns)) {
             let reason: NotifyReason = !stable ? .prerelease : (suspect ? .suspect : .notifyMode)
             return .notify(version: version, reason: reason)
         }
@@ -73,7 +77,7 @@ extension AppModel {
     /// Downloads a found release of an app, checks it is the same app, and installs it over the
     /// installed one only when the app is on auto AND the release is stable with no warning sign.
     /// Otherwise says why it did not; the engine posts the notification.
-    func applyAppUpdate(record: AppRecord, device: Device, found: FoundRelease, stable: Bool, userApproved: Bool = false) async -> AppUpdateResult {
+    func applyAppUpdate(record: AppRecord, device: Device, found: FoundRelease, stable: Bool, userInitiated: Bool = false, approved: Set<NotifyReason> = []) async -> AppUpdateResult {
         let fm = FileManager.default
         let work = libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent(UUID().uuidString)
         defer { try? fm.removeItem(at: work) }
@@ -96,7 +100,13 @@ extension AppModel {
         let version = info.version ?? found.tag
         let isAuto = record.updateSource?.mode == .auto
         let allowed = UpdateApply.autoAllowed(content: info.content, stable: stable)
-        guard userApproved || (isAuto && allowed) else {
+        if userInitiated {
+            // The click is the mode's approval; a prerelease and a suspect content each need their own.
+            if !stable && !approved.contains(.prerelease) { return .notify(version: version, reason: .prerelease) }
+            if !UpdateApply.autoAllowed(content: info.content, stable: true) && !approved.contains(.suspect) {
+                return .notify(version: version, reason: .suspect)
+            }
+        } else if !(isAuto && allowed) {
             let reason: NotifyReason = !stable ? .prerelease : (isAuto ? .suspect : .notifyMode)
             return .notify(version: version, reason: reason)
         }

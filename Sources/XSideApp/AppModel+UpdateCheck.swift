@@ -17,7 +17,7 @@ enum UpdateCheckResult: Sendable, Equatable {
     case installed(version: String)
     /// A release is out but was not installed by itself (notify mode, prerelease, or a guardrail).
     /// `reason` says why it waits (a prerelease, a suspect content, or just the notify mode).
-    case available(version: String, reason: NotifyReason)
+    case available(version: String, reason: NotifyReason, tag: String, asset: String)
     /// Several files fit the variant: the person picks (only a manual check says so).
     case needsVariantChoice
     case failed(String)
@@ -28,6 +28,8 @@ struct UpdateCheckReport: Sendable, Equatable {
     let result: UpdateCheckResult
     /// The tweak's package id; nil for the app itself.
     var tweakPackageID: String? = nil
+    /// Unique within one check (names can repeat).
+    var key: String { tweakPackageID ?? "app" }
 }
 
 extension AppModel {
@@ -110,7 +112,9 @@ extension AppModel {
     /// The fiche's « Installer » / « Installer quand même »: looks at the source again and installs
     /// what it finds on the person's say-so (mode, prerelease and suspect-content guards do not
     /// apply; the bundle/package identity check does). `tweakPackageID` nil: the app itself.
-    func installUpdateNow(_ entry: AppEntry, tweakPackageID: String?) async -> UpdateCheckResult {
+    func installUpdateNow(_ entry: AppEntry, tweakPackageID: String?, expectedTag: String, expectedAsset: String,
+                          approved: Set<NotifyReason>) async -> UpdateCheckResult {
+        guard canManage(entry) else { return .failed("not allowed") }
         let record = records.first(where: { $0.id == entry.record.id }) ?? entry.record
         let tweak = tweakPackageID.flatMap { id in record.tweaks?.first { $0.packageID == id } }
         let target = UpdateTarget(record: record, tweak: tweak)
@@ -125,15 +129,19 @@ extension AppModel {
         case .upToDate: return .upToDate
         case .needsVariantChoice: return .needsVariantChoice
         case .failed(let reason): return .failed(reason)
-        case .available(let found, _, let stable):
-            switch await apply(target, device: device, found: found, stable: stable, userApproved: true) {
+        case .available(let found, let version, let stable):
+            // The release changed since the card: nothing installs under the earlier approval.
+            guard found.tag == expectedTag, found.asset.name == expectedAsset else {
+                return .available(version: version, reason: stable ? .notifyMode : .prerelease, tag: found.tag, asset: found.asset.name)
+            }
+            switch await apply(target, device: device, found: found, stable: stable, userInitiated: true, approved: approved) {
             case .installed(let v):
                 await persistTrigger(found.trigger, for: target)
                 return .installed(version: v)
             case .upToDate:
                 await persistTrigger(found.trigger, for: target)
                 return .upToDate
-            case .notify(let v, let r): return .available(version: v, reason: r)
+            case .notify(let v, let r): return .available(version: v, reason: r, tag: found.tag, asset: found.asset.name)
             case .incompatible: return .failed("incompatible")
             case .failed(let m): return .failed(m)
             }
@@ -152,14 +160,14 @@ extension AppModel {
             Self.updateLogger.notice("update check failed for \(target.name, privacy: .public): \(reason, privacy: .public)")
             return .failed(reason)
         case .available(let found, let version, let stable):
-            var result = UpdateCheckResult.available(version: version, reason: stable ? .notifyMode : .prerelease)
+            var result = UpdateCheckResult.available(version: version, reason: stable ? .notifyMode : .prerelease, tag: found.tag, asset: found.asset.name)
             var persist = true
             let auto = stable && target.source?.mode == .auto
             if auto, let device = deviceForAutoUpdate(target.record) {
                 switch await apply(target, device: device, found: found, stable: stable) {
                 case .installed(let installed): return await persisted(found.trigger, target, .installed(version: installed))
                 case .upToDate: return await persisted(found.trigger, target, .upToDate)
-                case .notify(let v, let reason): result = .available(version: v, reason: reason)
+                case .notify(let v, let reason): result = .available(version: v, reason: reason, tag: found.tag, asset: found.asset.name)
                 case .incompatible: break
                 case .failed(let reason):
                     Self.updateLogger.notice("auto update failed for \(target.name, privacy: .public): \(reason, privacy: .public)")
@@ -169,7 +177,7 @@ extension AppModel {
             // Auto but no device to install on: announced, and not marked seen, so the install
             // happens once a device is back.
             if auto, deviceForAutoUpdate(target.record) == nil { persist = false }
-            if case .available(let v, _) = result { notify(target, version: v) }
+            if case .available(let v, _, _, _) = result { notify(target, version: v) }
             if persist { await persistTrigger(found.trigger, for: target) }
             return result
         }
@@ -177,9 +185,9 @@ extension AppModel {
 
     private enum Applied { case installed(String), upToDate, notify(String, NotifyReason), incompatible, failed(String) }
 
-    private func apply(_ target: UpdateTarget, device: Device, found: FoundRelease, stable: Bool, userApproved: Bool = false) async -> Applied {
+    private func apply(_ target: UpdateTarget, device: Device, found: FoundRelease, stable: Bool, userInitiated: Bool = false, approved: Set<NotifyReason> = []) async -> Applied {
         if let tweak = target.tweak {
-            switch await applyTweakUpdate(old: tweak, recordID: target.record.id, device: device, found: found, stable: stable, userApproved: userApproved) {
+            switch await applyTweakUpdate(old: tweak, recordID: target.record.id, device: device, found: found, stable: stable, userInitiated: userInitiated, approved: approved) {
             case .installed(let v): return .installed(v)
             case .upToDate: return .upToDate
             case .notify(let v, let r): return .notify(v, r)
@@ -187,7 +195,7 @@ extension AppModel {
             case .failed(let m): return .failed(m)
             }
         }
-        switch await applyAppUpdate(record: target.record, device: device, found: found, stable: stable, userApproved: userApproved) {
+        switch await applyAppUpdate(record: target.record, device: device, found: found, stable: stable, userInitiated: userInitiated, approved: approved) {
         case .installed(let v): return .installed(v)
         case .notify(let v, let r): return .notify(v, r)
         case .incompatible: return .incompatible
