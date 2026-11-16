@@ -49,7 +49,8 @@ extension AppModel {
         let verdict = TweakClassifier.verdict(checked, entryContext(record, old.id, on: device.id))
         let isAuto = old.updateSource?.mode == .auto
         // Injected code: its binaries are scanned (from the scratch copy) before anything is written.
-        let hasSigns = !IPAContentScanner.warningSigns(of: checked, in: scratch).isEmpty
+        // Fails closed: an incomplete scan counts as a sign.
+        let hasSigns = !IPAContentScanner.warningScan(of: checked, in: scratch).isClean
         guard isAuto, UpdateApply.tweakAutoAllowed(verdict: verdict, stable: stable, hasSigns: hasSigns) else {
             var suspect = hasSigns
             if case .incompatible = verdict { suspect = true }

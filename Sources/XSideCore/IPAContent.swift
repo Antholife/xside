@@ -454,16 +454,28 @@ public enum IPAContentScanner {
         return signs(text: data.prefix(maxScanBytes), imports: imports, kind: .tweak)
     }
 
-    /// The union of the signs of every binary of an analyzed package stored under `storage/<id>`.
-    /// A binary that cannot be read counts as a sign-less file here: the analyzer already read it.
-    public static func warningSigns(of package: TweakPackage, in storage: URL) -> [WarningSign] {
+    /// The result of scanning a whole tweak package. `complete` is false when not every binary was
+    /// read (or there was none to read): the caller must then treat the tweak as suspect.
+    public struct TweakScan: Equatable, Sendable {
+        public var signs: [WarningSign]
+        public var complete: Bool
+        /// True when the tweak may be trusted as clean: the scan was complete and found nothing.
+        public var isClean: Bool { complete && signs.isEmpty }
+    }
+
+    /// Scans every binary of an analyzed package stored under `storage/<id>/<binary.path>`.
+    /// Fails closed: no binary, or one that cannot be read, makes the scan incomplete.
+    public static func warningScan(of package: TweakPackage, in storage: URL) -> TweakScan {
         let folder = storage.appendingPathComponent(package.id)
         var found = Set<WarningSign>()
+        var scanned = 0
+        var complete = !package.binaries.isEmpty
         for binary in package.binaries {
-            guard let data = try? Data(contentsOf: folder.appendingPathComponent(binary.path)) else { continue }
+            guard let data = try? Data(contentsOf: folder.appendingPathComponent(binary.path)) else { complete = false; continue }
+            scanned += 1
             found.formUnion(warningSigns(machO: data))
         }
-        return WarningSign.allCases.filter(found.contains)
+        return TweakScan(signs: WarningSign.allCases.filter(found.contains), complete: complete && scanned > 0)
     }
 
     static func signs(text: Data, imports: Set<String>, kind: IPAAddition.Kind) -> [WarningSign] {

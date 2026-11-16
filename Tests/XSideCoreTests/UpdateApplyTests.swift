@@ -63,4 +63,52 @@ import Testing
         #expect(!UpdateApply.packageIDMatches("com.a.tweak2", oldPackageID: "com.a.tweak"))
         #expect(!UpdateApply.packageIDMatches("com.a.Tweak", oldPackageID: "com.a.tweak"))
     }
+
+    // MARK: whole-package scan on a real analyzer layout
+
+    private func lone(_ data: Data, storage: URL) async throws -> TweakPackage {
+        let src = storage.deletingLastPathComponent().appendingPathComponent("Lone-\(UUID().uuidString).dylib")
+        try data.write(to: src)
+        defer { try? FileManager.default.removeItem(at: src) }
+        return try await TweakAnalyzer.analyze(src, into: storage, runner: ProcessRunner(), now: Date())
+    }
+
+    @Test func packageScan_findsASignThroughTheAnalyzersLayout() async throws {
+        try await withTemporaryDirectory("scan") { dir in
+            let storage = dir.appendingPathComponent("store")
+            let bad = ContentMachO.build(imports: ["_MSHookMessageEx"], strings: ["https://discord.com/api/webhooks/1"], signed: false)
+            let package = try await lone(bad, storage: storage)
+            #expect(!package.binaries.isEmpty)
+            let scan = IPAContentScanner.warningScan(of: package, in: storage)
+            #expect(scan.complete)
+            #expect(scan.signs == [.discordWebhook])
+        }
+    }
+
+    @Test func packageScan_cleanIsComplete() async throws {
+        try await withTemporaryDirectory("scan") { dir in
+            let storage = dir.appendingPathComponent("store")
+            let package = try await lone(ContentMachO.build(imports: ["_MSHookMessageEx"], signed: false), storage: storage)
+            let scan = IPAContentScanner.warningScan(of: package, in: storage)
+            #expect(scan.isClean)
+        }
+    }
+
+    @Test func packageScan_missingBinaryOrNoBinariesIsIncomplete() async throws {
+        try await withTemporaryDirectory("scan") { dir in
+            let storage = dir.appendingPathComponent("store")
+            var package = try await lone(ContentMachO.build(imports: ["_MSHookMessageEx"], signed: false), storage: storage)
+            // A binary that is not where the scanner looks.
+            package.binaries[0].path = "nowhere/missing.dylib"
+            let missing = IPAContentScanner.warningScan(of: package, in: storage)
+            #expect(!missing.complete)
+            #expect(!missing.isClean)
+            package.binaries = []
+            let none = IPAContentScanner.warningScan(of: package, in: storage)
+            #expect(!none.complete)
+            #expect(!none.isClean)
+            // Wrong storage root: nothing resolves.
+            #expect(!IPAContentScanner.warningScan(of: package, in: dir.appendingPathComponent("other")).isClean)
+        }
+    }
 }
