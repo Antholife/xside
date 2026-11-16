@@ -1,0 +1,222 @@
+import Foundation
+
+/// One backed-up copy of an app's data container.
+public struct BackupSnapshot: Codable, Equatable, Sendable {
+    public let id: String // ISO8601 directory name
+    public let signedBundleID: String
+    public let deviceID: String
+    public let deviceName: String
+    public let createdAt: Date
+    public let byteSize: Int
+    public let fileCount: Int
+    public let includedCaches: Bool
+    public let appVersion: String?
+
+    public init(id: String, signedBundleID: String, deviceID: String, deviceName: String, createdAt: Date,
+                byteSize: Int, fileCount: Int, includedCaches: Bool, appVersion: String?) {
+        self.id = id; self.signedBundleID = signedBundleID; self.deviceID = deviceID
+        self.deviceName = deviceName; self.createdAt = createdAt; self.byteSize = byteSize
+        self.fileCount = fileCount; self.includedCaches = includedCaches; self.appVersion = appVersion
+    }
+}
+
+public struct BackupIndex: Codable, Equatable, Sendable {
+    public var snapshots: [BackupSnapshot]
+    public init(snapshots: [BackupSnapshot] = []) { self.snapshots = snapshots }
+}
+
+/// On-disk snapshot store under `<library root>/backups/<signedBundleID>/<deviceID>/<id>/`.
+/// Unchanged files (same relative path, size, mtime) are hard-linked from the newest prior snapshot of the pair.
+/// Snapshot contents are the user's private data: only counts, sizes and ids are ever reported.
+public actor AppDataBackup {
+    private let base: URL
+    private var indexURL: URL { base.appendingPathComponent("index.json") }
+    private let fm = FileManager.default
+
+    /// `root` is the library root; the store lives in `root/backups`.
+    public init(root: URL) {
+        self.base = root.appendingPathComponent("backups", isDirectory: true)
+    }
+
+    public func list() -> [BackupSnapshot] {
+        loadIndex().snapshots.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    public func list(signedBundleID: String, deviceID: String? = nil) -> [BackupSnapshot] {
+        list().filter { $0.signedBundleID == signedBundleID && (deviceID == nil || $0.deviceID == deviceID) }
+    }
+
+    public func snapshot(_ id: String) -> BackupSnapshot? {
+        loadIndex().snapshots.first { $0.id == id }
+    }
+
+    public func snapshotDir(_ s: BackupSnapshot) -> URL {
+        pairDir(s.signedBundleID, s.deviceID).appendingPathComponent(s.id, isDirectory: true)
+    }
+
+    public func createSnapshot(from sourceDir: URL, signedBundleID: String, deviceID: String, deviceName: String,
+                               includedCaches: Bool, appVersion: String?, retention: Int = 3,
+                               now: Date = Date()) throws -> BackupSnapshot {
+        let pair = pairDir(signedBundleID, deviceID)
+        try fm.createDirectory(at: pair, withIntermediateDirectories: true)
+
+        var index = loadIndex()
+        let previous = index.snapshots
+            .filter { $0.signedBundleID == signedBundleID && $0.deviceID == deviceID }
+            .max { $0.createdAt < $1.createdAt }
+            .map { snapshotDir($0) }
+
+        var id = Self.makeID(now)
+        var n = 1
+        while fm.fileExists(atPath: pair.appendingPathComponent(id).path) { n += 1; id = Self.makeID(now) + "-\(n)" }
+        let final = pair.appendingPathComponent(id, isDirectory: true)
+        let staging = pair.appendingPathComponent(".staging-\(UUID().uuidString)", isDirectory: true)
+
+        var bytes = 0, files = 0
+        do {
+            try fm.createDirectory(at: staging, withIntermediateDirectories: true)
+            (bytes, files) = try copyTree(from: sourceDir, to: staging, linkingFrom: previous)
+            try fm.moveItem(at: staging, to: final)
+        } catch {
+            try? fm.removeItem(at: staging)
+            throw error
+        }
+
+        let snap = BackupSnapshot(id: id, signedBundleID: signedBundleID, deviceID: deviceID, deviceName: deviceName,
+                                  createdAt: now, byteSize: bytes, fileCount: files,
+                                  includedCaches: includedCaches, appVersion: appVersion)
+        index.snapshots.append(snap)
+
+        let mine = index.snapshots
+            .filter { $0.signedBundleID == signedBundleID && $0.deviceID == deviceID }
+            .sorted { $0.createdAt > $1.createdAt }
+        for old in mine.dropFirst(max(retention, 1)) {
+            try? fm.removeItem(at: snapshotDir(old))
+            index.snapshots.removeAll { $0.id == old.id && $0.signedBundleID == old.signedBundleID && $0.deviceID == old.deviceID }
+        }
+        try saveIndex(index)
+        return snap
+    }
+
+    public func delete(_ id: String) throws {
+        var index = loadIndex()
+        for s in index.snapshots where s.id == id { try removeIfPresent(snapshotDir(s)) }
+        index.snapshots.removeAll { $0.id == id }
+        try saveIndex(index)
+    }
+
+    public func deleteAll(signedBundleID: String, deviceID: String? = nil) throws {
+        var index = loadIndex()
+        for s in index.snapshots where s.signedBundleID == signedBundleID && (deviceID == nil || s.deviceID == deviceID) {
+            try removeIfPresent(snapshotDir(s))
+        }
+        index.snapshots.removeAll { $0.signedBundleID == signedBundleID && (deviceID == nil || $0.deviceID == deviceID) }
+        try saveIndex(index)
+    }
+
+    /// Sum of file sizes counting each inode once, so hard-linked history isn't double-counted.
+    public func totalBytes() -> Int {
+        guard let e = fm.enumerator(at: base, includingPropertiesForKeys: nil) else { return 0 }
+        var seen = Set<String>()
+        var total = 0
+        for case let url as URL in e {
+            var st = stat()
+            guard lstat(url.path, &st) == 0, (st.st_mode & S_IFMT) == S_IFREG else { continue }
+            if seen.insert("\(st.st_dev):\(st.st_ino)").inserted { total += Int(st.st_size) }
+        }
+        return total
+    }
+
+    /// True when both trees hold the same files with the same sizes and modification times.
+    static func contentUnchanged(_ a: URL, _ b: URL) -> Bool {
+        let ma = fileSignatures(a), mb = fileSignatures(b)
+        return ma == mb
+    }
+
+    // MARK: - Internals
+
+    private func pairDir(_ bundleID: String, _ deviceID: String) -> URL {
+        base.appendingPathComponent(bundleID, isDirectory: true).appendingPathComponent(deviceID, isDirectory: true)
+    }
+
+    private func removeIfPresent(_ url: URL) throws {
+        if fm.fileExists(atPath: url.path) { try fm.removeItem(at: url) }
+    }
+
+    private func loadIndex() -> BackupIndex {
+        guard let data = try? Data(contentsOf: indexURL),
+              let idx = try? JSONDecoder().decode(BackupIndex.self, from: data) else { return BackupIndex() }
+        return idx
+    }
+
+    private func saveIndex(_ index: BackupIndex) throws {
+        try fm.createDirectory(at: base, withIntermediateDirectories: true)
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.sortedKeys, .prettyPrinted]
+        try enc.encode(index).write(to: indexURL, options: .atomic)
+    }
+
+    private static func makeID(_ date: Date) -> String {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f.string(from: date).replacingOccurrences(of: ":", with: "-")
+    }
+
+    private struct Signature: Equatable { let size: Int; let mtime: TimeInterval }
+
+    private static func fileSignatures(_ root: URL) -> [String: Signature] {
+        var out: [String: Signature] = [:]
+        let prefix = root.resolvingSymlinksInPath().path
+        guard let e = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil) else { return out }
+        for case let url as URL in e {
+            var st = stat()
+            guard lstat(url.path, &st) == 0, (st.st_mode & S_IFMT) == S_IFREG else { continue }
+            let rel = String(url.resolvingSymlinksInPath().path.dropFirst(prefix.count))
+            out[rel] = Signature(size: Int(st.st_size),
+                                 mtime: TimeInterval(st.st_mtimespec.tv_sec) + TimeInterval(st.st_mtimespec.tv_nsec) / 1e9)
+        }
+        return out
+    }
+
+    /// Copies `source` into `dest` (which exists), linking files unchanged vs `previous`. Returns (bytes, files).
+    private func copyTree(from source: URL, to dest: URL, linkingFrom previous: URL?) throws -> (Int, Int) {
+        let srcRoot = source.resolvingSymlinksInPath().path
+        guard let e = fm.enumerator(at: source, includingPropertiesForKeys: nil) else { return (0, 0) }
+        var bytes = 0, files = 0
+        for case let url as URL in e {
+            let rel = String(url.resolvingSymlinksInPath().path.dropFirst(srcRoot.count + 1))
+            let target = dest.appendingPathComponent(rel)
+            var st = stat()
+            guard lstat(url.path, &st) == 0 else { continue }
+            switch st.st_mode & S_IFMT {
+            case S_IFDIR:
+                try fm.createDirectory(at: target, withIntermediateDirectories: true)
+            case S_IFLNK:
+                let dst = try fm.destinationOfSymbolicLink(atPath: url.path)
+                try fm.createSymbolicLink(atPath: target.path, withDestinationPath: dst)
+            case S_IFREG:
+                if let previous, Self.sameFile(previous.appendingPathComponent(rel).path, st),
+                   link(previous.appendingPathComponent(rel).path, target.path) == 0 {
+                    // hard-linked
+                } else {
+                    try fm.copyItem(at: url, to: target)
+                    try fm.setAttributes([.modificationDate: Date(timeIntervalSince1970:
+                        TimeInterval(st.st_mtimespec.tv_sec) + TimeInterval(st.st_mtimespec.tv_nsec) / 1e9)],
+                                         ofItemAtPath: target.path)
+                }
+                bytes += Int(st.st_size); files += 1
+            default:
+                continue
+            }
+        }
+        return (bytes, files)
+    }
+
+    private static func sameFile(_ path: String, _ src: stat) -> Bool {
+        var p = stat()
+        guard lstat(path, &p) == 0, (p.st_mode & S_IFMT) == S_IFREG else { return false }
+        return p.st_size == src.st_size
+            && p.st_mtimespec.tv_sec == src.st_mtimespec.tv_sec
+            && p.st_mtimespec.tv_nsec == src.st_mtimespec.tv_nsec
+    }
+}
