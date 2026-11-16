@@ -1414,3 +1414,9 @@
 
 "settings.appData.retention.one" = "1 version";
 "settings.appData.retention.many" = "%d versions";
+"fiche.data.working.export" = "Export en cours…";
+"fiche.data.working.import" = "Import en cours…";
+"fiche.data.working.restore" = "Restauration en cours…";
+"fiche.data.export.help" = "Exporte la version la plus récente de cette installation (l’export d’une autre version se fait dans la liste ci-dessous).";
+"install.step.restoring" = "Restauration des données";
+"menuBar.working.data" = "Sauvegarde…";

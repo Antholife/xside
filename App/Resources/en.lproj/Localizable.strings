@@ -1380,7 +1380,7 @@
 "menu.exportData" = "Export data…";
 "menu.importData" = "Import data…";
 "fiche.data.section.versions" = "Versions";
-"fiche.data.working" = "Working…";
+"fiche.data.working" = "Backing up…";
 "fiche.data.done" = "Done";
 "fiche.data.cycle" = "Installed on %@";
 "fiche.data.cycle.current" = "(current cycle)";
@@ -1414,3 +1414,9 @@
 
 "settings.appData.retention.one" = "1 version";
 "settings.appData.retention.many" = "%d versions";
+"fiche.data.working.export" = "Exporting…";
+"fiche.data.working.import" = "Importing…";
+"fiche.data.working.restore" = "Restoring…";
+"fiche.data.export.help" = "Exports the latest version of this installation (export another version from the list below).";
+"install.step.restoring" = "Restoring data";
+"menuBar.working.data" = "Backing up…";

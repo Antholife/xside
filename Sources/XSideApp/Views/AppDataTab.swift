@@ -4,50 +4,58 @@ import XSideCore
 
 /// The fiche's data actions, shared by the « Données » tab and the header's « ⋯ » menu.
 @MainActor enum AppDataActions {
-    static func backUpNow(_ entry: AppEntry, model: AppModel) async {
-        if !(await model.backUpNow(entry)) { alert(L("fiche.data.backUpNow.failed")) }
+    @discardableResult
+    static func backUpNow(_ entry: AppEntry, model: AppModel) async -> Bool {
+        let ok = await model.backUpNow(entry)
+        if !ok { alert(L("fiche.data.backUpNow.failed")) }
+        return ok
     }
 
     /// Exports the newest snapshot of this installation through a save panel.
-    static func exportLatest(_ entry: AppEntry, model: AppModel) async {
+    @discardableResult
+    static func exportLatest(_ entry: AppEntry, model: AppModel) async -> Bool {
         let snaps = await model.backups(forRecord: entry.record.id).filter { $0.deviceID == entry.installation.deviceID }
-        guard let latest = snaps.first else { return alert(L("fiche.data.empty")) }
-        await export(latest, model: model)
+        guard let latest = snaps.first else { alert(L("fiche.data.empty")); return false }
+        return await export(latest, model: model)
     }
 
-    static func export(_ snap: BackupSnapshot, model: AppModel) async {
-        guard let zip = await model.exportBackup(snap.id) else { return alert(L("settings.appData.export.failed")) }
+    /// True when the zip was saved (false: failed or cancelled).
+    @discardableResult
+    static func export(_ snap: BackupSnapshot, model: AppModel) async -> Bool {
+        guard let zip = await model.exportBackup(snap.id) else { alert(L("settings.appData.export.failed")); return false }
         defer { cleanUp(zip) }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = zip.lastPathComponent
         panel.allowedContentTypes = [.zip]
-        guard panel.runModal() == .OK, let dest = panel.url else { return }
+        guard panel.runModal() == .OK, let dest = panel.url else { return false }
         do {
             if FileManager.default.fileExists(atPath: dest.path) {
                 _ = try FileManager.default.replaceItemAt(dest, withItemAt: zip, backupItemName: nil, options: [])
             } else {
                 try FileManager.default.copyItem(at: zip, to: dest)
             }
-        } catch { alert(L("settings.appData.export.failed")) }
+        } catch { alert(L("settings.appData.export.failed")); return false }
+        return true
     }
 
     /// Picks a .zip, confirms the explicit target (this app, this device), then imports.
-    static func importData(_ entry: AppEntry, appName: String, deviceName: String, model: AppModel) async {
+    @discardableResult
+    static func importData(_ entry: AppEntry, appName: String, deviceName: String, model: AppModel) async -> Bool {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.zip]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.prompt = L("fiche.data.import.choose")
-        guard panel.runModal() == .OK, let zip = panel.url else { return }
+        guard panel.runModal() == .OK, let zip = panel.url else { return false }
         let a = NSAlert()
         a.messageText = L("fiche.data.import.title", appName)
         a.informativeText = L("fiche.data.import.note", appName, deviceName)
         a.addButton(withTitle: L("fiche.data.import"))
         a.addButton(withTitle: L("install.cancel"))
-        guard a.runModal() == .alertFirstButtonReturn else { return }
-        if !(await model.importBackup(zip: zip, intoRecordID: entry.record.id, deviceID: entry.installation.deviceID)) {
-            alert(L("fiche.data.import.mismatch"))
-        }
+        guard a.runModal() == .alertFirstButtonReturn else { return false }
+        let ok = await model.importBackup(zip: zip, intoRecordID: entry.record.id, deviceID: entry.installation.deviceID)
+        if !ok { alert(L("fiche.data.import.mismatch")) }
+        return ok
     }
 
     static func alert(_ title: String) {
@@ -76,7 +84,9 @@ struct AppDataTab: View {
     let appName: String
     let deviceName: String
     @State private var snaps: [BackupSnapshot] = []
+    private enum Action { case backup, export, importData, restore }
     @State private var busy = false
+    @State private var action: Action = .backup
     @State private var justDone = false
 
     private var options: InstallOptions {
@@ -84,6 +94,14 @@ struct AppDataTab: View {
     }
     private var backupOn: Bool { options.backupData != false }
     private var working: Bool { busy || model.dataBusy.contains(entry.id) }
+    private var workingText: String {
+        switch action {
+        case .backup: L("fiche.data.working")
+        case .export: L("fiche.data.working.export")
+        case .importData: L("fiche.data.working.import")
+        case .restore: L("fiche.data.working.restore")
+        }
+    }
     private var reloadID: String { "\(entry.id)/\(model.jobs[entry.id] == nil)/\(model.dataBusy.contains(entry.id))/\(options.backupData.map(String.init(describing:)) ?? "")" }
 
     /// A boxed row: title + explanation on the left, switch on the right (like the Correctifs tab).
@@ -112,16 +130,17 @@ struct AppDataTab: View {
                       isOn: Binding(get: { options.backupCaches != false }, set: { v in Task { await model.setBackupCaches(v, for: entry) } }),
                       enabled: backupOn)
             HStack(spacing: 8) {
-                Button(L("fiche.data.backUpNow")) { run { await AppDataActions.backUpNow(entry, model: model) } }
+                Button(L("fiche.data.backUpNow")) { run(.backup) { await AppDataActions.backUpNow(entry, model: model) } }
                     .buttonStyle(.borderedProminent)
-                Button(L("fiche.data.export")) { run { await AppDataActions.exportLatest(entry, model: model) } }
+                Button(L("fiche.data.export")) { run(.export) { await AppDataActions.exportLatest(entry, model: model) } }
                     .disabled(snaps.isEmpty)
+                    .help(L("fiche.data.export.help"))
                 Button(L("fiche.data.import")) {
-                    run { await AppDataActions.importData(entry, appName: appName, deviceName: deviceName, model: model) }
+                    run(.importData) { await AppDataActions.importData(entry, appName: appName, deviceName: deviceName, model: model) }
                 }
                 if working {
                     ProgressView().controlSize(.small)
-                    Text(L("fiche.data.working")).font(.caption).foregroundStyle(.secondary)
+                    Text(workingText).font(.caption).foregroundStyle(.secondary)
                 } else if justDone {
                     Label(L("fiche.data.done"), systemImage: "checkmark.circle.fill")
                         .font(.caption).foregroundStyle(.green)
@@ -156,10 +175,6 @@ struct AppDataTab: View {
         }
         .toggleStyle(.xside)
         .task(id: reloadID) { await reload() }
-        .onChange(of: model.dataBusy.contains(entry.id)) { was, now in
-            guard was, !now else { return }
-            flashDone()
-        }
     }
 
     private func versionRow(_ snap: BackupSnapshot, latest: Bool) -> some View {
@@ -173,7 +188,7 @@ struct AppDataTab: View {
             }
             Spacer(minLength: 0)
             Button(L("settings.appData.restore")) { restore(snap) }
-            Button(L("settings.appData.export")) { run { await AppDataActions.export(snap, model: model) } }
+            Button(L("settings.appData.export")) { run(.export) { await AppDataActions.export(snap, model: model) } }
         }
         .disabled(working)
     }
@@ -209,18 +224,21 @@ struct AppDataTab: View {
         a.addButton(withTitle: L("settings.appData.restore"))
         a.addButton(withTitle: L("install.cancel"))
         guard a.runModal() == .alertFirstButtonReturn else { return }
-        run {
-            if !(await model.restore(snap.id, entry)) { AppDataActions.alert(L("settings.appData.restore.failed")) }
+        run(.restore) {
+            let ok = await model.restore(snap.id, entry)
+            if !ok { AppDataActions.alert(L("settings.appData.restore.failed")) }
+            return ok
         }
     }
 
-    private func run(_ work: @escaping () async -> Void) {
+    private func run(_ kind: Action, _ work: @escaping () async -> Bool) {
+        action = kind
         busy = true
         Task {
-            await work()
+            let ok = await work()
             await reload()
             busy = false
-            flashDone()
+            if ok { flashDone() }
         }
     }
 

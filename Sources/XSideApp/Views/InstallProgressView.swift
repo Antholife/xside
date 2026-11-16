@@ -223,6 +223,7 @@ extension ProgressStep {
         case .legacy32: L("install.step.legacy32")
         case .signing: L("install.step.signing")
         case .installing: L("install.step.installing")
+        case .restoring: L("install.step.restoring")
         case .wifiCheck: L("wifi.title")
         }
     }

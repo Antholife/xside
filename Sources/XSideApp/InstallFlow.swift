@@ -157,7 +157,8 @@ final class InstallFlow {
         let id = deviceID ?? runs.first?.deviceID
         return ProgressStep.list(includingWifiCheck: wifiStepPlanned, includingDuo: id.map(runDuo.contains) ?? false,
                                  includingLegacy32: runLegacy32, includingICloud: id.map(runICloud.contains) ?? false,
-                                 includingTweaks: id.map { runTweaks[$0]?.contains(where: \.enabled) == true } ?? false)
+                                 includingTweaks: id.map { runTweaks[$0]?.contains(where: \.enabled) == true } ?? false,
+                                 includingRestore: runRestoreID != nil)
     }
 
     /// `skippedRunSteps`, and the Duo step on a device where it added nothing.

@@ -3534,6 +3534,7 @@ extension AppModel {
             items.append(L("menuBar.working.install", flow.info?.name ?? flow.ipa.deletingPathExtension().lastPathComponent))
         }
         if items.isEmpty, isCreatingCertificate { items.append(L("menuBar.working.certificate")) }
+        if items.isEmpty, !dataBusy.isEmpty { items.append(L("menuBar.working.data")) }
         guard let first = items.first else { return nil }
         return items.count > 1 ? L("menuBar.working.more", first, items.count - 1) : first
     }

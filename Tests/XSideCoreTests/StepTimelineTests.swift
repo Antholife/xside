@@ -10,6 +10,14 @@ import Testing
         #expect(firstRun.last == .wifiCheck)
     }
 
+    @Test func restoreIsItsOwnVisibleStep() {
+        #expect(ProgressStep(.restoring) == .restoring)
+        #expect(ProgressStep(.backingUp) == .installing)
+        #expect(!run.contains(.restoring))
+        let withRestore = ProgressStep.list(includingWifiCheck: false, includingRestore: true)
+        #expect(withRestore == [.preparing, .profile, .welcome, .signing, .installing, .restoring])
+    }
+
     /// Its own step when the Duo option is on: done once passed, skipped (with its reason in the
     /// app) when it couldn't be added.
     @Test func theDuoStepIsListedOnlyWhenAskedFor() {
