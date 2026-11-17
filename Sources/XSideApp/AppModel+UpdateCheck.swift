@@ -276,7 +276,12 @@ extension AppModel {
                 defer { updateFraction[key] = nil }
                 let progress: @Sendable (Double) -> Void = { [weak self] f in Task { @MainActor in self?.updateFraction[key] = f } }
                 notifyInstalling(target, version: version)
-                switch await apply(target, device: device, found: found, stable: stable, progress: progress) {
+                // Run in a stored task so « Annuler » in the tab can cancel the download/install.
+                let jobKey = JobKey(recordID: target.record.id, deviceID: device.id)
+                let installTask = Task { await self.apply(target, device: device, found: found, stable: stable, progress: progress) }
+                autoInstallTasks[jobKey] = installTask
+                defer { autoInstallTasks[jobKey] = nil }
+                switch await installTask.value {
                 case .installed(let installed):
                     await markInstalled(found, for: target)
                     notifyUpdated(target, version: installed) // Auto mode: tell the person XSide did it
@@ -305,7 +310,7 @@ extension AppModel {
         }
     }
 
-    private enum Applied { case installed(String), upToDate, notify(String, NotifyReason), incompatible, failed(String) }
+    enum Applied { case installed(String), upToDate, notify(String, NotifyReason), incompatible, failed(String) }
 
     /// A stable key for this app/tweak's download progress (`AppModel.updateFraction`).
     static func updateFractionKey(recordID: UUID, tweakPackageID: String?) -> String {
@@ -344,6 +349,12 @@ extension AppModel {
         guard let installation = target.record.installations.first else { return false }
         let job = RefreshJob(recordID: target.record.id, deviceID: installation.deviceID)
         return await onAppUpdateAvailable?(AppUpdateNotice(appName: target.name, version: version, job: job, id: target.noticeID)) ?? false
+    }
+
+    /// Cancels a background auto-install for an app (from « Annuler » in the « Mises à jour » tab).
+    /// Best-effort: it cancels the download, then the install at its next cancellation point.
+    func cancelAutoInstall(recordID: UUID) {
+        for (key, task) in autoInstallTasks where key.recordID == recordID { task.cancel() }
     }
 
     /// Auto mode but no reachable device: notify that the update is pending. Returns whether delivered.

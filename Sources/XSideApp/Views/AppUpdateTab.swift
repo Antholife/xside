@@ -210,6 +210,8 @@ struct AppUpdateTab: View {
                 Image(systemName: "arrow.down.circle.fill").font(.system(size: 15)).foregroundStyle(Theme.violet)
                 Text(L("update.installing")).font(.system(size: 12, weight: .semibold))
                 Spacer()
+                Button(L("install.cancel")) { model.cancelAutoInstall(recordID: entry.record.id) }
+                    .controlSize(.small)
             }
             ProgressView(value: min(max(fraction, 0), 1)).progressViewStyle(.linear).tint(Theme.violet)
         }

@@ -168,6 +168,8 @@ final class AppModel {
     private(set) var appIDReleases: [Date] = []
     /// Current step of each running install/refresh, per app row.
     private(set) var jobs: [JobKey: JobStage] = [:]
+    /// Running background auto-install tasks, so the « Mises à jour » tab can cancel one.
+    @ObservationIgnored var autoInstallTasks: [JobKey: Task<Applied, Never>] = [:]
     /// Entries (`AppEntry.id`) with a backup, restore or import running: the fiche shows a spinner.
     private(set) var dataBusy: Set<JobKey> = []
     /// A running manual/pre-update backup's progress (0...1) per row; absent while the total is unknown.
