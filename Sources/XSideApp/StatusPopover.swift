@@ -45,7 +45,8 @@ final class StatusPopover: NSObject, NSPopoverDelegate {
         popover.delegate = self
         let host = NSHostingController(rootView: content
             .environment(\.closePopover, ClosePopoverAction { [weak self] in self?.close() })
-            .environment(\.reopenPopover, ClosePopoverAction { [weak self] in self?.show() }))
+            .environment(\.reopenPopover, ClosePopoverAction { [weak self] in self?.show() })
+            .tint(Theme.violet))
         host.sizingOptions = [.preferredContentSize]
         popover.contentViewController = host
         Self.log.info("status item installed")

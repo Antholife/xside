@@ -366,7 +366,7 @@ struct UpdateSourceSheet: View {
             }
             if let frac = downloading {
                 HStack(spacing: 8) {
-                    ProgressView(value: frac)
+                    ProgressView(value: frac).progressViewStyle(.linear).tint(Theme.violet)
                     Text("\(Int(frac * 100)) %").font(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit()
                     Button(L("install.cancel")) { cancelDownload() }.controlSize(.small)
                 }

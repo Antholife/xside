@@ -37,7 +37,7 @@ struct XSideApp: App {
     var body: some Scene {
         // IPAs from Finder open this window (the popover can't hold an install).
         Window("XSide", id: InstallWindow.id) {
-            InstallWindowRoot(model: model)
+            InstallWindowRoot(model: model).tint(Theme.violet)
         }
         .windowStyle(.hiddenTitleBar) // the app's gradient header runs under it
         .windowResizability(.contentSize)
@@ -46,7 +46,7 @@ struct XSideApp: App {
 
         // The first-launch journey (see `MenuBarLabel` for when it opens by itself).
         Window(L("onboarding.window"), id: WelcomeWindow.id) {
-            WelcomeWindowRoot(model: model)
+            WelcomeWindowRoot(model: model).tint(Theme.violet)
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
@@ -57,7 +57,7 @@ struct XSideApp: App {
 
         // Once after an update (see `showWhatsNewIfNeeded`), and from Settings > About.
         Window(L("whatsNew.window"), id: WhatsNewWindow.id) {
-            WhatsNewWindowRoot()
+            WhatsNewWindowRoot().tint(Theme.violet)
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize) // can be made wider (more columns)
@@ -68,7 +68,7 @@ struct XSideApp: App {
 
         // "Why does it crash?" (an app's … menu, the install window, a row's crash line).
         Window(L("crash.window"), id: CrashWindow.id) {
-            CrashWindowRoot(model: model)
+            CrashWindowRoot(model: model).tint(Theme.violet)
         }
         .windowResizability(.contentSize)
         .defaultPosition(.center)
@@ -76,7 +76,7 @@ struct XSideApp: App {
         .restorationBehavior(.disabled)
 
         Settings {
-            SettingsView(model: model)
+            SettingsView(model: model).tint(Theme.violet)
         }
     }
 }
