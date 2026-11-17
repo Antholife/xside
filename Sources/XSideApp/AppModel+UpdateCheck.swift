@@ -89,7 +89,7 @@ extension AppModel {
         // The view's `entry.record` can be stale (a source added moments ago lives in `records`
         // already, not yet in the entry the view holds): check the fresh record, like installUpdateNow.
         let record = records.first(where: { $0.id == entry.record.id }) ?? entry.record
-        return await runUpdateChecks(updateTargets(of: record))
+        return await runUpdateChecks(updateTargets(of: record), userInitiated: true)
     }
 
     /// The row menu's « Vérifier les mises à jour »: the check, then a toast when there is nothing
@@ -111,7 +111,7 @@ extension AppModel {
         return false
     }
 
-    private func runUpdateChecks(_ targets: [UpdateTarget]) async -> [UpdateCheckReport] {
+    private func runUpdateChecks(_ targets: [UpdateTarget], userInitiated: Bool = false) async -> [UpdateCheckReport] {
         let work = libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent("updates-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: work) }
         let checker = UpdateChecker(fetcher: repoFetcher, runner: runner, workDir: work)
@@ -120,7 +120,10 @@ extension AppModel {
         var answers: [String: UpdateOutcome] = [:]
         var reports: [UpdateCheckReport] = []
         for target in targets {
-            guard let source = target.source else { continue }
+            guard var source = target.source else { continue }
+            // A manual check reports the true state: ignore the notify-dedup trigger (so an update
+            // already announced by the background pass still shows) and don't write it back.
+            if userInitiated { source.lastSeenTrigger = nil }
             let key = "\(source.repo.id)|\(source.variant)|\(target.kind)|\(target.installedVersion ?? "")|\(source.lastSeenTrigger ?? "")"
             let outcome: UpdateOutcome
             if let known = answers[key] {
@@ -129,7 +132,7 @@ extension AppModel {
                 outcome = await checker.check(source: source, kind: target.kind, installedVersion: target.installedVersion)
                 answers[key] = outcome
             }
-            reports.append(UpdateCheckReport(name: target.name, result: await route(outcome, for: target), tweakPackageID: target.tweak?.packageID))
+            reports.append(UpdateCheckReport(name: target.name, result: await route(outcome, for: target, userInitiated: userInitiated), tweakPackageID: target.tweak?.packageID))
         }
         return reports
     }
@@ -173,10 +176,12 @@ extension AppModel {
         }
     }
 
-    private func route(_ outcome: UpdateOutcome, for target: UpdateTarget) async -> UpdateCheckResult {
+    private func route(_ outcome: UpdateOutcome, for target: UpdateTarget, userInitiated: Bool = false) async -> UpdateCheckResult {
+        // A manual check is read-only w.r.t. the notify-dedup state: it never writes the trigger back.
+        func persist(_ trigger: String?) async { if !userInitiated { await persistTrigger(trigger, for: target) } }
         switch outcome {
         case .upToDate(let trigger):
-            await persistTrigger(trigger, for: target)
+            await persist(trigger)
             return .upToDate
         case .needsVariantChoice:
             return .needsVariantChoice
@@ -186,24 +191,25 @@ extension AppModel {
             return .failed(reason)
         case .available(let found, let version, let stable):
             var result = UpdateCheckResult.available(version: version, reason: stable ? .notifyMode : .prerelease, tag: found.tag, asset: found.asset.name)
-            var persist = true
+            var shouldPersist = true
             let auto = stable && target.source?.mode == .auto
             if auto, let device = deviceForAutoUpdate(target.record) {
                 switch await apply(target, device: device, found: found, stable: stable) {
-                case .installed(let installed): return await persisted(found.trigger, target, .installed(version: installed))
-                case .upToDate: return await persisted(found.trigger, target, .upToDate)
+                case .installed(let installed): await persist(found.trigger); return .installed(version: installed)
+                case .upToDate: await persist(found.trigger); return .upToDate
                 case .notify(let v, let reason): result = .available(version: v, reason: reason, tag: found.tag, asset: found.asset.name)
                 case .incompatible: break
                 case .failed(let reason):
                     Self.updateLogger.notice("auto update failed for \(target.name, privacy: .public): \(reason, privacy: .public)")
-                    persist = false // tried again next time
+                    shouldPersist = false // tried again next time
                 }
             }
             // Auto but no device to install on: announced, and not marked seen, so the install
             // happens once a device is back.
-            if auto, deviceForAutoUpdate(target.record) == nil { persist = false }
-            if case .available(let v, _, _, _) = result { notify(target, version: v) }
-            if persist { await persistTrigger(found.trigger, for: target) }
+            if auto, deviceForAutoUpdate(target.record) == nil { shouldPersist = false }
+            // The background pass announces; a manual check shows the card itself, no extra notice.
+            if case .available(let v, _, _, _) = result, !userInitiated { notify(target, version: v) }
+            if shouldPersist { await persist(found.trigger) }
             return result
         }
     }
@@ -241,11 +247,6 @@ extension AppModel {
         guard let installation = target.record.installations.first else { return }
         let job = RefreshJob(recordID: target.record.id, deviceID: installation.deviceID)
         onAppUpdateAvailable?(AppUpdateNotice(appName: target.name, version: version, job: job, id: target.noticeID))
-    }
-
-    private func persisted(_ trigger: String?, _ target: UpdateTarget, _ result: UpdateCheckResult) async -> UpdateCheckResult {
-        await persistTrigger(trigger, for: target)
-        return result
     }
 
     /// Remembers the release acted on (or announced) so the next look doesn't repeat it. The record
