@@ -172,7 +172,7 @@ struct UpdateSourceSheet: View {
     @State private var installedTag: String?  // the release the person is on (baseline)
     @State private var mode: UpdateMode = .notify
     @State private var interval: TimeInterval?
-    @State private var step = 0 // 0 variant · 1 download folder · 2 current version · 3 mode + frequency
+    @State private var step = 0 // 0 variant · 1 download folder · 2 mode + frequency · 3 current version
     @State private var downloadFolder = ""
     @State private var rememberFolder = false
     @State private var downloading: Double?   // progress while fetching the newest, nil when idle
@@ -201,10 +201,10 @@ struct UpdateSourceSheet: View {
                 case 1:
                     folderStep
                 case 2:
-                    tagStep
-                default:
                     modeCards
                     intervalRow
+                default:
+                    tagStep
                 }
             }
             .padding(18)
@@ -214,6 +214,7 @@ struct UpdateSourceSheet: View {
         }
         .frame(width: 460)
         .onAppear {
+            NSApp.activate(ignoringOtherApps: true) // menu-bar agent: make the sheet key so a first click lands
             mode = flow.draft.updateMode
             interval = flow.draft.updateInterval
             picked = flow.draft.updateVariantSource == repo ? flow.draft.updateVariantName : nil
@@ -252,13 +253,12 @@ struct UpdateSourceSheet: View {
     private var canAdvance: Bool {
         switch step {
         case 0: return ready && picked != nil
-        case 2: return installedTag != nil
-        default: return true // folder step and mode step are always advanceable
+        default: return true // folder and mode steps are always advanceable; version is the last step
         }
     }
 
     private func goNext() {
-        if step == 1 { // entering the version step: default to the auto-detected tag, else nothing
+        if step == 2 { // entering the version step (last): default to the auto-detected tag, else nothing
             if installedTag == nil || !releaseTags.contains(where: { $0.tag == installedTag }) {
                 installedTag = autoDetectedTag // nil when it can't be told: the person must pick
             }
