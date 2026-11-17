@@ -1469,6 +1469,13 @@
 "update.mode.note" = "Auto: only stable versions install by themselves, after a check of the content.";
 "update.mode.notify" = "Notify me";
 "update.mode.auto" = "Install automatically";
+"update.mode.notify.detail" = "XSide notifies you when a new version is out. You install it yourself whenever you want; nothing moves without you.";
+"update.mode.auto.detail" = "XSide installs new stable versions on its own, after a content check. A prerelease or a suspicious file warns you instead of installing.";
+"update.source.verify" = "Check the link";
+"update.source.validate" = "Confirm";
+"update.source.remove" = "Remove the link";
+"update.verify.ready" = "Repository recognized";
+"update.variant.which" = "Which file to follow?";
 "update.variant.title" = "Which variant to follow?";
 "update.variant.message" = "%@: several files match. Choose the one you're installing; XSide will follow the same variant in future versions.";
 "update.variant.follow" = "Follow this variant";

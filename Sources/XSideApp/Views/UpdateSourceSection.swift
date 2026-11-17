@@ -2,26 +2,22 @@ import AppKit
 import SwiftUI
 import XSideCore
 
-/// "Source de mise à jour" in the install window: an optional GitHub link, what to do when a
-/// release comes out, and (once the repo's files are known) which variant to follow. The link is
-/// validated by `GitHubSource.parse`; the releases are read off the main actor.
+/// "Source de mise à jour" in the install window: an optional GitHub link. You type the link, press
+/// « Vérifier le lien », and a sheet checks the repo, lets you pick the file to follow (when several)
+/// and the mode (notify / auto), then confirm. Once set, the card shows a summary with « Modifier »
+/// and a way to remove it. The link is validated by `GitHubSource.parse`; releases are read off the
+/// main actor via `AppModel.installableIPAs`.
 struct UpdateSourceSection: View {
     let model: AppModel
     @Bindable var flow: InstallFlow
-
-    /// What the last look at the repo's releases found (names of the newest release's `.ipa`s).
-    private enum Check: Equatable {
-        case idle, checking, failed, none
-        case found([String])
-    }
-    @State private var check = Check.idle
-    /// The file the variant was derived from, only while it belongs to the repo now in the field.
-    private var chosenName: String? {
-        flow.draft.updateVariant != nil && flow.draft.updateVariantSource == parsed ? flow.draft.updateVariantName : nil
-    }
+    @State private var showsSheet = false
 
     private var parsed: GitHubSource? { GitHubSource.parse(flow.draft.updateSourceURL) }
     private var isEmpty: Bool { flow.draft.updateSourceURL.trimmingCharacters(in: .whitespaces).isEmpty }
+    /// Configured: a variant chosen for the very repo in the field now (so the summary is shown).
+    private var chosenName: String? {
+        flow.draft.updateVariant != nil && flow.draft.updateVariantSource == parsed ? flow.draft.updateVariantName : nil
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -29,142 +25,278 @@ struct UpdateSourceSection: View {
             VStack(alignment: .leading, spacing: 0) {
                 OptionRow(symbol: "arrow.down.circle.fill", title: L("update.source.link"),
                           detail: L("update.source.link.note")) { EmptyView() }
-                HStack(spacing: 8) {
-                    TextField(L("update.source.link"), text: $flow.draft.updateSourceURL,
-                              prompt: Text(L("update.source.placeholder")))
-                        .labelsHidden()
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12, design: .monospaced))
-                        .autocorrectionDisabled()
-                        .onSubmit { Task { await look() } }
-                    statusPill
-                }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 9)
-                statusDetail
-                if !isEmpty, parsed != nil {
+                if let chosenName {
                     Divider().padding(.leading, 48)
-                    OptionRow(symbol: "bolt.fill", title: L("update.mode.title"), detail: nil) {
-                        Picker(L("update.mode.title"), selection: $flow.draft.updateMode) {
-                            Text(L("update.mode.notify")).tag(UpdateMode.notify)
-                            Text(L("update.mode.auto")).tag(UpdateMode.auto)
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.segmented)
-                        .fixedSize()
-                    }
-                    Label(L("update.mode.note"), systemImage: "info.circle")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.leading, 48)
-                        .padding(.trailing, 12)
-                        .padding(.bottom, 10)
+                    configuredRow(chosenName)
+                } else {
+                    Divider().padding(.leading, 48)
+                    editRow
                 }
             }
             .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .disabled(flow.isRunning)
         }
-        // A new link (or a valid one first typed) is looked at once the typing pauses.
-        .task(id: flow.draft.updateSourceURL) {
-            // A variant already chosen for this very repo (the view was rebuilt): keep it.
-            if chosenName != nil { return }
-            // Otherwise the variant belongs to another repo (or none): drop it.
-            check = .idle
-            flow.draft.updateVariant = nil
-            flow.draft.updateVariantSource = nil
-            flow.draft.updateVariantName = nil
-            guard parsed != nil else { return }
-            try? await Task.sleep(for: .milliseconds(800))
-            guard !Task.isCancelled else { return }
-            await look()
+        .sheet(isPresented: $showsSheet) {
+            if let repo = parsed {
+                UpdateSourceSheet(model: model, flow: flow, repo: repo) { showsSheet = false }
+            }
         }
+    }
+
+    /// The link field and its « Vérifier le lien » button (enabled once the link is a valid GitHub repo).
+    @ViewBuilder private var editRow: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                TextField(L("update.source.link"), text: $flow.draft.updateSourceURL,
+                          prompt: Text(L("update.source.placeholder")))
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 12, design: .monospaced))
+                    .autocorrectionDisabled()
+                    .onSubmit { if parsed != nil { showsSheet = true } }
+                statusPill
+            }
+            Button(L("update.source.verify")) { showsSheet = true }
+                .buttonStyle(GradientButtonStyle())
+                .frame(maxWidth: .infinity)
+                .disabled(parsed == nil)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 11)
+    }
+
+    /// The summary once a source is set: the followed file, the mode, « Modifier », and a remove button.
+    private func configuredRow(_ name: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: 15))
+                .foregroundStyle(Color(nsColor: .systemGreen))
+                .frame(width: 26)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L("update.source.tracking", name) + " · " + modeLabel)
+                    .font(.system(size: 13, weight: .medium))
+                    .fixedSize(horizontal: false, vertical: true)
+                if let repo = parsed {
+                    Text("github.com/\(repo.owner)/\(repo.repo)")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            Spacer(minLength: 8)
+            Button(L("install.summary.edit")) { showsSheet = true }
+                .controlSize(.small)
+            Button(action: remove) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 15))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help(L("update.source.remove"))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+    }
+
+    private var modeLabel: String { L(flow.draft.updateMode == .auto ? "update.mode.auto" : "update.mode.notify") }
+
+    private func remove() {
+        flow.draft.updateVariant = nil
+        flow.draft.updateVariantSource = nil
+        flow.draft.updateVariantName = nil
+        flow.draft.updateSourceURL = ""
     }
 
     @ViewBuilder private var statusPill: some View {
         if !isEmpty {
             if parsed != nil {
                 Label(L("update.source.recognized"), systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 11))
                     .foregroundStyle(Color(nsColor: .systemGreen))
             } else {
                 Label(L("update.source.invalid"), systemImage: "xmark.circle.fill")
+                    .font(.system(size: 11))
                     .foregroundStyle(Color(nsColor: .systemRed))
             }
         }
     }
+}
 
-    @ViewBuilder private var statusDetail: some View {
-        if parsed != nil {
-            Group {
-                switch check {
-                case .idle:
-                    if let chosenName { note(L("update.source.tracking", chosenName), symbol: "checkmark.seal.fill", orange: false) }
-                case .checking:
-                    HStack(spacing: 6) { ProgressView().controlSize(.mini); Text(L("update.source.checking")) }
-                case .failed:
-                    note(L("update.source.failed"), symbol: "exclamationmark.triangle.fill", orange: true)
-                case .none:
-                    note(L("update.source.noAsset"), symbol: "exclamationmark.triangle.fill", orange: true)
-                case .found(let names):
-                    if let chosenName {
-                        HStack(spacing: 8) {
-                            note(L("update.source.tracking", chosenName), symbol: "checkmark.seal.fill", orange: false)
-                            if names.count > 1 {
-                                Button(L("update.source.choose")) { choose(from: names) }
-                                    .controlSize(.small)
-                            }
-                        }
-                    } else {
-                        HStack(spacing: 8) {
-                            note(L("update.source.multiple"), symbol: "list.bullet", orange: false)
-                            Button(L("update.source.choose")) { choose(from: names) }
-                                .controlSize(.small)
-                        }
-                    }
+/// The sheet opened by « Vérifier le lien »: it reads the repo's releases, lets the person pick the
+/// file to follow (when several) and the mode, and on « Valider » writes the choice into the draft.
+struct UpdateSourceSheet: View {
+    let model: AppModel
+    @Bindable var flow: InstallFlow
+    let repo: GitHubSource
+    let dismiss: () -> Void
+
+    private enum Phase: Equatable { case verifying, failed, noAsset, ready([String]) }
+    @State private var phase: Phase = .verifying
+    @State private var picked: String?
+    @State private var mode: UpdateMode = .notify
+
+    private var isReady: Bool {
+        if case .ready = phase, picked != nil { return true }
+        return false
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(L("update.source.title")).font(.system(size: 15, weight: .bold))
+                Text("github.com/\(repo.owner)/\(repo.repo)")
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1).truncationMode(.middle)
+            }
+            .padding(.horizontal, 18).padding(.top, 16).padding(.bottom, 10)
+            Divider()
+            VStack(alignment: .leading, spacing: 14) {
+                verifyBanner
+                if case .ready(let names) = phase {
+                    if names.count > 1 { variantPicker(names) }
+                    modeCards
                 }
             }
-            .font(.system(size: 11))
-            .foregroundStyle(.secondary)
-            .padding(.leading, 12)
-            .padding(.trailing, 12)
-            .padding(.bottom, 10)
+            .padding(18)
+            Divider()
+            HStack(spacing: 10) {
+                Spacer()
+                Button(L("install.cancel"), action: dismiss)
+                    .controlSize(.large)
+                    .keyboardShortcut(.cancelAction)
+                Button(L("update.source.validate"), action: validate)
+                    .buttonStyle(GradientButtonStyle())
+                    .controlSize(.large)
+                    .frame(minWidth: 120)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!isReady)
+            }
+            .padding(.horizontal, 18).padding(.vertical, 14)
+        }
+        .frame(width: 460)
+        .onAppear {
+            mode = flow.draft.updateMode
+            picked = flow.draft.updateVariantSource == repo ? flow.draft.updateVariantName : nil
+        }
+        .task { await look() }
+    }
+
+    @ViewBuilder private var verifyBanner: some View {
+        switch phase {
+        case .verifying:
+            banner { HStack(spacing: 7) { ProgressView().controlSize(.small); Text(L("update.source.checking")) } }
+        case .failed:
+            banner(color: .systemOrange) { Label(L("update.source.failed"), systemImage: "exclamationmark.triangle.fill") }
+        case .noAsset:
+            banner(color: .systemOrange) { Label(L("update.source.noAsset"), systemImage: "exclamationmark.triangle.fill") }
+        case .ready:
+            banner(color: .systemGreen) { Label(L("update.verify.ready"), systemImage: "checkmark.circle.fill") }
         }
     }
 
-    private func note(_ text: String, symbol: String, orange: Bool) -> some View {
-        Label(text, systemImage: symbol)
-            .foregroundStyle(orange ? Color(nsColor: .systemOrange) : Color.secondary)
-            .fixedSize(horizontal: false, vertical: true)
+    private func banner<Content: View>(color: NSColor? = nil, @ViewBuilder _ content: () -> Content) -> some View {
+        content()
+            .font(.system(size: 12.5))
+            .foregroundStyle(color.map { Color(nsColor: $0) } ?? .secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
     }
 
-    /// Reads the repo's releases; one `.ipa` in the newest release is followed as is, several ask.
+    private func variantPicker(_ names: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(L("update.variant.which")).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+            Picker("", selection: $picked) {
+                ForEach(names, id: \.self) { name in Text(name).tag(Optional(name)) }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            if let picked {
+                let selector = VariantSelector.make(chosen: picked, others: names.filter { $0 != picked })
+                Text(L("update.variant.track", selector.stableTokens.joined(separator: ", ")))
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var modeCards: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(L("update.mode.title")).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+            ModeCard(symbol: "bell.fill", title: L("update.mode.notify"), detail: L("update.mode.notify.detail"),
+                     selected: mode == .notify) { mode = .notify }
+            ModeCard(symbol: "bolt.fill", title: L("update.mode.auto"), detail: L("update.mode.auto.detail"),
+                     selected: mode == .auto) { mode = .auto }
+        }
+    }
+
+    /// Reads the repo's releases; the newest release's `.ipa`s are the files to choose among.
     private func look() async {
-        guard let repo = parsed else { return }
-        check = .checking
+        phase = .verifying
         do {
             let all = try await model.installableIPAs(of: repo)
-            guard !Task.isCancelled, repo == parsed else { return }
-            guard let newest = all.first?.tag else { check = .none; return }
+            guard let newest = all.first?.tag else { phase = .noAsset; return }
             let names = all.filter { $0.tag == newest }.map(\.asset.name)
-            check = .found(names)
-            // One file: followed silently. Several: the person opens the choice ("Choisir").
-            if names.count == 1 { adopt(names[0], of: names, repo: repo) }
+            phase = .ready(names)
+            // Keep a still-valid pick (reopening « Modifier »); otherwise follow the first file.
+            if !(picked.map(names.contains) ?? false) { picked = names.first }
         } catch {
-            guard !Task.isCancelled else { return }
-            check = .failed
+            phase = .failed
         }
     }
 
-    private func choose(from names: [String]) {
-        guard let picked = UpdateSourceAlerts.chooseVariant(app: flow.appDisplayName, names: names,
-                                                            current: chosenName) else { return }
-        if let repo = parsed { adopt(picked, of: names, repo: repo) }
-    }
-
-    private func adopt(_ name: String, of names: [String], repo: GitHubSource) {
-        flow.draft.updateVariant = VariantSelector.make(chosen: name, others: names.filter { $0 != name })
+    private func validate() {
+        guard case .ready(let names) = phase, let picked else { return }
+        flow.draft.updateVariant = VariantSelector.make(chosen: picked, others: names.filter { $0 != picked })
         flow.draft.updateVariantSource = repo
-        flow.draft.updateVariantName = name
+        flow.draft.updateVariantName = picked
+        flow.draft.updateMode = mode
+        dismiss()
+    }
+}
+
+/// One selectable mode card: a radio, an icon, the title and its explanation; the selected one is
+/// outlined in the brand colour.
+private struct ModeCard: View {
+    let symbol: String
+    let title: String
+    let detail: String
+    let selected: Bool
+    let select: () -> Void
+
+    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 10, style: .continuous) }
+
+    var body: some View {
+        Button(action: select) {
+            HStack(alignment: .top, spacing: 10) {
+                ZStack {
+                    Circle().strokeBorder(selected ? Theme.violet : Color.secondary.opacity(0.5), lineWidth: 1.5)
+                    if selected { Circle().fill(Theme.violet).frame(width: 9, height: 9) }
+                }
+                .frame(width: 17, height: 17)
+                .padding(.top, 1)
+                Image(systemName: symbol)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.brand)
+                    .frame(width: 18)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.system(size: 13, weight: .semibold))
+                    Text(detail).font(.system(size: 11.5)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(11)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(shape.fill(selected ? Theme.violet.opacity(0.08) : Theme.cardFill))
+            .overlay(shape.strokeBorder(selected ? Theme.violet : Color.primary.opacity(0.08),
+                                        lineWidth: selected ? 1.5 : 0.5))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
     }
 }
 
