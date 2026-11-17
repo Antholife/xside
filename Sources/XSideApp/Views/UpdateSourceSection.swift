@@ -21,7 +21,14 @@ struct UpdateSourceSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            SectionTitle(L("update.source.title"))
+            VStack(alignment: .leading, spacing: 2) {
+                SectionTitle(L("update.source.title"))
+                Text(L("update.source.caption"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 2)
+            }
             VStack(alignment: .leading, spacing: 0) {
                 OptionRow(symbol: "arrow.down.circle.fill", title: L("update.source.link"),
                           detail: L("update.source.link.note")) { EmptyView() }

@@ -1454,6 +1454,7 @@
 "notification.appUpdate.body" = "Version %2$@ of %1$@ is out. Open XSide to update it.";
 
 "update.source.title" = "Update source";
+"update.source.caption" = "XSide can spot new versions and either tell you about them or install them for you.";
 "update.source.link" = "GitHub link";
 "update.source.link.note" = "Repository or releases page, both work. Optional.";
 "update.source.placeholder" = "https://github.com/owner/repo";
