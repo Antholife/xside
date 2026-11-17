@@ -379,6 +379,9 @@ struct OptionsDraft: Equatable {
     var updateMode: UpdateMode = .notify
     /// Per-app check cadence chosen at install, in seconds; `nil` = follow the global default.
     var updateInterval: TimeInterval?
+    /// The release tag this install corresponds to (the baseline for future update checks), chosen
+    /// in the source sheet. `nil` = not set (no update detection until a baseline exists).
+    var updateInstalledTag: String?
     var updateVariant: VariantSelector?
     /// The repo and file name `updateVariant` was derived from: the variant is only valid for that
     /// repo (`UpdateSourceSection` clears all three when the link points elsewhere).

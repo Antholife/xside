@@ -153,22 +153,19 @@ extension AppModel {
     private func runUpdateChecks(_ targets: [UpdateTarget], userInitiated: Bool = false) async -> [UpdateCheckReport] {
         let work = libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent("updates-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: work) }
-        let checker = UpdateChecker(fetcher: repoFetcher, runner: runner, workDir: work)
-        // Two sources asking the same thing of the same repo (same variant, kind and installed
-        // version) are answered by one look.
+        let checker = UpdateChecker(fetcher: repoFetcher, workDir: work)
+        // Two sources asking the same of the same repo (same variant, kind and baseline tag) share
+        // one look at the release list.
         var answers: [String: UpdateOutcome] = [:]
         var reports: [UpdateCheckReport] = []
         for target in targets {
             guard let source = target.source else { continue }
-            // A manual check reports the true state from the cached version (no re-download); the
-            // background pass announces a release once. Neither writes the trigger back on a manual run.
-            let key = "\(source.repo.id)|\(source.variant)|\(target.kind)|\(target.installedVersion ?? "")|\(source.lastSeenTrigger ?? "")|\(userInitiated)"
+            let key = "\(source.repo.id)|\(source.variant)|\(target.kind)|\(source.installedTag ?? "")"
             let outcome: UpdateOutcome
             if let known = answers[key] {
                 outcome = known
             } else {
-                outcome = await checker.check(source: source, kind: target.kind, installedVersion: target.installedVersion,
-                                              reportCachedAvailable: userInitiated)
+                outcome = await checker.check(source: source, kind: target.kind)
                 answers[key] = outcome
             }
             reports.append(UpdateCheckReport(name: target.name, result: await route(outcome, for: target, userInitiated: userInitiated), tweakPackageID: target.tweak?.packageID))
@@ -191,11 +188,8 @@ extension AppModel {
         }
         let work = libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent("updates-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: work) }
-        let checker = UpdateChecker(fetcher: repoFetcher, runner: runner, workDir: work)
-        // The user asked to install from a card we already showed: report the available release
-        // (from cache if unchanged) rather than short-circuiting to « à jour » on the seen trigger.
-        switch await checker.check(source: source, kind: target.kind, installedVersion: target.installedVersion,
-                                   reportCachedAvailable: true) {
+        let checker = UpdateChecker(fetcher: repoFetcher, workDir: work)
+        switch await checker.check(source: source, kind: target.kind) {
         case .upToDate: return .upToDate
         case .needsVariantChoice: return .needsVariantChoice
         case .failed(let reason): return .failed(reason)
@@ -212,10 +206,10 @@ extension AppModel {
             }
             switch await apply(target, device: device, found: found, stable: stable, userInitiated: true, approved: approved, progress: progress) {
             case .installed(let v):
-                await persistTrigger(found.trigger, version: nil, for: target)
+                await markInstalled(found, for: target)
                 return .installed(version: v)
             case .upToDate:
-                await persistTrigger(found.trigger, version: nil, for: target)
+                await markInstalled(found, for: target)
                 return .upToDate
             case .notify(let v, let r): return .available(version: v, reason: r, tag: found.tag, asset: found.asset.name)
             case .incompatible: return .failed("incompatible")
@@ -225,14 +219,8 @@ extension AppModel {
     }
 
     private func route(_ outcome: UpdateOutcome, for target: UpdateTarget, userInitiated: Bool = false) async -> UpdateCheckResult {
-        // Any full evaluation caches the release (trigger + version) so the next check — manual or
-        // background — is answered without re-downloading the file.
-        func persist(_ trigger: String?, _ version: String?) async {
-            await persistTrigger(trigger, version: version, for: target)
-        }
         switch outcome {
-        case .upToDate(let trigger):
-            await persist(trigger, nil)
+        case .upToDate:
             return .upToDate
         case .needsVariantChoice:
             return .needsVariantChoice
@@ -242,27 +230,24 @@ extension AppModel {
             return .failed(reason)
         case .available(let found, let version, let stable):
             var result = UpdateCheckResult.available(version: version, reason: stable ? .notifyMode : .prerelease, tag: found.tag, asset: found.asset.name)
-            var shouldPersist = true
             let auto = stable && target.source?.mode == .auto
             if auto, let device = deviceForAutoUpdate(target.record) {
                 switch await apply(target, device: device, found: found, stable: stable) {
-                case .installed(let installed): await persist(found.trigger, nil); return .installed(version: installed)
-                case .upToDate: await persist(found.trigger, nil); return .upToDate
+                case .installed(let installed): await markInstalled(found, for: target); return .installed(version: installed)
+                case .upToDate: await markInstalled(found, for: target); return .upToDate
                 case .notify(let v, let reason): result = .available(version: v, reason: reason, tag: found.tag, asset: found.asset.name)
                 case .incompatible: break
                 case .failed(let reason):
                     Self.updateLogger.notice("auto update failed for \(target.name, privacy: .public): \(reason, privacy: .public)")
-                    shouldPersist = false // tried again next time
                 }
             }
-            // Auto but no device to install on: announced, and not marked seen, so the install
-            // happens once a device is back.
-            if auto, deviceForAutoUpdate(target.record) == nil { shouldPersist = false }
-            // Cache the available version so a later manual check reports it without re-downloading.
-            let pendingVersion: String? = { if case .available(let v, _, _, _) = result { v } else { nil } }()
-            // The background pass announces; a manual check shows the card itself, no extra notice.
-            if let pendingVersion, !userInitiated { notify(target, version: pendingVersion) }
-            if shouldPersist { await persist(found.trigger, pendingVersion) }
+            // The background pass announces a release once (deduped on the trigger); a manual check
+            // shows the card itself, no extra notice.
+            let alreadyAnnounced = target.source?.lastSeenTrigger == found.trigger
+            if !userInitiated, !alreadyAnnounced, case .available(let v, _, _, _) = result {
+                notify(target, version: v)
+                await markAnnounced(found.trigger, for: target)
+            }
             return result
         }
     }
@@ -307,25 +292,36 @@ extension AppModel {
         onAppUpdateAvailable?(AppUpdateNotice(appName: target.name, version: version, job: job, id: target.noticeID))
     }
 
-    /// Remembers the release acted on (or announced) so the next look doesn't repeat it. The record
-    /// is read again: an update that swapped a tweak changed its id.
-    private func persistTrigger(_ trigger: String?, version: String?, for target: UpdateTarget) async {
-        guard let trigger else { return }
+    /// The release was announced to the person (notify-dedup): the next pass won't notify it again.
+    private func markAnnounced(_ trigger: String, for target: UpdateTarget) async {
+        await mutateSource(for: target) { $0.lastSeenTrigger = trigger }
+    }
+
+    /// XSide installed this release: it becomes the baseline, so a check is up to date until a newer
+    /// release appears. Its trigger is marked announced too (no stale "available" notice).
+    private func markInstalled(_ found: FoundRelease, for target: UpdateTarget) async {
+        await mutateSource(for: target) { $0.installedTag = found.tag; $0.lastSeenTrigger = found.trigger }
+    }
+
+    /// Reads the source again (an update that swapped a tweak changed its id), applies `change`, and
+    /// writes it back only when something actually changed.
+    private func mutateSource(for target: UpdateTarget, _ change: (inout UpdateSource) -> Void) async {
         do {
+            let records = await library.records()
             if let old = target.tweak {
-                guard let record = await library.records().first(where: { $0.id == target.record.id }),
+                guard let record = records.first(where: { $0.id == target.record.id }),
                       let tweak = record.tweaks?.first(where: { $0.packageID == old.packageID && $0.updateSource != nil }),
-                      var source = tweak.updateSource,
-                      source.lastSeenTrigger != trigger || source.lastSeenVersion != version else { return }
-                source.lastSeenTrigger = trigger
-                source.lastSeenVersion = version
+                      var source = tweak.updateSource else { return }
+                let before = source
+                change(&source)
+                guard source != before else { return }
                 try await library.setUpdateSource(source, forTweak: tweak.id, recordID: record.id)
             } else {
-                guard let record = await library.records().first(where: { $0.id == target.record.id }),
-                      var source = record.updateSource,
-                      source.lastSeenTrigger != trigger || source.lastSeenVersion != version else { return }
-                source.lastSeenTrigger = trigger
-                source.lastSeenVersion = version
+                guard let record = records.first(where: { $0.id == target.record.id }),
+                      var source = record.updateSource else { return }
+                let before = source
+                change(&source)
+                guard source != before else { return }
                 try await library.setUpdateSource(source, forRecord: record.id)
             }
             await reloadRecords()
@@ -350,7 +346,7 @@ extension AppModel {
     func persistUpdateSource(from draft: OptionsDraft, recordID: UUID) {
         guard let repo = GitHubSource.parse(draft.updateSourceURL), let variant = draft.updateVariant else { return }
         let source = UpdateSource(repo: repo, variant: variant, mode: draft.updateMode, lastSeenTrigger: nil,
-                                  checkInterval: draft.updateInterval)
+                                  installedTag: draft.updateInstalledTag, checkInterval: draft.updateInterval)
         Task {
             do {
                 try await library.setUpdateSource(source, forRecord: recordID)

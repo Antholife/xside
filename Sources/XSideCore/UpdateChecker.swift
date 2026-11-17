@@ -8,34 +8,23 @@ public enum UpdateOutcome: Sendable, Equatable {
     case failed(String)
 }
 
-/// Decides whether a GitHub source has a newer release than what is installed. The release list is
-/// the cheap trigger; the downloaded file's own version (IPA Info.plist / deb control) is the truth.
+/// Decides whether a GitHub source has a release newer than the one the person is on, by the
+/// release the repo publishes (its tag), not by the app's own version: a tweak bumped without a
+/// new host-app version is still an update. Only the release list is fetched — no file download, so
+/// a check is cheap. The app version is used elsewhere only to flag a downgrade at install.
 public struct UpdateChecker: Sendable {
-    /// Seam: reads the real version of a downloaded file. Tests inject a stub; the default inspects the ipa/deb.
-    typealias VersionReader = @Sendable (URL, ReleaseKind) async -> String?
-
     let fetcher: HTTPFetching
-    let runner: CommandRunning
     let workDir: URL
-    let readVersion: VersionReader
 
-    public init(fetcher: HTTPFetching, runner: CommandRunning, workDir: URL) {
-        self.init(fetcher: fetcher, runner: runner, workDir: workDir,
-                  readVersion: { file, kind in await Self.inspectVersion(file, kind: kind, runner: runner, workDir: workDir) })
-    }
-
-    init(fetcher: HTTPFetching, runner: CommandRunning, workDir: URL, readVersion: @escaping VersionReader) {
+    public init(fetcher: HTTPFetching, workDir: URL) {
         self.fetcher = fetcher
-        self.runner = runner
         self.workDir = workDir
-        self.readVersion = readVersion
     }
 
-    /// `reportCachedAvailable` (a user-initiated check): when the newest release is the one already
-    /// seen, report it as available again from `source.lastSeenVersion` instead of re-downloading the
-    /// file. The background pass leaves it false so it announces a release only once.
-    public func check(source: UpdateSource, kind: ReleaseKind, installedVersion: String?,
-                      reportCachedAvailable: Bool = false) async -> UpdateOutcome {
+    /// Available when the newest release matching the variant is a different tag than the one the
+    /// source is on (`installedTag`). No `installedTag` yet (older data, or the baseline was never
+    /// set) means we can't tell, so it reports up to date rather than a false update.
+    public func check(source: UpdateSource, kind: ReleaseKind) async -> UpdateOutcome {
         let fm = FileManager.default
         do { try fm.createDirectory(at: workDir, withIntermediateDirectories: true) } catch {
             return .failed("work directory: \(error.localizedDescription)")
@@ -50,51 +39,26 @@ public struct UpdateChecker: Sendable {
         } catch {
             return .failed("release list: \(error)")
         }
-        let found: FoundRelease
         do {
             switch try ReleaseFinder.choose(data, source: source.repo, kind: kind, variant: source.variant) {
             case .ambiguous: return .needsVariantChoice
             case .none: return .upToDate(trigger: source.lastSeenTrigger)
-            case .found(let f): found = f
+            case .found(let found):
+                guard let installedTag = source.installedTag, !installedTag.isEmpty else {
+                    return .upToDate(trigger: found.trigger)
+                }
+                if found.tag == installedTag { return .upToDate(trigger: found.trigger) }
+                return .available(found, version: Self.displayTag(found.tag), stable: !found.isPrerelease)
             }
         } catch {
             return .failed("release list: \(error)")
         }
-        if found.trigger == source.lastSeenTrigger {
-            // Already seen. The background pass is done (it announced the release once). A manual
-            // check answers from the cached version — so it shows the update again without
-            // re-downloading the file; if there's no cached version yet (older data), it falls
-            // through to read it once, which caches it for next time.
-            if reportCachedAvailable, let cached = source.lastSeenVersion {
-                if Self.isNewer(cached, than: installedVersion, kind: kind) {
-                    return .available(found, version: cached, stable: !found.isPrerelease)
-                }
-                return .upToDate(trigger: found.trigger)
-            }
-            if !reportCachedAvailable { return .upToDate(trigger: found.trigger) }
-            // Manual check, cache miss: fall through to download and read the real version.
-        }
+    }
 
-        // Defence in depth: the finder already drops these.
-        guard found.asset.size > 0, found.asset.size <= kind.maxBytes else { return .upToDate(trigger: found.trigger) }
-        let ext = kind == .ipa ? "ipa" : "deb"
-        let asset = workDir.appendingPathComponent("asset-\(UUID().uuidString).\(ext)")
-        defer { try? fm.removeItem(at: asset) }
-        do {
-            _ = try await fetcher.fetch(found.asset.url, maxBytes: kind.maxBytes, to: asset,
-                                        redirectingWithin: AuthorReleases.assetHosts)
-        } catch {
-            return .failed("download: \(error)")
-        }
-        var st = stat()
-        guard lstat(asset.path, &st) == 0, st.st_mode & S_IFMT == S_IFREG, Int(st.st_size) == found.asset.size else {
-            return .failed("download: not the \(found.asset.size) bytes the release lists")
-        }
-        guard let real = await readVersion(asset, kind) else { return .upToDate(trigger: found.trigger) }
-        if Self.isNewer(real, than: installedVersion, kind: kind) {
-            return .available(found, version: real, stable: !found.isPrerelease)
-        }
-        return .upToDate(trigger: found.trigger)
+    /// A tag shown to the person: a leading `v`/`V` dropped (`v1.1.8` → `1.1.8`).
+    public static func displayTag(_ tag: String) -> String {
+        if let f = tag.first, f == "v" || f == "V" { return String(tag.dropFirst()) }
+        return tag
     }
 
     /// Kind-aware "is the release newer": `.ipa` uses the dotted-integer rule, `.deb` the dpkg rule.
@@ -135,15 +99,5 @@ public struct UpdateChecker: Sendable {
             out.append(n)
         }
         return out
-    }
-
-    private static func inspectVersion(_ file: URL, kind: ReleaseKind, runner: CommandRunning, workDir: URL) async -> String? {
-        switch kind {
-        case .ipa:
-            return try? await IPAImporter.inspect(ipa: file, runner: runner, scratchRoot: workDir).version
-        case .deb:
-            guard let text = try? await DebReader.control(of: file, runner: runner) else { return nil }
-            return (try? DebControl.parse(text))?.version
-        }
     }
 }

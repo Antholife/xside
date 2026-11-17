@@ -5,25 +5,87 @@ import Foundation
 @Suite struct UpdateCheckerTests {
     static let source = ReleaseFinderTests.source
     static let plain = ReleaseFinderTests.plain
-    static let found = FoundRelease(
-        tag: "v1.1.8", isPrerelease: false,
-        asset: ReleaseAsset(name: ReleaseFinderTests.ipa, url: URL(string: "\(ReleaseFinderTests.base)/v1.1.8/\(ReleaseFinderTests.ipa)")!, size: 1000),
-        trigger: "v1.1.8|\(ReleaseFinderTests.ipa)|2026-11-01T10:00:00Z")
+    /// The newest non-draft release matching `plain` in the fixture.
+    static let newestTag = "v1.1.8"
 
-    static func make(_ json: Data? = ReleaseFinderTests.fixture, version: String? = "1.1.8")
-        -> (UpdateChecker, FakeFetcher, URL) {
+    static func make(_ json: Data? = ReleaseFinderTests.fixture) -> (UpdateChecker, FakeFetcher, URL) {
         let fetcher = FakeFetcher()
         if let json { fetcher.serve(source.api.absoluteString, json) }
-        fetcher.serve(found.asset.url.absoluteString, Data(repeating: 0x78, count: 1000))
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("uc-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let checker = UpdateChecker(fetcher: fetcher, runner: NoRunner(), workDir: dir, readVersion: { _, _ in version })
-        return (checker, fetcher, dir)
+        return (UpdateChecker(fetcher: fetcher, workDir: dir), fetcher, dir)
     }
 
-    func src(last: String? = nil) -> UpdateSource {
-        UpdateSource(repo: Self.source, variant: Self.plain, mode: .notify, lastSeenTrigger: last)
+    func src(installed: String? = nil) -> UpdateSource {
+        UpdateSource(repo: Self.source, variant: Self.plain, mode: .notify, installedTag: installed)
     }
+
+    // MARK: Tag-based detection
+
+    @Test func check_availableWhenNewestTagDiffersFromBaseline() async {
+        let (c, f, _) = Self.make()
+        let r = await c.check(source: src(installed: "v1.1.7"), kind: .ipa)
+        guard case .available(let found, let version, let stable) = r else { Issue.record("\(r)"); return }
+        #expect(found.tag == Self.newestTag)
+        #expect(version == "1.1.8") // the tag, « v » dropped
+        #expect(stable == true)
+        // The check only reads the release list — it never downloads the asset.
+        #expect(f.fetched == [Self.source.api])
+    }
+
+    @Test func check_upToDateWhenOnNewestTag() async {
+        let (c, f, _) = Self.make()
+        let r = await c.check(source: src(installed: Self.newestTag), kind: .ipa)
+        #expect(r == .upToDate(trigger: "v1.1.8|\(ReleaseFinderTests.ipa)|2026-11-01T10:00:00Z"))
+        #expect(f.fetched == [Self.source.api])
+    }
+
+    @Test func check_upToDateWhenNoBaseline() async {
+        // No installedTag (older data): we can't tell, so never a false update.
+        let (c, _, _) = Self.make()
+        let r = await c.check(source: src(installed: nil), kind: .ipa)
+        guard case .upToDate = r else { Issue.record("\(r)"); return }
+    }
+
+    @Test func check_prereleaseIsAvailableButNotStable() async {
+        let json = ReleaseFinderTests.json([
+            ReleaseFinderTests.release("v2", pre: true, [ReleaseFinderTests.asset("v2", ReleaseFinderTests.ipa)]),
+            ReleaseFinderTests.release("v1.1.8", [ReleaseFinderTests.asset("v1.1.8", ReleaseFinderTests.ipa)]),
+        ])
+        let (c, _, _) = Self.make(json)
+        let r = await c.check(source: src(installed: "v1.1.8"), kind: .ipa)
+        guard case .available(let found, let v, let stable) = r else { Issue.record("\(r)"); return }
+        #expect(found.tag == "v2"); #expect(v == "2"); #expect(stable == false)
+    }
+
+    @Test func check_needsVariantChoiceOnAmbiguous() async {
+        let (c, _, _) = Self.make()
+        let loose = UpdateSource(repo: Self.source, variant: VariantSelector(stableTokens: ["ytkace"], excludedTokens: []),
+                                 installedTag: "v1.1.7")
+        let r = await c.check(source: loose, kind: .ipa)
+        #expect(r == .needsVariantChoice)
+    }
+
+    @Test func check_upToDateWhenNoMatchingAsset() async {
+        let (c, _, _) = Self.make()
+        let s = UpdateSource(repo: Self.source, variant: VariantSelector(stableTokens: ["nothing"], excludedTokens: []),
+                             installedTag: "v1.1.7")
+        guard case .upToDate = await c.check(source: s, kind: .ipa) else { Issue.record("expected upToDate"); return }
+    }
+
+    @Test func check_failedOnFetchError() async {
+        let (c, _, _) = Self.make(nil) // nothing served for the api
+        guard case .failed = await c.check(source: src(installed: "v1"), kind: .ipa) else { Issue.record("expected failed"); return }
+    }
+
+    @Test func displayTag_dropsLeadingV() {
+        #expect(UpdateChecker.displayTag("v1.1.8") == "1.1.8")
+        #expect(UpdateChecker.displayTag("V2.0") == "2.0")
+        #expect(UpdateChecker.displayTag("1.1.8") == "1.1.8")
+        #expect(UpdateChecker.displayTag("") == "")
+    }
+
+    // MARK: Version helpers (used by the install downgrade guard)
 
     @Test func isNewer_semverOrdering() {
         #expect(UpdateChecker.isNewer("1.1.9", than: "1.1.8") == true)
@@ -33,155 +95,18 @@ import Foundation
         #expect(UpdateChecker.isNewer("1.2", than: "1.2.0") == false)
         #expect(UpdateChecker.isNewer("1.2.1", than: "1.2") == true)
         #expect(UpdateChecker.isNewer("21.46.3", than: "v3.0") == nil)
-        #expect(UpdateChecker.isNewer("abc", than: "1.0") == nil)
         #expect(UpdateChecker.isNewer("1.0", than: nil) == nil)
     }
 
-    @Test func isNewer_kindAware() {
-        #expect(UpdateChecker.isNewer("1.1.9-1", than: "1.1.8", kind: .deb))
-        #expect(UpdateChecker.isNewer("1.1.8-2", than: "1.1.8-1", kind: .deb))
-        #expect(UpdateChecker.isNewer("1.0", than: "1.0~beta", kind: .deb))
-        #expect(!UpdateChecker.isNewer("1.1.8-1", than: "1.1.8-1", kind: .deb))
-        #expect(!UpdateChecker.isNewer("1.0~beta", than: "1.0", kind: .deb))
-        #expect(!UpdateChecker.isNewer("1.1.9", than: nil, kind: .deb))
-                // ipa keeps the dotted-integer logic: non-comparable stays "not newer"
-        #expect(UpdateChecker.isNewer("1.1.9", than: "1.1.8", kind: .ipa))
-        #expect(!UpdateChecker.isNewer("1.1.9-1", than: "1.1.8", kind: .ipa))
-    }
-
-    func debCheck(real: String, installed: String?) async -> UpdateOutcome {
-        let (_, f, dir) = Self.make()
-        let debURL = URL(string: "\(ReleaseFinderTests.base)/v1.1.8/\(ReleaseFinderTests.rootless)")!
-        f.serve(debURL.absoluteString, Data(repeating: 0x78, count: 1000))
-        let c = UpdateChecker(fetcher: f, runner: NoRunner(), workDir: dir, readVersion: { _, _ in real })
-        let variant = VariantSelector.make(chosen: ReleaseFinderTests.rootless, others: [ReleaseFinderTests.roothide])
-        let s = UpdateSource(repo: Self.source, variant: variant, mode: .notify, lastSeenTrigger: nil)
-        return await c.check(source: s, kind: .deb, installedVersion: installed)
-    }
-
-    @Test func check_deb_revisionBumpIsUpdate() async {
-        for (real, inst) in [("1.1.9-1", "1.1.8"), ("1.1.8-2", "1.1.8-1")] {
-            let r = await debCheck(real: real, installed: inst)
-            guard case .available(_, let v, _) = r else { Issue.record("\(real) vs \(inst): \(r)"); continue }
-            #expect(v == real)
-        }
-    }
-
-    @Test func check_deb_notNewerIsUpToDate() async {
-        for (real, inst) in [("1.1.8-1", "1.1.8-1"), ("1.0~beta", "1.0"), ("1.1.8", nil)] as [(String, String?)] {
-            let r = await debCheck(real: real, installed: inst)
-            guard case .upToDate = r else { Issue.record("\(real) vs \(String(describing: inst)): \(r)"); continue }
-        }
-    }
-
-    @Test func check_upToDateWhenTriggerUnchanged() async {
-        let (c, f, _) = Self.make()
-        let r = await c.check(source: src(last: Self.found.trigger), kind: .ipa, installedVersion: "1.0")
-        #expect(r == .upToDate(trigger: Self.found.trigger))
-        #expect(!f.fetched.contains(Self.found.asset.url))
-    }
-
-    @Test func check_cachedAvailable_reportsWithoutDownload() async {
-        let (c, f, _) = Self.make()
-        var s = src(last: Self.found.trigger)
-        s.lastSeenVersion = "1.1.8"
-        let r = await c.check(source: s, kind: .ipa, installedVersion: "1.1.7", reportCachedAvailable: true)
-        #expect(r == .available(Self.found, version: "1.1.8", stable: true))
-        #expect(!f.fetched.contains(Self.found.asset.url)) // reported from cache, no re-download
-    }
-
-    @Test func check_cachedButNotNewer_isUpToDate() async {
-        let (c, f, _) = Self.make()
-        var s = src(last: Self.found.trigger)
-        s.lastSeenVersion = "1.1.8"
-        let r = await c.check(source: s, kind: .ipa, installedVersion: "1.1.8", reportCachedAvailable: true)
-        #expect(r == .upToDate(trigger: Self.found.trigger))
-        #expect(!f.fetched.contains(Self.found.asset.url))
-    }
-
-    @Test func check_backgroundIgnoresCache_upToDateOnTriggerMatch() async {
-        let (c, f, _) = Self.make()
-        var s = src(last: Self.found.trigger)
-        s.lastSeenVersion = "1.1.8"
-        let r = await c.check(source: s, kind: .ipa, installedVersion: "1.1.7") // background: reportCachedAvailable false
-        #expect(r == .upToDate(trigger: Self.found.trigger))
-        #expect(!f.fetched.contains(Self.found.asset.url))
-    }
-
-    @Test func check_availableWhenNewerStable() async {
-        let (c, f, dir) = Self.make(version: "1.1.8")
-        let r = await c.check(source: src(), kind: .ipa, installedVersion: "1.1.7")
-        #expect(r == .available(Self.found, version: "1.1.8", stable: true))
-        #expect(f.fetched.contains(Self.found.asset.url))
-        #expect((try? FileManager.default.contentsOfDirectory(atPath: dir.path))?.isEmpty ?? true)
-    }
-
-    @Test func check_notStableFlagsPrerelease() async {
-        let json = ReleaseFinderTests.json([ReleaseFinderTests.release("v2", pre: true, [ReleaseFinderTests.asset("v2", ReleaseFinderTests.ipa)])])
-        let (c, f, _) = Self.make(json)
-        let url = "\(ReleaseFinderTests.base)/v2/\(ReleaseFinderTests.ipa)"
-        f.serve(url, Data(repeating: 0x78, count: 1000))
-        let r = await c.check(source: src(), kind: .ipa, installedVersion: "1.0")
-        guard case .available(let rel, let v, let stable) = r else { Issue.record("\(r)"); return }
-        #expect(rel.tag == "v2"); #expect(v == "1.1.8"); #expect(stable == false)
-    }
-
-    @Test func check_upToDateWhenSameVersionDespiteNewTrigger() async {
-        let (c, _, _) = Self.make(version: "1.1.8")
-        let r = await c.check(source: src(last: "old|trigger"), kind: .ipa, installedVersion: "1.1.8")
-        #expect(r == .upToDate(trigger: Self.found.trigger))
-    }
-
-    @Test func check_rejectsAssetOverCap() async {
-        let big = AppUpdateLimits.maxIPABytes + 1
-        let json = ReleaseFinderTests.json([ReleaseFinderTests.release("v2", [ReleaseFinderTests.asset("v2", ReleaseFinderTests.ipa, size: big)])])
-        let (c, f, _) = Self.make(json)
-        let r = await c.check(source: src(last: "old"), kind: .ipa, installedVersion: "1.0")
-        #expect(r == .upToDate(trigger: "old"))
-        #expect(f.fetched == [Self.source.api])
-    }
-
-    @Test func finder_dropsOverCapAsset() throws {
-        let json = ReleaseFinderTests.json([ReleaseFinderTests.release("v2", [
-            ReleaseFinderTests.asset("v2", ReleaseFinderTests.ipa, size: AppUpdateLimits.maxIPABytes + 1),
-            ReleaseFinderTests.asset("v2", ReleaseFinderTests.ipa16, size: 10)])])
-        let a = try ReleaseFinder.installableAssets(json, source: Self.source, kind: .ipa)
-        #expect(a.map(\.asset.name) == [ReleaseFinderTests.ipa16])
-    }
-
-    @Test func check_failedOnSizeMismatch() async {
-        let (c, f, _) = Self.make(version: "9.9")
-        f.serve(Self.found.asset.url.absoluteString, Data("xx".utf8))
-        let r = await c.check(source: src(), kind: .ipa, installedVersion: "1.0")
-        guard case .failed = r else { Issue.record("\(r)"); return }
+    @Test func isDowngrade_onlyWhenInstalledStrictlyNewer() {
+        #expect(UpdateChecker.isDowngrade(installed: "21.46.3", candidate: "21.44.4"))
+        #expect(!UpdateChecker.isDowngrade(installed: "21.44.4", candidate: "21.46.3"))
+        #expect(!UpdateChecker.isDowngrade(installed: "21.44.4", candidate: "21.44.4"))
+        #expect(!UpdateChecker.isDowngrade(installed: nil, candidate: "1.0"))
+        #expect(!UpdateChecker.isDowngrade(installed: "1.0", candidate: nil))
     }
 
     @Test func isNewer_trimsNewline() {
         #expect(UpdateChecker.isNewer("1.2.0\n", than: "1.1") == true)
-    }
-
-    @Test func check_upToDateWhenNonComparable() async {
-        let (c, _, _) = Self.make(version: nil)
-        let r = await c.check(source: src(), kind: .ipa, installedVersion: "1.0")
-        #expect(r == .upToDate(trigger: Self.found.trigger))
-    }
-
-    @Test func check_needsVariantChoiceOnAmbiguous() async {
-        let (c, _, _) = Self.make()
-        let other = UpdateSource(repo: Self.source, variant: VariantSelector(stableTokens: ["ytkace"], excludedTokens: []))
-        let r = await c.check(source: other, kind: .ipa, installedVersion: "1.0")
-        #expect(r == .needsVariantChoice)
-    }
-
-    @Test func check_failedOnFetchError() async {
-        let (c, _, _) = Self.make(nil)
-        let r = await c.check(source: src(), kind: .ipa, installedVersion: "1.0")
-        guard case .failed = r else { Issue.record("\(r)"); return }
-    }
-}
-
-private struct NoRunner: CommandRunning {
-    func run(_ executable: String, _ arguments: [String], cwd: URL?, timeout: Duration) async throws -> CommandResult {
-        throw CancellationError()
     }
 }

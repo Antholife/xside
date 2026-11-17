@@ -53,12 +53,12 @@ public struct UpdateSource: Codable, Equatable, Sendable {
     public let repo: GitHubSource
     public var variant: VariantSelector
     public var mode: UpdateMode
-    /// The last release tag acted on or already notified about.
+    /// The newest release tag the background pass has already announced (notify-dedup only).
     public var lastSeenTrigger: String?
-    /// The version of the release `lastSeenTrigger` points to, when that release was a newer one
-    /// (so a manual check can report it as available again without re-downloading the file). `nil`
-    /// means the last-seen release was not an update (up to date) or hasn't been read yet.
-    public var lastSeenVersion: String?
+    /// The release tag the person is currently on — the baseline a check compares against. A newer
+    /// release in the repo = an update. Set when the source is added (the install sheet asks) and
+    /// updated each time XSide installs an update.
+    public var installedTag: String?
     /// How often the background pass checks this source, in seconds. `nil` = follow the global
     /// default; `<= 0` = never (manual checks only). Clamped up to `UpdateSchedule.minimumInterval`.
     public var checkInterval: TimeInterval?
@@ -66,13 +66,13 @@ public struct UpdateSource: Codable, Equatable, Sendable {
     public var lastCheckedAt: Date?
 
     public init(repo: GitHubSource, variant: VariantSelector, mode: UpdateMode = .notify,
-                lastSeenTrigger: String? = nil, lastSeenVersion: String? = nil,
+                lastSeenTrigger: String? = nil, installedTag: String? = nil,
                 checkInterval: TimeInterval? = nil, lastCheckedAt: Date? = nil) {
         self.repo = repo
         self.variant = variant
         self.mode = mode
         self.lastSeenTrigger = lastSeenTrigger
-        self.lastSeenVersion = lastSeenVersion
+        self.installedTag = installedTag
         self.checkInterval = checkInterval
         self.lastCheckedAt = lastCheckedAt
     }
