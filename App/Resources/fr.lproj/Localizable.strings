@@ -1496,7 +1496,7 @@
 "update.source.recognized" = "Dépôt reconnu";
 "update.source.invalid" = "URL GitHub invalide";
 "update.source.checking" = "Lecture des releases…";
-"update.source.noAsset" = "Aucune version installable trouvée";
+"update.source.noAsset" = "Ce dépôt ne publie pas d'IPA (rien à installer sur un appareil)";
 "update.source.failed" = "Impossible de lire les releases. Vérifie le lien et ta connexion.";
 "update.source.tracking" = "Suivi : %@";
 "update.source.multiple" = "Ce dépôt propose plusieurs fichiers installables. Choisis celui que tu installes.";

@@ -1496,7 +1496,7 @@
 "update.source.recognized" = "Repository recognized";
 "update.source.invalid" = "Invalid GitHub URL";
 "update.source.checking" = "Looking at the releases…";
-"update.source.noAsset" = "No installable version found";
+"update.source.noAsset" = "This repo publishes no IPA (nothing to install on a device)";
 "update.source.failed" = "Couldn't read the releases. Check the link and your connection.";
 "update.source.tracking" = "Following: %@";
 "update.source.multiple" = "This repository offers several installable files. Choose the one you're installing.";
