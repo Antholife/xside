@@ -1458,7 +1458,7 @@
 "update.source.link" = "GitHub link";
 "update.source.link.note" = "Repository or releases page, both work. Optional.";
 "update.source.placeholder" = "https://github.com/owner/repo";
-"update.source.recognized" = "repository recognized";
+"update.source.recognized" = "Repository recognized";
 "update.source.invalid" = "Invalid GitHub URL";
 "update.source.checking" = "Looking at the releases…";
 "update.source.noAsset" = "No installable version found";

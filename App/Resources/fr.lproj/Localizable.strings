@@ -1458,7 +1458,7 @@
 "update.source.link" = "Lien GitHub";
 "update.source.link.note" = "Page du dépôt ou des releases : les deux marchent. Facultatif.";
 "update.source.placeholder" = "https://github.com/auteur/depot";
-"update.source.recognized" = "dépôt reconnu";
+"update.source.recognized" = "Dépôt reconnu";
 "update.source.invalid" = "URL GitHub invalide";
 "update.source.checking" = "Lecture des releases…";
 "update.source.noAsset" = "Aucune version installable trouvée";
