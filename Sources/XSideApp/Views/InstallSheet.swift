@@ -496,14 +496,14 @@ struct InstallSheet: View {
                 }
                 // Install only at the last step (or on the summary).
                 if flow.reviewsSteps && flow.step < flow.stepCount - 1 {
-                    Button(L("install.next")) { withAnimation(.smooth(duration: 0.2)) { flow.go(to: flow.step + 1) } }
+                    Button(L("install.next"), action: goNext)
                         .buttonStyle(GradientButtonStyle())
                         .controlSize(.large)
                         .frame(maxWidth: .infinity)
                         .keyboardShortcut(.defaultAction)
                         .disabled(flow.step == InstallFlow.tweaksStep && !model.tweaksToSettle(flow).isEmpty)
                 } else {
-                    Button(installLabel, action: model.startInstall)
+                    Button(installLabel, action: attemptInstall)
                         .buttonStyle(GradientButtonStyle())
                         .controlSize(.large)
                         .frame(maxWidth: .infinity)
@@ -511,6 +511,28 @@ struct InstallSheet: View {
                         .disabled(!canInstall)
                 }
             }
+        }
+    }
+
+    /// « Suivant »: a typed-but-unconfirmed update link stops the flow on the Installation step and
+    /// highlights the field; otherwise move on.
+    private func goNext() {
+        if flow.step == InstallFlow.optionsStep && flow.updateLinkPending {
+            withAnimation(.smooth(duration: 0.2)) { flow.updateLinkError = true }
+        } else {
+            withAnimation(.smooth(duration: 0.2)) { flow.go(to: flow.step + 1) }
+        }
+    }
+
+    /// Install: the same link guard, in case the last step was reached straight from the step bar.
+    private func attemptInstall() {
+        if flow.updateLinkPending {
+            withAnimation(.smooth(duration: 0.2)) {
+                flow.updateLinkError = true
+                flow.go(to: InstallFlow.optionsStep)
+            }
+        } else {
+            model.startInstall()
         }
     }
 

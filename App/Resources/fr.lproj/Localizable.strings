@@ -1475,6 +1475,8 @@
 "update.source.verify" = "Vérifier le lien";
 "update.source.validate" = "Valider";
 "update.source.remove" = "Retirer le lien";
+"update.source.clear" = "Effacer le lien";
+"update.source.mustVerify" = "Vérifie le lien ou supprime-le pour continuer.";
 "update.verify.ready" = "Dépôt reconnu";
 "update.variant.which" = "Quel fichier suivre ?";
 "update.variant.title" = "Quelle variante suivre ?";

@@ -1475,6 +1475,8 @@
 "update.source.verify" = "Check the link";
 "update.source.validate" = "Confirm";
 "update.source.remove" = "Remove the link";
+"update.source.clear" = "Clear the link";
+"update.source.mustVerify" = "Check the link or remove it to continue.";
 "update.verify.ready" = "Repository recognized";
 "update.variant.which" = "Which file to follow?";
 "update.variant.title" = "Which variant to follow?";

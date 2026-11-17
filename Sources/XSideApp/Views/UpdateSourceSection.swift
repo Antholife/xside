@@ -41,6 +41,8 @@ struct UpdateSourceSection: View {
                 }
             }
             .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(flow.updateLinkError ? Color(nsColor: .systemOrange) : .clear, lineWidth: 1.5))
             .disabled(flow.isRunning)
         }
         .sheet(isPresented: $showsSheet) {
@@ -50,7 +52,8 @@ struct UpdateSourceSection: View {
         }
     }
 
-    /// The link field and its « Vérifier le lien » button (enabled once the link is a valid GitHub repo).
+    /// The link field, a trash button to clear it and the « Vérifier le lien » button (enabled once
+    /// the link is a valid GitHub repo). A pending link that blocked « Suivant » is flagged here.
     @ViewBuilder private var editRow: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
@@ -60,19 +63,39 @@ struct UpdateSourceSection: View {
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 12, design: .monospaced))
                     .autocorrectionDisabled()
+                    .onChange(of: flow.draft.updateSourceURL) { _, _ in flow.updateLinkError = false }
                     .onSubmit { if parsed != nil { showsSheet = true } }
                 statusPill
             }
-            HStack {
+            HStack(spacing: 8) {
                 Spacer(minLength: 0)
+                if !isEmpty {
+                    Button(action: clearLink) {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .help(L("update.source.clear"))
+                }
                 Button(L("update.source.verify")) { showsSheet = true }
                     .buttonStyle(GradientButtonStyle())
                     .fixedSize()
                     .disabled(parsed == nil)
             }
+            if flow.updateLinkError {
+                Label(L("update.source.mustVerify"), systemImage: "exclamationmark.circle.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color(nsColor: .systemOrange))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 11)
+    }
+
+    private func clearLink() {
+        flow.draft.updateSourceURL = ""
+        flow.updateLinkError = false
     }
 
     /// The summary once a source is set: the followed file, the mode, « Modifier », and a remove button.
@@ -116,6 +139,7 @@ struct UpdateSourceSection: View {
         flow.draft.updateVariantSource = nil
         flow.draft.updateVariantName = nil
         flow.draft.updateSourceURL = ""
+        flow.updateLinkError = false
     }
 
     @ViewBuilder private var statusPill: some View {
@@ -263,6 +287,7 @@ struct UpdateSourceSheet: View {
         flow.draft.updateVariantSource = repo
         flow.draft.updateVariantName = picked
         flow.draft.updateMode = mode
+        flow.updateLinkError = false
         dismiss()
     }
 }

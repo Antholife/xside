@@ -133,6 +133,17 @@ final class InstallFlow {
         dataChoice = defaultRestore ? (sorted.first.map { .restore($0.id) } ?? .none) : .none
     }
 
+    /// A GitHub link was typed but not confirmed (no variant chosen for the repo in the field now):
+    /// « Suivant » / Install stop and point back to it. An invalid link counts as pending too.
+    var updateLinkPending: Bool {
+        let url = draft.updateSourceURL.trimmingCharacters(in: .whitespaces)
+        guard !url.isEmpty else { return false }
+        guard let repo = GitHubSource.parse(url) else { return true }
+        return !(draft.updateVariant != nil && draft.updateVariantSource == repo)
+    }
+    /// Set when « Suivant »/Install was stopped by a pending link, to highlight the field; cleared on edit.
+    var updateLinkError = false
+
     /// Shows step `index`; from the summary, editing turns the steps on.
     func go(to index: Int) {
         reviewsSteps = true
