@@ -295,7 +295,9 @@ final class AppModel {
     /// A paused installation is refreshed again: its reminder comes back, and it may be due now.
     var onRefreshResumed: ((_ job: RefreshJob) -> Void)?
     /// An app or tweak has a new release that was not installed by itself: the engine notifies.
-    var onAppUpdateAvailable: ((_ notice: AppUpdateNotice) -> Void)?
+    /// Returns whether the notification was actually delivered (permission on, device notifies): the
+    /// caller only marks the release announced when it was, so a dropped notice is retried next check.
+    var onAppUpdateAvailable: ((_ notice: AppUpdateNotice) async -> Bool)?
     /// Every pipeline run that ends (install, manual or automatic refresh), with its error if it failed.
     var onJobFinished: ((_ job: RefreshJob, _ error: (any Error)?, _ automatic: Bool,
                                _ wasRefresh: Bool, _ dataBackedUp: Bool) -> Void)?

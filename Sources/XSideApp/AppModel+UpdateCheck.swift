@@ -262,8 +262,11 @@ extension AppModel {
             // shows the card itself, no extra notice.
             let alreadyAnnounced = target.source?.lastSeenTrigger == found.trigger
             if !userInitiated, !alreadyAnnounced, case .available(let v, _, _, _) = result {
-                notify(target, version: v)
-                await markAnnounced(found.trigger, for: target)
+                // Mark announced only when the notification was actually delivered: a dropped one
+                // (permission off, device notifies off) is retried on the next check.
+                if await notify(target, version: v) {
+                    await markAnnounced(found.trigger, for: target)
+                }
             }
             return result
         }
@@ -303,10 +306,11 @@ extension AppModel {
         return nil
     }
 
-    private func notify(_ target: UpdateTarget, version: String) {
-        guard let installation = target.record.installations.first else { return }
+    /// Posts the "update available" notification; returns whether it was actually delivered.
+    private func notify(_ target: UpdateTarget, version: String) async -> Bool {
+        guard let installation = target.record.installations.first else { return false }
         let job = RefreshJob(recordID: target.record.id, deviceID: installation.deviceID)
-        onAppUpdateAvailable?(AppUpdateNotice(appName: target.name, version: version, job: job, id: target.noticeID))
+        return await onAppUpdateAvailable?(AppUpdateNotice(appName: target.name, version: version, job: job, id: target.noticeID)) ?? false
     }
 
     /// The release was announced to the person (notify-dedup): the next pass won't notify it again.
