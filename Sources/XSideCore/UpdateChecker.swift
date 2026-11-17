@@ -61,13 +61,18 @@ public struct UpdateChecker: Sendable {
             return .failed("release list: \(error)")
         }
         if found.trigger == source.lastSeenTrigger {
-            // Already seen: the background pass is done (announced once); a manual check reports it
-            // from the cached version so it shows the update again without re-downloading the file.
-            if reportCachedAvailable, let cached = source.lastSeenVersion,
-               Self.isNewer(cached, than: installedVersion, kind: kind) {
-                return .available(found, version: cached, stable: !found.isPrerelease)
+            // Already seen. The background pass is done (it announced the release once). A manual
+            // check answers from the cached version — so it shows the update again without
+            // re-downloading the file; if there's no cached version yet (older data), it falls
+            // through to read it once, which caches it for next time.
+            if reportCachedAvailable, let cached = source.lastSeenVersion {
+                if Self.isNewer(cached, than: installedVersion, kind: kind) {
+                    return .available(found, version: cached, stable: !found.isPrerelease)
+                }
+                return .upToDate(trigger: found.trigger)
             }
-            return .upToDate(trigger: found.trigger)
+            if !reportCachedAvailable { return .upToDate(trigger: found.trigger) }
+            // Manual check, cache miss: fall through to download and read the real version.
         }
 
         // Defence in depth: the finder already drops these.
