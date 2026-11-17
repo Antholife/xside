@@ -1530,7 +1530,7 @@
 "update.source.whichTag.undetected" = "Couldn't detect the version from the file: pick it.";
 "update.newer.title" = "A newer version is available";
 "update.newer.note" = "You are installing %@. The newest in the repo is %@.";
-"update.newer.install" = "Install %@ instead";
+"update.newer.install" = "Install %@";
 "update.newer.downloading" = "Downloading %@…";
 "update.newer.failed" = "The download failed. Try again.";
 "update.source.verify" = "Check the link";

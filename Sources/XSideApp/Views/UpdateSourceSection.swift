@@ -320,8 +320,11 @@ struct UpdateSourceSheet: View {
                 Text(L("update.newer.downloading", UpdateChecker.displayTag(newest)))
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             } else {
-                Button(L("update.newer.install", UpdateChecker.displayTag(newest))) { installNewest(newest) }
-                    .buttonStyle(.bordered).controlSize(.small)
+                HStack {
+                    Spacer(minLength: 0)
+                    Button(L("update.newer.install", UpdateChecker.displayTag(newest))) { installNewest(newest) }
+                        .buttonStyle(GradientButtonStyle()).controlSize(.small).fixedSize()
+                }
             }
             if downloadFailed {
                 Label(L("update.newer.failed"), systemImage: "exclamationmark.triangle.fill")
