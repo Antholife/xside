@@ -54,9 +54,11 @@ struct AppUpdateTab: View {
         VStack(alignment: .leading, spacing: 0) {
             OptionRow(symbol: "arrow.down.circle.fill", title: "\(source.repo.owner)/\(source.repo.repo)",
                       detail: variantLine(source)) {
-                Button(L("update.tab.open")) { NSWorkspace.shared.open(source.repo.page) }
-                    .buttonStyle(.link)
-                    .font(.system(size: 11))
+                Button { NSWorkspace.shared.open(source.repo.page) } label: {
+                    Label { Text(L("update.tab.open")) } icon: { Image.githubMark }
+                }
+                .buttonStyle(.link)
+                .font(.system(size: 11))
             }
             Divider().padding(.leading, 48)
             OptionRow(symbol: "bolt.fill", title: L("update.mode.title"), detail: nil) {

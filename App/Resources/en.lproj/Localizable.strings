@@ -52,7 +52,7 @@
 "install.status.skipped" = "skipped";
 "install.step.profile" = "Apple permission";
 "install.step.welcome" = "Injecting the XSide module";
-"install.feature.title" = "Written into the app now";
+"install.feature.title" = "What this step adds";
 "install.feature.sheet" = "An XSide sheet the first time it opens";
 "install.feature.banner" = "A card after each refresh";
 "install.feature.reminder" = "A reminder before expiry, if you allow notifications";

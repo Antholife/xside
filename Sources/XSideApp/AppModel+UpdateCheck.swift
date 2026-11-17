@@ -86,7 +86,10 @@ extension AppModel {
     /// A manual check of one app and its tweaks (the fiche's button), whatever the schedule says.
     /// Unlike the background pass it reports a variant to choose and every failure.
     func checkUpdatesNow(_ entry: AppEntry) async -> [UpdateCheckReport] {
-        await runUpdateChecks(updateTargets(of: entry.record))
+        // The view's `entry.record` can be stale (a source added moments ago lives in `records`
+        // already, not yet in the entry the view holds): check the fresh record, like installUpdateNow.
+        let record = records.first(where: { $0.id == entry.record.id }) ?? entry.record
+        return await runUpdateChecks(updateTargets(of: record))
     }
 
     /// The row menu's « Vérifier les mises à jour »: the check, then a toast when there is nothing
