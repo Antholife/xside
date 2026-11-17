@@ -309,13 +309,18 @@ struct InstallSheet: View {
             InstallSummaryView(model: model, flow: flow)
         } else {
             switch flow.step {
-            case 0:
+            case InstallFlow.devicesStep:
                 // What the IPA holds first, before anything else (it never blocks « Suivant »).
                 if let content = flow.info?.content { IPAContentCards(content: content) }
                 DevicePicker(model: model, flow: flow)
                 PreflightNotes(warnings: model.preflightWarnings(for: flow), model: model, flow: flow)
-            case 1:
+            case InstallFlow.optionsStep:
                 InstallOptionsSection(model: model, flow: flow)
+                // What this step's fields cause (minimum iOS, a new App ID, an older version).
+                PreflightNotes(warnings: model.preflightWarnings(for: flow).filter(\.followsInstallOptions),
+                               model: model, flow: flow)
+            case InstallFlow.compatibilityStep:
+                // Its own step so « Installation » stops scrolling (device feedback 2026-11-17).
                 if !flow.deviceIDs.isEmpty {
                     CompatibilityFixesSection {
                         DuoOptionsCard(model: model, flow: flow)
@@ -323,10 +328,7 @@ struct InstallSheet: View {
                         CompatibilityFixCard { Legacy32InfoRow(appName: flow.appDisplayName, applied: flow.info?.hasLegacy32) }
                     }
                 }
-                // What this step's fields cause (minimum iOS, a new App ID, an older version).
-                PreflightNotes(warnings: model.preflightWarnings(for: flow).filter(\.followsInstallOptions),
-                               model: model, flow: flow)
-            case 2:
+            case InstallFlow.tweaksStep:
                 // Always there, even empty, so people find it (device test 2026-11-09).
                 InstallTweaksSection(model: model, flow: flow)
             case InstallFlow.dataStep where flow.hasRestorableBackup:
@@ -469,10 +471,10 @@ struct InstallSheet: View {
                     Button(L("install.back")) { withAnimation(.smooth(duration: 0.2)) { flow.go(to: flow.step - 1) } }
                         .controlSize(.large)
                 }
-                // Step ③ with tweaks « À régler »: they are settled or removed first (device round 2,
-                // items 3 and 6). On the summary, the same line, with « Modifier » to step ③ (mega review U5).
+                // The tweaks step with « À régler »: they are settled or removed first (device round 2,
+                // items 3 and 6). On the summary, the same line, with « Modifier » to that step (mega review U5).
                 let toSettle = !model.tweaksToSettle(flow).isEmpty
-                if toSettle && (!flow.reviewsSteps || flow.step == 2) {
+                if toSettle && (!flow.reviewsSteps || flow.step == InstallFlow.tweaksStep) {
                     Text(L("install.tweaks.blocked"))
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Color(nsColor: .systemRed))
@@ -483,7 +485,7 @@ struct InstallSheet: View {
                             .controlSize(.large)
                             .fixedSize()
                     } else {
-                        Button(L("install.summary.edit")) { withAnimation(.smooth(duration: 0.2)) { flow.go(to: 2) } }
+                        Button(L("install.summary.edit")) { withAnimation(.smooth(duration: 0.2)) { flow.go(to: InstallFlow.tweaksStep) } }
                             .controlSize(.large)
                             .fixedSize()
                     }
@@ -495,7 +497,7 @@ struct InstallSheet: View {
                         .controlSize(.large)
                         .frame(maxWidth: .infinity)
                         .keyboardShortcut(.defaultAction)
-                        .disabled(flow.step == 2 && !model.tweaksToSettle(flow).isEmpty)
+                        .disabled(flow.step == InstallFlow.tweaksStep && !model.tweaksToSettle(flow).isEmpty)
                 } else {
                     Button(installLabel, action: model.startInstall)
                         .buttonStyle(GradientButtonStyle())

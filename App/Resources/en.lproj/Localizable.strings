@@ -636,6 +636,7 @@
 /* 1.1: install steps, XSide module in the apps */
 "install.steps.devices" = "Devices";
 "install.steps.options" = "Install";
+"install.steps.compatibility" = "Compatibility";
 "install.steps.tweaks" = "Tweaks";
 "install.steps.inApp" = "XSide module in the app";
 "install.steps.a11y" = "Step %d of %d: %@";

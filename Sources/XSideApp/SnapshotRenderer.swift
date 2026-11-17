@@ -140,16 +140,17 @@ enum SnapshotRenderer {
                 }
                 .padding(20).frame(width: InstallWindow.width).background(Color(nsColor: .windowBackgroundColor)),
                        dark: dark, to: out.appendingPathComponent("icloud-team-\(language)-\(scheme).png"))
-                render(VStack(alignment: .leading, spacing: 14) {
-                    InstallOptionsSection(model: model, flow: flow)
-                    CompatibilityFixesSection {
+                render(InstallOptionsSection(model: model, flow: flow)
+                    .padding(20).frame(width: InstallWindow.width).background(Color(nsColor: .windowBackgroundColor)),
+                       dark: dark, to: out.appendingPathComponent("install-step2-\(language)-\(scheme).png"))
+                // Compatibility fixes are their own step now.
+                render(CompatibilityFixesSection {
                         DuoOptionsCard(model: model, flow: flow)
                         ICloudOptionsCard(model: model, flow: flow)
                         CompatibilityFixCard { Legacy32InfoRow(appName: flow.appDisplayName, applied: flow.info?.hasLegacy32) }
                     }
-                }
-                .padding(20).frame(width: InstallWindow.width).background(Color(nsColor: .windowBackgroundColor)),
-                       dark: dark, to: out.appendingPathComponent("install-step2-\(language)-\(scheme).png"))
+                    .padding(20).frame(width: InstallWindow.width).background(Color(nsColor: .windowBackgroundColor)),
+                       dark: dark, to: out.appendingPathComponent("install-compatibility-\(language)-\(scheme).png"))
                 render(InstallSummaryView(model: model, flow: flow)
                         .padding(20).frame(width: InstallWindow.width).background(Color(nsColor: .windowBackgroundColor)),
                        dark: dark, to: out.appendingPathComponent("install-summary-\(language)-\(scheme).png"))
@@ -167,7 +168,7 @@ enum SnapshotRenderer {
                 for (suffix, ids) in [("", sample.deviceIDs), ("-single", [sample.deviceIDs[0]]), ("-shared", sample.deviceIDs)] {
                     let step = sample.flow()
                     step.deviceIDs = ids
-                    step.step = 2
+                    step.step = InstallFlow.tweaksStep
                     model.showSnapshotFlow(step)
                     if suffix == "-shared" {
                         model.dependencyErrors = [DependencyLineKey(scope: .window, package: "com.opa334.altlist"): L("deps.error.notFound.github", "AltList")]
@@ -181,7 +182,7 @@ enum SnapshotRenderer {
                 let empty = sample.flow()
                 empty.tweaks = []
                 empty.tweakErrors = []
-                empty.step = 2
+                empty.step = InstallFlow.tweaksStep
                 model.showSnapshotFlow(empty)
                 render(VStack(alignment: .leading, spacing: 14) {
                     StepBar(flow: empty)

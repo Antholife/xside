@@ -1,14 +1,15 @@
 import SwiftUI
 import XSideCore
 
-/// ① Appareils · ② Installation · ③ Tweaks · ④ Module XSide dans l'app: where the install window is; each step
-/// can be clicked.
+/// ① Appareils · ② Installation · ③ Compatibilité · ④ Tweaks · ⑤ Module XSide dans l'app: where the install
+/// window is; each step can be clicked.
 struct StepBar: View {
     let flow: InstallFlow
 
-    /// The four fixed steps, plus "Données" last when the app has a backup to restore.
+    /// The five fixed steps, plus "Données" last when the app has a backup to restore.
     private var titles: [String] {
-        var all = [L("install.steps.devices"), L("install.steps.options"), L("install.steps.tweaks"), L("install.steps.inApp")]
+        var all = [L("install.steps.devices"), L("install.steps.options"), L("install.steps.compatibility"),
+                   L("install.steps.tweaks"), L("install.steps.inApp")]
         if flow.hasRestorableBackup { all.append(L("install.steps.data")) }
         return all
     }
@@ -56,7 +57,7 @@ struct StepBar: View {
     }
 }
 
-/// Step ④: the XSide module in the app for every checked device, with where each device stands.
+/// Step ⑤: the XSide module in the app for every checked device, with where each device stands.
 struct InAppStep: View {
     let model: AppModel
     @Bindable var flow: InstallFlow
@@ -120,11 +121,11 @@ struct InstallSummaryView: View {
                                          })
         VStack(alignment: .leading, spacing: 10) {
             SectionTitle(L("install.summary.title"))
-            group(L("install.optionsTitle"), lines.install, step: 1)
-            // The compatibility fixes, apart (step ② edits them too).
-            if !lines.fixes.isEmpty { group(L("fixes.section"), lines.fixes, step: 1) }
-            if !lines.tweaks.isEmpty { group(L("tweaks.section"), lines.tweaks, step: 2) }
-            group(L("install.steps.inApp"), lines.inApp, step: 3)
+            group(L("install.optionsTitle"), lines.install, step: InstallFlow.optionsStep)
+            // The compatibility fixes have their own step now.
+            if !lines.fixes.isEmpty { group(L("fixes.section"), lines.fixes, step: InstallFlow.compatibilityStep) }
+            if !lines.tweaks.isEmpty { group(L("tweaks.section"), lines.tweaks, step: InstallFlow.tweaksStep) }
+            group(L("install.steps.inApp"), lines.inApp, step: InstallFlow.inAppStep)
             if flow.hasRestorableBackup { dataGroup }
             Text(L("install.summary.note", info?.name ?? ""))
                 .font(.system(size: 11))

@@ -2334,7 +2334,7 @@ final class AppModel {
         if let custom = flow.draft.options.customBundleID, !BundleIdentifier.isValid(custom) {
             flow.failure = nil
             flow.phase = .editing(error: XSideError.invalidBundleID(custom).localizedMessage)
-            flow.go(to: 1) // where the identifier field is
+            flow.go(to: InstallFlow.optionsStep) // where the identifier field is
             return
         }
         // Judged for exactly these devices (mega review U1), then a converted tweak on any of
