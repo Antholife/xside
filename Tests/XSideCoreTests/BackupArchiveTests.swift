@@ -18,6 +18,46 @@ import Testing
         return tree
     }
 
+    @Test func packTree_thenUnpackTree_roundTrips() async throws {
+        try await withTemporaryDirectory("archive") { dir in
+            let src = dir.appendingPathComponent("src", isDirectory: true)
+            let fm = FileManager.default
+            try fm.createDirectory(at: src.appendingPathComponent("apps/APP1/tweaks/pkg"), withIntermediateDirectories: true)
+            try Data("ipa-bytes".utf8).write(to: src.appendingPathComponent("apps/APP1/original.ipa"))
+            try Data("deb".utf8).write(to: src.appendingPathComponent("apps/APP1/tweaks/pkg/x.deb"))
+            try Data("{\"v\":1}".utf8).write(to: src.appendingPathComponent("manifest.json"))
+
+            let zip = dir.appendingPathComponent("full.xsbak")
+            try BackupArchive.packTree(src, to: zip)
+            let out = try BackupArchive.unpackTree(zip, to: dir.appendingPathComponent("dest", isDirectory: true))
+
+            #expect(try Data(contentsOf: out.appendingPathComponent("manifest.json")) == Data("{\"v\":1}".utf8))
+            #expect(try Data(contentsOf: out.appendingPathComponent("apps/APP1/original.ipa")) == Data("ipa-bytes".utf8))
+            #expect(try Data(contentsOf: out.appendingPathComponent("apps/APP1/tweaks/pkg/x.deb")) == Data("deb".utf8))
+        }
+    }
+
+    @Test func unpackTree_rejectsSymlinkArchive() async throws {
+        try await withTemporaryDirectory("archive") { dir in
+            let src = dir.appendingPathComponent("src", isDirectory: true)
+            let fm = FileManager.default
+            try fm.createDirectory(at: src, withIntermediateDirectories: true)
+            try Data("x".utf8).write(to: src.appendingPathComponent("real.txt"))
+            try fm.createSymbolicLink(at: src.appendingPathComponent("link"),
+                                      withDestinationURL: URL(fileURLWithPath: "/etc/hosts"))
+            let zip = dir.appendingPathComponent("evil.zip")
+            // Use the system zip preserving the symlink entry (-y), to prove unpackTree rejects it.
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+            p.arguments = ["-q", "-r", "-y", "-X", zip.path, "--", "."]
+            p.currentDirectoryURL = src
+            try p.run(); p.waitUntilExit()
+            #expect(throws: BackupArchiveError.unsafeArchive) {
+                _ = try BackupArchive.unpackTree(zip, to: dir.appendingPathComponent("dest", isDirectory: true))
+            }
+        }
+    }
+
     @Test func export_thenReadManifest_roundTrips() async throws {
         try await withTemporaryDirectory("archive") { dir in
             let tree = try makeTree(dir)

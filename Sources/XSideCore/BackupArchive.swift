@@ -59,6 +59,36 @@ public enum BackupArchive {
         guard r.status == 0 else { throw BackupArchiveError.toolFailed(tool: "zip", status: r.status) }
     }
 
+    /// Zips an already-prepared directory as-is (the caller builds the layout, e.g. a full backup's
+    /// `manifest.json` + `apps/<id>/…`). The caller must put only regular files and directories in it;
+    /// `unpackTree` vets the archive on the way back in.
+    public static func packTree(_ dir: URL, to zipURL: URL) throws {
+        let fm = FileManager.default
+        try? fm.removeItem(at: zipURL)  // zip would otherwise append to an existing archive
+        try fm.createDirectory(at: zipURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let r = try run("/usr/bin/zip", ["-q", "-r", "-X", zipURL.path, "--", "."], cwd: dir)
+        guard r.status == 0 else { throw BackupArchiveError.toolFailed(tool: "zip", status: r.status) }
+    }
+
+    /// Vets (no symlink, absolute path, `..`, or zip-slip) and extracts an archive into a fresh
+    /// subdirectory of `dir`, returning that directory. Used to read a full backup back.
+    public static func unpackTree(_ zipURL: URL, to dir: URL) throws -> URL {
+        let fm = FileManager.default
+        try vet(zipURL: zipURL)
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        let target = dir.appendingPathComponent("extract-\(UUID().uuidString)", isDirectory: true)
+        try fm.createDirectory(at: target, withIntermediateDirectories: false)
+        do {
+            let r = try run("/usr/bin/unzip", ["-q", "-d", target.path, "--", zipURL.path], cwd: nil)
+            guard r.status == 0 else { throw BackupArchiveError.toolFailed(tool: "unzip", status: r.status) }
+            try verifyExtracted(target)
+        } catch {
+            try? fm.removeItem(at: target)
+            throw error
+        }
+        return target
+    }
+
     /// nil when the archive has no `xside-backup.json` or it is not valid manifest JSON.
     public static func readManifest(zipURL: URL) throws -> BackupManifest? {
         let r = try run("/usr/bin/unzip", ["-p", "--", zipURL.path, manifestName], cwd: nil)
