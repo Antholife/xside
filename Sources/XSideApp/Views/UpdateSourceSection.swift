@@ -267,15 +267,18 @@ struct UpdateSourceSheet: View {
     }
 
     /// Releases that have an asset for the chosen variant, newest first — the versions to pick from.
-    private var releaseTags: [(tag: String, asset: String)] {
+    private var releaseTags: [(tag: String, asset: String, pre: Bool)] {
         guard let picked, case .ready(let names) = phase else { return [] }
         let selector = VariantSelector.make(chosen: picked, others: names.filter { $0 != picked })
-        var seen = Set<String>(), out: [(String, String)] = []
+        var seen = Set<String>(), out: [(String, String, Bool)] = []
         for e in all where selector.matches(e.asset.name) && !seen.contains(e.tag) {
-            seen.insert(e.tag); out.append((e.tag, e.asset.name))
+            seen.insert(e.tag); out.append((e.tag, e.asset.name, e.isPrerelease))
         }
         return out
     }
+
+    /// The newest release for the chosen variant is a prerelease (beta).
+    private var newestIsPrerelease: Bool { releaseTags.first?.pre ?? false }
 
     /// Best-effort guess of the release the person is installing: the one whose variant asset name
     /// carries the IPA's own app version (e.g. `…_21.44.4.ipa`). nil when it can't be told.
@@ -333,7 +336,8 @@ struct UpdateSourceSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
             Picker("", selection: $installedTag) {
                 ForEach(releaseTags, id: \.tag) { r in
-                    Text(UpdateChecker.displayTag(r.tag)).tag(Optional(r.tag))
+                    Text(r.pre ? L("update.tag.beta", UpdateChecker.displayTag(r.tag)) : UpdateChecker.displayTag(r.tag))
+                        .tag(Optional(r.tag))
                 }
             }
             .labelsHidden().pickerStyle(.menu).padding(.top, 2)
@@ -362,6 +366,10 @@ struct UpdateSourceSheet: View {
                     Text(L("update.newer.note", UpdateChecker.displayTag(installedTag ?? ""), UpdateChecker.displayTag(newest)))
                         .font(.system(size: 11.5)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    if newestIsPrerelease {
+                        Label(L("update.newer.beta"), systemImage: "flask.fill")
+                            .font(.system(size: 10.5)).foregroundStyle(Color(nsColor: .systemOrange))
+                    }
                 }
             }
             if let frac = downloading {

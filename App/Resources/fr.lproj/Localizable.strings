@@ -1533,6 +1533,8 @@
 "update.newer.install" = "Installer la %@";
 "update.newer.downloading" = "Téléchargement de la %@…";
 "update.newer.failed" = "Le téléchargement a échoué. Réessaie.";
+"update.newer.beta" = "C'est une préversion (bêta).";
+"update.tag.beta" = "%@ (bêta)";
 "update.folder.title" = "Dossier de téléchargement";
 "update.folder.note" = "Une copie en plus de l'IPA téléchargé, pour toi (« installer la plus récente » et futures mises à jour). XSide garde toujours sa copie interne pour rafraîchir l'app ; ceci ne la remplace pas.";
 "update.folder.none" = "Aucun (pas de copie pour toi)";
