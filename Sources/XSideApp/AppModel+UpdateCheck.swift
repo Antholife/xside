@@ -270,7 +270,13 @@ extension AppModel {
             var result = UpdateCheckResult.available(version: version, reason: stable ? .notifyMode : .prerelease, tag: found.tag, asset: found.asset.name)
             let auto = stable && target.source?.mode == .auto
             if auto, let device = deviceForAutoUpdate(target.record) {
-                switch await apply(target, device: device, found: found, stable: stable) {
+                // Report progress so the « Mises à jour » tab shows it, and notify so a tap goes there.
+                let key = Self.updateFractionKey(recordID: target.record.id, tweakPackageID: target.tweak?.packageID)
+                updateFraction[key] = 0
+                defer { updateFraction[key] = nil }
+                let progress: @Sendable (Double) -> Void = { [weak self] f in Task { @MainActor in self?.updateFraction[key] = f } }
+                notifyInstalling(target, version: version)
+                switch await apply(target, device: device, found: found, stable: stable, progress: progress) {
                 case .installed(let installed):
                     await markInstalled(found, for: target)
                     notifyUpdated(target, version: installed) // Auto mode: tell the person XSide did it
@@ -335,6 +341,13 @@ extension AppModel {
         guard let installation = target.record.installations.first else { return false }
         let job = RefreshJob(recordID: target.record.id, deviceID: installation.deviceID)
         return await onAppUpdateAvailable?(AppUpdateNotice(appName: target.name, version: version, job: job, id: target.noticeID)) ?? false
+    }
+
+    /// XSide started an auto-install: a notification whose tap opens the tab to watch the progress.
+    private func notifyInstalling(_ target: UpdateTarget, version: String) {
+        guard let installation = target.record.installations.first else { return }
+        let job = RefreshJob(recordID: target.record.id, deviceID: installation.deviceID)
+        onAppInstalling?(AppUpdateNotice(appName: target.name, version: version, job: job, id: target.noticeID))
     }
 
     /// XSide auto-installed an update: a confirmation notification (it replaces the "available" one).

@@ -46,6 +46,11 @@ struct AppUpdateTab: View {
             if !tracked.isEmpty { tweakCard }
             if hasAnySource { checkArea }
         }
+        // Opening the tab (e.g. from the notification) shows the current state without a manual click;
+        // silent, so an up-to-date app doesn't pop a toast each time.
+        .task(id: entry.id) {
+            if reports == nil, hasAnySource, !checking, backgroundInstallFraction == nil { await check(silent: true) }
+        }
     }
 
     // MARK: Source
@@ -175,8 +180,15 @@ struct AppUpdateTab: View {
 
     // MARK: Check
 
+    /// A background auto-install running for this app (no card of its own), shown as a progress card.
+    private var backgroundInstallFraction: Double? {
+        guard !busy.contains("app") else { return nil } // a card here already shows its progress
+        return model.updateFraction[AppModel.updateFractionKey(recordID: entry.record.id, tweakPackageID: nil)]
+    }
+
     private var checkArea: some View {
         VStack(alignment: .leading, spacing: 8) {
+            if let f = backgroundInstallFraction { installingCard(f) }
             if let reports {
                 ForEach(reports, id: \.key) { card(for: $0) }
             }
@@ -189,6 +201,21 @@ struct AppUpdateTab: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    /// Progress card for a background auto-install (reached here from the notification).
+    private func installingCard(_ fraction: Double) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.down.circle.fill").font(.system(size: 15)).foregroundStyle(Theme.violet)
+                Text(L("update.installing")).font(.system(size: 12, weight: .semibold))
+                Spacer()
+            }
+            ProgressView(value: min(max(fraction, 0), 1)).progressViewStyle(.linear).tint(Theme.violet)
+        }
+        .padding(12)
+        .background(Theme.violet.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.violet.opacity(0.35), lineWidth: 1))
     }
 
     private enum Tone { case green, orange, red, plain }
@@ -303,7 +330,8 @@ struct AppUpdateTab: View {
 
     // MARK: Actions
 
-    private func check() async {
+    /// `silent` (an auto-check when the tab opens): no « à jour »/failure toast, just fill the cards.
+    private func check(silent: Bool = false) async {
         checking = true
         defer { checking = false }
         approvals = [:]
@@ -316,8 +344,10 @@ struct AppUpdateTab: View {
             }
         }
         if actionable.isEmpty {
-            let failure = all.compactMap { if case .failed(let m) = $0.result { m } else { nil } }.first
-            model.showToast(failure.map { L("update.toast.failed", $0) } ?? L("update.toast.upToDate"))
+            if !silent {
+                let failure = all.compactMap { if case .failed(let m) = $0.result { m } else { nil } }.first
+                model.showToast(failure.map { L("update.toast.failed", $0) } ?? L("update.toast.upToDate"))
+            }
             reports = nil
         } else {
             reports = actionable

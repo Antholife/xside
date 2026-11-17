@@ -225,6 +225,21 @@ final class Notifier: NSObject {
         }
     }
 
+    /// XSide started an auto-install (Auto mode): a tap opens the app's « Mises à jour » tab to watch
+    /// the progress. Same `id` as the available/updated notices, so they replace one another.
+    func appInstalling(appName: String, version: String, job: RefreshJob, id: String) async {
+        let content = UNMutableNotificationContent()
+        content.title = L("notification.appInstalling.title", appName)
+        content.body = L("notification.appInstalling.body", version)
+        content.categoryIdentifier = Self.appUpdatedCategory
+        content.userInfo = [Self.recordKey: job.recordID.uuidString, Self.deviceKey: job.deviceID]
+        guard let center else {
+            Self.logger.notice("would notify: \(content.title)")
+            return
+        }
+        try? await center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+    }
+
     /// XSide installed an app/tweak update by itself (Auto mode): a confirmation. Same `id` as the
     /// "available" notice, so it replaces it. A tap opens the app's « Mises à jour » tab.
     func appUpdated(appName: String, version: String, job: RefreshJob, id: String) async {

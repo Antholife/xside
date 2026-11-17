@@ -80,6 +80,13 @@ final class BackgroundEngine {
             await self.notifier.appUpdateAvailable(appName: n.appName, version: n.version, job: n.job, id: n.id)
             return true
         }
+        model.onAppInstalling = { [weak self] n in
+            guard let self, self.model.devicePrefs.notifies(n.job.deviceID) else { return }
+            Task {
+                guard await self.notifier.canDeliver() else { return }
+                await self.notifier.appInstalling(appName: n.appName, version: n.version, job: n.job, id: n.id)
+            }
+        }
         model.onAppUpdated = { [weak self] n in
             guard let self, self.model.devicePrefs.notifies(n.job.deviceID) else { return }
             Task {
