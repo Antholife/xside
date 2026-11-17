@@ -247,9 +247,13 @@ struct InstallSheet: View {
                 } else if flow.wasCancelled {
                     CancelledNote()
                 }
-                // Installing an older version over a newer one is allowed, just flagged — once, by
-                // the per-device « Avant d'installer » note below (preflight .olderVersion), not also
-                // by a global line here (device feedback 2026-11-17).
+                // Installing an older version over a newer one is allowed, just flagged — once, at
+                // the top, titled « Downgrade », with the rich per-device note (not a thin line, and
+                // not also in the « Avant d'installer » block below: filtered out there). 2026-11-17.
+                let downgrades = model.preflightWarnings(for: flow).filter(\.isOlderVersion)
+                if !downgrades.isEmpty {
+                    PreflightNotes(warnings: downgrades, model: model, flow: flow, titleKey: "downgrade.title")
+                }
                 editingStep
             case .finished:
                 if flow.isMultiDevice {
@@ -300,7 +304,7 @@ struct InstallSheet: View {
             if let content = flow.info?.content { IPAContentCards(content: content) }
             DevicePicker(model: model, flow: flow)
             BlockedNotice(model: model, flow: flow)
-            PreflightNotes(warnings: model.preflightWarnings(for: flow), model: model, flow: flow)
+            PreflightNotes(warnings: model.preflightWarnings(for: flow).filter { !$0.isOlderVersion }, model: model, flow: flow)
             InstallSummaryView(model: model, flow: flow)
         } else {
             switch flow.step {
@@ -308,11 +312,11 @@ struct InstallSheet: View {
                 // What the IPA holds first, before anything else (it never blocks « Suivant »).
                 if let content = flow.info?.content { IPAContentCards(content: content) }
                 DevicePicker(model: model, flow: flow)
-                PreflightNotes(warnings: model.preflightWarnings(for: flow), model: model, flow: flow)
+                PreflightNotes(warnings: model.preflightWarnings(for: flow).filter { !$0.isOlderVersion }, model: model, flow: flow)
             case InstallFlow.optionsStep:
                 InstallOptionsSection(model: model, flow: flow)
-                // What this step's fields cause (minimum iOS, a new App ID, an older version).
-                PreflightNotes(warnings: model.preflightWarnings(for: flow).filter(\.followsInstallOptions),
+                // What this step's fields cause (minimum iOS, a new App ID). The downgrade is at the top.
+                PreflightNotes(warnings: model.preflightWarnings(for: flow).filter { $0.followsInstallOptions && !$0.isOlderVersion },
                                model: model, flow: flow)
             case InstallFlow.compatibilityStep:
                 // Its own step so « Installation » stops scrolling (device feedback 2026-11-17).
@@ -329,12 +333,12 @@ struct InstallSheet: View {
             case InstallFlow.dataStep where flow.hasRestorableBackup:
                 DataRestoreStep(flow: flow)
                 BlockedNotice(model: model, flow: flow)
-                PreflightNotes(warnings: model.preflightWarnings(for: flow), model: model, flow: flow)
+                PreflightNotes(warnings: model.preflightWarnings(for: flow).filter { !$0.isOlderVersion }, model: model, flow: flow)
             default:
                 InAppStep(model: model, flow: flow)
                 // Everything that may fail, where Install is pressed (Developer Mode off disables it).
                 BlockedNotice(model: model, flow: flow)
-                PreflightNotes(warnings: model.preflightWarnings(for: flow), model: model, flow: flow)
+                PreflightNotes(warnings: model.preflightWarnings(for: flow).filter { !$0.isOlderVersion }, model: model, flow: flow)
             }
         }
     }
@@ -530,6 +534,11 @@ extension InstallPreflight.Warning {
         case .developerModeOff, .deviceFull, .notMadeForDuo, .usesICloud, .iCloudKeptByPaidTeam: false
         }
     }
+
+    /// The downgrade warning, shown on its own « Downgrade » note at the top, not in the bottom block.
+    var isOlderVersion: Bool {
+        if case .olderVersion = self { true } else { false }
+    }
 }
 
 /// Before the install: what is likely to fail (Developer Mode off, old iOS, full device, no App ID left).
@@ -537,6 +546,8 @@ struct PreflightNotes: View {
     let warnings: [InstallPreflight.Warning]
     let model: AppModel
     let flow: InstallFlow
+    /// A title that replaces the default « Avant d'installer » (e.g. the downgrade note at the top).
+    var titleKey: String? = nil
 
     /// Only facts left ("last App ID", a paid team keeping the app's iCloud): a note, not a warning.
     private var isNoteOnly: Bool { warnings.allSatisfy { $0 == .lastAppID || $0 == .iCloudKeptByPaidTeam } }
@@ -544,7 +555,7 @@ struct PreflightNotes: View {
     var body: some View {
         if !warnings.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
-                Label(L(isNoteOnly ? "preflight.title.note" : "preflight.title"),
+                Label(L(titleKey ?? (isNoteOnly ? "preflight.title.note" : "preflight.title")),
                       systemImage: isNoteOnly ? "info.circle.fill" : "exclamationmark.triangle.fill")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(isNoteOnly ? Color.secondary : Color(nsColor: .systemOrange))
