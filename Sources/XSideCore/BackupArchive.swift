@@ -119,6 +119,12 @@ public enum BackupArchive {
         return (manifest, hasTree ? tree : target)
     }
 
+    /// Copies a tree into `dst`, dropping any symlink, so the full backup's staging never contains one
+    /// (its archive is then symlink-free and `unpackTree` won't reject it). Public for the assembler.
+    public static func copyTreeWithoutSymlinks(from src: URL, to dst: URL) throws {
+        try copyWithoutSymlinks(from: src, to: dst)
+    }
+
     /// Copies regular files and directories only; symlinks are skipped so archives never contain any
     /// (and zip has nothing to follow, e.g. a cyclic `a -> .`).
     private static func copyWithoutSymlinks(from src: URL, to dst: URL) throws {

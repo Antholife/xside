@@ -2903,7 +2903,7 @@ final class AppModel {
 
     private func backupBundleID(_ e: AppEntry) -> String { e.installation.signedBundleID ?? e.record.signedBundleID }
 
-    private func deviceDisplayName(_ id: String) -> String {
+    func deviceDisplayName(_ id: String) -> String {
         devices.first { $0.id == id }?.name ?? cachedNames[id] ?? id
     }
 
@@ -3608,7 +3608,7 @@ final class AppModel {
     }
 
     /// Runs `body`'s tools with the Xcode XSide uses (as the jobs do), else the system's.
-    private func withKnownXcode<T>(_ body: () async throws -> T) async rethrows -> T {
+    func withKnownXcode<T>(_ body: () async throws -> T) async rethrows -> T {
         guard let dir = lastKnownDeveloperDir else { return try await body() }
         return try await CommandEnvironment.withDeveloperDir(dir) { try await body() }
     }
