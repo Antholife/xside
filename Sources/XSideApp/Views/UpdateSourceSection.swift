@@ -167,14 +167,14 @@ struct UpdateSourceSheet: View {
 
     private enum Phase: Equatable { case verifying, failed, noAsset, ready([String]) }
     @State private var phase: Phase = .verifying
-    @State private var picked: String?
+    @State private var all: [(tag: String, isPrerelease: Bool, asset: ReleaseAsset)] = []
+    @State private var picked: String?        // the variant asset name
+    @State private var installedTag: String?  // the release the person is on (baseline)
     @State private var mode: UpdateMode = .notify
     @State private var interval: TimeInterval?
+    @State private var step = 0 // 0 variant · 1 current version · 2 mode + frequency
 
-    private var isReady: Bool {
-        if case .ready = phase, picked != nil { return true }
-        return false
-    }
+    private var ready: Bool { if case .ready = phase { true } else { false } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -188,36 +188,106 @@ struct UpdateSourceSheet: View {
             .padding(.horizontal, 18).padding(.top, 16).padding(.bottom, 10)
             Divider()
             VStack(alignment: .leading, spacing: 14) {
-                verifyBanner
-                if case .ready(let names) = phase {
-                    if names.count > 1 { variantPicker(names) }
+                switch step {
+                case 0:
+                    verifyBanner
+                    if case .ready(let names) = phase, names.count > 1 { variantPicker(names) }
+                case 1:
+                    tagStep
+                default:
                     modeCards
                     intervalRow
                 }
             }
             .padding(18)
+            .frame(minHeight: 120, alignment: .top)
             Divider()
-            HStack(spacing: 10) {
-                Spacer()
-                Button(L("install.cancel"), action: dismiss)
-                    .controlSize(.large)
-                    .keyboardShortcut(.cancelAction)
-                Button(L("update.source.validate"), action: validate)
-                    .buttonStyle(GradientButtonStyle())
-                    .controlSize(.large)
-                    .frame(minWidth: 120)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!isReady)
-            }
-            .padding(.horizontal, 18).padding(.vertical, 14)
+            footer
         }
         .frame(width: 460)
         .onAppear {
             mode = flow.draft.updateMode
             interval = flow.draft.updateInterval
             picked = flow.draft.updateVariantSource == repo ? flow.draft.updateVariantName : nil
+            installedTag = flow.draft.updateInstalledTag
         }
         .task { await look() }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 10) {
+            Spacer()
+            if step == 0 {
+                Button(L("install.cancel"), action: dismiss).controlSize(.large).keyboardShortcut(.cancelAction)
+            } else {
+                Button(L("install.back")) { withAnimation(.smooth(duration: 0.15)) { step -= 1 } }.controlSize(.large)
+            }
+            if step < 2 {
+                Button(L("install.next")) { goNext() }
+                    .buttonStyle(GradientButtonStyle()).controlSize(.large).frame(minWidth: 120)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!canAdvance)
+            } else {
+                Button(L("update.source.validate"), action: validate)
+                    .buttonStyle(GradientButtonStyle()).controlSize(.large).frame(minWidth: 120)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(installedTag == nil)
+            }
+        }
+        .padding(.horizontal, 18).padding(.vertical, 14)
+    }
+
+    private var canAdvance: Bool {
+        switch step {
+        case 0: return ready && picked != nil
+        case 1: return installedTag != nil
+        default: return true
+        }
+    }
+
+    private func goNext() {
+        if step == 0 { // entering the version step: default the baseline (auto-detected, else newest)
+            if installedTag == nil || !releaseTags.contains(where: { $0.tag == installedTag }) {
+                installedTag = autoDetectedTag ?? releaseTags.first?.tag
+            }
+        }
+        withAnimation(.smooth(duration: 0.15)) { step += 1 }
+    }
+
+    /// Releases that have an asset for the chosen variant, newest first — the versions to pick from.
+    private var releaseTags: [(tag: String, asset: String)] {
+        guard let picked, case .ready(let names) = phase else { return [] }
+        let selector = VariantSelector.make(chosen: picked, others: names.filter { $0 != picked })
+        var seen = Set<String>(), out: [(String, String)] = []
+        for e in all where selector.matches(e.asset.name) && !seen.contains(e.tag) {
+            seen.insert(e.tag); out.append((e.tag, e.asset.name))
+        }
+        return out
+    }
+
+    /// Best-effort guess of the release the person is installing: the one whose variant asset name
+    /// carries the IPA's own app version (e.g. `…_21.44.4.ipa`). nil when it can't be told.
+    private var autoDetectedTag: String? {
+        guard let version = flow.info?.version, !version.isEmpty else { return nil }
+        return releaseTags.first { $0.asset.contains(version) }?.tag
+    }
+
+    private var tagStep: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(L("update.source.whichTag")).font(.system(size: 13, weight: .semibold))
+            Text(L("update.source.whichTag.note")).font(.system(size: 11.5)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Picker("", selection: $installedTag) {
+                ForEach(releaseTags, id: \.tag) { r in
+                    Text(UpdateChecker.displayTag(r.tag)).tag(Optional(r.tag))
+                }
+            }
+            .labelsHidden().pickerStyle(.menu).padding(.top, 2)
+            if let installedTag, installedTag == autoDetectedTag {
+                Label(L("update.source.whichTag.detected"), systemImage: "wand.and.stars")
+                    .font(.system(size: 11)).foregroundStyle(Theme.violet)
+            }
+        }
     }
 
     private var intervalRow: some View {
@@ -282,9 +352,10 @@ struct UpdateSourceSheet: View {
     private func look() async {
         phase = .verifying
         do {
-            let all = try await model.installableIPAs(of: repo)
-            guard let newest = all.first?.tag else { phase = .noAsset; return }
-            let names = all.filter { $0.tag == newest }.map(\.asset.name)
+            let fetched = try await model.installableIPAs(of: repo)
+            all = fetched
+            guard let newest = fetched.first?.tag else { phase = .noAsset; return }
+            let names = fetched.filter { $0.tag == newest }.map(\.asset.name)
             phase = .ready(names)
             // Keep a still-valid pick (reopening « Modifier »); otherwise follow the first file.
             if !(picked.map(names.contains) ?? false) { picked = names.first }
@@ -294,12 +365,13 @@ struct UpdateSourceSheet: View {
     }
 
     private func validate() {
-        guard case .ready(let names) = phase, let picked else { return }
+        guard case .ready(let names) = phase, let picked, let installedTag else { return }
         flow.draft.updateVariant = VariantSelector.make(chosen: picked, others: names.filter { $0 != picked })
         flow.draft.updateVariantSource = repo
         flow.draft.updateVariantName = picked
         flow.draft.updateMode = mode
         flow.draft.updateInterval = interval
+        flow.draft.updateInstalledTag = installedTag
         flow.updateLinkError = false
         dismiss()
     }

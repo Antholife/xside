@@ -1483,6 +1483,9 @@
 "update.mode.auto" = "Installer auto";
 "update.mode.notify.detail" = "XSide t'envoie une notification quand une nouvelle version sort. Tu l'installes toi-même quand tu veux, rien ne bouge sans toi.";
 "update.mode.auto.detail" = "XSide installe tout seul les nouvelles versions stables, après un contrôle du contenu. Une préversion ou un fichier suspect te prévient au lieu de s'installer.";
+"update.source.whichTag" = "Quelle version installes-tu ?";
+"update.source.whichTag.note" = "Pour suivre les prochaines releases, XSide a besoin de savoir où tu en es. Le nom du fichier ne le dit pas toujours.";
+"update.source.whichTag.detected" = "Détecté depuis l'IPA";
 "update.source.verify" = "Vérifier le lien";
 "update.source.validate" = "Valider";
 "update.source.remove" = "Retirer le lien";

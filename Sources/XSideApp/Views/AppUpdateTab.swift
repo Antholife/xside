@@ -415,7 +415,13 @@ struct AppUpdateTab: View {
                 chosen = picked
             }
             let variant = VariantSelector.make(chosen: chosen, others: names.filter { $0 != chosen })
-            let new = UpdateSource(repo: repo, variant: variant, mode: current?.mode ?? .notify, lastSeenTrigger: nil)
+            // Baseline (which release you're on): the one whose variant asset carries the installed
+            // app version, else the newest (assume you're adding a source for the latest you have).
+            let baseline = all.first { e in
+                variant.matches(e.asset.name) && (record.version.map { e.asset.name.contains($0) } ?? false)
+            }?.tag ?? newest
+            let new = UpdateSource(repo: repo, variant: variant, mode: current?.mode ?? .notify,
+                                   installedTag: current?.installedTag ?? baseline)
             try await model.library.setUpdateSource(new, forRecord: record.id)
             await model.reloadRecords()
             editing = false
