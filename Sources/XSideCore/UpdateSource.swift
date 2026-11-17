@@ -59,13 +59,21 @@ public struct UpdateSource: Codable, Equatable, Sendable {
     /// (so a manual check can report it as available again without re-downloading the file). `nil`
     /// means the last-seen release was not an update (up to date) or hasn't been read yet.
     public var lastSeenVersion: String?
+    /// How often the background pass checks this source, in seconds. `nil` = follow the global
+    /// default; `<= 0` = never (manual checks only). Clamped up to `UpdateSchedule.minimumInterval`.
+    public var checkInterval: TimeInterval?
+    /// When the background pass last checked this source (per-source cadence).
+    public var lastCheckedAt: Date?
 
     public init(repo: GitHubSource, variant: VariantSelector, mode: UpdateMode = .notify,
-                lastSeenTrigger: String? = nil, lastSeenVersion: String? = nil) {
+                lastSeenTrigger: String? = nil, lastSeenVersion: String? = nil,
+                checkInterval: TimeInterval? = nil, lastCheckedAt: Date? = nil) {
         self.repo = repo
         self.variant = variant
         self.mode = mode
         self.lastSeenTrigger = lastSeenTrigger
         self.lastSeenVersion = lastSeenVersion
+        self.checkInterval = checkInterval
+        self.lastCheckedAt = lastCheckedAt
     }
 }

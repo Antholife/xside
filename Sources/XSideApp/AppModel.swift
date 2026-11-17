@@ -2800,10 +2800,19 @@ final class AppModel {
     nonisolated static let backupBeforeUpdateDefaultKey = "backupBeforeUpdate"
     /// How many backups to keep per app and device (default 3).
     nonisolated static let backupRetentionKey = "backupRetention"
+    /// The global default update-check cadence, in seconds (default one day; a per-app override on
+    /// the source wins). `<= 0` would mean never, but the global default is never set to never here.
+    nonisolated static let updateCheckIntervalKey = "updateCheckInterval"
 
     /// Snapshots kept per app and device; at least 1.
     nonisolated static var backupRetention: Int {
         max(1, UserDefaults.standard.object(forKey: backupRetentionKey) as? Int ?? 3)
+    }
+
+    /// The global default update-check cadence in seconds; defaults to `UpdateSchedule.interval`.
+    nonisolated static var updateCheckInterval: TimeInterval {
+        let v = UserDefaults.standard.object(forKey: updateCheckIntervalKey) as? Double
+        return v.map { max($0, UpdateSchedule.minimumInterval) } ?? UpdateSchedule.interval
     }
 
     nonisolated static func setting(_ key: String) -> Bool {

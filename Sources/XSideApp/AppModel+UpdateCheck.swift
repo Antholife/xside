@@ -66,21 +66,60 @@ extension AppModel {
     /// skipped here (the fiche asks).
     func checkUpdatesIfDue() {
         let now = Date()
-        guard hasLoadedRecords, !updateCheckRunning,
-              UpdateSchedule.isDue(lastChecked: lastUpdateCheck, lastFailure: lastUpdateFailure, now: now) else { return }
-        let targets = records.flatMap(updateTargets(of:))
-        // Nothing to look at is a look done: asked again after a day, not at every tick.
-        guard !targets.isEmpty else { lastUpdateCheck = now; return }
+        guard hasLoadedRecords, !updateCheckRunning else { return }
+        // Global back-off after a pass where everything failed (offline, rate limited): don't hammer
+        // the API at every tick, whatever each source's own cadence says.
+        if let f = lastUpdateFailure, f <= now, now.timeIntervalSince(f) < UpdateSchedule.failureInterval { return }
+        let globalDefault = Self.updateCheckInterval
+        // Each source on its own cadence (per-app override, else the global default; « never » is skipped).
+        let due = records.flatMap(updateTargets(of:)).filter { target in
+            let interval = UpdateSchedule.effectiveInterval(target.source?.checkInterval, default: globalDefault)
+            return UpdateSchedule.isDue(lastChecked: target.source?.lastCheckedAt, interval: interval, now: now)
+        }
+        guard !due.isEmpty else { return }
         updateCheckRunning = true
         Task { [weak self] in
             guard let self else { return }
             defer { updateCheckRunning = false }
-            let reports = await runUpdateChecks(targets)
-            // Every source failing (offline, rate limited) is no look done: tried again after
-            // `UpdateSchedule.failureInterval`, not at the next tick (that would burn the rate limit).
+            let reports = await runUpdateChecks(due)
+            // Advance the cadence only for the sources we actually reached: a failed one (offline,
+            // rate limited) stays due so it's retried, under the global back-off above.
+            let reachedTargets = zip(due, reports).compactMap { target, report -> UpdateTarget? in
+                if case .failed = report.result { nil } else { target }
+            }
+            await markChecked(reachedTargets, at: now)
             let reached = reports.contains { if case .failed = $0.result { false } else { true } }
-            if reached { lastUpdateCheck = now; lastUpdateFailure = nil } else { lastUpdateFailure = now }
+            lastUpdateFailure = reached ? nil : now
+            lastUpdateCheck = now
         }
+    }
+
+    /// Stamps `lastCheckedAt` on each source's library entry so its own cadence advances.
+    private func markChecked(_ targets: [UpdateTarget], at now: Date) async {
+        guard !targets.isEmpty else { return }
+        let records = await library.records()
+        var wrote = false
+        for target in targets {
+            do {
+                if let old = target.tweak {
+                    guard let record = records.first(where: { $0.id == target.record.id }),
+                          let tweak = record.tweaks?.first(where: { $0.packageID == old.packageID && $0.updateSource != nil }),
+                          var source = tweak.updateSource else { continue }
+                    source.lastCheckedAt = now
+                    try await library.setUpdateSource(source, forTweak: tweak.id, recordID: record.id)
+                    wrote = true
+                } else {
+                    guard let record = records.first(where: { $0.id == target.record.id }),
+                          var source = record.updateSource else { continue }
+                    source.lastCheckedAt = now
+                    try await library.setUpdateSource(source, forRecord: record.id)
+                    wrote = true
+                }
+            } catch {
+                Self.updateLogger.error("lastChecked not saved: \(String(describing: error), privacy: .public)")
+            }
+        }
+        if wrote { await reloadRecords() }
     }
 
     /// A manual check of one app and its tweaks (the fiche's button), whatever the schedule says.

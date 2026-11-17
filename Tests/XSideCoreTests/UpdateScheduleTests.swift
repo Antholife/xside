@@ -19,6 +19,33 @@ final class UpdateScheduleTests: XCTestCase {
     func testClockGoneBackIsDue() {
         XCTAssertTrue(UpdateSchedule.isDue(lastChecked: now.addingTimeInterval(60), now: now))
     }
+
+    func testEffectiveInterval_nilIsGlobalDefault() {
+        XCTAssertEqual(UpdateSchedule.effectiveInterval(nil, default: 86_400), 86_400)
+    }
+
+    func testEffectiveInterval_zeroOrNegativeIsNever() {
+        XCTAssertEqual(UpdateSchedule.effectiveInterval(0, default: 86_400), 0)
+        XCTAssertEqual(UpdateSchedule.effectiveInterval(-5, default: 86_400), 0)
+    }
+
+    func testEffectiveInterval_clampsToTheFloor() {
+        XCTAssertEqual(UpdateSchedule.effectiveInterval(60, default: 86_400), UpdateSchedule.minimumInterval)
+        XCTAssertEqual(UpdateSchedule.effectiveInterval(nil, default: 60), UpdateSchedule.minimumInterval)
+        XCTAssertEqual(UpdateSchedule.effectiveInterval(7_200, default: 86_400), 7_200)
+    }
+
+    func testPerSourceNeverIsNotDue() {
+        XCTAssertFalse(UpdateSchedule.isDue(lastChecked: nil, interval: 0, now: now))
+        XCTAssertFalse(UpdateSchedule.isDue(lastChecked: now.addingTimeInterval(-1_000_000), interval: 0, now: now))
+    }
+
+    func testPerSourceCustomInterval() {
+        let hour: TimeInterval = 3_600
+        XCTAssertTrue(UpdateSchedule.isDue(lastChecked: now.addingTimeInterval(-hour), interval: hour, now: now))
+        XCTAssertFalse(UpdateSchedule.isDue(lastChecked: now.addingTimeInterval(-hour + 1), interval: hour, now: now))
+        XCTAssertTrue(UpdateSchedule.isDue(lastChecked: nil, interval: hour, now: now))
+    }
 }
 
 extension UpdateScheduleTests {
