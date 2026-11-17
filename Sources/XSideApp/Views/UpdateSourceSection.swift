@@ -172,7 +172,9 @@ struct UpdateSourceSheet: View {
     @State private var installedTag: String?  // the release the person is on (baseline)
     @State private var mode: UpdateMode = .notify
     @State private var interval: TimeInterval?
-    @State private var step = 0 // 0 variant · 1 current version · 2 mode + frequency
+    @State private var step = 0 // 0 variant · 1 download folder · 2 current version · 3 mode + frequency
+    @State private var downloadFolder = ""
+    @State private var rememberFolder = false
     @State private var downloading: Double?   // progress while fetching the newest, nil when idle
     @State private var downloadFailed = false
     @State private var downloadTask: Task<Void, Never>?
@@ -197,6 +199,8 @@ struct UpdateSourceSheet: View {
                     verifyBanner
                     if case .ready(let names) = phase, names.count > 1 { variantPicker(names) }
                 case 1:
+                    folderStep
+                case 2:
                     tagStep
                 default:
                     modeCards
@@ -214,6 +218,8 @@ struct UpdateSourceSheet: View {
             interval = flow.draft.updateInterval
             picked = flow.draft.updateVariantSource == repo ? flow.draft.updateVariantName : nil
             installedTag = flow.draft.updateInstalledTag
+            downloadFolder = AppModel.downloadsFolder?.path ?? ""
+            rememberFolder = AppModel.keepDownloads && !downloadFolder.isEmpty
         }
         .task { await look() }
     }
@@ -228,7 +234,7 @@ struct UpdateSourceSheet: View {
                 Button(L("install.back")) { withAnimation(.smooth(duration: 0.15)) { step -= 1 } }.controlSize(.large)
                     .disabled(busy)
             }
-            if step < 2 {
+            if step < 3 {
                 Button(L("install.next")) { goNext() }
                     .buttonStyle(GradientButtonStyle()).controlSize(.large).frame(minWidth: 120)
                     .keyboardShortcut(.defaultAction)
@@ -246,13 +252,13 @@ struct UpdateSourceSheet: View {
     private var canAdvance: Bool {
         switch step {
         case 0: return ready && picked != nil
-        case 1: return installedTag != nil
-        default: return true
+        case 2: return installedTag != nil
+        default: return true // folder step and mode step are always advanceable
         }
     }
 
     private func goNext() {
-        if step == 0 { // entering the version step: default to the auto-detected tag, else nothing
+        if step == 1 { // entering the version step: default to the auto-detected tag, else nothing
             if installedTag == nil || !releaseTags.contains(where: { $0.tag == installedTag }) {
                 installedTag = autoDetectedTag // nil when it can't be told: the person must pick
             }
@@ -276,6 +282,48 @@ struct UpdateSourceSheet: View {
     private var autoDetectedTag: String? {
         guard let version = flow.info?.version, !version.isEmpty else { return nil }
         return releaseTags.first { $0.asset.contains(version) }?.tag
+    }
+
+    /// Where the downloaded IPA is kept (default: the global setting). Choosing one here uses it for
+    /// this download; « Se souvenir » also saves it globally so future updates keep their IPAs there.
+    private var folderStep: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(L("update.folder.title")).font(.system(size: 13, weight: .semibold))
+            Text(L("update.folder.note")).font(.system(size: 11.5)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Image(systemName: "folder.fill").foregroundStyle(.secondary)
+                Text(downloadFolder.isEmpty ? L("update.folder.none") : (downloadFolder as NSString).abbreviatingWithTildeInPath)
+                    .font(.system(size: 12))
+                    .foregroundStyle(downloadFolder.isEmpty ? Color(nsColor: .systemOrange) : .secondary)
+                    .lineLimit(1).truncationMode(.middle)
+                Spacer(minLength: 8)
+                if !downloadFolder.isEmpty {
+                    Button { downloadFolder = ""; rememberFolder = false } label: { Image(systemName: "xmark.circle.fill") }
+                        .buttonStyle(.plain).foregroundStyle(.secondary)
+                }
+                Button(L("settings.downloads.choose")) { chooseFolder() }
+            }
+            .padding(10)
+            .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            Toggle(L("update.folder.remember"), isOn: $rememberFolder).font(.system(size: 12)).disabled(downloadFolder.isEmpty)
+        }
+    }
+
+    private func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.prompt = L("settings.downloads.choose")
+        if !downloadFolder.isEmpty { panel.directoryURL = URL(fileURLWithPath: downloadFolder) }
+        if panel.runModal() == .OK, let url = panel.url { downloadFolder = url.path; rememberFolder = true }
+    }
+
+    /// Saves the chosen folder as the global download folder when « Se souvenir » is on.
+    private func persistFolderIfRemembered() {
+        guard rememberFolder, !downloadFolder.isEmpty else { return }
+        UserDefaults.standard.set(downloadFolder, forKey: AppModel.downloadsFolderKey)
+        UserDefaults.standard.set(true, forKey: AppModel.keepDownloadsKey)
     }
 
     private var tagStep: some View {
@@ -349,11 +397,13 @@ struct UpdateSourceSheet: View {
             url: flow.draft.updateSourceURL,
             variant: VariantSelector.make(chosen: picked, others: names.filter { $0 != picked }),
             variantSource: repo, variantName: picked, mode: mode, interval: interval, installedTag: newest)
+        persistFolderIfRemembered()
         downloadFailed = false
         downloading = 0
         downloadTask = Task {
             do {
-                try await model.installNewestAtInstall(asset: asset, appName: flow.info?.name, seed: seed) { f in
+                try await model.installNewestAtInstall(asset: asset, appName: flow.info?.name, seed: seed,
+                                                       keepFolder: downloadFolder.isEmpty ? nil : downloadFolder) { f in
                     Task { @MainActor in downloading = f }
                 }
                 dismiss()
@@ -454,6 +504,7 @@ struct UpdateSourceSheet: View {
         flow.draft.updateMode = mode
         flow.draft.updateInterval = interval
         flow.draft.updateInstalledTag = installedTag
+        persistFolderIfRemembered()
         flow.updateLinkError = false
         dismiss()
     }

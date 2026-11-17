@@ -1533,6 +1533,10 @@
 "update.newer.install" = "Install %@";
 "update.newer.downloading" = "Downloading %@…";
 "update.newer.failed" = "The download failed. Try again.";
+"update.folder.title" = "Download folder";
+"update.folder.note" = "Where to keep the downloaded IPA, for 'install the newest' and future updates. Defaults to your folder from Settings.";
+"update.folder.none" = "None (don't keep)";
+"update.folder.remember" = "Remember for updates";
 "update.source.verify" = "Check the link";
 "update.source.validate" = "Confirm";
 "update.source.remove" = "Remove the link";

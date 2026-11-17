@@ -1533,6 +1533,10 @@
 "update.newer.install" = "Installer la %@";
 "update.newer.downloading" = "Téléchargement de la %@…";
 "update.newer.failed" = "Le téléchargement a échoué. Réessaie.";
+"update.folder.title" = "Dossier de téléchargement";
+"update.folder.note" = "Où garder l'IPA téléchargé, pour « installer la plus récente » et les futures mises à jour. Par défaut, ton dossier des réglages.";
+"update.folder.none" = "Aucun (ne pas garder)";
+"update.folder.remember" = "S'en souvenir pour les mises à jour";
 "update.source.verify" = "Vérifier le lien";
 "update.source.validate" = "Valider";
 "update.source.remove" = "Retirer le lien";

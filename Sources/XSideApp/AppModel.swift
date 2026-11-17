@@ -2241,6 +2241,7 @@ final class AppModel {
     /// Downloads the newest release's asset (the one the source sheet offered), keeps a copy if asked,
     /// then restarts the install window on it with the update source already configured.
     func installNewestAtInstall(asset: ReleaseAsset, appName: String?, seed: UpdateSourceSeed,
+                                keepFolder: String? = nil,
                                 progress: @escaping @Sendable (Double) -> Void) async throws {
         let dir = libraryRoot.appendingPathComponent(AppLibrary.stagingFolder)
             .appendingPathComponent("download-\(UUID().uuidString)")
@@ -2255,7 +2256,8 @@ final class AppModel {
             try? FileManager.default.removeItem(at: dir)
             throw error
         }
-        keepDownloadedIPA(from: file, appName: appName, tag: seed.installedTag)
+        let oneOff = (keepFolder?.isEmpty == false) ? URL(fileURLWithPath: keepFolder!, isDirectory: true) : nil
+        keepDownloadedIPA(from: file, appName: appName, tag: seed.installedTag, folder: oneOff)
         request(file, seed: seed)
     }
 
@@ -2857,8 +2859,11 @@ final class AppModel {
 
     /// Copies a freshly downloaded `.ipa` into the person's chosen folder, when "Conserver les IPA
     /// téléchargés" is on. Best-effort: a failure is logged, never raised into the install/update flow.
-    nonisolated func keepDownloadedIPA(from file: URL, appName: String?, tag: String) {
-        guard Self.keepDownloads, let folder = Self.downloadsFolder else { return }
+    nonisolated func keepDownloadedIPA(from file: URL, appName: String?, tag: String, folder overrideFolder: URL? = nil) {
+        let folder: URL
+        if let overrideFolder { folder = overrideFolder }                       // a one-off folder (the install sheet)
+        else if Self.keepDownloads, let f = Self.downloadsFolder { folder = f }   // the global setting
+        else { return }
         let fm = FileManager.default
         do {
             try fm.createDirectory(at: folder, withIntermediateDirectories: true)
