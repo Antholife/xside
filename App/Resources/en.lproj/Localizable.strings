@@ -1534,8 +1534,8 @@
 "update.newer.downloading" = "Downloading %@…";
 "update.newer.failed" = "The download failed. Try again.";
 "update.folder.title" = "Download folder";
-"update.folder.note" = "Where to keep the downloaded IPA, for 'install the newest' and future updates. Defaults to your folder from Settings.";
-"update.folder.none" = "None (don't keep)";
+"update.folder.note" = "An extra copy of the downloaded IPA, for you ('install the newest' and future updates). XSide always keeps its own internal copy to refresh the app; this doesn't replace it.";
+"update.folder.none" = "None (no copy for you)";
 "update.folder.remember" = "Remember for updates";
 "update.source.verify" = "Check the link";
 "update.source.validate" = "Confirm";
