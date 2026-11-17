@@ -639,6 +639,7 @@
 "install.steps.compatibility" = "Compatibilité";
 "install.steps.tweaks" = "Tweaks";
 "install.steps.inApp" = "Module XSide dans l'app";
+"install.steps.inApp.short" = "Module XSide";
 "install.steps.a11y" = "Étape %d sur %d : %@";
 "install.next" = "Suivant";
 "install.back" = "Retour";

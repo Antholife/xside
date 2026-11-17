@@ -6,22 +6,23 @@ import XSideCore
 struct StepBar: View {
     let flow: InstallFlow
 
-    /// The five fixed steps, plus "Données" last when the app has a backup to restore.
+    /// The five fixed steps, plus "Données" last when the app has a backup to restore. The module
+    /// step uses its short label here so six steps fit the window; its full name is the step's own title.
     private var titles: [String] {
         var all = [L("install.steps.devices"), L("install.steps.options"), L("install.steps.compatibility"),
-                   L("install.steps.tweaks"), L("install.steps.inApp")]
+                   L("install.steps.tweaks"), L("install.steps.inApp.short")]
         if flow.hasRestorableBackup { all.append(L("install.steps.data")) }
         return all
     }
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 3) {
             ForEach(Array(titles.enumerated()), id: \.offset) { index, title in
                 if index > 0 {
                     Capsule()
                         .fill(index <= flow.step ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(Color.primary.opacity(0.12)))
                         .frame(height: 2)
-                        .frame(minWidth: 8, maxWidth: 24)
+                        .frame(minWidth: 6, maxWidth: 16)
                 }
                 Button {
                     withAnimation(.smooth(duration: 0.2)) { flow.go(to: index) }
@@ -41,9 +42,11 @@ struct StepBar: View {
                             .font(.system(size: 12, weight: index == flow.step ? .semibold : .regular))
                             .foregroundStyle(index == flow.step ? .primary : .secondary)
                             .lineLimit(1)
-                            .fixedSize()
+                            // No .fixedSize(): if six steps plus a long locale would overflow 720 pt,
+                            // the titles shrink a hair instead of pushing the whole window off-screen.
+                            .minimumScaleFactor(0.8)
                     }
-                    .padding(.horizontal, 7)
+                    .padding(.horizontal, 6)
                     .padding(.vertical, 4)
                     .background(index == flow.step ? Theme.violet.opacity(0.12) : .clear, in: Capsule())
                     .contentShape(Capsule())
