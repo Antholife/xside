@@ -49,10 +49,14 @@ public struct BackupAppEntry: Codable, Equatable, Sendable {
     public var dataBytes: Int
     /// packageID → deb file name inside `apps/<id>/tweaks/` (empty when no tweaks were included).
     public var tweakFiles: [String: String]
+    /// The tweak packages (metadata) for the included tweaks, so a fresh install can re-adopt their
+    /// stored folders from `apps/<id>/tweaks/<pkgid>/`. Empty when no tweaks were included.
+    public var tweakPool: [TweakPackage]
 
     public init(recordID: UUID, displayName: String, originalBundleID: String, options: InstallOptions,
                 updateSource: UpdateSource? = nil, installation: InstallationConfig, hasIPA: Bool, hasData: Bool,
-                dataIncludesCaches: Bool, ipaBytes: Int, dataBytes: Int, tweakFiles: [String: String]) {
+                dataIncludesCaches: Bool, ipaBytes: Int, dataBytes: Int, tweakFiles: [String: String],
+                tweakPool: [TweakPackage] = []) {
         self.recordID = recordID
         self.displayName = displayName
         self.originalBundleID = originalBundleID
@@ -65,6 +69,7 @@ public struct BackupAppEntry: Codable, Equatable, Sendable {
         self.ipaBytes = ipaBytes
         self.dataBytes = dataBytes
         self.tweakFiles = tweakFiles
+        self.tweakPool = tweakPool
     }
 
     /// Which aspects the archive can restore for this app (greys the unchecked columns in the sheet).

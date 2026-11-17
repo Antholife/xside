@@ -89,6 +89,13 @@ public enum BackupArchive {
         return target
     }
 
+    /// Reads one entry's bytes from the archive without extracting it (used to peek a full backup's
+    /// `manifest.json`). nil when the entry is absent.
+    public static func readFile(_ zipURL: URL, named name: String) throws -> Data? {
+        let r = try run("/usr/bin/unzip", ["-p", "--", zipURL.path, name], cwd: nil)
+        return r.status == 0 ? r.output : nil
+    }
+
     /// nil when the archive has no `xside-backup.json` or it is not valid manifest JSON.
     public static func readManifest(zipURL: URL) throws -> BackupManifest? {
         let r = try run("/usr/bin/unzip", ["-p", "--", zipURL.path, manifestName], cwd: nil)

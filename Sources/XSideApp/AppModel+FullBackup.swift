@@ -53,6 +53,7 @@ extension AppModel {
                                          appVersion: record.version,
                                          withoutXSideFeatures: installation.withoutXSideFeatures)
             var hasIPA = false, ipaBytes = 0, tweakFiles: [String: String] = [:]
+            var tweakPool: [TweakPackage] = []
             do {
                 try fm.createDirectory(at: appDir, withIntermediateDirectories: true)
                 if inc.app {
@@ -71,6 +72,8 @@ extension AppModel {
                             tweakFiles[t.id] = t.id
                         }
                         cfg.tweaks = installation.tweaks ?? []
+                        let ids = Set((installation.tweaks ?? []).map(\.id))
+                        tweakPool = (record.tweaks ?? []).filter { ids.contains($0.id) }
                     }
                 }
             } catch {
@@ -89,7 +92,7 @@ extension AppModel {
                 entries.append(BackupAppEntry(recordID: record.id, displayName: name, originalBundleID: record.originalBundleID,
                                               options: record.options, updateSource: inc.app ? record.updateSource : nil,
                                               installation: cfg, hasIPA: hasIPA, hasData: hasData, dataIncludesCaches: dataCaches,
-                                              ipaBytes: ipaBytes, dataBytes: dataBytes, tweakFiles: tweakFiles))
+                                              ipaBytes: ipaBytes, dataBytes: dataBytes, tweakFiles: tweakFiles, tweakPool: tweakPool))
             } else {
                 failed.append(name)
             }
@@ -105,6 +108,100 @@ extension AppModel {
             return FullBackupResult(saved: 0, failedApps: selections.map { $0.entry.record.displayName })
         }
         return FullBackupResult(saved: entries.count, failedApps: failed)
+    }
+
+    /// Outcome of a restore: how many apps came back, and the names of those that could not.
+    struct FullRestoreResult {
+        var restored: Int
+        var failedApps: [String]
+    }
+
+    /// Restores the chosen apps from an `.xsbak` onto `targetDeviceID`. Per app it rebuilds the record
+    /// from the archived IPA, re-applies options, update source, compatibility, in-app settings and
+    /// tweaks through the normal install pipeline, then reinjects the data. Best-effort per app.
+    func restoreFullBackup(archive: URL, selections: [(entry: BackupAppEntry, chosen: BackupAspects)],
+                           targetDeviceID: String,
+                           progress: @escaping @Sendable (Double) -> Void = { _ in }) async -> FullRestoreResult {
+        let fm = FileManager.default
+        let names = selections.map { $0.entry.displayName }
+        let work = libraryRoot.appendingPathComponent(AppLibrary.stagingFolder)
+            .appendingPathComponent("restore-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fm.removeItem(at: work) }
+        guard let extracted = try? BackupArchive.unpackTree(archive, to: work),
+              let env = try? environment?.get() else {
+            return FullRestoreResult(restored: 0, failedApps: names)
+        }
+
+        var restored = 0
+        var failed: [String] = []
+        let total = max(selections.count, 1)
+        for (i, sel) in selections.enumerated() {
+            defer { progress(Double(i + 1) / Double(total)) }
+            let e = sel.entry
+            let action = FullBackup.restoreAction(available: e.availableAspects, chosen: sel.chosen)
+            let appDir = extracted.appendingPathComponent("apps/\(e.recordID.uuidString)-\(e.installation.sourceDeviceID)", isDirectory: true)
+            let dataZip = appDir.appendingPathComponent("data.zip")
+            do {
+                switch action {
+                case .skip:
+                    continue
+                case .dataOnly:
+                    guard let rec = records.first(where: { $0.originalBundleID == e.originalBundleID }),
+                          fm.fileExists(atPath: dataZip.path),
+                          await importBackup(zip: dataZip, intoRecordID: rec.id, deviceID: targetDeviceID) else {
+                        failed.append(e.displayName); continue
+                    }
+                    restored += 1
+                case .reinstall(let compat, let inAppOn, let tweaksOn, let dataOn):
+                    guard let device = devices.first(where: { $0.id == targetDeviceID && $0.isAvailable }) else {
+                        failed.append(e.displayName); continue
+                    }
+                    let ipa = appDir.appendingPathComponent("original.ipa")
+                    let info = try await IPAImporter.inspect(ipa: ipa, runner: runner)
+                    let rec = try await library.importIPA(ipa, info: info, teamID: env.teamID)
+                    try await library.setOptions(e.options, for: rec.id)
+                    if let src = e.updateSource { try await library.setUpdateSource(src, forRecord: rec.id) }
+
+                    var tweakUses: [TweakUse] = []
+                    var held: [String] = []
+                    if tweaksOn, !e.tweakPool.isEmpty {
+                        let staged = e.tweakPool.compactMap { pkg -> StagedTweak? in
+                            let dir = appDir.appendingPathComponent("tweaks/\(pkg.id)", isDirectory: true)
+                            return fm.fileExists(atPath: dir.path) ? StagedTweak(package: pkg, directory: dir) : nil
+                        }
+                        held = try await library.adoptTweaks(staged, recordID: rec.id)
+                        tweakUses = e.installation.tweaks
+                    }
+                    await reloadRecords()
+                    let inAppDraft = (inAppOn ? e.installation.inApp : nil)
+                        .map { InAppDraft(settings: $0, touched: Set(InAppField.allCases)) }
+                    do {
+                        _ = try await importAndInstall(ipa, on: device, options: e.options, inApp: inAppDraft,
+                                                       duoCompatibility: compat ? e.installation.duoCompatibility : nil,
+                                                       iCloudSignedOut: compat ? e.installation.iCloudSignedOut : nil,
+                                                       tweaks: tweaksOn ? tweakUses : nil, importedInto: rec.id)
+                    } catch {
+                        if !held.isEmpty { await library.releaseTweaks(held, recordID: rec.id) }
+                        throw error
+                    }
+                    if !held.isEmpty { await library.releaseTweaks(held, recordID: rec.id) }
+                    if dataOn, fm.fileExists(atPath: dataZip.path) {
+                        _ = await importBackup(zip: dataZip, intoRecordID: rec.id, deviceID: targetDeviceID)
+                    }
+                    restored += 1
+                }
+            } catch {
+                failed.append(e.displayName)
+            }
+        }
+        await reloadRecords()
+        return FullRestoreResult(restored: restored, failedApps: failed)
+    }
+
+    /// Reads an archive's manifest (one entry, no full extraction) for the restore sheet's list.
+    func readFullBackupManifest(_ archive: URL) -> FullBackupManifest? {
+        guard let data = try? BackupArchive.readFile(archive, named: "manifest.json") else { return nil }
+        return try? JSONDecoder().decode(FullBackupManifest.self, from: data)
     }
 
     /// Captures the app's data now (a fresh snapshot, caches per the toggle) and exports it to a zip.

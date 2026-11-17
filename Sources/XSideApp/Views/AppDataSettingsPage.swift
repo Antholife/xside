@@ -18,6 +18,14 @@ struct AppDataSettingsPage: View {
     @State private var expanded: Set<UUID> = []
     @State private var busy = false
     @State private var showsFullBackup = false
+    @State private var restoreTarget: RestoreTarget?
+
+    /// An `.xsbak` the person picked, with its manifest, driving the restore sheet.
+    struct RestoreTarget: Identifiable {
+        let id = UUID()
+        let url: URL
+        let manifest: FullBackupManifest
+    }
 
     /// Installed apps, one per record, in the panel's order.
     private var records: [AppRecord] {
@@ -43,8 +51,11 @@ struct AppDataSettingsPage: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text(L("backup.full.lead")).font(.callout).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    Button(L("backup.full.button")) { showsFullBackup = true }
-                        .buttonStyle(GradientButtonStyle())
+                    HStack(spacing: 10) {
+                        Button(L("backup.full.button")) { showsFullBackup = true }
+                            .buttonStyle(GradientButtonStyle())
+                        Button(L("backup.restore.button")) { chooseArchive() }
+                    }
                 }
             }
             Section(L("settings.appData.defaults")) {
@@ -99,6 +110,9 @@ struct AppDataSettingsPage: View {
         .task(id: reloadID) { await reload() }
         .sheet(isPresented: $showsFullBackup) {
             FullBackupSheet(model: model) { showsFullBackup = false }
+        }
+        .sheet(item: $restoreTarget) { t in
+            FullRestoreSheet(model: model, archive: t.url, manifest: t.manifest) { restoreTarget = nil }
         }
     }
 
@@ -209,6 +223,20 @@ struct AppDataSettingsPage: View {
         for r in records { map[r.id] = await model.backups(forRecord: r.id) }
         perRecord = map
         orphans = await model.orphanBackups()
+    }
+
+    /// Picks an `.xsbak`, reads its manifest and opens the restore sheet (or says it can't be read).
+    private func chooseArchive() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedFileTypes = ["xsbak"]
+        panel.prompt = L("backup.restore.button")
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard let manifest = model.readFullBackupManifest(url), !manifest.apps.isEmpty else {
+            return alert(L("backup.restore.invalid"), nil)
+        }
+        restoreTarget = RestoreTarget(url: url, manifest: manifest)
     }
 
     private func restore(_ snap: BackupSnapshot, in record: AppRecord) {
