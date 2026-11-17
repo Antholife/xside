@@ -15,9 +15,9 @@ public struct UpdateSchedule: Sendable {
     /// `nil` interval = the global default; `<= 0` = never (manual checks only). Anything positive is
     /// clamped up to `minimumInterval`.
     public static func effectiveInterval(_ perApp: TimeInterval?, default globalDefault: TimeInterval) -> TimeInterval {
-        guard let perApp else { return max(globalDefault, minimumInterval) }
-        guard perApp > 0 else { return 0 } // never
-        return max(perApp, minimumInterval)
+        let base = perApp ?? globalDefault // nil per-app follows the global default (which may be « never »)
+        guard base > 0 else { return 0 } // never
+        return max(base, minimumInterval)
     }
 
     /// Due when never checked, when `interval` has passed, or when the clock went back. `interval <= 0`

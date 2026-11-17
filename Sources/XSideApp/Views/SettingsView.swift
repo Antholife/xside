@@ -245,6 +245,7 @@ private struct SettingsPage: View {
     @AppStorage(AppModel.openTrustSettingsKey) private var openTrustSettings = true
     @AppStorage(AppModel.forgetDeletedAppsKey) private var forgetDeletedApps = true
     @AppStorage(AppModel.reviewInstallOptionsKey) private var reviewInstallOptions = true
+    @AppStorage(AppModel.updateCheckIntervalKey) private var updateCheckSeconds = UpdateSchedule.interval
     @AppStorage(BackgroundEngine.refreshDaysBeforeKey) private var refreshDaysBefore = 2
     @AppStorage(BackgroundEngine.pausedUntilKey) private var pausedUntil = 0.0
     @AppStorage(BackgroundEngine.acOnlyKey) private var acOnly = false
@@ -372,6 +373,18 @@ private struct SettingsPage: View {
             Text(L("settings.afterInstall.footer"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        }
+        Section {
+            LabeledContent {
+                UpdateIntervalControl(
+                    seconds: Binding(get: { updateCheckSeconds <= 0 ? 0 : max(updateCheckSeconds, UpdateSchedule.minimumInterval) },
+                                     set: { updateCheckSeconds = $0 ?? UpdateSchedule.interval }),
+                    allowsNever: true)
+                    .fixedSize()
+            } label: {
+                Text(L("settings.updateFrequency"))
+                Text(L("settings.updateFrequency.note"))
+            }
         }
         Section {
             LabeledContent {

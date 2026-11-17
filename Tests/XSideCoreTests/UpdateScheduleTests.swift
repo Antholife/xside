@@ -29,6 +29,11 @@ final class UpdateScheduleTests: XCTestCase {
         XCTAssertEqual(UpdateSchedule.effectiveInterval(-5, default: 86_400), 0)
     }
 
+    func testEffectiveInterval_nilFollowsGlobalNever() {
+        // Global default « never »: an app with no override also never checks.
+        XCTAssertEqual(UpdateSchedule.effectiveInterval(nil, default: 0), 0)
+    }
+
     func testEffectiveInterval_clampsToTheFloor() {
         XCTAssertEqual(UpdateSchedule.effectiveInterval(60, default: 86_400), UpdateSchedule.minimumInterval)
         XCTAssertEqual(UpdateSchedule.effectiveInterval(nil, default: 60), UpdateSchedule.minimumInterval)

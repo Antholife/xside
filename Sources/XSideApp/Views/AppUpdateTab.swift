@@ -72,6 +72,14 @@ struct AppUpdateTab: View {
                 .pickerStyle(.segmented)
                 .fixedSize()
             }
+            Divider().padding(.leading, 48)
+            OptionRow(symbol: "clock.fill", title: L("update.interval.title"), detail: nil) {
+                UpdateIntervalControl(
+                    seconds: Binding(get: { source.checkInterval },
+                                     set: { var s = source; s.checkInterval = $0; save(s) }),
+                    allowsGlobalDefault: true, allowsNever: true,
+                    globalDefaultSeconds: AppModel.updateCheckInterval)
+            }
             HStack(spacing: 10) {
                 Button(L("update.tab.variant")) { Task { await repickVariant(source) } }
                 Button(L("update.tab.edit")) { urlText = "https://github.com/\(source.repo.owner)/\(source.repo.repo)"; editing = true }

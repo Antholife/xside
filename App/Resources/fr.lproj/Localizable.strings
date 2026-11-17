@@ -1466,6 +1466,17 @@
 "update.source.tracking" = "Suivi : %@";
 "update.source.multiple" = "Ce dépôt propose plusieurs fichiers installables. Choisis celui que tu installes.";
 "update.source.choose" = "Choisir";
+"settings.updateFrequency" = "Vérifier les mises à jour des apps";
+"settings.updateFrequency.note" = "À quelle fréquence XSide cherche de nouvelles versions des apps qui suivent un dépôt GitHub. Réglable par app.";
+"update.interval.title" = "Fréquence de vérification";
+"update.interval.never" = "Jamais (manuel)";
+"update.interval.global" = "Réglage global (%@)";
+"update.interval.custom" = "Personnalisé…";
+"update.interval.week" = "%d sem.";
+"update.interval.unit.minutes" = "minutes";
+"update.interval.unit.hours" = "heures";
+"update.interval.unit.days" = "jours";
+"update.interval.unit.months" = "mois";
 "update.mode.title" = "Quand une version sort";
 "update.mode.note" = "Auto : seules les versions stables s'installent seules, après un contrôle du contenu.";
 "update.mode.notify" = "Me prévenir";

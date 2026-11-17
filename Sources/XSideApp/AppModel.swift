@@ -2810,9 +2810,10 @@ final class AppModel {
     }
 
     /// The global default update-check cadence in seconds; defaults to `UpdateSchedule.interval`.
+    /// `<= 0` means never (auto-checks off unless an app overrides it).
     nonisolated static var updateCheckInterval: TimeInterval {
-        let v = UserDefaults.standard.object(forKey: updateCheckIntervalKey) as? Double
-        return v.map { max($0, UpdateSchedule.minimumInterval) } ?? UpdateSchedule.interval
+        guard let v = UserDefaults.standard.object(forKey: updateCheckIntervalKey) as? Double else { return UpdateSchedule.interval }
+        return v <= 0 ? 0 : max(v, UpdateSchedule.minimumInterval)
     }
 
     nonisolated static func setting(_ key: String) -> Bool {

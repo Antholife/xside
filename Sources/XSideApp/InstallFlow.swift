@@ -377,6 +377,8 @@ struct OptionsDraft: Equatable {
     /// record's `updateSource` is built from these after the import (`AppModel.persistUpdateSource`).
     var updateSourceURL = ""
     var updateMode: UpdateMode = .notify
+    /// Per-app check cadence chosen at install, in seconds; `nil` = follow the global default.
+    var updateInterval: TimeInterval?
     var updateVariant: VariantSelector?
     /// The repo and file name `updateVariant` was derived from: the variant is only valid for that
     /// repo (`UpdateSourceSection` clears all three when the link points elsewhere).

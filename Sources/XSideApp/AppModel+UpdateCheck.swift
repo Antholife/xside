@@ -349,7 +349,8 @@ extension AppModel {
     /// record's update source. Nothing without a valid link and a chosen variant.
     func persistUpdateSource(from draft: OptionsDraft, recordID: UUID) {
         guard let repo = GitHubSource.parse(draft.updateSourceURL), let variant = draft.updateVariant else { return }
-        let source = UpdateSource(repo: repo, variant: variant, mode: draft.updateMode, lastSeenTrigger: nil)
+        let source = UpdateSource(repo: repo, variant: variant, mode: draft.updateMode, lastSeenTrigger: nil,
+                                  checkInterval: draft.updateInterval)
         Task {
             do {
                 try await library.setUpdateSource(source, forRecord: recordID)

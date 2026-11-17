@@ -169,6 +169,7 @@ struct UpdateSourceSheet: View {
     @State private var phase: Phase = .verifying
     @State private var picked: String?
     @State private var mode: UpdateMode = .notify
+    @State private var interval: TimeInterval?
 
     private var isReady: Bool {
         if case .ready = phase, picked != nil { return true }
@@ -191,6 +192,7 @@ struct UpdateSourceSheet: View {
                 if case .ready(let names) = phase {
                     if names.count > 1 { variantPicker(names) }
                     modeCards
+                    intervalRow
                 }
             }
             .padding(18)
@@ -212,9 +214,19 @@ struct UpdateSourceSheet: View {
         .frame(width: 460)
         .onAppear {
             mode = flow.draft.updateMode
+            interval = flow.draft.updateInterval
             picked = flow.draft.updateVariantSource == repo ? flow.draft.updateVariantName : nil
         }
         .task { await look() }
+    }
+
+    private var intervalRow: some View {
+        HStack(spacing: 10) {
+            Text(L("update.interval.title")).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            UpdateIntervalControl(seconds: $interval, allowsGlobalDefault: true, allowsNever: true,
+                                  globalDefaultSeconds: AppModel.updateCheckInterval)
+        }
     }
 
     @ViewBuilder private var verifyBanner: some View {
@@ -287,6 +299,7 @@ struct UpdateSourceSheet: View {
         flow.draft.updateVariantSource = repo
         flow.draft.updateVariantName = picked
         flow.draft.updateMode = mode
+        flow.draft.updateInterval = interval
         flow.updateLinkError = false
         dismiss()
     }

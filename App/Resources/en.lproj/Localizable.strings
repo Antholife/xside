@@ -1466,6 +1466,17 @@
 "update.source.tracking" = "Following: %@";
 "update.source.multiple" = "This repository offers several installable files. Choose the one you're installing.";
 "update.source.choose" = "Choose";
+"settings.updateFrequency" = "Check apps for updates";
+"settings.updateFrequency.note" = "How often XSide looks for new versions of apps that follow a GitHub repo. Can be set per app.";
+"update.interval.title" = "Check frequency";
+"update.interval.never" = "Never (manual)";
+"update.interval.global" = "Global setting (%@)";
+"update.interval.custom" = "Custom…";
+"update.interval.week" = "%dw";
+"update.interval.unit.minutes" = "minutes";
+"update.interval.unit.hours" = "hours";
+"update.interval.unit.days" = "days";
+"update.interval.unit.months" = "months";
 "update.mode.title" = "When a version comes out";
 "update.mode.note" = "Auto: only stable versions install by themselves, after a check of the content.";
 "update.mode.notify" = "Notify me";
