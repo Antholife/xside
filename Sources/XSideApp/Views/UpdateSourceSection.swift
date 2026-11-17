@@ -251,9 +251,9 @@ struct UpdateSourceSheet: View {
     }
 
     private func goNext() {
-        if step == 0 { // entering the version step: default the baseline (auto-detected, else newest)
+        if step == 0 { // entering the version step: default to the auto-detected tag, else nothing
             if installedTag == nil || !releaseTags.contains(where: { $0.tag == installedTag }) {
-                installedTag = autoDetectedTag ?? releaseTags.first?.tag
+                installedTag = autoDetectedTag // nil when it can't be told: the person must pick
             }
         }
         withAnimation(.smooth(duration: 0.15)) { step += 1 }
@@ -288,11 +288,14 @@ struct UpdateSourceSheet: View {
                 }
             }
             .labelsHidden().pickerStyle(.menu).padding(.top, 2)
-            if let installedTag, installedTag == autoDetectedTag {
+            if autoDetectedTag == nil {
+                Label(L("update.source.whichTag.undetected"), systemImage: "exclamationmark.circle.fill")
+                    .font(.system(size: 11)).foregroundStyle(Color(nsColor: .systemOrange))
+            } else if let installedTag, installedTag == autoDetectedTag {
                 Label(L("update.source.whichTag.detected"), systemImage: "wand.and.stars")
                     .font(.system(size: 11)).foregroundStyle(Theme.violet)
             }
-            if let newest = newestTag, installedTag != newest { newerOffer(newest) }
+            if let newest = newestTag, let installedTag, installedTag != newest { newerOffer(newest) }
         }
     }
 

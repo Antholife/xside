@@ -1492,6 +1492,7 @@
 "update.source.whichTag" = "Quelle version installes-tu ?";
 "update.source.whichTag.note" = "Pour suivre les prochaines releases, XSide a besoin de savoir où tu en es. Le nom du fichier ne le dit pas toujours.";
 "update.source.whichTag.detected" = "Détecté depuis l'IPA";
+"update.source.whichTag.undetected" = "Version non détectée depuis le fichier : choisis-la.";
 "update.newer.title" = "Version plus récente disponible";
 "update.newer.note" = "Tu installes la %@. La plus récente du dépôt est la %@.";
 "update.newer.install" = "Installer la %@ à la place";
