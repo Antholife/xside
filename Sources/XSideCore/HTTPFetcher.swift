@@ -18,12 +18,22 @@ public protocol HTTPFetching: Sendable {
     /// Same, but the URL and every redirect hop must be `https` on one of `hosts` (lowercased, default
     /// port): anything else is refused before it is asked (`RepoError.notAllowlisted`).
     func fetch(_ url: URL, maxBytes: Int, to file: URL, redirectingWithin hosts: Set<String>) async throws -> URL
+    /// Same, reporting download progress (0…1) as bytes arrive, when the response declares a length.
+    /// A conformer that can't report progress uses the default below (which ignores it).
+    func fetch(_ url: URL, maxBytes: Int, to file: URL, redirectingWithin hosts: Set<String>,
+               progress: (@Sendable (Double) -> Void)?) async throws -> URL
 }
 
 extension HTTPFetching {
     /// Redirects may go to any HTTPS host (within `RedirectPolicy`).
     public func fetch(_ url: URL, maxBytes: Int, to file: URL) async throws -> URL {
         try await fetch(url, maxBytes: maxBytes, to: file, stayingOn: nil)
+    }
+
+    /// Default: no progress reporting (the plain variant).
+    public func fetch(_ url: URL, maxBytes: Int, to file: URL, redirectingWithin hosts: Set<String>,
+                      progress: (@Sendable (Double) -> Void)?) async throws -> URL {
+        try await fetch(url, maxBytes: maxBytes, to: file, redirectingWithin: hosts)
     }
 }
 
@@ -127,7 +137,13 @@ public struct URLSessionFetcher: HTTPFetching {
         try await fetch(url, maxBytes: maxBytes, to: file, scope: .hosts(Set(hosts.map { $0.lowercased() })))
     }
 
-    private func fetch(_ url: URL, maxBytes: Int, to file: URL, scope: RedirectScope) async throws -> URL {
+    public func fetch(_ url: URL, maxBytes: Int, to file: URL, redirectingWithin hosts: Set<String>,
+                      progress: (@Sendable (Double) -> Void)?) async throws -> URL {
+        try await fetch(url, maxBytes: maxBytes, to: file, scope: .hosts(Set(hosts.map { $0.lowercased() })), progress: progress)
+    }
+
+    private func fetch(_ url: URL, maxBytes: Int, to file: URL, scope: RedirectScope,
+                       progress: (@Sendable (Double) -> Void)? = nil) async throws -> URL {
         try? FileManager.default.removeItem(at: file)
         guard RedirectPolicy.isHTTPS(url) else {
             log.error("refused (not https): \(RepoLog.display(url))")
@@ -143,7 +159,7 @@ public struct URLSessionFetcher: HTTPFetching {
         var request = URLRequest(url: url)
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         request.httpShouldHandleCookies = false
-        let delegate = FetchDelegate(file: file, maxBytes: maxBytes, scope: scope)
+        let delegate = FetchDelegate(file: file, maxBytes: maxBytes, scope: scope, progress: progress)
         let session = URLSession(configuration: Self.configuration(protocolClasses: protocolClasses),
                                  delegate: delegate, delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
@@ -180,11 +196,15 @@ private final class FetchDelegate: NSObject, URLSessionDataDelegate, @unchecked 
     private var failure: Error?
     private var _status: Int?
     private var continuation: CheckedContinuation<URL, Error>?
+    private let onProgress: (@Sendable (Double) -> Void)?
+    private var expected: Int64 = 0
+    private var lastReported = -1.0
 
-    init(file: URL, maxBytes: Int, scope: RedirectScope) {
+    init(file: URL, maxBytes: Int, scope: RedirectScope, progress: (@Sendable (Double) -> Void)? = nil) {
         self.file = file
         self.maxBytes = maxBytes
         self.scope = scope
+        self.onProgress = progress
     }
 
     var bytes: Int { lock.withLock { written } }
@@ -223,7 +243,7 @@ private final class FetchDelegate: NSObject, URLSessionDataDelegate, @unchecked 
         guard let http = response as? HTTPURLResponse else {
             fail(RepoError.httpStatus(0), dataTask); completionHandler(.cancel); return
         }
-        lock.withLock { _status = http.statusCode }
+        lock.withLock { _status = http.statusCode; if response.expectedContentLength > 0 { expected = response.expectedContentLength } }
         guard (200..<300).contains(http.statusCode) else {
             fail(RepoError.httpStatus(http.statusCode), dataTask); completionHandler(.cancel); return
         }
@@ -243,14 +263,21 @@ private final class FetchDelegate: NSObject, URLSessionDataDelegate, @unchecked 
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        let (h, over): (FileHandle?, Bool) = lock.withLock {
-            guard failure == nil else { return (nil, false) }
+        let (h, over, fraction): (FileHandle?, Bool, Double?) = lock.withLock {
+            guard failure == nil else { return (nil, false, nil) }
             let (sum, overflow) = written.addingReportingOverflow(data.count)
-            if overflow || sum > maxBytes { return (nil, true) }
+            if overflow || sum > maxBytes { return (nil, true, nil) }
             written = sum
-            return (handle, false)
+            // Report at most every whole percent, so the UI isn't flooded from the download queue.
+            var f: Double?
+            if onProgress != nil, expected > 0 {
+                let p = min(1, Double(sum) / Double(expected))
+                if p - lastReported >= 0.01 || p >= 1 { lastReported = p; f = p }
+            }
+            return (handle, false, f)
         }
         if over { fail(RepoError.tooLarge, dataTask); return }
+        if let fraction { onProgress?(fraction) }
         guard let h else { return }
         do { try h.write(contentsOf: data) } catch { fail(error, dataTask) }
     }

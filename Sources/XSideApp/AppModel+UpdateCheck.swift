@@ -153,7 +153,10 @@ extension AppModel {
         let work = libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent("updates-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: work) }
         let checker = UpdateChecker(fetcher: repoFetcher, runner: runner, workDir: work)
-        switch await checker.check(source: source, kind: target.kind, installedVersion: target.installedVersion) {
+        // The user asked to install from a card we already showed: report the available release
+        // (from cache if unchanged) rather than short-circuiting to « à jour » on the seen trigger.
+        switch await checker.check(source: source, kind: target.kind, installedVersion: target.installedVersion,
+                                   reportCachedAvailable: true) {
         case .upToDate: return .upToDate
         case .needsVariantChoice: return .needsVariantChoice
         case .failed(let reason): return .failed(reason)
@@ -162,7 +165,13 @@ extension AppModel {
             guard found.tag == expectedTag, found.asset.name == expectedAsset else {
                 return .changed
             }
-            switch await apply(target, device: device, found: found, stable: stable, userInitiated: true, approved: approved) {
+            let key = Self.updateFractionKey(recordID: record.id, tweakPackageID: tweakPackageID)
+            updateFraction[key] = 0
+            defer { updateFraction[key] = nil }
+            let progress: @Sendable (Double) -> Void = { [weak self] f in
+                Task { @MainActor in self?.updateFraction[key] = f }
+            }
+            switch await apply(target, device: device, found: found, stable: stable, userInitiated: true, approved: approved, progress: progress) {
             case .installed(let v):
                 await persistTrigger(found.trigger, version: nil, for: target)
                 return .installed(version: v)
@@ -221,9 +230,14 @@ extension AppModel {
 
     private enum Applied { case installed(String), upToDate, notify(String, NotifyReason), incompatible, failed(String) }
 
-    private func apply(_ target: UpdateTarget, device: Device, found: FoundRelease, stable: Bool, userInitiated: Bool = false, approved: Set<NotifyReason> = []) async -> Applied {
+    /// A stable key for this app/tweak's download progress (`AppModel.updateFraction`).
+    static func updateFractionKey(recordID: UUID, tweakPackageID: String?) -> String {
+        "\(recordID.uuidString)|\(tweakPackageID ?? "app")"
+    }
+
+    private func apply(_ target: UpdateTarget, device: Device, found: FoundRelease, stable: Bool, userInitiated: Bool = false, approved: Set<NotifyReason> = [], progress: (@Sendable (Double) -> Void)? = nil) async -> Applied {
         if let tweak = target.tweak {
-            switch await applyTweakUpdate(old: tweak, recordID: target.record.id, device: device, found: found, stable: stable, userInitiated: userInitiated, approved: approved) {
+            switch await applyTweakUpdate(old: tweak, recordID: target.record.id, device: device, found: found, stable: stable, userInitiated: userInitiated, approved: approved, progress: progress) {
             case .installed(let v): return .installed(v)
             case .upToDate: return .upToDate
             case .notify(let v, let r): return .notify(v, r)
@@ -231,7 +245,7 @@ extension AppModel {
             case .failed(let m): return .failed(m)
             }
         }
-        switch await applyAppUpdate(record: target.record, device: device, found: found, stable: stable, userInitiated: userInitiated, approved: approved) {
+        switch await applyAppUpdate(record: target.record, device: device, found: found, stable: stable, userInitiated: userInitiated, approved: approved, progress: progress) {
         case .installed(let v): return .installed(v)
         case .notify(let v, let r): return .notify(v, r)
         case .incompatible: return .incompatible

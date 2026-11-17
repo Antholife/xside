@@ -36,11 +36,11 @@ public enum UpdateApply {
     /// Fetches a release asset with the kind's fixed size cap (not the size the release claims),
     /// then checks it is a regular file of exactly the listed size.
     public static func downloadAsset(_ asset: ReleaseAsset, kind: ReleaseKind, to file: URL,
-                                     fetcher: HTTPFetching) async throws {
+                                     fetcher: HTTPFetching, progress: (@Sendable (Double) -> Void)? = nil) async throws {
         guard asset.size > 0, asset.size <= kind.maxBytes else { throw RepoError.tooLarge }
         do {
             _ = try await fetcher.fetch(asset.url, maxBytes: kind.maxBytes, to: file,
-                                        redirectingWithin: AuthorReleases.assetHosts)
+                                        redirectingWithin: AuthorReleases.assetHosts, progress: progress)
         } catch { try? FileManager.default.removeItem(at: file); throw error }
         var st = stat()
         guard lstat(file.path, &st) == 0, st.st_mode & S_IFMT == S_IFREG, Int(st.st_size) == asset.size else {

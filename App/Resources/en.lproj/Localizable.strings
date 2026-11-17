@@ -1500,8 +1500,9 @@
 "update.tab.check.note" = "You can run a check by hand.";
 "update.state.upToDate" = "Up to date";
 "update.state.installed" = "%@ installed";
-"update.state.available" = "New version %@ available";
+"update.state.available" = "Version %@ available!";
 "update.state.available.note" = "Stable release.";
+"update.installing" = "Downloading and installing…";
 "update.state.beta" = "Beta %@ available";
 "update.state.beta.note" = "Pre-release: never installs by itself, even in Auto mode.";
 "update.state.suspect" = "%@ available: check before installing";
@@ -1509,7 +1510,7 @@
 "update.state.variant" = "Several files match";
 "update.state.variant.note" = "Pick the variant to follow.";
 "update.state.failed" = "Couldn't check this source. Try again later.";
-"update.action.install" = "Install";
+"update.action.install" = "Download and install";
 "update.action.installAnyway" = "Install anyway";
 "update.action.view" = "View";
 "update.action.examine" = "Examine";

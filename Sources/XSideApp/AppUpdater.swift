@@ -24,14 +24,14 @@ extension AppModel {
     /// Downloads a found `.deb` of a tracked tweak, checks it is the same tweak, and swaps it into
     /// the app's pool only when the tweak is on auto AND the release is stable with a usable
     /// verdict. Otherwise says why it did not; the engine posts the notification.
-    func applyTweakUpdate(old: TweakPackage, recordID: UUID, device: Device, found: FoundRelease, stable: Bool, userInitiated: Bool = false, approved: Set<NotifyReason> = []) async -> TweakUpdateResult {
+    func applyTweakUpdate(old: TweakPackage, recordID: UUID, device: Device, found: FoundRelease, stable: Bool, userInitiated: Bool = false, approved: Set<NotifyReason> = [], progress: (@Sendable (Double) -> Void)? = nil) async -> TweakUpdateResult {
         let fm = FileManager.default
         let work = libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent(UUID().uuidString)
         defer { try? fm.removeItem(at: work) }
         let deb = work.appendingPathComponent("update.deb")
         do {
             try fm.createDirectory(at: work, withIntermediateDirectories: true)
-            try await UpdateApply.downloadAsset(found.asset, kind: .deb, to: deb, fetcher: repoFetcher)
+            try await UpdateApply.downloadAsset(found.asset, kind: .deb, to: deb, fetcher: repoFetcher, progress: progress)
         } catch {
             return .failed("download: \(error)")
         }
@@ -77,7 +77,7 @@ extension AppModel {
     /// Downloads a found release of an app, checks it is the same app, and installs it over the
     /// installed one only when the app is on auto AND the release is stable with no warning sign.
     /// Otherwise says why it did not; the engine posts the notification.
-    func applyAppUpdate(record: AppRecord, device: Device, found: FoundRelease, stable: Bool, userInitiated: Bool = false, approved: Set<NotifyReason> = []) async -> AppUpdateResult {
+    func applyAppUpdate(record: AppRecord, device: Device, found: FoundRelease, stable: Bool, userInitiated: Bool = false, approved: Set<NotifyReason> = [], progress: (@Sendable (Double) -> Void)? = nil) async -> AppUpdateResult {
         let fm = FileManager.default
         let work = libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent(UUID().uuidString)
         defer { try? fm.removeItem(at: work) }
@@ -85,7 +85,7 @@ extension AppModel {
         let info: AppInfo
         do {
             try fm.createDirectory(at: work, withIntermediateDirectories: true)
-            try await UpdateApply.downloadAsset(found.asset, kind: .ipa, to: ipa, fetcher: repoFetcher)
+            try await UpdateApply.downloadAsset(found.asset, kind: .ipa, to: ipa, fetcher: repoFetcher, progress: progress)
         } catch {
             return .failed("download: \(error)")
         }

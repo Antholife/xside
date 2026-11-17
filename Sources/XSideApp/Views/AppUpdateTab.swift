@@ -228,29 +228,51 @@ struct AppUpdateTab: View {
         case .red: Color(nsColor: .systemRed)
         case .plain: .secondary
         }
-        return HStack(spacing: 10) {
-            Image(systemName: symbol)
-                .font(.system(size: 15))
-                .foregroundStyle(color)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 12, weight: .semibold))
-                if let detail {
-                    Text(detail).font(.system(size: 11)).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+        let busyThis = busy.contains(report.tweakPackageID ?? "app")
+        return VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 10) {
+                Image(systemName: symbol)
+                    .font(.system(size: 15))
+                    .foregroundStyle(color)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.system(size: 12, weight: .semibold))
+                    if let detail {
+                        Text(detail).font(.system(size: 11)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer(minLength: 8)
+                if !busyThis {
+                    ForEach(Array(actions.enumerated()), id: \.offset) { _, a in
+                        actionButton(a, report: report, prominent: a == actions.first && tone != .orange)
+                    }
                 }
             }
-            Spacer(minLength: 8)
-            if busy.contains(report.tweakPackageID ?? "app") {
-                ProgressView().controlSize(.small)
-            } else {
-                ForEach(Array(actions.enumerated()), id: \.offset) { _, a in
-                    actionButton(a, report: report, prominent: a == actions.first && tone != .orange)
-                }
-            }
+            if busyThis { progressBar(for: report) }
         }
         .padding(12)
         .background(color.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(color.opacity(0.35), lineWidth: 1))
+    }
+
+    /// While « Télécharger et installer » runs: the download percent, then the install phase.
+    @ViewBuilder private func progressBar(for report: UpdateCheckReport) -> some View {
+        let key = AppModel.updateFractionKey(recordID: record.id, tweakPackageID: report.tweakPackageID)
+        let fraction = model.updateFraction[key]
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Text(L("update.installing")).font(.system(size: 11)).foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+                if let fraction, fraction < 1 {
+                    Text("\(Int(fraction * 100)) %").font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
+                }
+            }
+            if let fraction {
+                ProgressView(value: min(max(fraction, 0), 1)).progressViewStyle(.linear)
+            } else {
+                ProgressView().progressViewStyle(.linear)
+            }
+        }
     }
 
     @ViewBuilder private func actionButton(_ a: CardAction, report: UpdateCheckReport, prominent: Bool) -> some View {

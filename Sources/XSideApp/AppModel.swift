@@ -172,6 +172,9 @@ final class AppModel {
     private(set) var dataBusy: Set<JobKey> = []
     /// A running manual/pre-update backup's progress (0...1) per row; absent while the total is unknown.
     private(set) var backupFraction: [JobKey: Double] = [:]
+    /// A running « Télécharger et installer » update's download progress (0...1), keyed by
+    /// `AppModel.updateFractionKey`; absent while nothing is downloading.
+    var updateFraction: [String: Double] = [:]
     private(set) var pairing: Set<String> = []
     private(set) var pairErrors: [String: String] = [:]
     /// Settings > Mes apps: why the last tweak files added to an installation couldn't be

@@ -1500,8 +1500,9 @@
 "update.tab.check.note" = "Tu peux relancer une vérification à la main.";
 "update.state.upToDate" = "À jour";
 "update.state.installed" = "%@ installée";
-"update.state.available" = "Nouvelle version %@ disponible";
+"update.state.available" = "Version %@ disponible !";
 "update.state.available.note" = "Version stable.";
+"update.installing" = "Téléchargement et installation…";
 "update.state.beta" = "Bêta %@ disponible";
 "update.state.beta.note" = "Pré-version : ne s'installe pas toute seule, même en mode Auto.";
 "update.state.suspect" = "%@ disponible : vérifie avant d'installer";
@@ -1509,7 +1510,7 @@
 "update.state.variant" = "Plusieurs fichiers correspondent";
 "update.state.variant.note" = "Choisis la variante à suivre.";
 "update.state.failed" = "Impossible de vérifier cette source. Réessaie plus tard.";
-"update.action.install" = "Installer";
+"update.action.install" = "Télécharger et installer";
 "update.action.installAnyway" = "Installer quand même";
 "update.action.view" = "Voir";
 "update.action.examine" = "Examiner";
