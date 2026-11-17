@@ -277,7 +277,21 @@ struct AppUpdateTab: View {
         checking = true
         defer { checking = false }
         approvals = [:]
-        reports = await model.checkUpdatesNow(entry)
+        let all = await model.checkUpdatesNow(entry)
+        // Cards are for what needs a decision; « à jour »/échec is a toast, not a big green band.
+        let actionable = all.filter { report in
+            switch report.result {
+            case .available, .needsVariantChoice, .changed: true
+            case .upToDate, .installed, .failed: false
+            }
+        }
+        if actionable.isEmpty {
+            let failure = all.compactMap { if case .failed(let m) = $0.result { m } else { nil } }.first
+            model.showToast(failure.map { L("update.toast.failed", $0) } ?? L("update.toast.upToDate"))
+            reports = nil
+        } else {
+            reports = actionable
+        }
     }
 
     private func install(_ report: UpdateCheckReport, confirm: Bool) async {
