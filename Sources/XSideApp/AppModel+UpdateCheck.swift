@@ -64,6 +64,16 @@ extension AppModel {
     /// and tweak with a GitHub source, installs a stable release of those on auto, and notifies the
     /// rest. Runs as a task; one failing source never stops the others. A variant to choose is
     /// skipped here (the fiche asks).
+    /// Debug-only: `XSIDE_FAST_UPDATES=1` honors short per-app check intervals (down to 20 s) instead
+    /// of the 15-minute floor, to test the automatic update notification without waiting.
+    static let fastUpdateCadence: Bool = {
+        #if DEBUG
+        return ProcessInfo.processInfo.environment["XSIDE_FAST_UPDATES"] == "1"
+        #else
+        return false
+        #endif
+    }()
+
     func checkUpdatesIfDue() {
         let now = Date()
         guard hasLoadedRecords, !updateCheckRunning else { return }
@@ -73,7 +83,9 @@ extension AppModel {
         let globalDefault = Self.updateCheckInterval
         // Each source on its own cadence (per-app override, else the global default; « never » is skipped).
         let due = records.flatMap(updateTargets(of:)).filter { target in
-            let interval = UpdateSchedule.effectiveInterval(target.source?.checkInterval, default: globalDefault)
+            let interval = Self.fastUpdateCadence
+                ? max(target.source?.checkInterval ?? globalDefault, 20) // debug: honor short intervals
+                : UpdateSchedule.effectiveInterval(target.source?.checkInterval, default: globalDefault)
             return UpdateSchedule.isDue(lastChecked: target.source?.lastCheckedAt, interval: interval, now: now)
         }
         guard !due.isEmpty else { return }

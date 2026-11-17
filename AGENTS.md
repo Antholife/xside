@@ -40,7 +40,7 @@ Instructions for AI coding agents (Codex, Claude Code, Cursor, Copilot, ...) and
 - A free Apple Account allows **3 sideloaded apps per device** and **10 new App IDs per 7 days**. Reuse the same test IPA instead of installing many different ones.
 - Tweaks: `scripts/make-tweak-test-kit.sh` (run `scripts/build-unzstd.sh` first; `XST_CRASH=1` adds crash.deb) builds an unsigned test app (io.github.xside.tweaktest, lines that say "no" until a tweak changes them) and ✅/🔧/❌ test tweaks. Sources in `scripts/tweak-test-kit/`.
 - Never put a debug or locally built app in `/Applications`: that's where the released app lives and updates itself.
-- Debug-only hooks: `XSIDE_FAKE_NO_DEVICES=1`, `XSIDE_FAKE_PREFLIGHT=1`, `XSIDE_FAKE_ENV_FILE=<file>` (see `Sources/XSideApp/AppModel.swift`) show screens that are hard to reach for real. Build-time: `XSIDE_TEST_REMINDER=1` fires the iPhone reminder 1 minute after launch, `XSIDE_TEST_LATE=1` forces the late state; never ship or commit those builds.
+- Debug-only hooks: `XSIDE_FAKE_NO_DEVICES=1`, `XSIDE_FAKE_PREFLIGHT=1`, `XSIDE_FAKE_ENV_FILE=<file>` (see `Sources/XSideApp/AppModel.swift`) show screens that are hard to reach for real. `XSIDE_FAST_UPDATES=1` honors short per-app update-check intervals (down to 20 s) instead of the 15-minute floor, to test the automatic update notification without waiting. Build-time: `XSIDE_TEST_REMINDER=1` fires the iPhone reminder 1 minute after launch, `XSIDE_TEST_LATE=1` forces the late state; never ship or commit those builds.
 
 ## Build and test
 
