@@ -1488,6 +1488,8 @@
 "notification.appUpdate.title" = "%@ : mise à jour disponible";
 "notification.appUpdate.body" = "La version %2$@ de %1$@ est disponible. Ouvre XSide pour la mettre à jour.";
 "notification.appUpdate.action" = "Voir la mise à jour";
+"notification.appPending.title" = "%@ %@ en attente";
+"notification.appPending.body" = "Appareil non disponible. XSide l'installera dès qu'il est connecté.";
 "notification.appInstalling.title" = "%@ : mise à jour en cours";
 "notification.appInstalling.body" = "Installation de la version %@… Ouvre pour suivre.";
 "notification.appUpdated.title" = "%@ mis à jour";

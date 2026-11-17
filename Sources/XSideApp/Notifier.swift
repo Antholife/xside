@@ -225,6 +225,22 @@ final class Notifier: NSObject {
         }
     }
 
+    /// Auto mode, but no reachable device: the update is pending and installs by itself when the
+    /// device is back. A tap opens the app's « Mises à jour » tab.
+    func appUpdatePending(appName: String, version: String, job: RefreshJob, id: String) async {
+        let content = UNMutableNotificationContent()
+        content.title = L("notification.appPending.title", appName, version)
+        content.body = L("notification.appPending.body")
+        content.sound = .default
+        content.categoryIdentifier = Self.appUpdatedCategory
+        content.userInfo = [Self.recordKey: job.recordID.uuidString, Self.deviceKey: job.deviceID]
+        guard let center else {
+            Self.logger.notice("would notify: \(content.title)")
+            return
+        }
+        try? await center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+    }
+
     /// XSide started an auto-install (Auto mode): a tap opens the app's « Mises à jour » tab to watch
     /// the progress. Same `id` as the available/updated notices, so they replace one another.
     func appInstalling(appName: String, version: String, job: RefreshJob, id: String) async {

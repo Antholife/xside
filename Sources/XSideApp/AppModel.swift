@@ -298,6 +298,8 @@ final class AppModel {
     /// Returns whether the notification was actually delivered (permission on, device notifies): the
     /// caller only marks the release announced when it was, so a dropped notice is retried next check.
     var onAppUpdateAvailable: ((_ notice: AppUpdateNotice) async -> Bool)?
+    /// Auto mode but no reachable device: the update is pending. Returns whether it was delivered.
+    var onAppUpdatePending: ((_ notice: AppUpdateNotice) async -> Bool)?
     /// XSide started an auto-install: a notification to watch the progress.
     var onAppInstalling: ((_ notice: AppUpdateNotice) -> Void)?
     /// XSide auto-installed an app/tweak update: a confirmation notification.

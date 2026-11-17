@@ -292,11 +292,14 @@ extension AppModel {
             // shows the card itself, no extra notice.
             let alreadyAnnounced = target.source?.lastSeenTrigger == found.trigger
             if !userInitiated, !alreadyAnnounced, case .available(let v, _, _, _) = result {
+                // Auto mode but no reachable device: say the update is pending (it installs by itself
+                // when the device is back), rather than the plain « disponible » of notify mode.
+                let autoPending = auto && deviceForAutoUpdate(target.record) == nil
+                let delivered = autoPending ? await notifyAutoPending(target, version: v)
+                                            : await notify(target, version: v)
                 // Mark announced only when the notification was actually delivered: a dropped one
                 // (permission off, device notifies off) is retried on the next check.
-                if await notify(target, version: v) {
-                    await markAnnounced(found.trigger, for: target)
-                }
+                if delivered { await markAnnounced(found.trigger, for: target) }
             }
             return result
         }
@@ -341,6 +344,13 @@ extension AppModel {
         guard let installation = target.record.installations.first else { return false }
         let job = RefreshJob(recordID: target.record.id, deviceID: installation.deviceID)
         return await onAppUpdateAvailable?(AppUpdateNotice(appName: target.name, version: version, job: job, id: target.noticeID)) ?? false
+    }
+
+    /// Auto mode but no reachable device: notify that the update is pending. Returns whether delivered.
+    private func notifyAutoPending(_ target: UpdateTarget, version: String) async -> Bool {
+        guard let installation = target.record.installations.first else { return false }
+        let job = RefreshJob(recordID: target.record.id, deviceID: installation.deviceID)
+        return await onAppUpdatePending?(AppUpdateNotice(appName: target.name, version: version, job: job, id: target.noticeID)) ?? false
     }
 
     /// XSide started an auto-install: a notification whose tap opens the tab to watch the progress.
