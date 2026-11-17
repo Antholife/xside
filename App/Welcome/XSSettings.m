@@ -236,10 +236,15 @@ NSDictionary *XSLastRefresh(void) {
     return last;
 }
 
+static NSString *XSRefreshOnLaunchKey(void);
+
 void XSRecordRefresh(BOOL succeeded, NSString *reasonKey, NSDate *at) {
     NSMutableDictionary *last = [@{@"at": at, @"succeeded": @(succeeded)} mutableCopy];
     if (!succeeded && reasonKey) last[@"reasonKey"] = reasonKey;
     [XSDefaults() setObject:last forKey:XSLastRefreshKey];
+    // The app was actually refreshed: the pending « rafraîchir à la prochaine ouverture » is done,
+    // so clear it (it stayed on across launches until the Mac could be reached).
+    if (succeeded) [XSDefaults() setObject:@NO forKey:XSRefreshOnLaunchKey()];
     XSWriteStatusRows(nil);
 }
 
@@ -299,14 +304,14 @@ void XSNoteSignature(NSDate *expiry) {
     [d setObject:expiry forKey:XSLastExpiryKey];
 }
 
-BOOL XSTakeRefreshOnLaunch(void) {
-    // "Rafraîchir à la prochaine ouverture": an action, not a setting (not synced, not reported).
-    NSUserDefaults *d = XSDefaults();
-    NSString *key = [XSRowPrefix stringByAppendingString:@"refreshOnLaunch"];
-    id on = [d objectForKey:key];
-    if (![on isKindOfClass:NSNumber.class] || ![on boolValue]) return NO;
-    [d setObject:@NO forKey:key]; // back off in iOS Settings: one press, one refresh
-    return YES;
+static NSString *XSRefreshOnLaunchKey(void) { return [XSRowPrefix stringByAppendingString:@"refreshOnLaunch"]; }
+
+BOOL XSWantsRefreshOnLaunch(void) {
+    // "Rafraîchir à la prochaine ouverture": a pending action. It is NOT consumed here, only read —
+    // so if the Mac can't be reached this launch (not the same Wi-Fi), the next open tries again. It
+    // is cleared only when a refresh is actually confirmed (see `XSRecordRefresh`).
+    id on = [XSDefaults() objectForKey:XSRefreshOnLaunchKey()];
+    return [on isKindOfClass:NSNumber.class] && [on boolValue];
 }
 
 BOOL XSChannelGranted(void) { return [XSDefaults() boolForKey:XSChannelGrantedKey]; }

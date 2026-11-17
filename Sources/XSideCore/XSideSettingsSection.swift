@@ -57,7 +57,7 @@ extension SettingsSection {
             ("title.validUntil", "Valable jusqu'au"), ("title.refreshedOn", "Rafraîchie le"),
             ("title.version", "Version"), ("title.installedOn", "Installée le"),
             ("title.refreshOnLaunch", "Rafraîchir à la prochaine ouverture"),
-            // Asked at the next launch or return to the app (XSTakeRefreshOnLaunch), the Mac
+            // Asked at the next launch or return to the app (XSWantsRefreshOnLaunch), the Mac
             // accepts on its own. "cet appareil": the same page is written for an iPad.
             ("footer.refreshOnLaunch", "Rafraîchit l'app la prochaine fois que tu l'ouvres, sans rien faire sur ton Mac : "
                 + "il suffit qu'XSide soit ouvert sur ton Mac et que cet appareil soit sur le même Wi-Fi ou branché en USB."),
