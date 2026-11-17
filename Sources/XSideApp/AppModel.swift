@@ -2250,6 +2250,7 @@ final class AppModel {
         let file = dir.appendingPathComponent(DownloadKeep.safeName(asset.name))
         do {
             try await UpdateApply.downloadAsset(asset, kind: .ipa, to: file, fetcher: repoFetcher, progress: progress)
+            try Task.checkCancellation() // cancelled during the download: don't start the install
         } catch {
             try? FileManager.default.removeItem(at: dir)
             throw error

@@ -175,6 +175,7 @@ struct UpdateSourceSheet: View {
     @State private var step = 0 // 0 variant · 1 current version · 2 mode + frequency
     @State private var downloading: Double?   // progress while fetching the newest, nil when idle
     @State private var downloadFailed = false
+    @State private var downloadTask: Task<Void, Never>?
 
     private var ready: Bool { if case .ready = phase { true } else { false } }
     private var busy: Bool { downloading != nil }
@@ -316,7 +317,11 @@ struct UpdateSourceSheet: View {
                 }
             }
             if let frac = downloading {
-                ProgressView(value: frac).controlSize(.small)
+                HStack(spacing: 8) {
+                    ProgressView(value: frac)
+                    Text("\(Int(frac * 100)) %").font(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit()
+                    Button(L("install.cancel")) { cancelDownload() }.controlSize(.small)
+                }
                 Text(L("update.newer.downloading", UpdateChecker.displayTag(newest)))
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             } else {
@@ -346,17 +351,25 @@ struct UpdateSourceSheet: View {
             variantSource: repo, variantName: picked, mode: mode, interval: interval, installedTag: newest)
         downloadFailed = false
         downloading = 0
-        Task {
+        downloadTask = Task {
             do {
                 try await model.installNewestAtInstall(asset: asset, appName: flow.info?.name, seed: seed) { f in
                     Task { @MainActor in downloading = f }
                 }
                 dismiss()
+            } catch is CancellationError {
+                downloading = nil
             } catch {
                 downloading = nil
                 downloadFailed = true
             }
         }
+    }
+
+    private func cancelDownload() {
+        downloadTask?.cancel()
+        downloadTask = nil
+        downloading = nil
     }
 
     private var intervalRow: some View {
