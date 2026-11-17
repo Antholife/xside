@@ -56,10 +56,13 @@ struct UpdateSourceSection: View {
                     .onSubmit { if parsed != nil { showsSheet = true } }
                 statusPill
             }
-            Button(L("update.source.verify")) { showsSheet = true }
-                .buttonStyle(GradientButtonStyle())
-                .frame(maxWidth: .infinity)
-                .disabled(parsed == nil)
+            HStack {
+                Spacer(minLength: 0)
+                Button(L("update.source.verify")) { showsSheet = true }
+                    .buttonStyle(GradientButtonStyle())
+                    .fixedSize()
+                    .disabled(parsed == nil)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 11)
