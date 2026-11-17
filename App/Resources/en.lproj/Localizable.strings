@@ -1512,6 +1512,7 @@
 "settings.downloads.none" = "No folder chosen";
 "update.interval.title" = "Check frequency";
 "update.interval.never" = "Never (manual)";
+"update.interval.atRefresh" = "At each refresh";
 "update.interval.global" = "Global setting (%@)";
 "update.interval.custom" = "Custom…";
 "update.interval.week" = "%dw";

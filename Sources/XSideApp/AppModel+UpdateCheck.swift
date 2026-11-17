@@ -83,6 +83,8 @@ extension AppModel {
         let globalDefault = Self.updateCheckInterval
         // Each source on its own cadence (per-app override, else the global default; « never » is skipped).
         let due = records.flatMap(updateTargets(of:)).filter { target in
+            // "At refresh" sources are not on the time cadence: they are checked when the app refreshes.
+            if UpdateSchedule.checksAtRefresh(target.source?.checkInterval, default: globalDefault) { return false }
             let interval = Self.fastUpdateCadence
                 ? max(target.source?.checkInterval ?? globalDefault, 20) // debug: honor short intervals
                 : UpdateSchedule.effectiveInterval(target.source?.checkInterval, default: globalDefault)
@@ -103,6 +105,25 @@ extension AppModel {
             let reached = reports.contains { if case .failed = $0.result { false } else { true } }
             lastUpdateFailure = reached ? nil : now
             lastUpdateCheck = now
+        }
+    }
+
+    /// Runs an update check for an app whose source is set to "at refresh", right after it refreshed.
+    /// Notifies / auto-installs like the background pass (not user-initiated).
+    func checkUpdatesAtRefresh(recordID: UUID) {
+        guard hasLoadedRecords, !updateCheckRunning, let record = records.first(where: { $0.id == recordID }) else { return }
+        let globalDefault = Self.updateCheckInterval
+        let targets = updateTargets(of: record).filter {
+            UpdateSchedule.checksAtRefresh($0.source?.checkInterval, default: globalDefault)
+        }
+        guard !targets.isEmpty else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            let reports = await runUpdateChecks(targets)
+            let reached = zip(targets, reports).compactMap { t, r -> UpdateTarget? in
+                if case .failed = r.result { nil } else { t }
+            }
+            await markChecked(reached, at: Date())
         }
     }
 

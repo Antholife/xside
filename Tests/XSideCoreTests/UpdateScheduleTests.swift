@@ -40,6 +40,23 @@ final class UpdateScheduleTests: XCTestCase {
         XCTAssertEqual(UpdateSchedule.effectiveInterval(7_200, default: 86_400), 7_200)
     }
 
+    func testAtRefresh_isNeverDueOnTheTimer() {
+        // The « at refresh » sentinel is not a time cadence: the timer never makes it due.
+        XCTAssertEqual(UpdateSchedule.effectiveInterval(UpdateSchedule.atRefresh, default: 86_400), 0)
+        XCTAssertFalse(UpdateSchedule.isDue(lastChecked: nil,
+                                            interval: UpdateSchedule.effectiveInterval(UpdateSchedule.atRefresh, default: 86_400),
+                                            now: now))
+    }
+
+    func testChecksAtRefresh() {
+        XCTAssertTrue(UpdateSchedule.checksAtRefresh(UpdateSchedule.atRefresh, default: 86_400))
+        XCTAssertFalse(UpdateSchedule.checksAtRefresh(3_600, default: 86_400))
+        XCTAssertFalse(UpdateSchedule.checksAtRefresh(0, default: 86_400)) // never, not at-refresh
+        // A nil per-app value follows the global default.
+        XCTAssertTrue(UpdateSchedule.checksAtRefresh(nil, default: UpdateSchedule.atRefresh))
+        XCTAssertFalse(UpdateSchedule.checksAtRefresh(nil, default: 86_400))
+    }
+
     func testPerSourceNeverIsNotDue() {
         XCTAssertFalse(UpdateSchedule.isDue(lastChecked: nil, interval: 0, now: now))
         XCTAssertFalse(UpdateSchedule.isDue(lastChecked: now.addingTimeInterval(-1_000_000), interval: 0, now: now))

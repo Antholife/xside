@@ -12,6 +12,17 @@ public struct UpdateSchedule: Sendable {
     /// After a pass where every source failed (offline, rate limited): not tried again before this.
     public static let failureInterval: TimeInterval = 3_600
 
+    /// Sentinel `checkInterval` meaning "check at each refresh of the app", not on a time cadence.
+    /// Negative and distinct from « never » (0), so the timer treats it as never but the engine runs
+    /// a check when the app is refreshed.
+    public static let atRefresh: TimeInterval = -2
+
+    /// Whether the resolved setting is "at refresh" (the per-app value, or the global default when the
+    /// per-app value follows it).
+    public static func checksAtRefresh(_ perApp: TimeInterval?, default globalDefault: TimeInterval) -> Bool {
+        (perApp ?? globalDefault) == atRefresh
+    }
+
     /// `nil` interval = the global default; `<= 0` = never (manual checks only). Anything positive is
     /// clamped up to `minimumInterval`.
     public static func effectiveInterval(_ perApp: TimeInterval?, default globalDefault: TimeInterval) -> TimeInterval {

@@ -459,7 +459,10 @@ final class BackgroundEngine {
             if updated != gate { gate = updated; persistGate() }
             notifySuccess(job, wasRefresh: wasRefresh, dataBackedUp: dataBackedUp)
             scheduleReminder(job)
-            if wasRefresh { model.updater.checkSoon("after a refresh") }
+            if wasRefresh {
+                model.updater.checkSoon("after a refresh")
+                model.checkUpdatesAtRefresh(recordID: job.recordID) // sources set to "at refresh"
+            }
             return
         }
         // Cancelled by the user: nothing failed, nothing to report.

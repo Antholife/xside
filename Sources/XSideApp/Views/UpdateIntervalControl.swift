@@ -57,13 +57,14 @@ struct UpdateIntervalControl: View {
         HStack(spacing: 8) {
             Menu {
                 if allowsGlobalDefault {
-                    Button(L("update.interval.global", IntervalLabel.short(globalDefaultSeconds))) { set(nil) }
+                    Button(L("update.interval.global", label(globalDefaultSeconds))) { set(nil) }
                     Divider()
                 }
                 ForEach(Self.presets, id: \.self) { p in
                     Button(IntervalLabel.short(p)) { set(p) }
                 }
                 if allowsNever {
+                    Button(L("update.interval.atRefresh")) { set(UpdateSchedule.atRefresh) }
                     Button(L("update.interval.never")) { set(0) }
                 }
                 Divider()
@@ -91,8 +92,13 @@ struct UpdateIntervalControl: View {
     }
 
     private var menuLabel: String {
-        if seconds == nil && allowsGlobalDefault { return L("update.interval.global", IntervalLabel.short(globalDefaultSeconds)) }
-        return IntervalLabel.short(seconds ?? globalDefaultSeconds)
+        if seconds == nil && allowsGlobalDefault { return L("update.interval.global", label(globalDefaultSeconds)) }
+        return label(seconds ?? globalDefaultSeconds)
+    }
+
+    /// Label for one interval value, including the « at refresh » sentinel.
+    private func label(_ s: TimeInterval) -> String {
+        s == UpdateSchedule.atRefresh ? L("update.interval.atRefresh") : IntervalLabel.short(s)
     }
 
     private func set(_ s: TimeInterval?) {
