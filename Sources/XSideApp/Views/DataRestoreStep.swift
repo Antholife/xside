@@ -38,14 +38,10 @@ struct DataRestoreStep: View {
                 if listOpen || restoringOther { versions }
             }
             if flow.targetHasApp {
-                Text(L("install.data.overwrite"))
-                    .font(.system(size: 11.5)).foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
+                InlineWarning(L("install.data.overwrite"))
             }
             if let warning = versionWarning {
-                Text(warning)
-                    .font(.system(size: 11.5)).foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
+                InlineWarning(warning)
             }
             HStack(alignment: .top, spacing: 8) {
                 option(selected: flow.dataChoice == .none, title: L("install.data.none"), tag: nil,
@@ -89,9 +85,11 @@ struct DataRestoreStep: View {
         .padding(.leading, 20)
     }
 
-    /// Non-blocking note when the backup being restored comes from another app version than the one installed.
+    /// Non-blocking note when the backup comes from another app version than the one installed. Shown
+    /// for the backup being restored, or — so it's always visible, not only once « Restaurer » is
+    /// picked — for the most recent one that would be restored by default.
     private var versionWarning: String? {
-        guard let id = restoringID, let snap = flow.dataSnapshots.first(where: { $0.id == id }),
+        guard let id = restoringID ?? latest?.id, let snap = flow.dataSnapshots.first(where: { $0.id == id }),
               BackupSnapshot.restoreVersionWarning(snapshot: snap.appVersion, installed: flow.info?.version),
               let from = snap.versionLabel, let to = BackupSnapshot.versionLabel(flow.info?.version) else { return nil }
         return L("install.data.versionWarning", from, to)

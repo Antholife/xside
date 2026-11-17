@@ -247,13 +247,6 @@ struct InstallSheet: View {
                 } else if flow.wasCancelled {
                     CancelledNote()
                 }
-                // Installing an older version over a newer one is allowed, just flagged — once, at
-                // the top, titled « Downgrade », with the rich per-device note (not a thin line, and
-                // not also in the « Avant d'installer » block below: filtered out there). 2026-11-17.
-                let downgrades = model.preflightWarnings(for: flow).filter(\.isOlderVersion)
-                if !downgrades.isEmpty {
-                    PreflightNotes(warnings: downgrades, model: model, flow: flow, titleKey: "downgrade.title")
-                }
                 editingStep
             case .finished:
                 if flow.isMultiDevice {
@@ -303,6 +296,7 @@ struct InstallSheet: View {
         if !flow.reviewsSteps {
             if let content = flow.info?.content { IPAContentCards(content: content) }
             DevicePicker(model: model, flow: flow)
+            downgradeNote
             BlockedNotice(model: model, flow: flow)
             PreflightNotes(warnings: model.preflightWarnings(for: flow).filter { !$0.isOlderVersion }, model: model, flow: flow)
             InstallSummaryView(model: model, flow: flow)
@@ -314,8 +308,10 @@ struct InstallSheet: View {
                 DevicePicker(model: model, flow: flow)
                 PreflightNotes(warnings: model.preflightWarnings(for: flow).filter { !$0.isOlderVersion }, model: model, flow: flow)
             case InstallFlow.optionsStep:
+                // The downgrade note lives on this step only, not repeated on every step.
+                downgradeNote
                 InstallOptionsSection(model: model, flow: flow)
-                // What this step's fields cause (minimum iOS, a new App ID). The downgrade is at the top.
+                // What this step's fields cause (minimum iOS, a new App ID). The downgrade is above.
                 PreflightNotes(warnings: model.preflightWarnings(for: flow).filter { $0.followsInstallOptions && !$0.isOlderVersion },
                                model: model, flow: flow)
             case InstallFlow.compatibilityStep:
@@ -340,6 +336,15 @@ struct InstallSheet: View {
                 BlockedNotice(model: model, flow: flow)
                 PreflightNotes(warnings: model.preflightWarnings(for: flow).filter { !$0.isOlderVersion }, model: model, flow: flow)
             }
+        }
+    }
+
+    /// The downgrade note (installing an older version than what's on a device): shown on the
+    /// Installation step only, and on the summary — not repeated at the top of every step.
+    @ViewBuilder private var downgradeNote: some View {
+        let downgrades = model.preflightWarnings(for: flow).filter(\.isOlderVersion)
+        if !downgrades.isEmpty {
+            PreflightNotes(warnings: downgrades, model: model, flow: flow, titleKey: "downgrade.title")
         }
     }
 
@@ -1083,6 +1088,32 @@ struct ExportLogsLink: View {
         }
         .buttonStyle(.link)
         .font(.system(size: 12))
+    }
+}
+
+/// A short, non-blocking warning as a small orange block (icon + text), the same fill and border as
+/// the « Avant d'installer » notes — for inline cautions that used to be a bare orange sentence.
+struct InlineWarning: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color(nsColor: .systemOrange))
+                .frame(width: 14)
+            Text(text)
+                .font(.system(size: 12))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 9)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(Color(nsColor: .systemOrange).opacity(0.09)))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .strokeBorder(Color(nsColor: .systemOrange).opacity(0.25), lineWidth: 0.5))
     }
 }
 
