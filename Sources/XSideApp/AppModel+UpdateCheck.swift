@@ -271,7 +271,10 @@ extension AppModel {
             let auto = stable && target.source?.mode == .auto
             if auto, let device = deviceForAutoUpdate(target.record) {
                 switch await apply(target, device: device, found: found, stable: stable) {
-                case .installed(let installed): await markInstalled(found, for: target); return .installed(version: installed)
+                case .installed(let installed):
+                    await markInstalled(found, for: target)
+                    notifyUpdated(target, version: installed) // Auto mode: tell the person XSide did it
+                    return .installed(version: installed)
                 case .upToDate: await markInstalled(found, for: target); return .upToDate
                 case .notify(let v, let reason): result = .available(version: v, reason: reason, tag: found.tag, asset: found.asset.name)
                 case .incompatible: break
@@ -332,6 +335,13 @@ extension AppModel {
         guard let installation = target.record.installations.first else { return false }
         let job = RefreshJob(recordID: target.record.id, deviceID: installation.deviceID)
         return await onAppUpdateAvailable?(AppUpdateNotice(appName: target.name, version: version, job: job, id: target.noticeID)) ?? false
+    }
+
+    /// XSide auto-installed an update: a confirmation notification (it replaces the "available" one).
+    private func notifyUpdated(_ target: UpdateTarget, version: String) {
+        guard let installation = target.record.installations.first else { return }
+        let job = RefreshJob(recordID: target.record.id, deviceID: installation.deviceID)
+        onAppUpdated?(AppUpdateNotice(appName: target.name, version: version, job: job, id: target.noticeID))
     }
 
     /// The release was announced to the person (notify-dedup): the next pass won't notify it again.

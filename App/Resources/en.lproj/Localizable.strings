@@ -1488,6 +1488,8 @@
 "notification.appUpdate.title" = "%@: update available";
 "notification.appUpdate.body" = "Version %2$@ of %1$@ is out. Open XSide to update it.";
 "notification.appUpdate.action" = "View update";
+"notification.appUpdated.title" = "%@ updated";
+"notification.appUpdated.body" = "Version %@ installed automatically.";
 
 "update.source.title" = "Update source";
 "update.source.caption" = "XSide can spot new versions and either tell you about them or install them for you.";

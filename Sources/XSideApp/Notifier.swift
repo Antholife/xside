@@ -50,6 +50,8 @@ final class Notifier: NSObject {
     /// jour » tab. Its own category, so it never shows the refresh action.
     private nonisolated static let appUpdateCategory = "appUpdateAvailable"
     private nonisolated static let openUpdateAction = "openAppUpdate"
+    /// XSide installed an app/tweak update by itself (Auto mode): a confirmation, a tap opens the app.
+    private nonisolated static let appUpdatedCategory = "appUpdatedDone"
     static var openPanelHandler: (@MainActor (RefreshJob?) -> Void)?
     /// Causes the user fixes in Xcode itself (its account settings): their notification has
     /// "Open Xcode", and a tap opens Settings.
@@ -100,6 +102,7 @@ final class Notifier: NSObject {
                                    actions: [UNNotificationAction(identifier: Self.openUpdateAction,
                                                                   title: L("notification.appUpdate.action"), options: [.foreground])],
                                    intentIdentifiers: []),
+            UNNotificationCategory(identifier: Self.appUpdatedCategory, actions: [], intentIdentifiers: []),
             UNNotificationCategory(identifier: Self.crashCategory, actions: [], intentIdentifiers: []),
         ])
     }
@@ -210,6 +213,26 @@ final class Notifier: NSObject {
         content.body = L("notification.appUpdate.body", appName, version)
         content.sound = .default
         content.categoryIdentifier = Self.appUpdateCategory
+        content.userInfo = [Self.recordKey: job.recordID.uuidString, Self.deviceKey: job.deviceID]
+        guard let center else {
+            Self.logger.notice("would notify: \(content.title)")
+            return
+        }
+        do {
+            try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+        } catch {
+            Self.logger.error("notification failed: \(String(describing: error))")
+        }
+    }
+
+    /// XSide installed an app/tweak update by itself (Auto mode): a confirmation. Same `id` as the
+    /// "available" notice, so it replaces it. A tap opens the app's « Mises à jour » tab.
+    func appUpdated(appName: String, version: String, job: RefreshJob, id: String) async {
+        let content = UNMutableNotificationContent()
+        content.title = L("notification.appUpdated.title", appName)
+        content.body = L("notification.appUpdated.body", version)
+        content.sound = .default
+        content.categoryIdentifier = Self.appUpdatedCategory
         content.userInfo = [Self.recordKey: job.recordID.uuidString, Self.deviceKey: job.deviceID]
         guard let center else {
             Self.logger.notice("would notify: \(content.title)")
