@@ -47,8 +47,17 @@ public struct UpdateChecker: Sendable {
                 guard let installedTag = source.installedTag, !installedTag.isEmpty else {
                     return .upToDate(trigger: found.trigger)
                 }
-                if found.tag == installedTag { return .upToDate(trigger: found.trigger) }
-                return .available(found, version: Self.displayTag(found.tag), stable: !found.isPrerelease)
+                // A different tag is a new version.
+                if found.tag != installedTag {
+                    return .available(found, version: Self.displayTag(found.tag), stable: !found.isPrerelease)
+                }
+                // Same tag: a rolling tag (`nightly`, `latest`) can still be a fresh build. When the
+                // baseline trigger is known and differs, it is a new build; otherwise up to date (the
+                // caller learns the current trigger as the baseline).
+                if let base = source.installedTrigger, !base.isEmpty, found.trigger != base {
+                    return .available(found, version: Self.displayTag(found.tag), stable: !found.isPrerelease)
+                }
+                return .upToDate(trigger: found.trigger)
             }
         } catch {
             return .failed("release list: \(error)")

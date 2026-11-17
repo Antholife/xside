@@ -220,7 +220,12 @@ extension AppModel {
 
     private func route(_ outcome: UpdateOutcome, for target: UpdateTarget, userInitiated: Bool = false) async -> UpdateCheckResult {
         switch outcome {
-        case .upToDate:
+        case .upToDate(let trigger):
+            // Learn the baseline trigger on the first check (for rolling tags like `nightly`, where
+            // the tag alone never changes): store the current release's trigger as the reference.
+            if let trigger, target.source?.installedTag?.isEmpty == false, target.source?.installedTrigger == nil {
+                await mutateSource(for: target) { $0.installedTrigger = trigger }
+            }
             return .upToDate
         case .needsVariantChoice:
             return .needsVariantChoice
@@ -300,7 +305,7 @@ extension AppModel {
     /// XSide installed this release: it becomes the baseline, so a check is up to date until a newer
     /// release appears. Its trigger is marked announced too (no stale "available" notice).
     private func markInstalled(_ found: FoundRelease, for target: UpdateTarget) async {
-        await mutateSource(for: target) { $0.installedTag = found.tag; $0.lastSeenTrigger = found.trigger }
+        await mutateSource(for: target) { $0.installedTag = found.tag; $0.installedTrigger = found.trigger; $0.lastSeenTrigger = found.trigger }
     }
 
     /// Reads the source again (an update that swapped a tweak changed its id), applies `change`, and

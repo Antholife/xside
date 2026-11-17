@@ -16,9 +16,12 @@ import Foundation
         return (UpdateChecker(fetcher: fetcher, workDir: dir), fetcher, dir)
     }
 
-    func src(installed: String? = nil) -> UpdateSource {
-        UpdateSource(repo: Self.source, variant: Self.plain, mode: .notify, installedTag: installed)
+    func src(installed: String? = nil, trigger: String? = nil) -> UpdateSource {
+        UpdateSource(repo: Self.source, variant: Self.plain, mode: .notify, installedTag: installed, installedTrigger: trigger)
     }
+
+    /// The fixture's newest release trigger (`tag|asset|updatedAt`).
+    static let newestTrigger = "v1.1.8|\(ReleaseFinderTests.ipa)|2026-11-01T10:00:00Z"
 
     // MARK: Tag-based detection
 
@@ -38,6 +41,28 @@ import Foundation
         let r = await c.check(source: src(installed: Self.newestTag), kind: .ipa)
         #expect(r == .upToDate(trigger: "v1.1.8|\(ReleaseFinderTests.ipa)|2026-11-01T10:00:00Z"))
         #expect(f.fetched == [Self.source.api])
+    }
+
+    @Test func check_upToDateWhenSameTagAndSameTrigger() async {
+        let (c, _, _) = Self.make()
+        let r = await c.check(source: src(installed: "v1.1.8", trigger: Self.newestTrigger), kind: .ipa)
+        guard case .upToDate = r else { Issue.record("\(r)"); return }
+    }
+
+    @Test func check_availableWhenSameTagButTriggerDiffers() async {
+        // Rolling tag (e.g. `nightly`): same tag name, but a new build (trigger changed).
+        let (c, _, _) = Self.make()
+        let r = await c.check(source: src(installed: "v1.1.8", trigger: "v1.1.8|old.ipa|2025-01-01T00:00:00Z"), kind: .ipa)
+        guard case .available(let found, _, _) = r else { Issue.record("\(r)"); return }
+        #expect(found.tag == "v1.1.8")
+    }
+
+    @Test func check_upToDateWhenSameTagAndNoTriggerBaselineYet() async {
+        // No trigger baseline learned yet: never a false update; the caller adopts the current one.
+        let (c, _, _) = Self.make()
+        guard case .upToDate = await c.check(source: src(installed: "v1.1.8", trigger: nil), kind: .ipa) else {
+            Issue.record("expected upToDate"); return
+        }
     }
 
     @Test func check_upToDateWhenNoBaseline() async {
