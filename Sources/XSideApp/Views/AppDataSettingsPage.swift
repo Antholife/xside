@@ -17,6 +17,7 @@ struct AppDataSettingsPage: View {
     @State private var orphans: [BackupSnapshot] = []
     @State private var expanded: Set<UUID> = []
     @State private var busy = false
+    @State private var showsFullBackup = false
 
     /// Installed apps, one per record, in the panel's order.
     private var records: [AppRecord] {
@@ -37,6 +38,14 @@ struct AppDataSettingsPage: View {
         Form {
             Section {
                 Text(L("settings.appData.lead")).font(.callout).foregroundStyle(.secondary)
+            }
+            Section {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(L("backup.full.lead")).font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button(L("backup.full.button")) { showsFullBackup = true }
+                        .buttonStyle(GradientButtonStyle())
+                }
             }
             Section(L("settings.appData.defaults")) {
                 Toggle(isOn: $backupNew) { labeled(L("settings.appData.backupNew"), L("settings.appData.backupNew.note")) }
@@ -88,6 +97,9 @@ struct AppDataSettingsPage: View {
         .modifier(ReportsFormHeight())
         .disabled(busy)
         .task(id: reloadID) { await reload() }
+        .sheet(isPresented: $showsFullBackup) {
+            FullBackupSheet(model: model) { showsFullBackup = false }
+        }
     }
 
     // MARK: Rows
