@@ -45,16 +45,17 @@ struct DataRestoreStep: View {
             }
             HStack(alignment: .top, spacing: 8) {
                 option(selected: flow.dataChoice == .none, title: L("install.data.none"), tag: nil,
-                       note: L("install.data.none.note")) {
+                       note: L("install.data.none.note"), fillHeight: true) {
                     flow.dataChoice = .none
                     listOpen = false
                 }
                 option(selected: flow.dataChoice == .delete, title: L("install.data.delete"), tag: nil,
-                       note: L("install.data.delete.note")) {
+                       note: L("install.data.delete.note"), fillHeight: true) {
                     flow.dataChoice = .delete
                     listOpen = false
                 }
             }
+            .fixedSize(horizontal: false, vertical: true)
             Text(L("install.data.note"))
                 .font(.system(size: 11)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -104,7 +105,7 @@ struct DataRestoreStep: View {
     }
 
     private func option(selected: Bool, title: String, tag: String?, note: String?,
-                        action: @escaping () -> Void) -> some View {
+                        fillHeight: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(alignment: .top, spacing: 11) {
                 Image(systemName: selected ? "largecircle.fill.circle" : "circle")
@@ -129,7 +130,7 @@ struct DataRestoreStep: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 13).padding(.vertical, 11)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: fillHeight ? .infinity : nil, alignment: .topLeading)
             .background(selected ? Theme.violet.opacity(0.08) : Theme.cardFill,
                         in: RoundedRectangle(cornerRadius: 11, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
