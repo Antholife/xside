@@ -4,6 +4,10 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added
+
+- **Suivre un dépôt GitHub pour les mises à jour d'une app.** Colle le lien d'un dépôt à l'install (ou depuis l'onglet *Mises à jour* d'une app) : XSide repère la variante à suivre, te demande quelle version tu installes, puis surveille les nouvelles releases en comparant les tags (pas les numéros de version de l'app, qui ne bougent pas toujours). Il te prévient ou installe seul les versions stables, après un contrôle du contenu, à la fréquence que tu choisis (globale, par app, ou à l'install : minutes, heures, jours, mois, ou jamais). Si le fichier que tu installes n'est pas la dernière release, XSide propose de télécharger et d'installer la plus récente à la place. Une option *Conserver les IPA téléchargés* copie chaque IPA téléchargé dans un dossier à toi.
+
 ## [1.2.0-beta] - 2026-11-10
 
 1.1.0 was written but never published as a version of its own: everything it brought is part of 1.2.0, so a user coming from 1.0.6 sees it all here (its What's New shows these items too).

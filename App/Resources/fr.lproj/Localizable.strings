@@ -1468,6 +1468,12 @@
 "update.source.choose" = "Choisir";
 "settings.updateFrequency" = "Vérifier les mises à jour des apps";
 "settings.updateFrequency.note" = "À quelle fréquence XSide cherche de nouvelles versions des apps qui suivent un dépôt GitHub. Réglable par app.";
+"settings.downloads" = "Fichiers téléchargés";
+"settings.downloads.keep" = "Conserver les IPA téléchargés";
+"settings.downloads.keep.note" = "Copie chaque IPA téléchargé (mises à jour, installation de la plus récente) dans un dossier à toi.";
+"settings.downloads.folder" = "Dossier";
+"settings.downloads.choose" = "Choisir…";
+"settings.downloads.none" = "Aucun dossier choisi";
 "update.interval.title" = "Fréquence de vérification";
 "update.interval.never" = "Jamais (manuel)";
 "update.interval.global" = "Réglage global (%@)";
@@ -1486,6 +1492,11 @@
 "update.source.whichTag" = "Quelle version installes-tu ?";
 "update.source.whichTag.note" = "Pour suivre les prochaines releases, XSide a besoin de savoir où tu en es. Le nom du fichier ne le dit pas toujours.";
 "update.source.whichTag.detected" = "Détecté depuis l'IPA";
+"update.newer.title" = "Version plus récente disponible";
+"update.newer.note" = "Tu installes la %@. La plus récente du dépôt est la %@.";
+"update.newer.install" = "Installer la %@ à la place";
+"update.newer.downloading" = "Téléchargement de la %@…";
+"update.newer.failed" = "Le téléchargement a échoué. Réessaie.";
 "update.source.verify" = "Vérifier le lien";
 "update.source.validate" = "Valider";
 "update.source.remove" = "Retirer le lien";

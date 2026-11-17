@@ -246,6 +246,8 @@ private struct SettingsPage: View {
     @AppStorage(AppModel.forgetDeletedAppsKey) private var forgetDeletedApps = true
     @AppStorage(AppModel.reviewInstallOptionsKey) private var reviewInstallOptions = true
     @AppStorage(AppModel.updateCheckIntervalKey) private var updateCheckSeconds = UpdateSchedule.interval
+    @AppStorage(AppModel.keepDownloadsKey) private var keepDownloads = false
+    @AppStorage(AppModel.downloadsFolderKey) private var downloadsFolder = ""
     @AppStorage(BackgroundEngine.refreshDaysBeforeKey) private var refreshDaysBefore = 2
     @AppStorage(BackgroundEngine.pausedUntilKey) private var pausedUntil = 0.0
     @AppStorage(BackgroundEngine.acOnlyKey) private var acOnly = false
@@ -255,6 +257,17 @@ private struct SettingsPage: View {
     @Environment(\.openWindow) private var openWindow
     @State private var login = LaunchAtLogin()
     @State private var notifications = NotificationPermission()
+
+    /// Picks the folder that kept IPAs are copied into.
+    private func chooseDownloadsFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = L("settings.downloads.choose")
+        if !downloadsFolder.isEmpty { panel.directoryURL = URL(fileURLWithPath: downloadsFolder) }
+        if panel.runModal() == .OK, let url = panel.url { downloadsFolder = url.path }
+    }
 
     var body: some View {
         Form {
@@ -384,6 +397,25 @@ private struct SettingsPage: View {
             } label: {
                 Text(L("settings.updateFrequency"))
                 Text(L("settings.updateFrequency.note"))
+            }
+        }
+        Section(L("settings.downloads")) {
+            Toggle(isOn: $keepDownloads) {
+                Text(L("settings.downloads.keep"))
+                Text(L("settings.downloads.keep.note"))
+            }
+            if keepDownloads {
+                LabeledContent {
+                    HStack(spacing: 8) {
+                        Text(downloadsFolder.isEmpty ? L("settings.downloads.none")
+                             : (downloadsFolder as NSString).abbreviatingWithTildeInPath)
+                            .foregroundStyle(downloadsFolder.isEmpty ? Color(nsColor: .systemOrange) : .secondary)
+                            .lineLimit(1).truncationMode(.middle)
+                        Button(L("settings.downloads.choose")) { chooseDownloadsFolder() }
+                    }
+                } label: {
+                    Text(L("settings.downloads.folder"))
+                }
             }
         }
         Section {

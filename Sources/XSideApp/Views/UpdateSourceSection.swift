@@ -173,8 +173,11 @@ struct UpdateSourceSheet: View {
     @State private var mode: UpdateMode = .notify
     @State private var interval: TimeInterval?
     @State private var step = 0 // 0 variant · 1 current version · 2 mode + frequency
+    @State private var downloading: Double?   // progress while fetching the newest, nil when idle
+    @State private var downloadFailed = false
 
     private var ready: Bool { if case .ready = phase { true } else { false } }
+    private var busy: Bool { downloading != nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -219,19 +222,21 @@ struct UpdateSourceSheet: View {
             Spacer()
             if step == 0 {
                 Button(L("install.cancel"), action: dismiss).controlSize(.large).keyboardShortcut(.cancelAction)
+                    .disabled(busy)
             } else {
                 Button(L("install.back")) { withAnimation(.smooth(duration: 0.15)) { step -= 1 } }.controlSize(.large)
+                    .disabled(busy)
             }
             if step < 2 {
                 Button(L("install.next")) { goNext() }
                     .buttonStyle(GradientButtonStyle()).controlSize(.large).frame(minWidth: 120)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(!canAdvance)
+                    .disabled(!canAdvance || busy)
             } else {
                 Button(L("update.source.validate"), action: validate)
                     .buttonStyle(GradientButtonStyle()).controlSize(.large).frame(minWidth: 120)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(installedTag == nil)
+                    .disabled(installedTag == nil || busy)
             }
         }
         .padding(.horizontal, 18).padding(.vertical, 14)
@@ -286,6 +291,64 @@ struct UpdateSourceSheet: View {
             if let installedTag, installedTag == autoDetectedTag {
                 Label(L("update.source.whichTag.detected"), systemImage: "wand.and.stars")
                     .font(.system(size: 11)).foregroundStyle(Theme.violet)
+            }
+            if let newest = newestTag, installedTag != newest { newerOffer(newest) }
+        }
+    }
+
+    /// Newest release available for the chosen variant (the first of `releaseTags`).
+    private var newestTag: String? { releaseTags.first?.tag }
+
+    /// Shown in the version step when the person is not on the newest release: a button that
+    /// downloads the newest and restarts the install on it, with a progress bar while it fetches.
+    private func newerOffer(_ newest: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "bolt.fill").font(.system(size: 13)).foregroundStyle(Theme.brand).padding(.top, 1)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(L("update.newer.title")).font(.system(size: 12.5, weight: .semibold))
+                    Text(L("update.newer.note", UpdateChecker.displayTag(installedTag ?? ""), UpdateChecker.displayTag(newest)))
+                        .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            if let frac = downloading {
+                ProgressView(value: frac).controlSize(.small)
+                Text(L("update.newer.downloading", UpdateChecker.displayTag(newest)))
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+            } else {
+                Button(L("update.newer.install", UpdateChecker.displayTag(newest))) { installNewest(newest) }
+                    .buttonStyle(.bordered).controlSize(.small)
+            }
+            if downloadFailed {
+                Label(L("update.newer.failed"), systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11)).foregroundStyle(Color(nsColor: .systemOrange))
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.brand.opacity(0.06), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(Theme.brand.opacity(0.25), lineWidth: 1))
+    }
+
+    private func installNewest(_ newest: String) {
+        guard case .ready(let names) = phase, let picked,
+              let asset = all.first(where: { $0.tag == newest && $0.asset.name == releaseTags.first?.asset })?.asset else { return }
+        let seed = AppModel.UpdateSourceSeed(
+            url: flow.draft.updateSourceURL,
+            variant: VariantSelector.make(chosen: picked, others: names.filter { $0 != picked }),
+            variantSource: repo, variantName: picked, mode: mode, interval: interval, installedTag: newest)
+        downloadFailed = false
+        downloading = 0
+        Task {
+            do {
+                try await model.installNewestAtInstall(asset: asset, appName: flow.info?.name, seed: seed) { f in
+                    Task { @MainActor in downloading = f }
+                }
+                dismiss()
+            } catch {
+                downloading = nil
+                downloadFailed = true
             }
         }
     }

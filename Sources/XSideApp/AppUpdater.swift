@@ -119,6 +119,7 @@ extension AppModel {
             guard UpdateApply.applied(storedVersion: updated.version, expected: info.version) else {
                 return .failed("update not applied: stored \(updated.version ?? "nil") != \(info.version ?? "nil")")
             }
+            keepDownloadedIPA(from: ipa, appName: info.name, tag: found.tag)
             return .installed(version: version)
         } catch {
             return .failed("install: \(error)")

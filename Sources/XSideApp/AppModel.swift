@@ -2218,15 +2218,47 @@ final class AppModel {
 
     /// A request (Finder, drop, button). While an install runs, or its guide is still unseen, the
     /// request is queued, never dropped; otherwise it replaces a flow that hasn't started.
-    private func request(_ url: URL) {
+    private func request(_ url: URL, seed: UpdateSourceSeed? = nil) {
         if let current = install, current.isBusy {
             if current.ipa != url && !queuedIPAs.contains(url) { queuedIPAs.append(url) }
             return
         }
-        beginFlow(url)
+        beginFlow(url, seed: seed)
     }
 
-    private func beginFlow(_ url: URL) {
+    /// Pre-fills the install window's "Source de mise à jour" when the install is restarted on a
+    /// downloaded newest release (see `installNewestAtInstall`); nothing else carries over.
+    struct UpdateSourceSeed {
+        var url: String
+        var variant: VariantSelector
+        var variantSource: GitHubSource
+        var variantName: String
+        var mode: UpdateMode
+        var interval: TimeInterval?
+        var installedTag: String
+    }
+
+    /// Downloads the newest release's asset (the one the source sheet offered), keeps a copy if asked,
+    /// then restarts the install window on it with the update source already configured.
+    func installNewestAtInstall(asset: ReleaseAsset, appName: String?, seed: UpdateSourceSeed,
+                                progress: @escaping @Sendable (Double) -> Void) async throws {
+        let dir = libraryRoot.appendingPathComponent(AppLibrary.stagingFolder)
+            .appendingPathComponent("download-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        // Asset names come from the release and are untrusted: reduce to a safe component so the
+        // download cannot be written outside `dir`.
+        let file = dir.appendingPathComponent(DownloadKeep.safeName(asset.name))
+        do {
+            try await UpdateApply.downloadAsset(asset, kind: .ipa, to: file, fetcher: repoFetcher, progress: progress)
+        } catch {
+            try? FileManager.default.removeItem(at: dir)
+            throw error
+        }
+        keepDownloadedIPA(from: file, appName: appName, tag: seed.installedTag)
+        request(file, seed: seed)
+    }
+
+    private func beginFlow(_ url: URL, seed: UpdateSourceSeed? = nil) {
         let flow = InstallFlow(ipa: url)
         flow.onDevicesChanged = { [weak self, weak flow] in
             guard let self, let flow, self.install === flow, !flow.isRunning else { return }
@@ -2250,6 +2282,15 @@ final class AppModel {
                 let existing = records.first { $0.originalBundleID == info.bundleID }
                 flow.existing = existing
                 flow.draft = existing.map { OptionsDraft($0.options) } ?? OptionsDraft()
+                if let seed { // install restarted on a downloaded newest release: keep the source choice
+                    flow.draft.updateSourceURL = seed.url
+                    flow.draft.updateVariant = seed.variant
+                    flow.draft.updateVariantSource = seed.variantSource
+                    flow.draft.updateVariantName = seed.variantName
+                    flow.draft.updateMode = seed.mode
+                    flow.draft.updateInterval = seed.interval
+                    flow.draft.updateInstalledTag = seed.installedTag
+                }
                 flow.duoDevices = Set(existing?.installations.filter { $0.duoCompatibility == true }.map(\.deviceID) ?? [])
                 flow.iCloudDevices = Set(existing?.installations.filter { $0.iCloudSignedOut == true }.map(\.deviceID) ?? [])
                 prefillTweaks(flow)
@@ -2803,6 +2844,38 @@ final class AppModel {
     /// The global default update-check cadence, in seconds (default one day; a per-app override on
     /// the source wins). `<= 0` would mean never, but the global default is never set to never here.
     nonisolated static let updateCheckIntervalKey = "updateCheckInterval"
+    /// "Conserver les IPA téléchargés" (off by default) and the folder to copy them into.
+    nonisolated static let keepDownloadsKey = "keepDownloadedIPAs"
+    nonisolated static let downloadsFolderKey = "downloadedIPAsFolder"
+
+    nonisolated static var keepDownloads: Bool { UserDefaults.standard.bool(forKey: keepDownloadsKey) }
+    nonisolated static var downloadsFolder: URL? {
+        guard let p = UserDefaults.standard.string(forKey: downloadsFolderKey), !p.isEmpty else { return nil }
+        return URL(fileURLWithPath: p, isDirectory: true)
+    }
+
+    /// Copies a freshly downloaded `.ipa` into the person's chosen folder, when "Conserver les IPA
+    /// téléchargés" is on. Best-effort: a failure is logged, never raised into the install/update flow.
+    nonisolated func keepDownloadedIPA(from file: URL, appName: String?, tag: String) {
+        guard Self.keepDownloads, let folder = Self.downloadsFolder else { return }
+        let fm = FileManager.default
+        do {
+            try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            let existing = Set((try? fm.contentsOfDirectory(atPath: folder.path)) ?? [])
+            let name = DownloadKeep.disambiguate(
+                DownloadKeep.fileName(appName: appName, tag: tag, assetName: file.lastPathComponent), existing: existing)
+            let dest = folder.appendingPathComponent(name)
+            // Defense in depth: the name is already a safe component, but confirm the copy stays inside
+            // the chosen folder before writing.
+            guard dest.standardizedFileURL.deletingLastPathComponent().path == folder.standardizedFileURL.path else {
+                Log("updates").error("refused to keep ipa outside the chosen folder")
+                return
+            }
+            try fm.copyItem(at: file, to: dest)
+        } catch {
+            Log("updates").error("could not keep downloaded ipa: \(error)")
+        }
+    }
 
     /// Snapshots kept per app and device; at least 1.
     nonisolated static var backupRetention: Int {
