@@ -23,7 +23,10 @@ struct DataRestoreStep: View {
                 .padding(.bottom, 4)
 
             if let latest {
-                option(selected: restoringLatest, title: L("install.data.restore"), tag: L("install.data.recommended"),
+                // When the backup is from another version, « Ne rien restaurer » is the safe choice,
+                // so the « Recommandé » tag moves there instead of onto Restaurer.
+                option(selected: restoringLatest, title: L("install.data.restore"),
+                       tag: versionMismatch ? nil : L("install.data.recommended"),
                        note: describe(latest) + " · " + L("install.data.mostRecent")) {
                     flow.dataChoice = .restore(latest.id)
                     listOpen = false
@@ -44,7 +47,8 @@ struct DataRestoreStep: View {
                 InlineWarning(warning)
             }
             HStack(alignment: .top, spacing: 8) {
-                option(selected: flow.dataChoice == .none, title: L("install.data.none"), tag: nil,
+                option(selected: flow.dataChoice == .none, title: L("install.data.none"),
+                       tag: versionMismatch ? L("install.data.recommended") : nil,
                        note: L("install.data.none.note"), fillHeight: true) {
                     flow.dataChoice = .none
                     listOpen = false
@@ -89,6 +93,9 @@ struct DataRestoreStep: View {
     /// Non-blocking note when the backup comes from another app version than the one installed. Shown
     /// for the backup being restored, or — so it's always visible, not only once « Restaurer » is
     /// picked — for the most recent one that would be restored by default.
+    /// The backup that would be restored is from another app version (a possible compatibility snag).
+    private var versionMismatch: Bool { versionWarning != nil }
+
     private var versionWarning: String? {
         guard let id = restoringID ?? latest?.id, let snap = flow.dataSnapshots.first(where: { $0.id == id }),
               BackupSnapshot.restoreVersionWarning(snapshot: snap.appVersion, installed: flow.info?.version),
