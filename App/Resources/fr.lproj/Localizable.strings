@@ -1487,6 +1487,7 @@
 
 "notification.appUpdate.title" = "%@ : mise à jour disponible";
 "notification.appUpdate.body" = "La version %2$@ de %1$@ est disponible. Ouvre XSide pour la mettre à jour.";
+"notification.appUpdate.action" = "Voir la mise à jour";
 
 "update.source.title" = "Source de mise à jour";
 "update.source.caption" = "XSide peut détecter les nouvelles versions, te les proposer ou les installer directement.";

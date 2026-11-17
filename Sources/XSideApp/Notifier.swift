@@ -46,6 +46,10 @@ final class Notifier: NSObject {
     /// An update notification was tapped: Settings opens on that app's « Mises à jour » tab.
     static var openUpdateHandler: (@MainActor (RefreshJob) -> Void)?
     nonisolated static let updateNoticePrefix = "appUpdate."
+    /// A new release of an app/tweak on its GitHub source: "Voir" (or a tap) opens its « Mises à
+    /// jour » tab. Its own category, so it never shows the refresh action.
+    private nonisolated static let appUpdateCategory = "appUpdateAvailable"
+    private nonisolated static let openUpdateAction = "openAppUpdate"
     static var openPanelHandler: (@MainActor (RefreshJob?) -> Void)?
     /// Causes the user fixes in Xcode itself (its account settings): their notification has
     /// "Open Xcode", and a tap opens Settings.
@@ -92,6 +96,10 @@ final class Notifier: NSObject {
                                                                   title: L("notification.update.install"), options: [.foreground])],
                                    intentIdentifiers: []),
             UNNotificationCategory(identifier: Self.settingsCategory, actions: [], intentIdentifiers: []),
+            UNNotificationCategory(identifier: Self.appUpdateCategory,
+                                   actions: [UNNotificationAction(identifier: Self.openUpdateAction,
+                                                                  title: L("notification.appUpdate.action"), options: [.foreground])],
+                                   intentIdentifiers: []),
             UNNotificationCategory(identifier: Self.crashCategory, actions: [], intentIdentifiers: []),
         ])
     }
@@ -201,7 +209,8 @@ final class Notifier: NSObject {
         content.title = L("notification.appUpdate.title", appName)
         content.body = L("notification.appUpdate.body", appName, version)
         content.sound = .default
-        Self.tag(content, with: job)
+        content.categoryIdentifier = Self.appUpdateCategory
+        content.userInfo = [Self.recordKey: job.recordID.uuidString, Self.deviceKey: job.deviceID]
         guard let center else {
             Self.logger.notice("would notify: \(content.title)")
             return
@@ -461,6 +470,12 @@ extension Notifier: UNUserNotificationCenterDelegate {
             await MainActor.run {
                 NSApp.activate()
                 Self.whatsNewHandler?()
+            }
+        } else if response.actionIdentifier == Self.openUpdateAction, let job = Self.job(of: response.notification) {
+            await MainActor.run {
+                NSApp.activate()
+                Self.openUpdateHandler?(job)
+                Self.openSettings()
             }
         } else if response.actionIdentifier == Self.installUpdateAction
                     || (response.actionIdentifier == UNNotificationDefaultActionIdentifier
