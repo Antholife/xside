@@ -139,7 +139,11 @@ extension AppModel {
             defer { progress(Double(i + 1) / Double(total)) }
             let e = sel.entry
             let action = FullBackup.restoreAction(available: e.availableAspects, chosen: sel.chosen)
+            // The manifest comes from a file the person picked: a crafted sourceDeviceID must not let
+            // the path escape the extracted folder. recordID is a decoded UUID, so already safe.
+            guard Self.isSafePathComponent(e.installation.sourceDeviceID) else { failed.append(e.displayName); continue }
             let appDir = extracted.appendingPathComponent("apps/\(e.recordID.uuidString)-\(e.installation.sourceDeviceID)", isDirectory: true)
+            guard Self.isContained(appDir, in: extracted) else { failed.append(e.displayName); continue }
             let dataZip = appDir.appendingPathComponent("data.zip")
             do {
                 switch action {
@@ -166,8 +170,10 @@ extension AppModel {
                     var held: [String] = []
                     if tweaksOn, !e.tweakPool.isEmpty {
                         let staged = e.tweakPool.compactMap { pkg -> StagedTweak? in
+                            guard Self.isSafePathComponent(pkg.id) else { return nil }
                             let dir = appDir.appendingPathComponent("tweaks/\(pkg.id)", isDirectory: true)
-                            return fm.fileExists(atPath: dir.path) ? StagedTweak(package: pkg, directory: dir) : nil
+                            guard Self.isContained(dir, in: extracted), fm.fileExists(atPath: dir.path) else { return nil }
+                            return StagedTweak(package: pkg, directory: dir)
                         }
                         held = try await library.adoptTweaks(staged, recordID: rec.id)
                         tweakUses = e.installation.tweaks
@@ -202,6 +208,20 @@ extension AppModel {
     func readFullBackupManifest(_ archive: URL) -> FullBackupManifest? {
         guard let data = try? BackupArchive.readFile(archive, named: "manifest.json") else { return nil }
         return try? JSONDecoder().decode(FullBackupManifest.self, from: data)
+    }
+
+    /// A manifest-derived path component is safe only when it is a single separator-free ASCII token
+    /// (no `/`, `\`, `.`/`..`): the archive is untrusted, so it must never escape the extracted folder.
+    static func isSafePathComponent(_ s: String) -> Bool {
+        guard !s.isEmpty, s != ".", s != ".." else { return false }
+        return s.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "." || $0 == "_" || $0 == "-") }
+    }
+
+    /// True when `url` resolves to `root` or something inside it (belt-and-braces zip-slip guard).
+    static func isContained(_ url: URL, in root: URL) -> Bool {
+        let r = root.resolvingSymlinksInPath().standardizedFileURL.path
+        let p = url.resolvingSymlinksInPath().standardizedFileURL.path
+        return p == r || p.hasPrefix(r + "/")
     }
 
     /// Captures the app's data now (a fresh snapshot, caches per the toggle) and exports it to a zip.
