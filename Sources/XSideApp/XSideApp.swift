@@ -229,6 +229,13 @@ struct MenuBarLabel: View {
                     model.settingsPane = .signing
                     openSettings()
                 }
+                // An app-update notification: open Settings on that app's « Mises à jour » tab (not
+                // the signing page the handler above forces).
+                Notifier.openUpdateHandler = { job in
+                    model.openUpdateSection(job)
+                    NSApp.activate()
+                    openSettings()
+                }
                 appDelegate.quitStopsRefreshes = { [model] in model.quitStopsRefreshes }
                 Notifier.whatsNewHandler = { openWindow.presentWhatsNew() }
                 appDelegate.openIPA = { url in

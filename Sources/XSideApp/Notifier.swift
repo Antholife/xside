@@ -472,11 +472,7 @@ extension Notifier: UNUserNotificationCenterDelegate {
                 Self.whatsNewHandler?()
             }
         } else if response.actionIdentifier == Self.openUpdateAction, let job = Self.job(of: response.notification) {
-            await MainActor.run {
-                NSApp.activate()
-                Self.openUpdateHandler?(job)
-                Self.openSettings()
-            }
+            await MainActor.run { Self.openUpdateHandler?(job) }
         } else if response.actionIdentifier == Self.installUpdateAction
                     || (response.actionIdentifier == UNNotificationDefaultActionIdentifier
                         && request.content.categoryIdentifier == Self.updateCategory) {
@@ -493,11 +489,7 @@ extension Notifier: UNUserNotificationCenterDelegate {
             await MainActor.run { Self.refreshHandler?(job) }
         } else if response.actionIdentifier == UNNotificationDefaultActionIdentifier,
                   request.identifier.hasPrefix(Self.updateNoticePrefix), let job = Self.job(of: response.notification) {
-            await MainActor.run {
-                NSApp.activate()
-                Self.openUpdateHandler?(job)
-                Self.openSettings()
-            }
+            await MainActor.run { Self.openUpdateHandler?(job) }
         } else if response.actionIdentifier == Self.openPanelAction
                     || (response.actionIdentifier == UNNotificationDefaultActionIdentifier
                         && request.content.categoryIdentifier == Self.appCategory) {
