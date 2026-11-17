@@ -55,12 +55,17 @@ public struct UpdateSource: Codable, Equatable, Sendable {
     public var mode: UpdateMode
     /// The last release tag acted on or already notified about.
     public var lastSeenTrigger: String?
+    /// The version of the release `lastSeenTrigger` points to, when that release was a newer one
+    /// (so a manual check can report it as available again without re-downloading the file). `nil`
+    /// means the last-seen release was not an update (up to date) or hasn't been read yet.
+    public var lastSeenVersion: String?
 
     public init(repo: GitHubSource, variant: VariantSelector, mode: UpdateMode = .notify,
-                lastSeenTrigger: String? = nil) {
+                lastSeenTrigger: String? = nil, lastSeenVersion: String? = nil) {
         self.repo = repo
         self.variant = variant
         self.mode = mode
         self.lastSeenTrigger = lastSeenTrigger
+        self.lastSeenVersion = lastSeenVersion
     }
 }

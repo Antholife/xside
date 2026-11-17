@@ -120,16 +120,16 @@ extension AppModel {
         var answers: [String: UpdateOutcome] = [:]
         var reports: [UpdateCheckReport] = []
         for target in targets {
-            guard var source = target.source else { continue }
-            // A manual check reports the true state: ignore the notify-dedup trigger (so an update
-            // already announced by the background pass still shows) and don't write it back.
-            if userInitiated { source.lastSeenTrigger = nil }
-            let key = "\(source.repo.id)|\(source.variant)|\(target.kind)|\(target.installedVersion ?? "")|\(source.lastSeenTrigger ?? "")"
+            guard let source = target.source else { continue }
+            // A manual check reports the true state from the cached version (no re-download); the
+            // background pass announces a release once. Neither writes the trigger back on a manual run.
+            let key = "\(source.repo.id)|\(source.variant)|\(target.kind)|\(target.installedVersion ?? "")|\(source.lastSeenTrigger ?? "")|\(userInitiated)"
             let outcome: UpdateOutcome
             if let known = answers[key] {
                 outcome = known
             } else {
-                outcome = await checker.check(source: source, kind: target.kind, installedVersion: target.installedVersion)
+                outcome = await checker.check(source: source, kind: target.kind, installedVersion: target.installedVersion,
+                                              reportCachedAvailable: userInitiated)
                 answers[key] = outcome
             }
             reports.append(UpdateCheckReport(name: target.name, result: await route(outcome, for: target, userInitiated: userInitiated), tweakPackageID: target.tweak?.packageID))
@@ -164,10 +164,10 @@ extension AppModel {
             }
             switch await apply(target, device: device, found: found, stable: stable, userInitiated: true, approved: approved) {
             case .installed(let v):
-                await persistTrigger(found.trigger, for: target)
+                await persistTrigger(found.trigger, version: nil, for: target)
                 return .installed(version: v)
             case .upToDate:
-                await persistTrigger(found.trigger, for: target)
+                await persistTrigger(found.trigger, version: nil, for: target)
                 return .upToDate
             case .notify(let v, let r): return .available(version: v, reason: r, tag: found.tag, asset: found.asset.name)
             case .incompatible: return .failed("incompatible")
@@ -177,11 +177,14 @@ extension AppModel {
     }
 
     private func route(_ outcome: UpdateOutcome, for target: UpdateTarget, userInitiated: Bool = false) async -> UpdateCheckResult {
-        // A manual check is read-only w.r.t. the notify-dedup state: it never writes the trigger back.
-        func persist(_ trigger: String?) async { if !userInitiated { await persistTrigger(trigger, for: target) } }
+        // Any full evaluation caches the release (trigger + version) so the next check — manual or
+        // background — is answered without re-downloading the file.
+        func persist(_ trigger: String?, _ version: String?) async {
+            await persistTrigger(trigger, version: version, for: target)
+        }
         switch outcome {
         case .upToDate(let trigger):
-            await persist(trigger)
+            await persist(trigger, nil)
             return .upToDate
         case .needsVariantChoice:
             return .needsVariantChoice
@@ -195,8 +198,8 @@ extension AppModel {
             let auto = stable && target.source?.mode == .auto
             if auto, let device = deviceForAutoUpdate(target.record) {
                 switch await apply(target, device: device, found: found, stable: stable) {
-                case .installed(let installed): await persist(found.trigger); return .installed(version: installed)
-                case .upToDate: await persist(found.trigger); return .upToDate
+                case .installed(let installed): await persist(found.trigger, nil); return .installed(version: installed)
+                case .upToDate: await persist(found.trigger, nil); return .upToDate
                 case .notify(let v, let reason): result = .available(version: v, reason: reason, tag: found.tag, asset: found.asset.name)
                 case .incompatible: break
                 case .failed(let reason):
@@ -207,9 +210,11 @@ extension AppModel {
             // Auto but no device to install on: announced, and not marked seen, so the install
             // happens once a device is back.
             if auto, deviceForAutoUpdate(target.record) == nil { shouldPersist = false }
+            // Cache the available version so a later manual check reports it without re-downloading.
+            let pendingVersion: String? = { if case .available(let v, _, _, _) = result { v } else { nil } }()
             // The background pass announces; a manual check shows the card itself, no extra notice.
-            if case .available(let v, _, _, _) = result, !userInitiated { notify(target, version: v) }
-            if shouldPersist { await persist(found.trigger) }
+            if let pendingVersion, !userInitiated { notify(target, version: pendingVersion) }
+            if shouldPersist { await persist(found.trigger, pendingVersion) }
             return result
         }
     }
@@ -251,19 +256,23 @@ extension AppModel {
 
     /// Remembers the release acted on (or announced) so the next look doesn't repeat it. The record
     /// is read again: an update that swapped a tweak changed its id.
-    private func persistTrigger(_ trigger: String?, for target: UpdateTarget) async {
+    private func persistTrigger(_ trigger: String?, version: String?, for target: UpdateTarget) async {
         guard let trigger else { return }
         do {
             if let old = target.tweak {
                 guard let record = await library.records().first(where: { $0.id == target.record.id }),
                       let tweak = record.tweaks?.first(where: { $0.packageID == old.packageID && $0.updateSource != nil }),
-                      var source = tweak.updateSource, source.lastSeenTrigger != trigger else { return }
+                      var source = tweak.updateSource,
+                      source.lastSeenTrigger != trigger || source.lastSeenVersion != version else { return }
                 source.lastSeenTrigger = trigger
+                source.lastSeenVersion = version
                 try await library.setUpdateSource(source, forTweak: tweak.id, recordID: record.id)
             } else {
                 guard let record = await library.records().first(where: { $0.id == target.record.id }),
-                      var source = record.updateSource, source.lastSeenTrigger != trigger else { return }
+                      var source = record.updateSource,
+                      source.lastSeenTrigger != trigger || source.lastSeenVersion != version else { return }
                 source.lastSeenTrigger = trigger
+                source.lastSeenVersion = version
                 try await library.setUpdateSource(source, forRecord: record.id)
             }
             await reloadRecords()

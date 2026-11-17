@@ -31,7 +31,11 @@ public struct UpdateChecker: Sendable {
         self.readVersion = readVersion
     }
 
-    public func check(source: UpdateSource, kind: ReleaseKind, installedVersion: String?) async -> UpdateOutcome {
+    /// `reportCachedAvailable` (a user-initiated check): when the newest release is the one already
+    /// seen, report it as available again from `source.lastSeenVersion` instead of re-downloading the
+    /// file. The background pass leaves it false so it announces a release only once.
+    public func check(source: UpdateSource, kind: ReleaseKind, installedVersion: String?,
+                      reportCachedAvailable: Bool = false) async -> UpdateOutcome {
         let fm = FileManager.default
         do { try fm.createDirectory(at: workDir, withIntermediateDirectories: true) } catch {
             return .failed("work directory: \(error.localizedDescription)")
@@ -56,7 +60,15 @@ public struct UpdateChecker: Sendable {
         } catch {
             return .failed("release list: \(error)")
         }
-        if found.trigger == source.lastSeenTrigger { return .upToDate(trigger: found.trigger) }
+        if found.trigger == source.lastSeenTrigger {
+            // Already seen: the background pass is done (announced once); a manual check reports it
+            // from the cached version so it shows the update again without re-downloading the file.
+            if reportCachedAvailable, let cached = source.lastSeenVersion,
+               Self.isNewer(cached, than: installedVersion, kind: kind) {
+                return .available(found, version: cached, stable: !found.isPrerelease)
+            }
+            return .upToDate(trigger: found.trigger)
+        }
 
         // Defence in depth: the finder already drops these.
         guard found.asset.size > 0, found.asset.size <= kind.maxBytes else { return .upToDate(trigger: found.trigger) }

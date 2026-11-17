@@ -81,6 +81,33 @@ import Foundation
         #expect(!f.fetched.contains(Self.found.asset.url))
     }
 
+    @Test func check_cachedAvailable_reportsWithoutDownload() async {
+        let (c, f, _) = Self.make()
+        var s = src(last: Self.found.trigger)
+        s.lastSeenVersion = "1.1.8"
+        let r = await c.check(source: s, kind: .ipa, installedVersion: "1.1.7", reportCachedAvailable: true)
+        #expect(r == .available(Self.found, version: "1.1.8", stable: true))
+        #expect(!f.fetched.contains(Self.found.asset.url)) // reported from cache, no re-download
+    }
+
+    @Test func check_cachedButNotNewer_isUpToDate() async {
+        let (c, f, _) = Self.make()
+        var s = src(last: Self.found.trigger)
+        s.lastSeenVersion = "1.1.8"
+        let r = await c.check(source: s, kind: .ipa, installedVersion: "1.1.8", reportCachedAvailable: true)
+        #expect(r == .upToDate(trigger: Self.found.trigger))
+        #expect(!f.fetched.contains(Self.found.asset.url))
+    }
+
+    @Test func check_backgroundIgnoresCache_upToDateOnTriggerMatch() async {
+        let (c, f, _) = Self.make()
+        var s = src(last: Self.found.trigger)
+        s.lastSeenVersion = "1.1.8"
+        let r = await c.check(source: s, kind: .ipa, installedVersion: "1.1.7") // background: reportCachedAvailable false
+        #expect(r == .upToDate(trigger: Self.found.trigger))
+        #expect(!f.fetched.contains(Self.found.asset.url))
+    }
+
     @Test func check_availableWhenNewerStable() async {
         let (c, f, dir) = Self.make(version: "1.1.8")
         let r = await c.check(source: src(), kind: .ipa, installedVersion: "1.1.7")
