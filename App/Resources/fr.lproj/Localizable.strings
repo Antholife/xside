@@ -681,6 +681,9 @@
 "inApp.language.automatic" = "Automatique";
 "inApp.autoRefresh" = "Rafraîchissement automatique";
 "inApp.autoRefresh.note" = "Activé : XSide rafraîchit l'app avant qu'elle expire. Désactivé : il ne la rafraîchit plus, elle expirera à sa date. Réactivable ici ou depuis l'iPhone.";
+"inApp.updateMode" = "Quand une version sort";
+"inApp.updateMode.notify" = "Me prévenir";
+"inApp.updateMode.auto" = "Installer seul";
 "inApp.preview" = "Aperçu";
 "inApp.preview.validFor" = "Valable encore ";
 "inApp.preview.days5" = "5 jours";

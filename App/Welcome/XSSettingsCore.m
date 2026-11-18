@@ -7,12 +7,13 @@ static NSArray<NSString *> *XSBoolFields(void) {
 }
 
 NSArray<NSString *> *XSSettingFields(void) {
-    return @[@"showValidity", @"alertLate", @"refreshCard", @"reminder", @"language", @"autoRefresh"];
+    return @[@"showValidity", @"alertLate", @"refreshCard", @"reminder", @"language", @"autoRefresh", @"updateMode"];
 }
 
 /// The strings a choice field accepts; nil for a Bool field.
 static NSArray<NSString *> *XSChoices(NSString *field) {
     if ([field isEqualToString:@"language"]) return @[@"automatic", @"fr", @"en"];
+    if ([field isEqualToString:@"updateMode"]) return @[@"notify", @"auto"];
     return nil;
 }
 
@@ -50,6 +51,7 @@ NSDictionary *XSSettingsDefaults(BOOL reminder, NSDate *at) {
         @"reminder": XSField(@"reminder", @(reminder), at, @"mac"),
         @"language": XSField(@"language", @"automatic", at, @"mac"),
         @"autoRefresh": XSField(@"autoRefresh", @YES, at, @"mac"),
+        @"updateMode": XSField(@"updateMode", @"notify", at, @"mac"), // seeded from the app's source on the Mac
     };
 }
 
@@ -220,17 +222,22 @@ static NSString *XSFieldTitle(NSString *field, BOOL fr) {
         @"reminder": @[@"Rappel avant l'expiration", @"Reminder before expiry"],
         @"autoRefresh": @[@"Rafraîchissement automatique", @"Automatic refresh"],
         @"language": @[@"Langue des messages XSide", @"XSide messages language"],
+        @"updateMode": @[@"Quand une version sort", @"When a version is out"],
     };
     NSArray<NSString *> *pair = titles[field];
     return pair ? pair[fr ? 0 : 1] : field;
 }
 
-/// A field's value in words: on/off, or the language's name.
+/// A field's value in words: on/off, or a choice's name.
 static NSString *XSFieldValueText(NSString *field, id value, BOOL fr) {
     if ([field isEqualToString:@"language"]) {
         if ([value isEqual:@"fr"]) return @"Français";
         if ([value isEqual:@"en"]) return @"English";
         return fr ? @"Automatique" : @"Automatic";
+    }
+    if ([field isEqualToString:@"updateMode"]) {
+        if ([value isEqual:@"auto"]) return fr ? @"Installer seul" : @"Install on its own";
+        return fr ? @"Me prévenir" : @"Notify me";
     }
     BOOL on = [value isKindOfClass:NSNumber.class] && [value boolValue];
     return fr ? (on ? @"activé" : @"désactivé") : (on ? @"on" : @"off");
@@ -249,7 +256,7 @@ NSDictionary<NSString *, NSString *> *XSChangeTexts(NSArray<NSString *> *fields,
             if (byMac) {
                 return @{@"lead": [what stringByAppendingString:fr ? @" depuis XSide sur ton Mac" : @" from XSide on your Mac"]};
             }
-        } else if ([f isEqualToString:@"language"]) {
+        } else if (XSChoices(f) != nil) {
             what = fr ? [NSString stringWithFormat:@"« %@ » : %@", title, XSFieldValueText(f, value, fr)]
                       : [NSString stringWithFormat:@"\"%@\": %@", title, XSFieldValueText(f, value, fr)];
             if (byMac) return @{@"lead": [what stringByAppendingString:fr ? @", depuis ton Mac" : @", from your Mac"]};

@@ -43,6 +43,7 @@ static NSDictionary *fixtureSettings(void) {
         @"reminder": field(@NO, 1799999003000, @"mac"),
         @"language": field(@"fr", 1799999004000, @"device"),
         @"autoRefresh": field(@YES, 1799999005007, @"mac"),
+        @"updateMode": field(@"auto", 1799999006000, @"device"),
     };
 }
 

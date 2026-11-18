@@ -681,6 +681,9 @@
 "inApp.language.automatic" = "Automatic";
 "inApp.autoRefresh" = "Automatic refresh";
 "inApp.autoRefresh.note" = "On: XSide refreshes the app before it expires. Off: it no longer does, and the app expires on its date. Can be turned back on here or from the iPhone.";
+"inApp.updateMode" = "When a version is out";
+"inApp.updateMode.notify" = "Notify me";
+"inApp.updateMode.auto" = "Install on its own";
 "inApp.preview" = "Preview";
 "inApp.preview.validFor" = "Valid for ";
 "inApp.preview.days5" = "5 more days";

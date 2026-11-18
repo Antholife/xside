@@ -56,25 +56,62 @@ public struct InAppSettings: Codable, Equatable, Sendable {
     public var reminder: Field<Bool>
     public var language: Field<MessageLanguage>
     public var autoRefresh: Field<Bool>
+    /// What XSide does when a newer release of the app's GitHub source shows up (notify or install
+    /// on its own). Belongs to the app (its source is shared by every device), but rides here so it
+    /// syncs like the other settings; the Mac keeps `UpdateSource.mode` in step (see
+    /// `Library.applyCheckIn` and `setUpdateSource`). Inert for an app with no source.
+    public var updateMode: Field<UpdateMode>
 
     public init(showValidity: Field<Bool>, alertLate: Field<Bool>,
                 refreshCard: Field<Bool>, reminder: Field<Bool>, language: Field<MessageLanguage>,
-                autoRefresh: Field<Bool>) {
+                autoRefresh: Field<Bool>, updateMode: Field<UpdateMode>? = nil) {
         self.showValidity = showValidity
         self.alertLate = alertLate
         self.refreshCard = refreshCard
         self.reminder = reminder
         self.language = language
         self.autoRefresh = autoRefresh
+        // Older state has no updateMode: default it to the autoRefresh field's stamp (a safe past
+        // date), value « notify », so decoding never fails and a seeded value always wins.
+        self.updateMode = updateMode ?? Field(value: .notify, changedAt: autoRefresh.changedAt, changedBy: .mac)
+    }
+
+    // Custom Codable so state and channel JSON from before `updateMode` (older XSide, older dylibs)
+    // still decode: a missing `updateMode` is defaulted, not an error. Extra keys stay ignored.
+    private enum CodingKeys: String, CodingKey {
+        case showValidity, alertLate, refreshCard, reminder, language, autoRefresh, updateMode
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(showValidity: try c.decode(Field<Bool>.self, forKey: .showValidity),
+                  alertLate: try c.decode(Field<Bool>.self, forKey: .alertLate),
+                  refreshCard: try c.decode(Field<Bool>.self, forKey: .refreshCard),
+                  reminder: try c.decode(Field<Bool>.self, forKey: .reminder),
+                  language: try c.decode(Field<MessageLanguage>.self, forKey: .language),
+                  autoRefresh: try c.decode(Field<Bool>.self, forKey: .autoRefresh),
+                  updateMode: try c.decodeIfPresent(Field<UpdateMode>.self, forKey: .updateMode))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(showValidity, forKey: .showValidity)
+        try c.encode(alertLate, forKey: .alertLate)
+        try c.encode(refreshCard, forKey: .refreshCard)
+        try c.encode(reminder, forKey: .reminder)
+        try c.encode(language, forKey: .language)
+        try c.encode(autoRefresh, forKey: .autoRefresh)
+        try c.encode(updateMode, forKey: .updateMode)
     }
 
     /// Mac defaults for a new installation: the reminder is seeded from the global Mac setting,
-    /// everything else on (the validity pill too: Anthony, 2026-11-08).
+    /// everything else on (the validity pill too: Anthony, 2026-11-08). The update mode is seeded
+    /// from the app's own source at signing (`notify` here, for an app with no source).
     public static func defaults(reminder: Bool, at: Date) -> InAppSettings {
         func f<V>(_ v: V) -> Field<V> { Field(value: v, changedAt: at, changedBy: .mac) }
         return InAppSettings(showValidity: f(true), alertLate: f(true),
                              refreshCard: f(true), reminder: f(reminder), language: f(.automatic),
-                             autoRefresh: f(true))
+                             autoRefresh: f(true), updateMode: f(.notify))
     }
 
     /// Field-by-field merge (see `Field.merge`). Symmetric: `merge(a, b) == merge(b, a)`.
@@ -84,7 +121,8 @@ public struct InAppSettings: Codable, Equatable, Sendable {
                       refreshCard: .merge(a.refreshCard, b.refreshCard),
                       reminder: .merge(a.reminder, b.reminder),
                       language: .merge(a.language, b.language),
-                      autoRefresh: .merge(a.autoRefresh, b.autoRefresh))
+                      autoRefresh: .merge(a.autoRefresh, b.autoRefresh),
+                      updateMode: .merge(a.updateMode, b.updateMode))
     }
 
     /// "fr" or "en": the language of the plain texts XSide writes into the app at signing (Settings

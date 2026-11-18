@@ -296,6 +296,34 @@ struct SettingsBundleTests {
         #expect(language["Titles"] as? [String] == ["Automatic", "Français", "English"])
     }
 
+    /// With a GitHub source, a « Mises à jour » sub-page appears between Rafraîchissement and
+    /// Affichage: the tracked repo (read-only) and the mode choice, synced like the other settings.
+    @Test func updatesSubPageAppearsWithASource() throws {
+        let app = try makeApp()
+        let section = SettingsSection.xside(validUntil: "12 nov.", refreshedOn: "5 nov.", version: "1.2", installedOn: "1 nov.",
+                                            inApp: InAppSettings.defaults(reminder: false, at: Date(timeIntervalSince1970: 0)),
+                                            updateRepo: "itzzace/ytkace", language: "fr")
+        try SettingsBundle.add(section, to: app)
+        let panes = try childItems(app).filter { $0["Type"] as? String == "PSChildPaneSpecifier" }.compactMap { $0["File"] as? String }
+        #expect(panes == ["XSide-status", "XSide-refresh", "XSide-updates", "XSide-display"])
+        let updates = try subpage(app, "updates")
+        #expect(updates.first { $0["Key"] as? String == "io.github.xside.settings.updates.repo" }?["DefaultValue"] as? String == "itzzace/ytkace")
+        let mode = try #require(updates.first { $0["Key"] as? String == "io.github.xside.settings.updateMode" })
+        #expect(mode["Type"] as? String == "PSMultiValueSpecifier")
+        #expect(mode["Values"] as? [String] == ["notify", "auto"])
+        #expect(mode["Titles"] as? [String] == ["Me prévenir", "Installer seul"])
+        #expect(mode["DefaultValue"] as? String == "notify")
+    }
+
+    /// No source: no « Mises à jour » row and no plist for it.
+    @Test func noUpdatesSubPageWithoutASource() throws {
+        let app = try makeApp()
+        try SettingsBundle.add(xsideSection(), to: app)
+        #expect(!FileManager.default.fileExists(atPath: app.appendingPathComponent("Settings.bundle/XSide-updates.plist").path))
+        let panes = try childItems(app).filter { $0["Type"] as? String == "PSChildPaneSpecifier" }.compactMap { $0["File"] as? String }
+        #expect(panes == ["XSide-status", "XSide-refresh", "XSide-display"])
+    }
+
     /// The app is localized in French and English: Settings.bundle gets those two folders (and
     /// only those), keyed by the plain English titles.
     @Test func settingsTitlesGetTheirOwnTableOtherwise() throws {

@@ -22,6 +22,45 @@ private func inst(_ device: String, _ days: Double = 7) -> Installation {
 }
 
 struct LibraryTests {
+    private static func source(_ mode: UpdateMode) -> UpdateSource {
+        UpdateSource(repo: GitHubSource(owner: "o", repo: "r"),
+                     variant: VariantSelector(stableTokens: [], excludedTokens: []), mode: mode)
+    }
+
+    /// The update mode rides in the settings but belongs to the app's source: a phone's newer
+    /// change, delivered by a check-in, is mirrored onto the record's source (last change wins).
+    @Test func checkInPropagatesUpdateModeToTheSource() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let lib = AppLibrary(root: tmp.appendingPathComponent("lib"))
+        let rec = try await lib.importIPA(try makeIPA(in: tmp), info: info, teamID: "TEAM123456")
+        var i = inst("dev1")
+        i.inApp = InAppSettings.defaults(reminder: true, at: Date(timeIntervalSince1970: 2_000_000))
+        try await lib.upsert(i, for: rec.id)
+        try await lib.setUpdateSource(Self.source(.notify), forRecord: rec.id)
+        // Dated after the source change (which re-stamps with the real clock), so the phone wins.
+        let phone = i.inApp!.setting(\.updateMode, to: .auto, at: Date().addingTimeInterval(60), by: .device)
+        _ = try await lib.applyCheckIn(phone, checkIn: Date().addingTimeInterval(60), outcome: nil,
+                                       recordID: rec.id, deviceID: "dev1")
+        #expect(await lib.records().first?.updateSource?.mode == .auto)
+        // Persisted.
+        #expect(await AppLibrary(root: tmp.appendingPathComponent("lib")).records().first?.updateSource?.mode == .auto)
+    }
+
+    /// Changing the source's mode on the Mac re-stamps the installations' settings (Mac, now), so a
+    /// phone's stale value can't revert it at the next check-in.
+    @Test func changingTheSourceModeReStampsInstallations() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let lib = AppLibrary(root: tmp.appendingPathComponent("lib"))
+        let rec = try await lib.importIPA(try makeIPA(in: tmp), info: info, teamID: "TEAM123456")
+        var i = inst("dev1")
+        i.inApp = InAppSettings.defaults(reminder: true, at: Date(timeIntervalSince1970: 2_000_000))
+        try await lib.upsert(i, for: rec.id)
+        try await lib.setUpdateSource(Self.source(.auto), forRecord: rec.id)
+        let stored = try #require(await lib.records().first?.installations.first?.inApp)
+        #expect(stored.updateMode.value == .auto)
+        #expect(stored.updateMode.changedBy == .mac)
+    }
+
     @Test func persistsAcrossInstances() async throws {
         let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
         let root = tmp.appendingPathComponent("lib")

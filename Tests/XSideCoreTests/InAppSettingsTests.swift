@@ -26,6 +26,17 @@ struct InAppSettingsTests {
         }
     }
 
+    /// The update mode is a field like the others: newest change per side wins.
+    @Test func updateModeMergesLikeAnyField() {
+        let base = InAppSettings.defaults(reminder: true, at: t0)
+        #expect(base.updateMode.value == .notify)
+        let mac = base.setting(\.updateMode, to: .auto, at: at(1), by: .mac)
+        let dev = base.setting(\.updateMode, to: .notify, at: at(2), by: .device)
+        #expect(InAppSettings.merge(mac, dev).updateMode.value == .notify) // device newer
+        #expect(InAppSettings.merge(mac, base).updateMode.value == .auto)   // mac newer than the default
+        #expect(base.fields(differingFrom: mac) == [.updateMode])
+    }
+
     /// Final review Important 2: the plain texts written at signing (Settings titles, local network
     /// reason) are in the installation's chosen language, else the Mac's.
     @Test func textLanguageIsTheChosenOneElseTheMacs() {

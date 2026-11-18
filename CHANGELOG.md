@@ -6,7 +6,8 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 
 ### Changed
 
-- **La page « Réglages XSide » dans les Réglages iOS passe en master-détail** : un menu avec le statut en tête, puis une sous-page par thème (Rafraîchissement, Affichage dans l'app), chacune accessible d'un tap, pour piloter l'app depuis l'iPhone.
+- **La page « Réglages XSide » dans les Réglages iOS passe en master-détail** : un menu avec le statut en tête, puis une sous-page par thème (Rafraîchissement, Mises à jour, Affichage dans l'app), chacune accessible d'un tap, pour piloter l'app depuis l'iPhone.
+- **Choisir depuis l'iPhone ce que XSide fait quand une version sort.** Pour une app qui suit un dépôt GitHub, la sous-page « Mises à jour » montre le dépôt suivi et laisse basculer entre « Me prévenir » et « Installer seul » ; le choix se synchronise avec le Mac comme les autres réglages (le dernier changement gagne). Le dépôt et la variante restent pilotés depuis le Mac.
 
 ### Added
 

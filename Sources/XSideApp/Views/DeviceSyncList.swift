@@ -121,6 +121,8 @@ private struct DeviceSyncRow: View {
         case .reminder: return L("inApp.field.value", InAppOption.reminder.title, onOff(s.reminder.value))
         case .language: return L("inApp.field.value", L("inApp.language"), s.language.value.label)
         case .autoRefresh: return L("inApp.field.value", L("inApp.autoRefresh"), onOff(s.autoRefresh.value))
+        case .updateMode: return L("inApp.field.value", L("inApp.updateMode"),
+                                   L(s.updateMode.value == .auto ? "inApp.updateMode.auto" : "inApp.updateMode.notify"))
         }
     }
 

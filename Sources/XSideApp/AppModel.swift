@@ -425,7 +425,9 @@ final class AppModel {
             installedOn: (facts?.firstInstalledAt ?? now).formatted(style),
             connection: facts?.lastCheckIn.map { "✓ " + $0.formatted(style) } ?? "—",
             lastRefresh: outcome.map { ($0.succeeded ? "✓ " : "✕ ") + $0.at.formatted(style) } ?? "—",
-            inApp: facts?.inApp ?? inAppDefaults(at: now), language: textLanguage(facts))
+            inApp: facts?.inApp ?? inAppDefaults(at: now),
+            updateRepo: facts?.updateSource.map { "\($0.repo.owner)/\($0.repo.repo)" },
+            language: textLanguage(facts))
     }
 
     /// The language of the plain texts written into the app (see `InAppSettings.textLanguage`).
@@ -1619,6 +1621,7 @@ final class AppModel {
         case .reminder: return d(s.reminder)
         case .language: return d(s.language)
         case .autoRefresh: return d(s.autoRefresh)
+        case .updateMode: return d(s.updateMode)
         }
     }
 

@@ -536,7 +536,8 @@ public actor SideloadPipeline {
             await progress(.welcome)
             Self.logger.info("\(what): adding the welcome popup")
             let facts = signingFacts(recordID: recordID, deviceID: device.id, previous: previous, draft: draft,
-                                     appVersion: record.options.version ?? record.version, at: now())
+                                     appVersion: record.options.version ?? record.version,
+                                     updateSource: record.updateSource, at: now())
             var options = record.options
             // Off for this device only (a crash's fix) wins over the app's choice.
             options.withoutXSideFeatures = previous?.withoutXSideFeaturesHere == true
@@ -726,7 +727,8 @@ public actor SideloadPipeline {
     /// since the result is never paused), its first install date (set once) and this signing's
     /// outcome.
     private nonisolated func signingFacts(recordID: UUID, deviceID: String, previous: Installation?,
-                                          draft: InAppDraft?, appVersion: String?, at date: Date) -> InstallationFacts {
+                                          draft: InAppDraft?, appVersion: String?, updateSource: UpdateSource?,
+                                          at date: Date) -> InstallationFacts {
         var inApp = previous?.inApp ?? inAppDefaults(date)
         var macEdited = false
         if let draft {
@@ -737,6 +739,11 @@ public actor SideloadPipeline {
             macEdited = previous?.inApp != nil && inApp != base
         }
         if !inApp.autoRefresh.value { inApp = inApp.setting(\.autoRefresh, to: true, at: date, by: .mac) }
+        // The update mode belongs to the app's source (shared by every device), so it is always
+        // seeded from it here, stamped by the Mac: a phone's later change wins, the Mac's own
+        // change (which re-stamps the installations, see Library.setUpdateSource) wins over a stale
+        // phone value. An app with no source keeps « notify » (inert).
+        if let mode = updateSource?.mode { inApp = inApp.setting(\.updateMode, to: mode, at: date, by: .mac) }
         var facts = InstallationFacts(
             installationID: ChannelEnvelope.installationID(recordID: recordID, deviceID: deviceID),
             channelSecret: ChannelEnvelope.newSecret(), inApp: inApp,
@@ -744,7 +751,7 @@ public actor SideloadPipeline {
             firstInstalledAt: previous.map { $0.firstInstalledAt ?? $0.installedAt } ?? date,
             appVersion: appVersion,
             lastRefreshOutcome: RefreshOutcome(at: date, succeeded: true),
-            lastCheckIn: previous?.lastCheckIn, signedAt: date)
+            lastCheckIn: previous?.lastCheckIn, signedAt: date, updateSource: updateSource)
         facts.macEdited = macEdited
         return facts
     }

@@ -16,7 +16,7 @@ extension SettingsSection {
     /// Titles are plain text in `language` ("fr" or "en", see `SettingsSection.plainText(in:)`).
     public static func xside(validUntil: String, refreshedOn: String, version: String, installedOn: String,
                              connection: String = "—", lastRefresh: String = "—",
-                             inApp: InAppSettings? = nil, language: String = "en") -> SettingsSection {
+                             inApp: InAppSettings? = nil, updateRepo: String? = nil, language: String = "en") -> SettingsSection {
         let s = inApp ?? InAppSettings.defaults(reminder: true, at: Date())
         let p = SettingsBundle.keyPrefix
         func title(_ name: String) -> String { p + "title." + name }
@@ -49,6 +49,18 @@ extension SettingsSection {
                    .toggle(titleKey: title("autoRefresh"), key: "autoRefresh", defaultValue: s.autoRefresh.value)],
             strings: texts)
 
+        // Mises à jour (only when the app has a GitHub source): the tracked repo (read-only, changed
+        // on the Mac), then « Quand une version sort » (notify / install on its own), synced like the
+        // other settings. The frequency and « Vérifier maintenant » follow later.
+        let updatesPage: Row? = updateRepo.map { repo in
+            .childPane(titleKey: title("menu.updates"), key: "pane.updates", fileSuffix: "updates",
+                       page: SettingsSection(
+                        titleKey: title("menu.updates"), footerKey: p + "footer.updates",
+                        rows: [.value(titleKey: title("updates.repo"), key: "updates.repo", defaultValue: repo),
+                               choice("updateMode", ["notify", "auto"], s.updateMode.value.rawValue)],
+                        strings: texts))
+        }
+
         // Affichage dans l'app: how XSide shows up in the app ("Messages XSide" is derived from the
         // four switches, see InAppSettings.derivedLevel) and the messages' language.
         let displayPage = SettingsSection(
@@ -60,13 +72,15 @@ extension SettingsSection {
                    choice("language", ["automatic", "fr", "en"], s.language.value.rawValue)],
             strings: texts)
 
-        // The menu: « Statut » alone at the top, then the rest, the "installed with XSide" footer below.
+        // The menu: « Statut » alone at the top, then the rest (Rafraîchissement, Mises à jour when
+        // there is a source, Affichage), the "installed with XSide" footer below.
+        var rest: [Row] = [.group(key: "menu.rest", footerKey: p + "footer"),
+                           .childPane(titleKey: title("menu.refresh"), key: "pane.refresh", fileSuffix: "refresh", page: refreshPage)]
+        if let updatesPage { rest.append(updatesPage) }
+        rest.append(.childPane(titleKey: title("menu.display"), key: "pane.display", fileSuffix: "display", page: displayPage))
         let menu = SettingsSection(
             titleKey: title("group"), footerKey: nil,
-            rows: [.childPane(titleKey: title("menu.status"), key: "pane.status", fileSuffix: "status", page: statusPage),
-                   .group(key: "menu.rest", footerKey: p + "footer"),
-                   .childPane(titleKey: title("menu.refresh"), key: "pane.refresh", fileSuffix: "refresh", page: refreshPage),
-                   .childPane(titleKey: title("menu.display"), key: "pane.display", fileSuffix: "display", page: displayPage)],
+            rows: [.childPane(titleKey: title("menu.status"), key: "pane.status", fileSuffix: "status", page: statusPage)] + rest,
             strings: texts)
         return menu.plainText(in: language)
     }
@@ -79,7 +93,10 @@ extension SettingsSection {
         let fr = table([
             ("title.group", "Réglages XSide"),
             ("title.menu.status", "Statut"), ("title.menu.refresh", "Rafraîchissement"),
-            ("title.menu.display", "Affichage dans l'app"),
+            ("title.menu.updates", "Mises à jour"), ("title.menu.display", "Affichage dans l'app"),
+            ("title.updates.repo", "Dépôt suivi"), ("title.updateMode", "Quand une version sort"),
+            ("updateMode.notify", "Me prévenir"), ("updateMode.auto", "Installer seul"),
+            ("footer.updates", "Pour changer le dépôt suivi ou la variante, passe par ton Mac."),
             ("title.validUntil", "Valable jusqu'au"), ("title.refreshedOn", "Rafraîchie le"),
             ("title.version", "Version"), ("title.installedOn", "Installée le"),
             ("title.refreshOnLaunch", "Rafraîchir à la prochaine ouverture"),
@@ -106,7 +123,10 @@ extension SettingsSection {
         let en = table([
             ("title.group", "XSide Settings"),
             ("title.menu.status", "Status"), ("title.menu.refresh", "Refresh"),
-            ("title.menu.display", "In-app display"),
+            ("title.menu.updates", "Updates"), ("title.menu.display", "In-app display"),
+            ("title.updates.repo", "Tracked repo"), ("title.updateMode", "When a version is out"),
+            ("updateMode.notify", "Notify me"), ("updateMode.auto", "Install on its own"),
+            ("footer.updates", "To change the tracked repo or the variant, use your Mac."),
             ("title.validUntil", "Valid until"), ("title.refreshedOn", "Last refreshed"),
             ("title.version", "Version"), ("title.installedOn", "Installed on"),
             ("title.refreshOnLaunch", "Refresh at next launch"),

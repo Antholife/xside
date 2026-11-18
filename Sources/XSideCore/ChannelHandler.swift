@@ -180,7 +180,7 @@ public enum ChannelHandler {
         }
         return InAppSettings(showValidity: c(s.showValidity), alertLate: c(s.alertLate),
                              refreshCard: c(s.refreshCard), reminder: c(s.reminder), language: c(s.language),
-                             autoRefresh: c(s.autoRefresh))
+                             autoRefresh: c(s.autoRefresh), updateMode: c(s.updateMode))
     }
 
     /// The signed reply line for an authenticated request, in the request's `version` (always
@@ -297,9 +297,13 @@ public struct InstallationFacts: Sendable, Equatable {
     /// This signing changes fields the Mac's user touched in the install window (a Mac edit,
     /// dated `signedAt`). Not written into the app.
     public var macEdited = false
+    /// The app's GitHub update source at signing, nil when none: its repo is shown on the phone's
+    /// « Mises à jour » page, and its `mode` seeds `inApp.updateMode` (see `signingFacts`).
+    public var updateSource: UpdateSource?
 
     public init(installationID: String, channelSecret: Data, inApp: InAppSettings, firstInstalledAt: Date,
-                appVersion: String?, lastRefreshOutcome: RefreshOutcome?, lastCheckIn: Date?, signedAt: Date? = nil) {
+                appVersion: String?, lastRefreshOutcome: RefreshOutcome?, lastCheckIn: Date?, signedAt: Date? = nil,
+                updateSource: UpdateSource? = nil) {
         self.installationID = installationID
         self.channelSecret = channelSecret
         self.inApp = inApp
@@ -308,5 +312,6 @@ public struct InstallationFacts: Sendable, Equatable {
         self.lastRefreshOutcome = lastRefreshOutcome
         self.lastCheckIn = lastCheckIn
         self.signedAt = signedAt
+        self.updateSource = updateSource
     }
 }
