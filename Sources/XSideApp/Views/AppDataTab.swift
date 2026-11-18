@@ -274,7 +274,7 @@ struct AppDataTab: View {
         a.addButton(withTitle: L("install.cancel"))
         guard a.runModal() == .alertFirstButtonReturn else { return }
         run(.restore) {
-            let ok = await model.restore(snap.id, entry)
+            let ok = await model.restore(snap, entry)
             if ok { model.showToast(L("toast.restored")) } else { AppDataActions.alert(L("settings.appData.restore.failed")) }
             return ok
         }

@@ -1572,8 +1572,8 @@ final class AppModel {
             // so a request (crafted or replayed) must not reach another device's data of the app.
             if let entry = entry(recordID: job.recordID, deviceID: job.deviceID) {
                 let own = await backupStore.list(signedBundleID: backupBundleID(entry), deviceID: job.deviceID)
-                if own.contains(where: { $0.id == backupID }) {
-                    Task { [weak self] in _ = await self?.restore(backupID, entry) }
+                if let snap = own.first(where: { $0.id == backupID }) {
+                    Task { [weak self] in _ = await self?.restore(snap, entry) }
                 }
             }
             await reply(.accepted)
@@ -3034,7 +3034,9 @@ final class AppModel {
 
     /// Pushes a snapshot into the app. Always an overlay: the backend cannot clear a container.
     @discardableResult
-    func restore(_ snapshotID: String, _ entry: AppEntry) async -> Bool {
+    /// Restores a specific snapshot (the exact one the caller resolved and vetted, never re-looked-up
+    /// by id, so an id shared across devices can't redirect the restore to a sibling's data).
+    func restore(_ snapshot: BackupSnapshot, _ entry: AppEntry) async -> Bool {
         dataBusy.insert(entry.id)
         defer { dataBusy.remove(entry.id) }
         // The live record and installation, as in backUpNow: the entry's copy may be stale.
@@ -3043,7 +3045,7 @@ final class AppModel {
         let target = install.signedBundleID ?? liveRecord?.signedBundleID ?? backupBundleID(entry)
         do {
             let done = try await withKnownXcode {
-                try await backupService.restore(snapshotID: snapshotID, toSignedBundleID: target,
+                try await backupService.restore(snapshot, toSignedBundleID: target,
                                                 deviceID: install.deviceID,
                                                 executable: entry.record.executable ?? "", clear: false)
             }
@@ -3104,7 +3106,7 @@ final class AppModel {
                 deviceName: deviceDisplayName(installation.deviceID), includedCaches: manifest?.includedCaches ?? true,
                 appVersion: manifest?.appVersion, cycleStartedAt: installation.firstInstalledAt ?? installation.installedAt,
                 retention: Self.backupRetention)
-            return await restore(snap.id, entry)
+            return await restore(snap, entry)
         } catch {
             Self.logger.error("backup import failed: \(String(describing: type(of: error)))")
             return false

@@ -247,7 +247,7 @@ struct AppDataSettingsPage: View {
         guard confirm(L("settings.appData.restore.title", name), Self.restoreNote(snap, installedVersion: entry.record.version),
                       L("settings.appData.restore")) else { return }
         run {
-            let ok = await model.restore(snap.id, entry)
+            let ok = await model.restore(snap, entry)
             if ok { model.showToast(L("toast.restored")) } else { alert(L("settings.appData.restore.failed"), nil) }
         }
     }
