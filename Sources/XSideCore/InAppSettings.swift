@@ -69,12 +69,21 @@ public struct InAppSettings: Codable, Equatable, Sendable {
     /// `duoCompatibility` / `iCloudSignedOut` in step (see `Library.applyCheckIn`).
     public var duoCompatibility: Field<Bool>
     public var iCloudSignedOut: Field<Bool>
+    /// Per-app data/backup options (the app's `InstallOptions`), ridden here so the phone can set
+    /// them; the Mac keeps `record.options` in step. `backupData`: snapshot the data after each
+    /// refresh. `backupCaches`: include the Caches/tmp folders. `backupBeforeUpdate`: snapshot just
+    /// before an update installs.
+    public var backupData: Field<Bool>
+    public var backupCaches: Field<Bool>
+    public var backupBeforeUpdate: Field<Bool>
 
     public init(showValidity: Field<Bool>, alertLate: Field<Bool>,
                 refreshCard: Field<Bool>, reminder: Field<Bool>, language: Field<MessageLanguage>,
                 autoRefresh: Field<Bool>, updateMode: Field<UpdateMode>? = nil,
                 updateFrequency: Field<UpdateFrequency>? = nil,
-                duoCompatibility: Field<Bool>? = nil, iCloudSignedOut: Field<Bool>? = nil) {
+                duoCompatibility: Field<Bool>? = nil, iCloudSignedOut: Field<Bool>? = nil,
+                backupData: Field<Bool>? = nil, backupCaches: Field<Bool>? = nil,
+                backupBeforeUpdate: Field<Bool>? = nil) {
         self.showValidity = showValidity
         self.alertLate = alertLate
         self.refreshCard = refreshCard
@@ -88,14 +97,17 @@ public struct InAppSettings: Codable, Equatable, Sendable {
         self.updateFrequency = updateFrequency ?? Field(value: .global, changedAt: past, changedBy: .mac)
         self.duoCompatibility = duoCompatibility ?? Field(value: false, changedAt: past, changedBy: .mac)
         self.iCloudSignedOut = iCloudSignedOut ?? Field(value: false, changedAt: past, changedBy: .mac)
+        self.backupData = backupData ?? Field(value: true, changedAt: past, changedBy: .mac)
+        self.backupCaches = backupCaches ?? Field(value: true, changedAt: past, changedBy: .mac)
+        self.backupBeforeUpdate = backupBeforeUpdate ?? Field(value: true, changedAt: past, changedBy: .mac)
     }
 
     // Custom Codable so state and channel JSON from before these fields (older XSide, older dylibs)
-    // still decode: a missing update / compatibility field is defaulted, not an error. Extra keys
-    // stay ignored.
+    // still decode: a missing field is defaulted, not an error. Extra keys stay ignored.
     private enum CodingKeys: String, CodingKey {
         case showValidity, alertLate, refreshCard, reminder, language, autoRefresh
         case updateMode, updateFrequency, duoCompatibility, iCloudSignedOut
+        case backupData, backupCaches, backupBeforeUpdate
     }
 
     public init(from decoder: Decoder) throws {
@@ -109,7 +121,10 @@ public struct InAppSettings: Codable, Equatable, Sendable {
                   updateMode: try c.decodeIfPresent(Field<UpdateMode>.self, forKey: .updateMode),
                   updateFrequency: try c.decodeIfPresent(Field<UpdateFrequency>.self, forKey: .updateFrequency),
                   duoCompatibility: try c.decodeIfPresent(Field<Bool>.self, forKey: .duoCompatibility),
-                  iCloudSignedOut: try c.decodeIfPresent(Field<Bool>.self, forKey: .iCloudSignedOut))
+                  iCloudSignedOut: try c.decodeIfPresent(Field<Bool>.self, forKey: .iCloudSignedOut),
+                  backupData: try c.decodeIfPresent(Field<Bool>.self, forKey: .backupData),
+                  backupCaches: try c.decodeIfPresent(Field<Bool>.self, forKey: .backupCaches),
+                  backupBeforeUpdate: try c.decodeIfPresent(Field<Bool>.self, forKey: .backupBeforeUpdate))
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -124,6 +139,9 @@ public struct InAppSettings: Codable, Equatable, Sendable {
         try c.encode(updateFrequency, forKey: .updateFrequency)
         try c.encode(duoCompatibility, forKey: .duoCompatibility)
         try c.encode(iCloudSignedOut, forKey: .iCloudSignedOut)
+        try c.encode(backupData, forKey: .backupData)
+        try c.encode(backupCaches, forKey: .backupCaches)
+        try c.encode(backupBeforeUpdate, forKey: .backupBeforeUpdate)
     }
 
     /// Mac defaults for a new installation: the reminder is seeded from the global Mac setting,
@@ -134,7 +152,8 @@ public struct InAppSettings: Codable, Equatable, Sendable {
         return InAppSettings(showValidity: f(true), alertLate: f(true),
                              refreshCard: f(true), reminder: f(reminder), language: f(.automatic),
                              autoRefresh: f(true), updateMode: f(.notify), updateFrequency: f(.global),
-                             duoCompatibility: f(false), iCloudSignedOut: f(false))
+                             duoCompatibility: f(false), iCloudSignedOut: f(false),
+                             backupData: f(true), backupCaches: f(true), backupBeforeUpdate: f(true))
     }
 
     /// Field-by-field merge (see `Field.merge`). Symmetric: `merge(a, b) == merge(b, a)`.
@@ -148,7 +167,10 @@ public struct InAppSettings: Codable, Equatable, Sendable {
                       updateMode: .merge(a.updateMode, b.updateMode),
                       updateFrequency: .merge(a.updateFrequency, b.updateFrequency),
                       duoCompatibility: .merge(a.duoCompatibility, b.duoCompatibility),
-                      iCloudSignedOut: .merge(a.iCloudSignedOut, b.iCloudSignedOut))
+                      iCloudSignedOut: .merge(a.iCloudSignedOut, b.iCloudSignedOut),
+                      backupData: .merge(a.backupData, b.backupData),
+                      backupCaches: .merge(a.backupCaches, b.backupCaches),
+                      backupBeforeUpdate: .merge(a.backupBeforeUpdate, b.backupBeforeUpdate))
     }
 
     /// "fr" or "en": the language of the plain texts XSide writes into the app at signing (Settings

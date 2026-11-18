@@ -4,12 +4,13 @@
 
 static NSArray<NSString *> *XSBoolFields(void) {
     return @[@"showValidity", @"alertLate", @"refreshCard", @"reminder", @"autoRefresh",
-             @"duoCompatibility", @"iCloudSignedOut"];
+             @"duoCompatibility", @"iCloudSignedOut", @"backupData", @"backupCaches", @"backupBeforeUpdate"];
 }
 
 NSArray<NSString *> *XSSettingFields(void) {
     return @[@"showValidity", @"alertLate", @"refreshCard", @"reminder", @"language", @"autoRefresh",
-             @"updateMode", @"updateFrequency", @"duoCompatibility", @"iCloudSignedOut"];
+             @"updateMode", @"updateFrequency", @"duoCompatibility", @"iCloudSignedOut",
+             @"backupData", @"backupCaches", @"backupBeforeUpdate"];
 }
 
 /// The strings a choice field accepts; nil for a Bool field.
@@ -59,6 +60,9 @@ NSDictionary *XSSettingsDefaults(BOOL reminder, NSDate *at) {
         @"updateFrequency": XSField(@"updateFrequency", @"global", at, @"mac"),
         @"duoCompatibility": XSField(@"duoCompatibility", @NO, at, @"mac"),
         @"iCloudSignedOut": XSField(@"iCloudSignedOut", @NO, at, @"mac"),
+        @"backupData": XSField(@"backupData", @YES, at, @"mac"),
+        @"backupCaches": XSField(@"backupCaches", @YES, at, @"mac"),
+        @"backupBeforeUpdate": XSField(@"backupBeforeUpdate", @YES, at, @"mac"),
     };
 }
 
@@ -233,6 +237,9 @@ static NSString *XSFieldTitle(NSString *field, BOOL fr) {
         @"updateFrequency": @[@"Vérifier", @"Check"],
         @"duoCompatibility": @[@"Compatibilité iPhone Duo", @"iPhone Duo compatibility"],
         @"iCloudSignedOut": @[@"Simuler iCloud déconnecté", @"Simulate signed-out iCloud"],
+        @"backupData": @[@"Sauvegarder les données", @"Back up data"],
+        @"backupCaches": @[@"Inclure les caches", @"Include caches"],
+        @"backupBeforeUpdate": @[@"Sauvegarder avant une mise à jour", @"Back up before an update"],
     };
     NSArray<NSString *> *pair = titles[field];
     return pair ? pair[fr ? 0 : 1] : field;

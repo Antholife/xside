@@ -545,6 +545,9 @@ public actor SideloadPipeline {
             let facts = signingFacts(recordID: recordID, deviceID: device.id, previous: previous, draft: draft,
                                      appVersion: record.options.version ?? record.version,
                                      updateSource: record.updateSource, duo: duoAsked, iCloud: iCloudAsked,
+                                     backupData: record.options.backupData != false,
+                                     backupCaches: record.options.backupCaches != false,
+                                     backupBeforeUpdate: record.options.backupBeforeUpdate ?? true,
                                      backups: existingBackups, at: now())
             var options = record.options
             // Off for this device only (a crash's fix) wins over the app's choice.
@@ -733,7 +736,8 @@ public actor SideloadPipeline {
     /// outcome.
     private nonisolated func signingFacts(recordID: UUID, deviceID: String, previous: Installation?,
                                           draft: InAppDraft?, appVersion: String?, updateSource: UpdateSource?,
-                                          duo: Bool, iCloud: Bool, backups: [BackupSnapshot], at date: Date) -> InstallationFacts {
+                                          duo: Bool, iCloud: Bool, backupData: Bool, backupCaches: Bool,
+                                          backupBeforeUpdate: Bool, backups: [BackupSnapshot], at date: Date) -> InstallationFacts {
         var inApp = previous?.inApp ?? inAppDefaults(date)
         var macEdited = false
         if let draft {
@@ -761,6 +765,10 @@ public actor SideloadPipeline {
         // « Compatibilité » page with what this signing applies.
         seed(\.duoCompatibility, duo)
         seed(\.iCloudSignedOut, iCloud)
+        // The per-app data/backup options: seed the phone's « Données » page from the app's options.
+        seed(\.backupData, backupData)
+        seed(\.backupCaches, backupCaches)
+        seed(\.backupBeforeUpdate, backupBeforeUpdate)
         var facts = InstallationFacts(
             installationID: ChannelEnvelope.installationID(recordID: recordID, deviceID: deviceID),
             channelSecret: ChannelEnvelope.newSecret(), inApp: inApp,

@@ -671,6 +671,24 @@ public actor AppLibrary {
         items[index].options = options
         items[index].signedBundleID = custom
             ?? BundleIdentifier.defaultSigned(original: items[index].originalBundleID, teamID: items[index].teamID)
+        // Keep the per-app backup settings in step on each installation (the phone shows and syncs
+        // them), stamped by the Mac now, so a phone's stale value can't revert a change made here.
+        let old = previous[index].options
+        let now = Date()
+        for i in items[index].installations.indices {
+            guard let base = items[index].installations[i].inApp else { continue }
+            var inApp = base
+            if (old.backupData != false) != (options.backupData != false) {
+                inApp = inApp.setting(\.backupData, to: options.backupData != false, at: now, by: .mac)
+            }
+            if (old.backupCaches != false) != (options.backupCaches != false) {
+                inApp = inApp.setting(\.backupCaches, to: options.backupCaches != false, at: now, by: .mac)
+            }
+            if (old.backupBeforeUpdate ?? true) != (options.backupBeforeUpdate ?? true) {
+                inApp = inApp.setting(\.backupBeforeUpdate, to: options.backupBeforeUpdate ?? true, at: now, by: .mac)
+            }
+            if inApp != base { items[index].installations[i].inApp = inApp }
+        }
         do { try save() } catch { items = previous; throw error }
     }
 
@@ -935,6 +953,16 @@ public actor AppLibrary {
             if source.checkInterval != interval { source.checkInterval = interval; changed = true }
             if changed { items[index].updateSource = source }
         }
+        // The per-app data/backup options ride in the settings too but belong to record.options:
+        // mirror the phone's choice (the Mac re-stamps the installations when it changes them).
+        var opts = items[index].options
+        var optsChanged = false
+        if (opts.backupData != false) != merged.backupData.value { opts.backupData = merged.backupData.value; optsChanged = true }
+        if (opts.backupCaches != false) != merged.backupCaches.value { opts.backupCaches = merged.backupCaches.value; optsChanged = true }
+        if (opts.backupBeforeUpdate ?? true) != merged.backupBeforeUpdate.value {
+            opts.backupBeforeUpdate = merged.backupBeforeUpdate.value; optsChanged = true
+        }
+        if optsChanged { items[index].options = opts }
         do { try save() } catch { items = previous; throw error }
         rememberConnection(bundleID: items[index].originalBundleID, deviceID: deviceID, at: checkIn)
         return change

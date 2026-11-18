@@ -341,7 +341,12 @@ struct SettingsBundleTests {
         let data = try subpage(app, "data")
         let p = "io.github.xside.settings."
         #expect(data.first { $0["Key"] as? String == p + "data.count" }?["DefaultValue"] as? String == "2")
-        #expect(data.contains { $0["Key"] as? String == p + "backupNowOnLaunch" && $0["Type"] as? String == "PSToggleSwitchSpecifier" })
+        // The per-app backup options are toggles on the page.
+        for key in ["backupData", "backupCaches", "backupBeforeUpdate", "backupNowOnLaunch"] {
+            #expect(data.contains { $0["Key"] as? String == p + key && $0["Type"] as? String == "PSToggleSwitchSpecifier" })
+        }
+        // Each option has an explanatory footer below it (its own group).
+        #expect(data.contains { ($0["FooterText"] as? String)?.contains("garde une copie") == true })
         let restore = try #require(data.first { $0["Key"] as? String == p + "restoreFrom" })
         #expect(restore["Type"] as? String == "PSMultiValueSpecifier")
         #expect(restore["Values"] as? [String] == ["", "2026-11-17T10:00:00Z", "2026-11-10T09:00:00Z"])

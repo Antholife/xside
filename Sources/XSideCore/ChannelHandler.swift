@@ -196,7 +196,9 @@ public enum ChannelHandler {
                              refreshCard: c(s.refreshCard), reminder: c(s.reminder), language: c(s.language),
                              autoRefresh: c(s.autoRefresh), updateMode: c(s.updateMode),
                              updateFrequency: c(s.updateFrequency),
-                             duoCompatibility: c(s.duoCompatibility), iCloudSignedOut: c(s.iCloudSignedOut))
+                             duoCompatibility: c(s.duoCompatibility), iCloudSignedOut: c(s.iCloudSignedOut),
+                             backupData: c(s.backupData), backupCaches: c(s.backupCaches),
+                             backupBeforeUpdate: c(s.backupBeforeUpdate))
     }
 
     /// The signed reply line for an authenticated request, in the request's `version` (always

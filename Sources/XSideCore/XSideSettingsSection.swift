@@ -28,100 +28,81 @@ extension SettingsSection {
                     values: values, defaultValue: current)
         }
         // Master-detail (spec §2 corrections, maquette validée): a menu with « Statut » at the top,
-        // then « Rafraîchissement » and « Affichage dans l'app », each opening a sub-page of its own.
-        // iOS shows a child-pane row as a plain title and a chevron (no right-side summary).
+        // then a sub-page per theme. iOS shows a child-pane row as a plain title and a chevron.
+        // Every option sits in its own group so iOS shows an explanatory footer under each one
+        // (Anthony: « explique chaque option avec un texte en dessous »).
+        func pane(_ name: String, _ items: [(row: Row, footer: String)]) -> Row {
+            var rows: [Row] = []
+            for (i, item) in items.enumerated() {
+                if i > 0 { rows.append(.group(key: "\(name).g\(i)", footerKey: p + "footer." + item.footer)) }
+                rows.append(item.row)
+            }
+            let page = SettingsSection(titleKey: title("menu." + name),
+                                       footerKey: items.first.map { p + "footer." + $0.footer },
+                                       rows: rows, strings: texts)
+            return .childPane(titleKey: title("menu." + name), key: "pane." + name, fileSuffix: name, page: page)
+        }
+        func toggle(_ name: String, _ key: String, _ on: Bool) -> Row { .toggle(titleKey: title(name), key: key, defaultValue: on) }
+        func value(_ name: String, _ key: String, _ v: String) -> Row { .value(titleKey: title(name), key: key, defaultValue: v) }
 
-        // Statut: the read-only rows the dylib rewrites in the device's locale at launch.
-        let statusPage = SettingsSection(
-            titleKey: title("menu.status"), footerKey: nil,
-            rows: [.value(titleKey: title("validUntil"), key: "validUntil", defaultValue: validUntil),
-                   .value(titleKey: title("refreshedOn"), key: "refreshedOn", defaultValue: refreshedOn),
-                   .value(titleKey: title("version"), key: "version", defaultValue: version),
-                   .value(titleKey: title("installedOn"), key: "installedOn", defaultValue: installedOn),
-                   .value(titleKey: title("connection"), key: "connection", defaultValue: connection),
-                   .value(titleKey: title("lastRefresh"), key: "lastRefresh", defaultValue: lastRefresh)],
-            strings: texts)
+        // Statut: read-only rows the dylib rewrites in the device's locale at launch (one footer).
+        let statusPage: Row = .childPane(titleKey: title("menu.status"), key: "pane.status", fileSuffix: "status",
+            page: SettingsSection(titleKey: title("menu.status"), footerKey: p + "footer.status",
+                rows: [value("validUntil", "validUntil", validUntil), value("refreshedOn", "refreshedOn", refreshedOn),
+                       value("version", "version", version), value("installedOn", "installedOn", installedOn),
+                       value("connection", "connection", connection), value("lastRefresh", "lastRefresh", lastRefresh)],
+                strings: texts))
 
-        // Rafraîchissement: the "refresh at next launch" action (alone, with its footer saying what
-        // it does), then automatic refresh. The action is a switch the app turns back off at its
-        // next launch, asking XSide for a refresh; never synced with the Mac.
-        let refreshPage = SettingsSection(
-            titleKey: title("menu.refresh"), footerKey: p + "footer.refreshOnLaunch",
-            rows: [.toggle(titleKey: title("refreshOnLaunch"), key: "refreshOnLaunch", defaultValue: false),
-                   .group(key: "refresh.auto", footerKey: nil),
-                   .toggle(titleKey: title("autoRefresh"), key: "autoRefresh", defaultValue: s.autoRefresh.value)],
-            strings: texts)
+        // Rafraîchissement: the "refresh at next launch" action, then automatic refresh.
+        let refreshPane = pane("refresh", [
+            (toggle("refreshOnLaunch", "refreshOnLaunch", false), "refreshOnLaunch"),
+            (toggle("autoRefresh", "autoRefresh", s.autoRefresh.value), "autoRefresh")])
 
-        // Mises à jour (only when the app has a GitHub source): the tracked repo (read-only, changed
-        // on the Mac), then « Quand une version sort » (notify / install on its own), synced like the
-        // other settings. The frequency and « Vérifier maintenant » follow later.
-        let updatesPage: Row? = updateRepo.map { repo in
-            // « Vérifier » : an editable choice for the standard presets, a read-only line when the
-            // Mac set a custom interval (changed from the Mac, as the footer says).
+        // Mises à jour (only with a GitHub source): tracked repo, mode, frequency, « Vérifier maintenant ».
+        let updatesPane: Row? = updateRepo.map { repo in
             let frequencyRow: Row = updateFrequency == .custom
-                ? .value(titleKey: title("updateFrequency"), key: "updateFreq.custom",
-                         defaultValue: customFrequencyLabel ?? (p + "updateFrequency.custom"))
+                ? value("updateFrequency", "updateFreq.custom", customFrequencyLabel ?? (p + "updateFrequency.custom"))
                 : choice("updateFrequency", UpdateFrequency.choices.map(\.rawValue), updateFrequency.rawValue)
-            return .childPane(titleKey: title("menu.updates"), key: "pane.updates", fileSuffix: "updates",
-                              page: SettingsSection(
-                                titleKey: title("menu.updates"), footerKey: p + "footer.updates",
-                                rows: [.value(titleKey: title("updates.repo"), key: "updates.repo", defaultValue: repo),
-                                       choice("updateMode", ["notify", "auto"], s.updateMode.value.rawValue),
-                                       frequencyRow,
-                                       // An action (iOS Settings can't run one now): a switch the app
-                                       // turns back off and acts on at its next launch, like refresh-on-launch.
-                                       .group(key: "updates.action", footerKey: p + "footer.checkUpdates"),
-                                       .toggle(titleKey: title("checkUpdates"), key: "checkUpdatesOnLaunch", defaultValue: false)],
-                                strings: texts))
+            return pane("updates", [
+                (value("updates.repo", "updates.repo", repo), "updatesRepo"),
+                (choice("updateMode", ["notify", "auto"], s.updateMode.value.rawValue), "updateMode"),
+                (frequencyRow, "updateFrequency"),
+                (toggle("checkUpdates", "checkUpdatesOnLaunch", false), "checkUpdates")])
         }
 
-        // Compatibilité: the per-device install options (the Duo fix, the signed-out-iCloud shim),
-        // which take effect at the next refresh (re-sign), synced like the other settings.
-        let compatPage = SettingsSection(
-            titleKey: title("menu.compat"), footerKey: p + "footer.compat",
-            rows: [.toggle(titleKey: title("duoCompatibility"), key: "duoCompatibility", defaultValue: s.duoCompatibility.value),
-                   .toggle(titleKey: title("iCloudSignedOut"), key: "iCloudSignedOut", defaultValue: s.iCloudSignedOut.value)],
-            strings: texts)
+        // Compatibilité: the per-device install options, applied at the next refresh.
+        let compatPane = pane("compat", [
+            (toggle("duoCompatibility", "duoCompatibility", s.duoCompatibility.value), "duoCompatibility"),
+            (toggle("iCloudSignedOut", "iCloudSignedOut", s.iCloudSignedOut.value), "iCloudSignedOut")])
 
-        // Données: the data snapshots XSide keeps. « Sauvegarder maintenant » (an action, at the next
-        // launch) and « Restaurer depuis… » (pick a snapshot; DESTRUCTIVE, said in the footer), both
-        // at the app's next launch like the other actions. Export/import stay on the Mac.
-        var dataRows: [Row] = [
-            .value(titleKey: title("data.count"), key: "data.count", defaultValue: "\(dataBackups.count)"),
-            .group(key: "data.backup", footerKey: p + "footer.backupNow"),
-            .toggle(titleKey: title("backupNow"), key: "backupNowOnLaunch", defaultValue: false)]
+        // Données: the backup options, « Sauvegarder maintenant », and « Restaurer depuis… » when there
+        // are snapshots. The count and the restore list are as of the last refresh (static page).
+        var dataItems: [(row: Row, footer: String)] = [
+            (value("data.count", "data.count", "\(dataBackups.count)"), "dataCount"),
+            (toggle("backupData", "backupData", s.backupData.value), "backupData"),
+            (toggle("backupCaches", "backupCaches", s.backupCaches.value), "backupCaches"),
+            (toggle("backupBeforeUpdate", "backupBeforeUpdate", s.backupBeforeUpdate.value), "backupBeforeUpdate"),
+            (toggle("backupNow", "backupNowOnLaunch", false), "backupNow")]
         if !dataBackups.isEmpty {
-            dataRows.append(.group(key: "data.restore", footerKey: p + "footer.restore"))
-            dataRows.append(.choice(titleKey: title("restoreFrom"), key: "restoreFrom",
-                                    titleKeys: [p + "data.none"] + dataBackups.map(\.label),
-                                    values: [""] + dataBackups.map(\.id), defaultValue: ""))
+            dataItems.append((.choice(titleKey: title("restoreFrom"), key: "restoreFrom",
+                                      titleKeys: [p + "data.none"] + dataBackups.map(\.label),
+                                      values: [""] + dataBackups.map(\.id), defaultValue: ""), "restore"))
         }
-        let dataPage = SettingsSection(titleKey: title("menu.data"), footerKey: p + "footer.data",
-                                       rows: dataRows, strings: texts)
+        let dataPane = pane("data", dataItems)
 
-        // Affichage dans l'app: how XSide shows up in the app ("Messages XSide" is derived from the
-        // four switches, see InAppSettings.derivedLevel) and the messages' language.
-        let displayPage = SettingsSection(
-            titleKey: title("menu.display"), footerKey: nil,
-            rows: [.toggle(titleKey: title("showValidity"), key: "showValidity", defaultValue: s.showValidity.value),
-                   .toggle(titleKey: title("alertLate"), key: "alertLate", defaultValue: s.alertLate.value),
-                   .toggle(titleKey: title("refreshCard"), key: "refreshCard", defaultValue: s.refreshCard.value),
-                   .toggle(titleKey: title("reminder"), key: "reminder", defaultValue: s.reminder.value),
-                   choice("language", ["automatic", "fr", "en"], s.language.value.rawValue)],
-            strings: texts)
+        // Affichage dans l'app: how XSide shows up in the app, and the messages' language.
+        let displayPane = pane("display", [
+            (toggle("showValidity", "showValidity", s.showValidity.value), "showValidity"),
+            (toggle("alertLate", "alertLate", s.alertLate.value), "alertLate"),
+            (toggle("refreshCard", "refreshCard", s.refreshCard.value), "refreshCard"),
+            (toggle("reminder", "reminder", s.reminder.value), "reminder"),
+            (choice("language", ["automatic", "fr", "en"], s.language.value.rawValue), "language")])
 
-        // The menu: « Statut » alone at the top, then the rest (Rafraîchissement, Mises à jour when
-        // there is a source, Affichage), the "installed with XSide" footer below.
-        var rest: [Row] = [.group(key: "menu.rest", footerKey: p + "footer"),
-                           .childPane(titleKey: title("menu.refresh"), key: "pane.refresh", fileSuffix: "refresh", page: refreshPage)]
-        if let updatesPage { rest.append(updatesPage) }
-        rest.append(.childPane(titleKey: title("menu.compat"), key: "pane.compat", fileSuffix: "compat", page: compatPage))
-        rest.append(.childPane(titleKey: title("menu.data"), key: "pane.data", fileSuffix: "data", page: dataPage))
-        rest.append(.childPane(titleKey: title("menu.display"), key: "pane.display", fileSuffix: "display", page: displayPage))
-        let menu = SettingsSection(
-            titleKey: title("group"), footerKey: nil,
-            rows: [.childPane(titleKey: title("menu.status"), key: "pane.status", fileSuffix: "status", page: statusPage)] + rest,
-            strings: texts)
+        // The menu: « Statut » alone at the top, then the rest, the "installed with XSide" footer below.
+        var rest: [Row] = [.group(key: "menu.rest", footerKey: p + "footer"), refreshPane]
+        if let updatesPane { rest.append(updatesPane) }
+        rest.append(contentsOf: [compatPane, dataPane, displayPane])
+        let menu = SettingsSection(titleKey: title("group"), footerKey: nil, rows: [statusPage] + rest, strings: texts)
         return menu.plainText(in: language)
     }
 
@@ -136,6 +117,8 @@ extension SettingsSection {
             ("title.menu.updates", "Mises à jour"), ("title.menu.compat", "Compatibilité"),
             ("title.menu.data", "Données"), ("title.menu.display", "Affichage dans l'app"),
             ("title.data.count", "Sauvegardes"), ("data.none", "Aucune"),
+            ("title.backupData", "Sauvegarder les données"), ("title.backupCaches", "Inclure les caches"),
+            ("title.backupBeforeUpdate", "Sauvegarder avant une mise à jour"),
             ("title.backupNow", "Sauvegarder maintenant"),
             ("footer.backupNow", "Crée une sauvegarde des données à la prochaine ouverture de l'app."),
             ("title.restoreFrom", "Restaurer depuis"),
@@ -152,7 +135,22 @@ extension SettingsSection {
             ("updateFrequency.custom", "Personnalisé"),
             ("title.checkUpdates", "Vérifier maintenant"),
             ("footer.checkUpdates", "Lance une recherche de mises à jour à la prochaine ouverture de l'app."),
-            ("footer.updates", "Pour changer le dépôt suivi ou la variante, passe par ton Mac."),
+            ("footer.status", "Rafraîchi par ton Mac. Ces infos sont réécrites dans ta langue à l'ouverture de l'app."),
+            ("footer.autoRefresh", "Activé : XSide rafraîchit l'app avant qu'elle expire. Désactivé : elle expirera à sa date."),
+            ("footer.updatesRepo", "Le dépôt GitHub d'où viennent les mises à jour. Pour en changer, passe par ton Mac."),
+            ("footer.updateMode", "Me prévenir : une notification quand une version sort. Installer seul : XSide l'installe tout seul, après un contrôle du contenu."),
+            ("footer.updateFrequency", "À quelle fréquence XSide regarde si une nouvelle version est sortie."),
+            ("footer.duoCompatibility", "Adapte l'app aux deux écrans de l'iPhone Duo. S'applique au prochain rafraîchissement."),
+            ("footer.iCloudSignedOut", "Fait croire à l'app qu'iCloud est déconnecté. S'applique au prochain rafraîchissement."),
+            ("footer.dataCount", "Sauvegardes gardées sur ton Mac (compte à jour au dernier rafraîchissement de l'app)."),
+            ("footer.backupData", "XSide garde une copie des données sur ton Mac, à chaque rafraîchissement si elles ont changé."),
+            ("footer.backupCaches", "Inclut les dossiers Caches et tmp dans les sauvegardes."),
+            ("footer.backupBeforeUpdate", "Sauvegarde les données juste avant qu'une mise à jour s'installe."),
+            ("footer.showValidity", "Affiche combien de temps l'app reste valable, à son ouverture."),
+            ("footer.alertLate", "Prévient si XSide n'a pas pu rafraîchir l'app à temps."),
+            ("footer.refreshCard", "Affiche une carte dans l'app après un rafraîchissement."),
+            ("footer.reminder", "Un rappel avant que l'app expire."),
+            ("footer.language", "La langue des messages d'XSide dans l'app."),
             ("title.validUntil", "Valable jusqu'au"), ("title.refreshedOn", "Rafraîchie le"),
             ("title.version", "Version"), ("title.installedOn", "Installée le"),
             ("title.refreshOnLaunch", "Rafraîchir à la prochaine ouverture"),
@@ -182,6 +180,8 @@ extension SettingsSection {
             ("title.menu.updates", "Updates"), ("title.menu.compat", "Compatibility"),
             ("title.menu.data", "Data"), ("title.menu.display", "In-app display"),
             ("title.data.count", "Backups"), ("data.none", "None"),
+            ("title.backupData", "Back up data"), ("title.backupCaches", "Include caches"),
+            ("title.backupBeforeUpdate", "Back up before an update"),
             ("title.backupNow", "Back up now"),
             ("footer.backupNow", "Backs up the data the next time you open the app."),
             ("title.restoreFrom", "Restore from"),
@@ -198,7 +198,22 @@ extension SettingsSection {
             ("updateFrequency.custom", "Custom"),
             ("title.checkUpdates", "Check now"),
             ("footer.checkUpdates", "Runs an update check the next time you open the app."),
-            ("footer.updates", "To change the tracked repo or the variant, use your Mac."),
+            ("footer.status", "Refreshed by your Mac. These are rewritten in your language when you open the app."),
+            ("footer.autoRefresh", "On: XSide refreshes the app before it expires. Off: it will expire on its date."),
+            ("footer.updatesRepo", "The GitHub repo updates come from. To change it, use your Mac."),
+            ("footer.updateMode", "Notify me: a notification when a version is out. Install on its own: XSide installs it for you, after a content check."),
+            ("footer.updateFrequency", "How often XSide checks whether a new version is out."),
+            ("footer.duoCompatibility", "Adapts the app to the iPhone Duo's two screens. Applies at the next refresh."),
+            ("footer.iCloudSignedOut", "Makes the app think iCloud is signed out. Applies at the next refresh."),
+            ("footer.dataCount", "Backups kept on your Mac (count as of the app's last refresh)."),
+            ("footer.backupData", "XSide keeps a copy of the data on your Mac, at each refresh if it changed."),
+            ("footer.backupCaches", "Includes the Caches and tmp folders in the backups."),
+            ("footer.backupBeforeUpdate", "Backs up the data just before an update installs."),
+            ("footer.showValidity", "Shows how long the app stays valid, when you open it."),
+            ("footer.alertLate", "Warns if XSide couldn't refresh the app in time."),
+            ("footer.refreshCard", "Shows a card in the app after a refresh."),
+            ("footer.reminder", "A reminder before the app expires."),
+            ("footer.language", "The language of XSide's messages in the app."),
             ("title.validUntil", "Valid until"), ("title.refreshedOn", "Last refreshed"),
             ("title.version", "Version"), ("title.installedOn", "Installed on"),
             ("title.refreshOnLaunch", "Refresh at next launch"),

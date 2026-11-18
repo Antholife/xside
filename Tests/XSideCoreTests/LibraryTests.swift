@@ -107,6 +107,28 @@ struct LibraryTests {
         #expect(stored.iCloudSignedOut.changedBy == .mac)
     }
 
+    /// Backup options ride in the settings and belong to record.options: a phone change is mirrored
+    /// onto the options, and a Mac change (setOptions) re-stamps the installation so it syncs back.
+    @Test func backupOptionsRideBothWays() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let lib = AppLibrary(root: tmp.appendingPathComponent("lib"))
+        let rec = try await lib.importIPA(try makeIPA(in: tmp), info: info, teamID: "TEAM123456")
+        var i = inst("dev1")
+        i.inApp = InAppSettings.defaults(reminder: true, at: Date(timeIntervalSince1970: 2_000_000))
+        try await lib.upsert(i, for: rec.id)
+        // Phone turns « back up data » off.
+        let phone = i.inApp!.setting(\.backupData, to: false, at: Date().addingTimeInterval(60), by: .device)
+        _ = try await lib.applyCheckIn(phone, checkIn: Date().addingTimeInterval(60), outcome: nil, recordID: rec.id, deviceID: "dev1")
+        #expect(await lib.records().first?.options.backupData == false)
+        // Mac turns « back up before update » off: the installation's settings carry it, stamped by the Mac.
+        var opts = try #require(await lib.records().first?.options)
+        opts.backupBeforeUpdate = false
+        try await lib.setOptions(opts, for: rec.id)
+        let stored = try #require(await lib.records().first?.installations.first?.inApp)
+        #expect(stored.backupBeforeUpdate.value == false)
+        #expect(stored.backupBeforeUpdate.changedBy == .mac)
+    }
+
     @Test func persistsAcrossInstances() async throws {
         let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
         let root = tmp.appendingPathComponent("lib")

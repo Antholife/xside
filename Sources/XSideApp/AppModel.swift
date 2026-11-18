@@ -1660,6 +1660,9 @@ final class AppModel {
         case .updateFrequency: return d(s.updateFrequency)
         case .duoCompatibility: return d(s.duoCompatibility)
         case .iCloudSignedOut: return d(s.iCloudSignedOut)
+        case .backupData: return d(s.backupData)
+        case .backupCaches: return d(s.backupCaches)
+        case .backupBeforeUpdate: return d(s.backupBeforeUpdate)
         }
     }
 

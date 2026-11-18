@@ -47,6 +47,9 @@ static NSDictionary *fixtureSettings(void) {
         @"updateFrequency": field(@"daily", 1799999007000, @"device"),
         @"duoCompatibility": field(@YES, 1799999008000, @"device"),
         @"iCloudSignedOut": field(@NO, 1799999009000, @"mac"),
+        @"backupData": field(@YES, 1799999010000, @"mac"),
+        @"backupCaches": field(@NO, 1799999011000, @"device"),
+        @"backupBeforeUpdate": field(@YES, 1799999012000, @"mac"),
     };
 }
 

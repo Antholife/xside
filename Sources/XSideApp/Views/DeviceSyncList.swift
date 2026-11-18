@@ -126,6 +126,9 @@ private struct DeviceSyncRow: View {
         case .updateFrequency: return L("inApp.field.value", L("inApp.updateFrequency"), frequencyLabel(s.updateFrequency.value))
         case .duoCompatibility: return L("inApp.field.value", L("inApp.duoCompatibility"), onOff(s.duoCompatibility.value))
         case .iCloudSignedOut: return L("inApp.field.value", L("inApp.iCloudSignedOut"), onOff(s.iCloudSignedOut.value))
+        case .backupData: return L("inApp.field.value", L("fiche.data.backup"), onOff(s.backupData.value))
+        case .backupCaches: return L("inApp.field.value", L("fiche.data.caches"), onOff(s.backupCaches.value))
+        case .backupBeforeUpdate: return L("inApp.field.value", L("settings.appData.beforeUpdate"), onOff(s.backupBeforeUpdate.value))
         }
     }
 

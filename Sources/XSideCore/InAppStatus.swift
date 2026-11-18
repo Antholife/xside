@@ -129,6 +129,9 @@ extension SettingsDelivery {
             case .updateFrequency: pending(s.updateFrequency)
             case .duoCompatibility: pending(s.duoCompatibility)
             case .iCloudSignedOut: pending(s.iCloudSignedOut)
+            case .backupData: pending(s.backupData)
+            case .backupCaches: pending(s.backupCaches)
+            case .backupBeforeUpdate: pending(s.backupBeforeUpdate)
             }
         }
     }
@@ -143,6 +146,7 @@ private extension Field {
 public enum InAppField: String, CaseIterable, Sendable {
     case showValidity, alertLate, refreshCard, reminder, language, autoRefresh, updateMode, updateFrequency
     case duoCompatibility, iCloudSignedOut
+    case backupData, backupCaches, backupBeforeUpdate
 }
 
 /// The install window's step ③: the values shown and the fields the user changed there.
@@ -179,6 +183,9 @@ extension InAppSettings {
         adopt(.updateFrequency, \.updateFrequency)
         adopt(.duoCompatibility, \.duoCompatibility)
         adopt(.iCloudSignedOut, \.iCloudSignedOut)
+        adopt(.backupData, \.backupData)
+        adopt(.backupCaches, \.backupCaches)
+        adopt(.backupBeforeUpdate, \.backupBeforeUpdate)
         return copy
     }
 
@@ -195,6 +202,9 @@ extension InAppSettings {
         if updateFrequency.value != other.updateFrequency.value { result.insert(.updateFrequency) }
         if duoCompatibility.value != other.duoCompatibility.value { result.insert(.duoCompatibility) }
         if iCloudSignedOut.value != other.iCloudSignedOut.value { result.insert(.iCloudSignedOut) }
+        if backupData.value != other.backupData.value { result.insert(.backupData) }
+        if backupCaches.value != other.backupCaches.value { result.insert(.backupCaches) }
+        if backupBeforeUpdate.value != other.backupBeforeUpdate.value { result.insert(.backupBeforeUpdate) }
         return result
     }
 
