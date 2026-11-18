@@ -1568,9 +1568,13 @@ final class AppModel {
             await reply(.accepted)
         case let .restoreRequested(backupID):
             Self.channelLogger.notice("channel: restore \(backupID) asked for \(found.recordID) from \(job.deviceID)")
-            if let entry = entry(recordID: job.recordID, deviceID: job.deviceID),
-               await backups(forRecord: job.recordID).contains(where: { $0.id == backupID }) {
-                Task { [weak self] in _ = await self?.restore(backupID, entry) }
+            // Scope to THIS installation's own snapshots: the channel authenticates one installation,
+            // so a request (crafted or replayed) must not reach another device's data of the app.
+            if let entry = entry(recordID: job.recordID, deviceID: job.deviceID) {
+                let own = await backupStore.list(signedBundleID: backupBundleID(entry), deviceID: job.deviceID)
+                if own.contains(where: { $0.id == backupID }) {
+                    Task { [weak self] in _ = await self?.restore(backupID, entry) }
+                }
             }
             await reply(.accepted)
         }
