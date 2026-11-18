@@ -75,6 +75,10 @@ NSDictionary *XSRefreshBody(void) { return @{@"type": @"refresh"}; }
 
 NSDictionary *XSCheckUpdatesBody(void) { return @{@"type": @"checkUpdates"}; }
 
+NSDictionary *XSBackupNowBody(void) { return @{@"type": @"backupNow"}; }
+
+NSDictionary *XSRestoreBody(NSString *backupID) { return @{@"type": @"restore", @"backupID": backupID ?: @""}; }
+
 NSDictionary *XSSetAutoRefreshBody(BOOL on) { return @{@"type": @"setAutoRefresh", @"on": on ? @YES : @NO}; }
 
 NSDictionary *XSCheckInBody(NSDictionary *settings, NSDictionary *lastRefresh, NSString *appVersion,

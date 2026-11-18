@@ -325,6 +325,26 @@ BOOL XSTakeCheckUpdatesOnLaunch(void) {
     return wants;
 }
 
+static NSString *XSBackupNowKey(void) { return [XSRowPrefix stringByAppendingString:@"backupNowOnLaunch"]; }
+
+BOOL XSTakeBackupOnLaunch(void) {
+    id on = [XSDefaults() objectForKey:XSBackupNowKey()];
+    BOOL wants = [on isKindOfClass:NSNumber.class] && [on boolValue];
+    if (wants) [XSDefaults() setObject:@NO forKey:XSBackupNowKey()];
+    return wants;
+}
+
+static NSString *XSRestoreFromKey(void) { return [XSRowPrefix stringByAppendingString:@"restoreFrom"]; }
+
+NSString *XSTakeRestoreFrom(void) {
+    // A snapshot id the person picked in « Restaurer depuis… »: consumed at once (set back to none),
+    // so a restore runs once, not at every launch. Empty / not a string: nothing to restore.
+    id value = [XSDefaults() objectForKey:XSRestoreFromKey()];
+    if (![value isKindOfClass:NSString.class] || [value length] == 0) return nil;
+    [XSDefaults() setObject:@"" forKey:XSRestoreFromKey()];
+    return value;
+}
+
 BOOL XSChannelGranted(void) { return [XSDefaults() boolForKey:XSChannelGrantedKey]; }
 void XSSetChannelGranted(void) { [XSDefaults() setBool:YES forKey:XSChannelGrantedKey]; }
 BOOL XSNetworkExplained(void) { return [XSDefaults() boolForKey:XSNetworkExplainedKey]; }

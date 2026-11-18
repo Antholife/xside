@@ -159,6 +159,12 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
     /// "Check for updates now" from the phone (the app's GitHub source). Answered `accepted` at
     /// once; the outcome reaches the person through XSide's usual update notification, not a reply.
     case checkUpdates
+    /// "Back up this app's data now" from the phone. Answered `accepted`; the Mac pulls a snapshot.
+    case backupNow
+    /// "Restore this app's data from backup `<id>`" from the phone (DESTRUCTIVE: the current data is
+    /// replaced). Answered `accepted`; the Mac restores the snapshot whose id matches, for this
+    /// installation only. An unknown id restores nothing.
+    case restore(backupID: String)
     /// Pause (`false`) or resume (`true`) automatic refresh for this installation.
     case setAutoRefresh(Bool)
     /// A check-in that keeps the connection open while the app is in front: the Mac's changes are
@@ -171,7 +177,7 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
     case bye
 
     private enum CodingKeys: String, CodingKey {
-        case type, settings, lastRefresh, appVersion, pollEvery, on, saysBye, previousRunEnded, previousRunSince
+        case type, settings, lastRefresh, appVersion, pollEvery, on, saysBye, previousRunEnded, previousRunSince, backupID
     }
 
     public init(from decoder: Decoder) throws {
@@ -192,6 +198,8 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
         case "bye": self = .bye
         case "refresh": self = .refresh
         case "checkUpdates": self = .checkUpdates
+        case "backupNow": self = .backupNow
+        case "restore": self = .restore(backupID: try c.decode(String.self, forKey: .backupID))
         case "setAutoRefresh": self = .setAutoRefresh(try c.decode(Bool.self, forKey: .on))
         case let other:
             throw DecodingError.dataCorruptedError(forKey: .type, in: c, debugDescription: "unknown request \(other)")
@@ -218,6 +226,10 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
         case .bye: try c.encode("bye", forKey: .type)
         case .refresh: try c.encode("refresh", forKey: .type)
         case .checkUpdates: try c.encode("checkUpdates", forKey: .type)
+        case .backupNow: try c.encode("backupNow", forKey: .type)
+        case let .restore(backupID):
+            try c.encode("restore", forKey: .type)
+            try c.encode(backupID, forKey: .backupID)
         case let .setAutoRefresh(on):
             try c.encode("setAutoRefresh", forKey: .type)
             try c.encode(on, forKey: .on)
@@ -228,7 +240,7 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
     public var checkInReport: (settings: InAppSettings, lastRefresh: RefreshOutcome?)? {
         switch self {
         case let .checkIn(settings, lastRefresh, _, _, _), let .watch(settings, lastRefresh, _, _, _): (settings, lastRefresh)
-        case .refresh, .checkUpdates, .setAutoRefresh, .bye: nil
+        case .refresh, .checkUpdates, .backupNow, .restore, .setAutoRefresh, .bye: nil
         }
     }
 
@@ -236,7 +248,7 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
     public var previousRun: PreviousRun? {
         switch self {
         case let .checkIn(_, _, _, _, run), let .watch(_, _, _, _, run): run
-        case .refresh, .checkUpdates, .setAutoRefresh, .bye: nil
+        case .refresh, .checkUpdates, .backupNow, .restore, .setAutoRefresh, .bye: nil
         }
     }
 

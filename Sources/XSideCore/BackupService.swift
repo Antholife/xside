@@ -17,6 +17,13 @@ public protocol DataBackingUp: Sendable {
                  executable: String, clear: Bool) async throws -> RestoreClear?
     /// Forgets every snapshot of this app on this device.
     func deleteBackups(signedBundleID: String, deviceID: String) async
+    /// The snapshots XSide keeps for this app on this device, newest first (for the phone's
+    /// « Données » page, written at signing). Empty by default.
+    func list(signedBundleID: String, deviceID: String) async -> [BackupSnapshot]
+}
+
+public extension DataBackingUp {
+    func list(signedBundleID: String, deviceID: String) async -> [BackupSnapshot] { [] }
 }
 
 /// Turns the backup's progress counters into a 0...1 fraction.
@@ -42,6 +49,10 @@ public struct BackupService: DataBackingUp {
     public init(store: AppDataBackup, container: AppDataContainer) {
         self.store = store
         self.container = container
+    }
+
+    public func list(signedBundleID: String, deviceID: String) async -> [BackupSnapshot] {
+        await store.list(signedBundleID: signedBundleID, deviceID: deviceID).sorted { $0.createdAt > $1.createdAt }
     }
 
     /// Removes `xside-backup-*` folders a backup left behind when the app was killed mid-way. Only

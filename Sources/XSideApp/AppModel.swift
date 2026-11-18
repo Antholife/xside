@@ -431,6 +431,9 @@ final class AppModel {
             customFrequencyLabel: facts?.updateSource.flatMap {
                 UpdateFrequency.from($0.checkInterval) == .custom ? $0.checkInterval.map(IntervalLabel.short) : nil
             },
+            dataBackups: (facts?.backups ?? []).map { snap in
+                (id: snap.id, label: snap.createdAt.formatted(style) + (snap.appVersion.map { " (v\($0))" } ?? ""))
+            },
             language: textLanguage(facts))
     }
 
@@ -1557,7 +1560,27 @@ final class AppModel {
             Self.channelLogger.notice("channel: check-updates asked for \(found.recordID) from \(job.deviceID)")
             checkUpdatesForRecord(recordID: job.recordID)
             await reply(.accepted)
+        case .backupRequested:
+            Self.channelLogger.notice("channel: backup asked for \(found.recordID) from \(job.deviceID)")
+            if let entry = entry(recordID: job.recordID, deviceID: job.deviceID) {
+                Task { [weak self] in _ = await self?.backUpNow(entry) }
+            }
+            await reply(.accepted)
+        case let .restoreRequested(backupID):
+            Self.channelLogger.notice("channel: restore \(backupID) asked for \(found.recordID) from \(job.deviceID)")
+            if let entry = entry(recordID: job.recordID, deviceID: job.deviceID),
+               await backups(forRecord: job.recordID).contains(where: { $0.id == backupID }) {
+                Task { [weak self] in _ = await self?.restore(backupID, entry) }
+            }
+            await reply(.accepted)
         }
+    }
+
+    /// The app entry (record × device) for a channel job, nil when it isn't an installation we know.
+    private func entry(recordID: UUID, deviceID: String) -> AppEntry? {
+        guard let record = records.first(where: { $0.id == recordID }),
+              let installation = record.installations.first(where: { $0.deviceID == deviceID }) else { return nil }
+        return AppEntry(record: record, installation: installation)
     }
 
     private struct Refusal: Error { let reply: ChannelReply }
@@ -1643,6 +1666,8 @@ final class AppModel {
         case .bye: "bye"
         case .refresh: "refresh"
         case .checkUpdates: "check-updates"
+        case .backupNow: "backup-now"
+        case .restore(let id): "restore \(id)"
         case .setAutoRefresh(let on): "automatic refresh \(on ? "on" : "off")"
         }
     }

@@ -1081,3 +1081,39 @@ static void XSRequestCheckUpdatesNow(void) {
                             XSPillToneNeutral, 6));
     }) start];
 }
+
+// « Sauvegarder maintenant » / « Restaurer » : light actions, like check-updates. The Mac does the
+// work (it pulls or pushes the data over its own tools); the pill just says the request was taken.
+static void XSRequestDataActionNow(NSDictionary *body, NSString *askFR, NSString *askEN, NSString *okFR, NSString *okEN) {
+    XSPillContent *asking = XSPill(XSFrench() ? askFR : askEN, nil, XSPillToneNeutral, 0);
+    asking.busy = YES;
+    XSShowAnswer(asking);
+    [XSPatientExchange(body, NO, ^(XSChannelResult result, NSDictionary *reply, BOOL final) {
+        BOOL f = XSFrench();
+        if (result == XSChannelWaiting) { XSShowWaitingPill(YES); return; }
+        if (result != XSChannelReplied) { XSShowAnswer(XSUnansweredPill(result)); return; }
+        if ([reply[@"type"] isEqual:@"busy"]) {
+            XSShowAnswer(XSPill(f ? @"XSide est occupé" : @"XSide is busy",
+                                f ? @"Réessaie dans un instant." : @"Try again in a moment.", XSPillToneNeutral, 6));
+            return;
+        }
+        XSShowAnswer(XSPill(f ? okFR : okEN, nil, XSPillToneNeutral, 6));
+    }) start];
+}
+
+void XSRequestBackup(void) {
+    if (!XSInstallationID() || !XSChannelSecret()) return;
+    XSAfterSheet(^{ XSExplainNetworkThen(^{
+        XSRequestDataActionNow(XSBackupNowBody(), @"Sauvegarde des données…", @"Backing up the data…",
+                               @"Sauvegarde demandée à ton Mac", @"Backup asked of your Mac");
+    }); });
+}
+
+void XSRequestRestore(NSString *backupID) {
+    if (!XSInstallationID() || !XSChannelSecret() || backupID.length == 0) return;
+    NSDictionary *body = XSRestoreBody(backupID);
+    XSAfterSheet(^{ XSExplainNetworkThen(^{
+        XSRequestDataActionNow(body, @"Restauration des données…", @"Restoring the data…",
+                               @"Restauration demandée à ton Mac", @"Restore asked of your Mac");
+    }); });
+}

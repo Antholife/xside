@@ -30,6 +30,19 @@ import Foundation
         #expect(try ChannelEnvelope.decode(line: env.encodedLine()).open(secret: secret, now: now, seen: &seen) == .checkUpdates)
     }
 
+    @Test func backupAndRestoreAreAcceptedAndRoundTrip() throws {
+        let (r1, u1) = ChannelHandler.handle(.backupNow, installation: installation(), now: now, reminder: true)
+        #expect(r1 == .accepted && u1 == .backupRequested)
+        let (r2, u2) = ChannelHandler.handle(.restore(backupID: "snap-1"), installation: installation(), now: now, reminder: true)
+        #expect(r2 == .accepted && u2 == .restoreRequested(backupID: "snap-1"))
+        // The restore id survives the signed frame (base64 body + MAC) intact.
+        let env = try ChannelEnvelope.seal(.restore(backupID: "2026-11-17T10:00:00Z"), installationID: "rec|dev",
+                                           secret: secret, now: now, nonce: "n2")
+        var seen = NonceCache()
+        #expect(try ChannelEnvelope.decode(line: env.encodedLine()).open(secret: secret, now: now, seen: &seen)
+                == .restore(backupID: "2026-11-17T10:00:00Z"))
+    }
+
     @Test func checkInMergesAndReturnsTheMergedSettings() {
         let mac = InAppSettings.defaults(reminder: true, at: now.addingTimeInterval(-3600))
             .setting(\.refreshCard, to: false, at: now.addingTimeInterval(-60), by: .mac)

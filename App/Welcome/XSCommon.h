@@ -140,6 +140,11 @@ void XSWriteStatusRows(NSDate *_Nullable expiry);
 BOOL XSWantsRefreshOnLaunch(void);
 /// The "Vérifier maintenant" switch was on: consumes it (turns it back off) and returns YES.
 BOOL XSTakeCheckUpdatesOnLaunch(void);
+/// The "Sauvegarder maintenant" switch was on: consumes it and returns YES.
+BOOL XSTakeBackupOnLaunch(void);
+/// A snapshot id picked in "Restaurer depuis…": consumes it (sets it back to none) and returns it,
+/// nil when none was chosen.
+NSString *_Nullable XSTakeRestoreFrom(void);
 /// The person allowed the local network once (after tapping Refresh): checking in at launch is fine.
 BOOL XSChannelGranted(void);
 void XSSetChannelGranted(void);

@@ -18,6 +18,7 @@ extension SettingsSection {
                              connection: String = "—", lastRefresh: String = "—",
                              inApp: InAppSettings? = nil, updateRepo: String? = nil,
                              updateFrequency: UpdateFrequency = .global, customFrequencyLabel: String? = nil,
+                             dataBackups: [(id: String, label: String)] = [],
                              language: String = "en") -> SettingsSection {
         let s = inApp ?? InAppSettings.defaults(reminder: true, at: Date())
         let p = SettingsBundle.keyPrefix
@@ -82,6 +83,22 @@ extension SettingsSection {
                    .toggle(titleKey: title("iCloudSignedOut"), key: "iCloudSignedOut", defaultValue: s.iCloudSignedOut.value)],
             strings: texts)
 
+        // Données: the data snapshots XSide keeps. « Sauvegarder maintenant » (an action, at the next
+        // launch) and « Restaurer depuis… » (pick a snapshot; DESTRUCTIVE, said in the footer), both
+        // at the app's next launch like the other actions. Export/import stay on the Mac.
+        var dataRows: [Row] = [
+            .value(titleKey: title("data.count"), key: "data.count", defaultValue: "\(dataBackups.count)"),
+            .group(key: "data.backup", footerKey: p + "footer.backupNow"),
+            .toggle(titleKey: title("backupNow"), key: "backupNowOnLaunch", defaultValue: false)]
+        if !dataBackups.isEmpty {
+            dataRows.append(.group(key: "data.restore", footerKey: p + "footer.restore"))
+            dataRows.append(.choice(titleKey: title("restoreFrom"), key: "restoreFrom",
+                                    titleKeys: [p + "data.none"] + dataBackups.map(\.label),
+                                    values: [""] + dataBackups.map(\.id), defaultValue: ""))
+        }
+        let dataPage = SettingsSection(titleKey: title("menu.data"), footerKey: p + "footer.data",
+                                       rows: dataRows, strings: texts)
+
         // Affichage dans l'app: how XSide shows up in the app ("Messages XSide" is derived from the
         // four switches, see InAppSettings.derivedLevel) and the messages' language.
         let displayPage = SettingsSection(
@@ -99,6 +116,7 @@ extension SettingsSection {
                            .childPane(titleKey: title("menu.refresh"), key: "pane.refresh", fileSuffix: "refresh", page: refreshPage)]
         if let updatesPage { rest.append(updatesPage) }
         rest.append(.childPane(titleKey: title("menu.compat"), key: "pane.compat", fileSuffix: "compat", page: compatPage))
+        rest.append(.childPane(titleKey: title("menu.data"), key: "pane.data", fileSuffix: "data", page: dataPage))
         rest.append(.childPane(titleKey: title("menu.display"), key: "pane.display", fileSuffix: "display", page: displayPage))
         let menu = SettingsSection(
             titleKey: title("group"), footerKey: nil,
@@ -116,7 +134,13 @@ extension SettingsSection {
             ("title.group", "Réglages XSide"),
             ("title.menu.status", "Statut"), ("title.menu.refresh", "Rafraîchissement"),
             ("title.menu.updates", "Mises à jour"), ("title.menu.compat", "Compatibilité"),
-            ("title.menu.display", "Affichage dans l'app"),
+            ("title.menu.data", "Données"), ("title.menu.display", "Affichage dans l'app"),
+            ("title.data.count", "Sauvegardes"), ("data.none", "Aucune"),
+            ("title.backupNow", "Sauvegarder maintenant"),
+            ("footer.backupNow", "Crée une sauvegarde des données à la prochaine ouverture de l'app."),
+            ("title.restoreFrom", "Restaurer depuis"),
+            ("footer.restore", "⚠️ Remplace les données actuelles de l'app par la sauvegarde choisie, à la prochaine ouverture."),
+            ("footer.data", "L'export et l'import d'archives restent sur ton Mac."),
             ("title.duoCompatibility", "Compatibilité iPhone Duo"), ("title.iCloudSignedOut", "Simuler iCloud déconnecté"),
             ("footer.compat", "Ces réglages s'appliquent au prochain rafraîchissement de l'app."),
             ("title.updates.repo", "Dépôt suivi"), ("title.updateMode", "Quand une version sort"),
@@ -156,7 +180,13 @@ extension SettingsSection {
             ("title.group", "XSide Settings"),
             ("title.menu.status", "Status"), ("title.menu.refresh", "Refresh"),
             ("title.menu.updates", "Updates"), ("title.menu.compat", "Compatibility"),
-            ("title.menu.display", "In-app display"),
+            ("title.menu.data", "Data"), ("title.menu.display", "In-app display"),
+            ("title.data.count", "Backups"), ("data.none", "None"),
+            ("title.backupNow", "Back up now"),
+            ("footer.backupNow", "Backs up the data the next time you open the app."),
+            ("title.restoreFrom", "Restore from"),
+            ("footer.restore", "⚠️ Replaces the app's current data with the chosen backup, at the next launch."),
+            ("footer.data", "Exporting and importing archives stays on your Mac."),
             ("title.duoCompatibility", "iPhone Duo compatibility"), ("title.iCloudSignedOut", "Simulate signed-out iCloud"),
             ("footer.compat", "These apply at the app's next refresh."),
             ("title.updates.repo", "Tracked repo"), ("title.updateMode", "When a version is out"),

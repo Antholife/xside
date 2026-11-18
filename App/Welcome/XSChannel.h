@@ -19,6 +19,12 @@ void XSRequestRefresh(void);
 /// notification. Main thread.
 void XSRequestCheckUpdates(void);
 
+/// "Sauvegarder maintenant" from the phone: asks XSide to pull a data snapshot now. Main thread.
+void XSRequestBackup(void);
+/// "Restaurer depuis…" from the phone: asks XSide to restore the snapshot `backupID` (DESTRUCTIVE;
+/// the person picked it and the Settings footer warned). Does nothing for an empty id. Main thread.
+void XSRequestRestore(NSString *backupID);
+
 /// The silent check-in (≤ 3 s): sends this phone's settings and last refresh, adopts the merged
 /// settings and the refresh outcome XSide answers. Only once the local network was allowed.
 /// `done` (main queue) runs in every case, after the answer if any, with the one pill saying what

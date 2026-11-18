@@ -539,9 +539,13 @@ public actor SideloadPipeline {
             // the phone's « Compatibilité » page is seeded with what this signing actually applies.
             let duoAsked = duo ?? (previous?.duoCompatibility == true)
             let iCloudAsked = iCloud ?? (previous?.iCloudSignedOut == true)
+            // The snapshots the phone's « Données » page lists (read-only; a fetch that fails is just
+            // an empty list, never a signing failure).
+            let existingBackups = await backup?.list(signedBundleID: bundleID, deviceID: device.id) ?? []
             let facts = signingFacts(recordID: recordID, deviceID: device.id, previous: previous, draft: draft,
                                      appVersion: record.options.version ?? record.version,
-                                     updateSource: record.updateSource, duo: duoAsked, iCloud: iCloudAsked, at: now())
+                                     updateSource: record.updateSource, duo: duoAsked, iCloud: iCloudAsked,
+                                     backups: existingBackups, at: now())
             var options = record.options
             // Off for this device only (a crash's fix) wins over the app's choice.
             options.withoutXSideFeatures = previous?.withoutXSideFeaturesHere == true
@@ -729,7 +733,7 @@ public actor SideloadPipeline {
     /// outcome.
     private nonisolated func signingFacts(recordID: UUID, deviceID: String, previous: Installation?,
                                           draft: InAppDraft?, appVersion: String?, updateSource: UpdateSource?,
-                                          duo: Bool, iCloud: Bool, at date: Date) -> InstallationFacts {
+                                          duo: Bool, iCloud: Bool, backups: [BackupSnapshot], at date: Date) -> InstallationFacts {
         var inApp = previous?.inApp ?? inAppDefaults(date)
         var macEdited = false
         if let draft {
@@ -764,7 +768,7 @@ public actor SideloadPipeline {
             firstInstalledAt: previous.map { $0.firstInstalledAt ?? $0.installedAt } ?? date,
             appVersion: appVersion,
             lastRefreshOutcome: RefreshOutcome(at: date, succeeded: true),
-            lastCheckIn: previous?.lastCheckIn, signedAt: date, updateSource: updateSource)
+            lastCheckIn: previous?.lastCheckIn, signedAt: date, updateSource: updateSource, backups: backups)
         facts.macEdited = macEdited
         return facts
     }

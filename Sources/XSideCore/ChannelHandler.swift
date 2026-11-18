@@ -14,6 +14,10 @@ public enum InstallationUpdate: Equatable, Sendable {
     /// Check the app's GitHub source for a newer release now; the outcome is told by XSide's usual
     /// update notification, not a reply (the `accepted` reply just says the request was taken).
     case checkUpdatesRequested
+    /// Pull a fresh data snapshot of this installation now.
+    case backupRequested
+    /// Restore this installation's data from the snapshot with this id (DESTRUCTIVE).
+    case restoreRequested(backupID: String)
 }
 
 /// What became of one received request line (see the wire format in Channel.swift).
@@ -146,6 +150,10 @@ public enum ChannelHandler {
         case .checkUpdates:
             // Light and read-only on the Mac (no re-sign): always taken; the outcome is a notification.
             return (.accepted, .checkUpdatesRequested)
+        case .backupNow:
+            return (.accepted, .backupRequested)
+        case let .restore(backupID):
+            return (.accepted, .restoreRequested(backupID: backupID))
         case .bye:
             // Only meaningful on a watch (read there, never answered); on its own connection: nothing.
             return (.accepted, .none)
@@ -308,10 +316,13 @@ public struct InstallationFacts: Sendable, Equatable {
     /// The app's GitHub update source at signing, nil when none: its repo is shown on the phone's
     /// « Mises à jour » page, and its `mode` seeds `inApp.updateMode` (see `signingFacts`).
     public var updateSource: UpdateSource?
+    /// The data snapshots XSide keeps for this installation, newest first: the phone's « Données »
+    /// page shows them and lets one be picked to restore.
+    public var backups: [BackupSnapshot] = []
 
     public init(installationID: String, channelSecret: Data, inApp: InAppSettings, firstInstalledAt: Date,
                 appVersion: String?, lastRefreshOutcome: RefreshOutcome?, lastCheckIn: Date?, signedAt: Date? = nil,
-                updateSource: UpdateSource? = nil) {
+                updateSource: UpdateSource? = nil, backups: [BackupSnapshot] = []) {
         self.installationID = installationID
         self.channelSecret = channelSecret
         self.inApp = inApp

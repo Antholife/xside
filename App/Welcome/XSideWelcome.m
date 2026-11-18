@@ -878,6 +878,9 @@ static void XSLaunch(void) {
     // (its pills replace the launch pill). After this launch decided on the sheet: it waits for it.
     if (XSWantsRefreshOnLaunch()) dispatch_async(dispatch_get_main_queue(), ^{ XSWhenForeground(1.0, ^{ XSRequestRefresh(); }); });
     if (XSTakeCheckUpdatesOnLaunch()) dispatch_async(dispatch_get_main_queue(), ^{ XSWhenForeground(1.0, ^{ XSRequestCheckUpdates(); }); });
+    if (XSTakeBackupOnLaunch()) dispatch_async(dispatch_get_main_queue(), ^{ XSWhenForeground(1.0, ^{ XSRequestBackup(); }); });
+    NSString *restoreID = XSTakeRestoreFrom();
+    if (restoreID) dispatch_async(dispatch_get_main_queue(), ^{ XSWhenForeground(1.0, ^{ XSRequestRestore(restoreID); }); });
     NSDate *expiry = XSExpirationDate();
     if (!expiry) return;
     XSNoteSignature(expiry);
@@ -941,6 +944,9 @@ static void XSReturn(void) {
     // Coming back from iOS Settings right after turning it on is the usual way to use it.
     if (XSWantsRefreshOnLaunch()) XSWhenForeground(0.5, ^{ XSRequestRefresh(); });
     if (XSTakeCheckUpdatesOnLaunch()) XSWhenForeground(0.5, ^{ XSRequestCheckUpdates(); });
+    if (XSTakeBackupOnLaunch()) XSWhenForeground(0.5, ^{ XSRequestBackup(); });
+    NSString *restoreID2 = XSTakeRestoreFrom();
+    if (restoreID2) XSWhenForeground(0.5, ^{ XSRequestRestore(restoreID2); });
     BOOL changed = XSLoadSettings();
     // The answer to a Refresh that came while the person was away (final review minor 6).
     XSWhenForeground(0.3, ^{ XSShowKeptAnswer(); });
