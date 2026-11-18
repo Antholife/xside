@@ -1563,7 +1563,14 @@ final class AppModel {
         case .backupRequested:
             Self.channelLogger.notice("channel: backup asked for \(found.recordID) from \(job.deviceID)")
             if let entry = entry(recordID: job.recordID, deviceID: job.deviceID) {
-                Task { [weak self] in _ = await self?.backUpNow(entry) }
+                Task { [weak self] in
+                    guard let self else { return }
+                    _ = await self.backUpNow(entry)
+                    // Then refresh, so the phone's « Données » page (rewritten at signing) lists the
+                    // new snapshot (Anthony: « on refresh derrière »). Best effort: it does nothing
+                    // if a job is already running or the device went away.
+                    _ = self.startRefresh(RefreshJob(recordID: job.recordID, deviceID: job.deviceID), automatic: true)
+                }
             }
             await reply(.accepted)
         case let .restoreRequested(backupID):

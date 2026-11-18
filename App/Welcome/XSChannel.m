@@ -1084,7 +1084,8 @@ static void XSRequestCheckUpdatesNow(void) {
 
 // « Sauvegarder maintenant » / « Restaurer » : light actions, like check-updates. The Mac does the
 // work (it pulls or pushes the data over its own tools); the pill just says the request was taken.
-static void XSRequestDataActionNow(NSDictionary *body, NSString *askFR, NSString *askEN, NSString *okFR, NSString *okEN) {
+static void XSRequestDataActionNow(NSDictionary *body, NSString *askFR, NSString *askEN,
+                                   NSString *okFR, NSString *okEN, NSString *hintFR, NSString *hintEN) {
     XSPillContent *asking = XSPill(XSFrench() ? askFR : askEN, nil, XSPillToneNeutral, 0);
     asking.busy = YES;
     XSShowAnswer(asking);
@@ -1097,15 +1098,19 @@ static void XSRequestDataActionNow(NSDictionary *body, NSString *askFR, NSString
                                 f ? @"Réessaie dans un instant." : @"Try again in a moment.", XSPillToneNeutral, 6));
             return;
         }
-        XSShowAnswer(XSPill(f ? okFR : okEN, nil, XSPillToneNeutral, 6));
+        XSShowAnswer(XSPill(f ? okFR : okEN, f ? hintFR : hintEN, XSPillToneNeutral, 7));
     }) start];
 }
 
 void XSRequestBackup(void) {
     if (!XSInstallationID() || !XSChannelSecret()) return;
     XSAfterSheet(^{ XSExplainNetworkThen(^{
+        // The Mac backs up then refreshes, so the « Données » page lists the new snapshot: the
+        // refresh closes the app once done, like a normal refresh (the hint says so).
         XSRequestDataActionNow(XSBackupNowBody(), @"Sauvegarde des données…", @"Backing up the data…",
-                               @"Sauvegarde demandée à ton Mac", @"Backup asked of your Mac");
+                               @"Sauvegarde demandée à ton Mac", @"Backup asked of your Mac",
+                               @"XSide rafraîchit l'app pour l'ajouter à la liste ; elle se fermera un instant, rouvre-la ensuite.",
+                               @"XSide refreshes the app to add it to the list; it will close for a moment, open it again after.");
     }); });
 }
 
@@ -1114,6 +1119,8 @@ void XSRequestRestore(NSString *backupID) {
     NSDictionary *body = XSRestoreBody(backupID);
     XSAfterSheet(^{ XSExplainNetworkThen(^{
         XSRequestDataActionNow(body, @"Restauration des données…", @"Restoring the data…",
-                               @"Restauration demandée à ton Mac", @"Restore asked of your Mac");
+                               @"Restauration demandée à ton Mac", @"Restore asked of your Mac",
+                               @"Les données actuelles vont être remplacées par la sauvegarde choisie.",
+                               @"The current data will be replaced by the chosen backup.");
     }); });
 }
