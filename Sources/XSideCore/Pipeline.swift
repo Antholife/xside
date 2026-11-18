@@ -71,9 +71,11 @@ public enum InstallStep: Int, CaseIterable, Sendable {
     /// `legacy32`: removing the old 32-bit code, only when the app has some.
     /// `icloud`: adding the signed-out iCloud library, only when it was asked for.
     /// `tweaks`: injecting the device's enabled tweaks, only when it has some.
-    /// `backingUp`: snapshotting the app's data on a refresh (unless turned off), done BEFORE the
-    /// re-sign so the phone's « Données » page, written during signing, already lists the snapshot.
-    case profile, welcome, legacy32, duo, icloud, tweaks, backingUp, signing, installing
+    case profile, welcome, legacy32, duo, icloud, tweaks, signing, installing
+    /// `backingUp`: snapshotting the app's data after a successful refresh, unless turned off for the
+    /// app. Done AFTER the install so a slow backup (an app with many small files) never blocks the
+    /// refresh itself; the « Données » page it was written with is then one refresh behind.
+    case backingUp
     /// `restoring`: pushing a chosen backup into the freshly installed app's container.
     case restoring
 }
@@ -539,29 +541,9 @@ public actor SideloadPipeline {
             // the phone's « Compatibilité » page is seeded with what this signing actually applies.
             let duoAsked = duo ?? (previous?.duoCompatibility == true)
             let iCloudAsked = iCloud ?? (previous?.iCloudSignedOut == true)
-            // On a refresh, snapshot the data NOW, before the re-sign, so the phone's « Données » page
-            // (written during this signing) already counts and lists it (Anthony: « on save AVANT le
-            // refresh »). A refresh keeps the data, so the copy is the same as after the re-sign; its
-            // failure never fails the refresh.
-            if refresh, previous != nil, record.options.backupData != false, let backup {
-                await progress(.backingUp)
-                do {
-                    let snapshot = try await backup.backUp(signedBundleID: bundleID, deviceID: device.id, deviceName: device.name,
-                                                appVersion: record.version, includeCaches: record.options.backupCaches != false,
-                                                cycleStartedAt: previous.flatMap { $0.firstInstalledAt ?? $0.installedAt },
-                                                retention: retention(), onlyIfChanged: true,
-                                                progress: { done, total, bytes, bytesTotal in
-                        if let f = BackupProgress.fraction(filesDone: done, filesTotal: total, bytesDone: bytes, bytesTotal: bytesTotal) {
-                            StepProgress.report?(f)
-                        }
-                    })
-                    if snapshot != nil { await dataBackedUp(true) }
-                } catch {
-                    Self.logger.error("\(what): data backup failed: \(String(describing: type(of: error)))")
-                }
-            }
             // The snapshots the phone's « Données » page lists (read-only; a fetch that fails is just
-            // an empty list, never a signing failure) — now including the one just made above.
+            // an empty list, never a signing failure). As of the last refresh: the one this refresh
+            // makes (below, after the install) isn't in it yet.
             let existingBackups = await backup?.list(signedBundleID: bundleID, deviceID: device.id) ?? []
             let facts = signingFacts(recordID: recordID, deviceID: device.id, previous: previous, draft: draft,
                                      appVersion: record.options.version ?? record.version,
@@ -628,6 +610,27 @@ public actor SideloadPipeline {
             Self.logger.info("\(what): installing")
             try await CommandEnvironment.withDeveloperDir(current.developerDir) { [installer] in
                 try await installer.install(app: app, deviceID: device.id)
+            }
+
+            // A safety net, AFTER the install so it never blocks the refresh: a refresh keeps the
+            // app's data, so snapshot it now. Its failure never fails the refresh. The « Données »
+            // page written above is one refresh behind until the next refresh lists this snapshot.
+            if refresh, previous != nil, record.options.backupData != false, let backup {
+                await progress(.backingUp)
+                do {
+                    let snapshot = try await backup.backUp(signedBundleID: bundleID, deviceID: device.id, deviceName: device.name,
+                                                appVersion: record.version, includeCaches: record.options.backupCaches != false,
+                                                cycleStartedAt: previous.flatMap { $0.firstInstalledAt ?? $0.installedAt },
+                                                retention: retention(), onlyIfChanged: true,
+                                                progress: { done, total, bytes, bytesTotal in
+                        if let f = BackupProgress.fraction(filesDone: done, filesTotal: total, bytesDone: bytes, bytesTotal: bytesTotal) {
+                            StepProgress.report?(f)
+                        }
+                    })
+                    if snapshot != nil { await dataBackedUp(true) }
+                } catch {
+                    Self.logger.error("\(what): data backup failed: \(String(describing: type(of: error)))")
+                }
             }
 
             // A restore the person asked for. The app is already installed, so a failure must not undo

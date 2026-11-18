@@ -358,12 +358,9 @@ struct PipelineTests {
         #expect(backups.first?.deviceName == "Test")
         #expect(backups.first?.includeCaches == true)
         #expect(backups.first?.onlyIfChanged == true)
-        // The snapshot is taken BEFORE the re-sign/install now, so the phone's « Données » page
-        // written during signing already lists it.
-        #expect(await f.log.deviceCalls == ["backup:dev-1", "install:dev-1"])
-        let items = await steps.items
-        #expect(items.contains(.backingUp))
-        if let b = items.firstIndex(of: .backingUp), let i = items.firstIndex(of: .installing) { #expect(b < i) }
+        // The snapshot is taken AFTER the install, so a slow backup never blocks the refresh.
+        #expect(await f.log.deviceCalls == ["install:dev-1", "backup:dev-1"])
+        #expect(await steps.items.last == .backingUp)
     }
 
     @Test func refresh_tagsSnapshotWithFirstInstalledAtNotTheRefreshedInstalledAt() async throws {
