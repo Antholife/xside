@@ -874,6 +874,11 @@ static void XSLaunch(void) {
     XSRemoveLeftoverShortcuts(); // XSide's are static now (device feedback 3, E1)
     BOOL tellAutoRefresh = XSTakeAutoRefreshChangedOnPhone();
     NSArray<NSString *> *sendFields = XSTakeSettingsChangedOnPhone();
+    // A confirmed refresh (the app came back with a new signature) clears « Rafraîchir à la prochaine
+    // ouverture » HERE, before we read it below, so the launch that follows a successful refresh does
+    // not ask for another one (which the Mac would refuse as too soon). Same for the other actions.
+    NSDate *expiry = XSExpirationDate();
+    if (expiry) XSNoteSignature(expiry);
     // Asked from iOS Settings: the same as the Refresh quick action, once the app is on screen
     // (its pills replace the launch pill). After this launch decided on the sheet: it waits for it.
     if (XSWantsRefreshOnLaunch()) dispatch_async(dispatch_get_main_queue(), ^{ XSWhenForeground(1.0, ^{ XSRequestRefresh(); }); });
@@ -881,9 +886,7 @@ static void XSLaunch(void) {
     if (XSTakeBackupOnLaunch()) dispatch_async(dispatch_get_main_queue(), ^{ XSWhenForeground(1.0, ^{ XSRequestBackup(); }); });
     NSString *restoreID = XSTakeRestoreFrom();
     if (restoreID) dispatch_async(dispatch_get_main_queue(), ^{ XSWhenForeground(1.0, ^{ XSRequestRestore(restoreID); }); });
-    NSDate *expiry = XSExpirationDate();
     if (!expiry) return;
-    XSNoteSignature(expiry);
     XSWriteStatusRows(expiry);
     XSScheduleReminder(expiry, NO); // asked only after the sheet's "Notifications" page
     NSDictionary *settings = XSCurrentSettings();
