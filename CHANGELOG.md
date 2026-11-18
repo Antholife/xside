@@ -4,6 +4,10 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Changed
+
+- **La page « Réglages XSide » dans les Réglages iOS passe en master-détail** : un menu avec le statut en tête, puis une sous-page par thème (Rafraîchissement, Affichage dans l'app), chacune accessible d'un tap, pour piloter l'app depuis l'iPhone.
+
 ### Added
 
 - **Sauvegarde et restauration complètes (repartir au propre).** Dans *Réglages > Données des apps*, sauvegarde toutes tes apps XSide dans une seule archive `.xsbak` avant un clean total, un changement d'appareil ou une réinstallation d'iOS. Par app tu choisis ce que tu embarques : l'app (IPA), la compatibilité (Duo, iCloud), les réglages XSide in-app, les tweaks et les données (capturées sur le moment, avec ou sans caches). La restauration, façon Time Machine, liste les apps de l'archive et te laisse choisir quoi remettre, et sur quel appareil : elle réinstalle chaque app avec ses options, sa source de mise à jour, sa compatibilité, ses réglages in-app et ses tweaks, puis réinjecte les données.

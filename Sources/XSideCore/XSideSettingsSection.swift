@@ -24,27 +24,51 @@ extension SettingsSection {
             .choice(titleKey: title(name), key: name, titleKeys: values.map { p + "\(name).\($0)" },
                     values: values, defaultValue: current)
         }
-        let rows: [Row] = [
-            // An action, not a setting (iOS Settings can't run one): the app turns it back off at
-            // its next launch and asks XSide for a refresh. Never synced with the Mac.
-            // Alone in the first group, its footer saying what it does (Anthony found it ambiguous).
-            .toggle(titleKey: title("refreshOnLaunch"), key: "refreshOnLaunch", defaultValue: false),
-            .group(key: "section.status", footerKey: p + "footer"),
-            .value(titleKey: title("validUntil"), key: "validUntil", defaultValue: validUntil),
-            .value(titleKey: title("refreshedOn"), key: "refreshedOn", defaultValue: refreshedOn),
-            .value(titleKey: title("version"), key: "version", defaultValue: version),
-            .value(titleKey: title("installedOn"), key: "installedOn", defaultValue: installedOn),
-            .value(titleKey: title("connection"), key: "connection", defaultValue: connection),
-            .value(titleKey: title("lastRefresh"), key: "lastRefresh", defaultValue: lastRefresh),
-            .toggle(titleKey: title("showValidity"), key: "showValidity", defaultValue: s.showValidity.value),
-            .toggle(titleKey: title("alertLate"), key: "alertLate", defaultValue: s.alertLate.value),
-            .toggle(titleKey: title("refreshCard"), key: "refreshCard", defaultValue: s.refreshCard.value),
-            .toggle(titleKey: title("reminder"), key: "reminder", defaultValue: s.reminder.value),
-            .toggle(titleKey: title("autoRefresh"), key: "autoRefresh", defaultValue: s.autoRefresh.value),
-            choice("language", ["automatic", "fr", "en"], s.language.value.rawValue),
-        ]
-        return SettingsSection(titleKey: title("group"), footerKey: p + "footer.refreshOnLaunch", rows: rows, strings: texts)
-            .plainText(in: language)
+        // Master-detail (spec §2 corrections, maquette validée): a menu with « Statut » at the top,
+        // then « Rafraîchissement » and « Affichage dans l'app », each opening a sub-page of its own.
+        // iOS shows a child-pane row as a plain title and a chevron (no right-side summary).
+
+        // Statut: the read-only rows the dylib rewrites in the device's locale at launch.
+        let statusPage = SettingsSection(
+            titleKey: title("menu.status"), footerKey: nil,
+            rows: [.value(titleKey: title("validUntil"), key: "validUntil", defaultValue: validUntil),
+                   .value(titleKey: title("refreshedOn"), key: "refreshedOn", defaultValue: refreshedOn),
+                   .value(titleKey: title("version"), key: "version", defaultValue: version),
+                   .value(titleKey: title("installedOn"), key: "installedOn", defaultValue: installedOn),
+                   .value(titleKey: title("connection"), key: "connection", defaultValue: connection),
+                   .value(titleKey: title("lastRefresh"), key: "lastRefresh", defaultValue: lastRefresh)],
+            strings: texts)
+
+        // Rafraîchissement: the "refresh at next launch" action (alone, with its footer saying what
+        // it does), then automatic refresh. The action is a switch the app turns back off at its
+        // next launch, asking XSide for a refresh; never synced with the Mac.
+        let refreshPage = SettingsSection(
+            titleKey: title("menu.refresh"), footerKey: p + "footer.refreshOnLaunch",
+            rows: [.toggle(titleKey: title("refreshOnLaunch"), key: "refreshOnLaunch", defaultValue: false),
+                   .group(key: "refresh.auto", footerKey: nil),
+                   .toggle(titleKey: title("autoRefresh"), key: "autoRefresh", defaultValue: s.autoRefresh.value)],
+            strings: texts)
+
+        // Affichage dans l'app: how XSide shows up in the app ("Messages XSide" is derived from the
+        // four switches, see InAppSettings.derivedLevel) and the messages' language.
+        let displayPage = SettingsSection(
+            titleKey: title("menu.display"), footerKey: nil,
+            rows: [.toggle(titleKey: title("showValidity"), key: "showValidity", defaultValue: s.showValidity.value),
+                   .toggle(titleKey: title("alertLate"), key: "alertLate", defaultValue: s.alertLate.value),
+                   .toggle(titleKey: title("refreshCard"), key: "refreshCard", defaultValue: s.refreshCard.value),
+                   .toggle(titleKey: title("reminder"), key: "reminder", defaultValue: s.reminder.value),
+                   choice("language", ["automatic", "fr", "en"], s.language.value.rawValue)],
+            strings: texts)
+
+        // The menu: « Statut » alone at the top, then the rest, the "installed with XSide" footer below.
+        let menu = SettingsSection(
+            titleKey: title("group"), footerKey: nil,
+            rows: [.childPane(titleKey: title("menu.status"), key: "pane.status", fileSuffix: "status", page: statusPage),
+                   .group(key: "menu.rest", footerKey: p + "footer"),
+                   .childPane(titleKey: title("menu.refresh"), key: "pane.refresh", fileSuffix: "refresh", page: refreshPage),
+                   .childPane(titleKey: title("menu.display"), key: "pane.display", fileSuffix: "display", page: displayPage)],
+            strings: texts)
+        return menu.plainText(in: language)
     }
 
     private static let texts: [String: [String: String]] = {
@@ -54,6 +78,8 @@ extension SettingsSection {
         }
         let fr = table([
             ("title.group", "Réglages XSide"),
+            ("title.menu.status", "Statut"), ("title.menu.refresh", "Rafraîchissement"),
+            ("title.menu.display", "Affichage dans l'app"),
             ("title.validUntil", "Valable jusqu'au"), ("title.refreshedOn", "Rafraîchie le"),
             ("title.version", "Version"), ("title.installedOn", "Installée le"),
             ("title.refreshOnLaunch", "Rafraîchir à la prochaine ouverture"),
@@ -79,6 +105,8 @@ extension SettingsSection {
         ])
         let en = table([
             ("title.group", "XSide Settings"),
+            ("title.menu.status", "Status"), ("title.menu.refresh", "Refresh"),
+            ("title.menu.display", "In-app display"),
             ("title.validUntil", "Valid until"), ("title.refreshedOn", "Last refreshed"),
             ("title.version", "Version"), ("title.installedOn", "Installed on"),
             ("title.refreshOnLaunch", "Refresh at next launch"),

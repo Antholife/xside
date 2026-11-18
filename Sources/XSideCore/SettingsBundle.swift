@@ -16,6 +16,11 @@ public struct SettingsSection: Sendable {
         /// Starts another group (untitled) on XSide's page, `footerKey` under its rows; the rows
         /// before it stay in the group above, under the section's own footer.
         case group(key: String, footerKey: String?)
+        /// A row that opens a sub-page of its own (master-detail): `fileSuffix` names the sub-page's
+        /// plist (`XSide-<fileSuffix>.plist`), `page` is its content (groups, values, toggles,
+        /// choices, and child panes of its own). iOS shows `titleKey` and a chevron, no right-side
+        /// value. `key` is where a deep link points (unused otherwise: a child pane stores nothing).
+        case childPane(titleKey: String, key: String, fileSuffix: String, page: SettingsSection)
     }
 
     public let titleKey: String
@@ -48,6 +53,8 @@ public struct SettingsSection: Sendable {
                                defaultValue: defaultValue)
             case let .group(key, footerKey):
                 return .group(key: key, footerKey: footerKey.map(text))
+            case let .childPane(titleKey, key, fileSuffix, page):
+                return .childPane(titleKey: text(titleKey), key: key, fileSuffix: fileSuffix, page: page.plainText(in: language))
             }
         }
         var plain: [String: [String: String]] = [:]
@@ -55,6 +62,16 @@ public struct SettingsSection: Sendable {
             for (key, translation) in table { plain[lang, default: [:]][text(key)] = translation }
         }
         return SettingsSection(titleKey: text(titleKey), footerKey: footerKey.map(text), rows: rows, strings: plain)
+    }
+
+    /// Every string of this section and of all its sub-pages, merged (language -> key -> text); a
+    /// nearer entry wins over a deeper one. The bundle writes one strings table for the whole tree.
+    var allStrings: [String: [String: String]] {
+        var merged = strings
+        for case let .childPane(_, _, _, page) in rows {
+            merged.merge(page.allStrings) { mine, theirs in mine.merging(theirs) { m, _ in m } }
+        }
+        return merged
     }
 }
 
@@ -84,6 +101,17 @@ public enum SettingsBundle {
 
     struct NotAPage: Error {}
 
+    /// The plist file names (`XSide-<suffix>`) of every child pane of `section` and its sub-pages.
+    private static func childPaneFiles(of section: SettingsSection?) -> [String] {
+        guard let section else { return [] }
+        var files: [String] = []
+        for case let .childPane(_, _, suffix, page) in section.rows {
+            files.append(paneFile + "-" + suffix)
+            files.append(contentsOf: childPaneFiles(of: page))
+        }
+        return files
+    }
+
     /// Adds (or replaces) XSide's row at the end of the app's page, creating the page if the app
     /// has none, and writes XSide's page with the section. The app's own items and keys stay as
     /// they were. Titles are keys of the app's own `StringsTable` when its page has one (XSide's
@@ -112,8 +140,9 @@ public enum SettingsBundle {
                 else { throw NotAPage() }
                 root = read
             }
-            // Replaced only if it is a plain file (from an earlier signing).
-            for url in [paneURL, tweaksURL] {
+            // Replaced only if it is a plain file (from an earlier signing); the sub-pages too.
+            let subpaneURLs = childPaneFiles(of: section).map { bundle.appendingPathComponent($0 + ".plist") }
+            for url in [paneURL, tweaksURL] + subpaneURLs {
                 if let type = try? fm.attributesOfItem(atPath: url.path)[.type] as? FileAttributeType,
                    type != .typeRegular { throw NotAPage() }
             }
@@ -139,31 +168,6 @@ public enum SettingsBundle {
         }
         if section == nil, let tweaksRow { items.append(tweaksRow) }
 
-        // XSide's page: the section, its footer under the rows.
-        var group: [String: Any] = ["Type": "PSGroupSpecifier", "Key": keyPrefix + "section"]
-        if let footer = section?.footerKey { group["FooterText"] = footer }
-        var rows: [[String: Any]] = [group]
-        for row in section?.rows ?? [] {
-            switch row {
-            case let .value(titleKey, key, defaultValue):
-                rows.append(["Type": "PSTitleValueSpecifier", "Title": titleKey,
-                             "Key": keyPrefix + key, "DefaultValue": defaultValue])
-            case let .toggle(titleKey, key, defaultValue):
-                rows.append(["Type": "PSToggleSwitchSpecifier", "Title": titleKey,
-                             "Key": keyPrefix + key, "DefaultValue": defaultValue])
-            case let .choice(titleKey, key, titleKeys, values, defaultValue):
-                rows.append(["Type": "PSMultiValueSpecifier", "Title": titleKey, "Key": keyPrefix + key,
-                             "Titles": titleKeys, "Values": values, "DefaultValue": defaultValue])
-            case let .group(key, footerKey):
-                var group: [String: Any] = ["Type": "PSGroupSpecifier", "Key": keyPrefix + key]
-                if let footerKey { group["FooterText"] = footerKey }
-                rows.append(group)
-            }
-        }
-        if section != nil, let tweaksRow {
-            rows.append(["Type": "PSGroupSpecifier", "Title": "Tweaks", "Key": keyPrefix + "tweaks.group"])
-            rows.append(tweaksRow)
-        }
         // The page's own table; with none named iOS reads "Root", so XSide's keys go there when the
         // app ships a Root.strings; only an app with no strings at all gets XSide's table.
         let table: String
@@ -175,12 +179,60 @@ public enum SettingsBundle {
             table = ownTable
             root["StringsTable"] = table
         }
+        // XSide's page, now a master-detail menu: its rows, with each child pane written to its own
+        // plist (`XSide-<suffix>.plist`) and recursing into sub-pages of sub-pages.
+        func specifiers(for page: SettingsSection, groupKey: String) throws -> [[String: Any]] {
+            var lead: [String: Any] = ["Type": "PSGroupSpecifier", "Key": keyPrefix + groupKey]
+            if let footer = page.footerKey { lead["FooterText"] = footer }
+            var out: [[String: Any]] = [lead]
+            for row in page.rows {
+                switch row {
+                case let .value(titleKey, key, defaultValue):
+                    out.append(["Type": "PSTitleValueSpecifier", "Title": titleKey,
+                                "Key": keyPrefix + key, "DefaultValue": defaultValue])
+                case let .toggle(titleKey, key, defaultValue):
+                    out.append(["Type": "PSToggleSwitchSpecifier", "Title": titleKey,
+                                "Key": keyPrefix + key, "DefaultValue": defaultValue])
+                case let .choice(titleKey, key, titleKeys, values, defaultValue):
+                    out.append(["Type": "PSMultiValueSpecifier", "Title": titleKey, "Key": keyPrefix + key,
+                                "Titles": titleKeys, "Values": values, "DefaultValue": defaultValue])
+                case let .group(key, footerKey):
+                    var g: [String: Any] = ["Type": "PSGroupSpecifier", "Key": keyPrefix + key]
+                    if let footerKey { g["FooterText"] = footerKey }
+                    out.append(g)
+                case let .childPane(titleKey, key, fileSuffix, subpage):
+                    let file = paneFile + "-" + fileSuffix
+                    out.append(["Type": "PSChildPaneSpecifier", "Title": titleKey, "File": file,
+                                "Key": keyPrefix + key, "id": keyPrefix + key])
+                    let plist: [String: Any] = ["Title": titleKey, "StringsTable": table,
+                                                "PreferenceSpecifiers": try specifiers(for: subpage, groupKey: fileSuffix + ".section")]
+                    try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+                        .write(to: bundle.appendingPathComponent(file + ".plist"), options: .atomic)
+                }
+            }
+            return out
+        }
         root["PreferenceSpecifiers"] = items
         if let section {
+            var rows = try specifiers(for: section, groupKey: "section")
+            if let tweaksRow {
+                rows.append(["Type": "PSGroupSpecifier", "Title": "Tweaks", "Key": keyPrefix + "tweaks.group"])
+                rows.append(tweaksRow)
+            }
             let pane: [String: Any] = ["Title": section.titleKey, "StringsTable": table, "PreferenceSpecifiers": rows]
             try PropertyListSerialization.data(fromPropertyList: pane, format: .xml, options: 0).write(to: paneURL, options: .atomic)
         } else if fm.fileExists(atPath: paneURL.path) {
             try fm.removeItem(at: paneURL) // a plain file (checked above), from an earlier signing
+        }
+        // Stale sub-page plists from an earlier signing (fewer sub-pages, or none): drop any
+        // XSide-*.plist this signing did not write.
+        let keptSubpanes = Set(childPaneFiles(of: section).map { $0 + ".plist" })
+        for name in ((try? fm.contentsOfDirectory(atPath: bundle.path)) ?? []) where
+            name.hasPrefix(paneFile + "-") && name.hasSuffix(".plist") && !keptSubpanes.contains(name) {
+            let url = bundle.appendingPathComponent(name)
+            if (try? fm.attributesOfItem(atPath: url.path)[.type] as? FileAttributeType) == .typeRegular {
+                try? fm.removeItem(at: url)
+            }
         }
         if let tweaks {
             var rows: [[String: Any]] = []
@@ -205,7 +257,7 @@ public enum SettingsBundle {
             // Translations in the languages the app already has, never more (its localization set
             // stays as it was). In the app's own table, an entry it already has for the same text wins.
             let appLanguages = ((try? fm.contentsOfDirectory(atPath: app.path)) ?? []).filter { $0.hasSuffix(".lproj") }.sorted()
-            var texts = section?.strings ?? [:]
+            var texts = section?.allStrings ?? [:]
             texts.merge(tweaks?.strings ?? [:]) { $0.merging($1) { mine, _ in mine } }
             let ownKeys = table == ownTable ? [] : Set(texts.values.flatMap(\.keys))
             LocalizedStrings.merge(texts, into: bundle, table: table, keepExisting: ownKeys,
