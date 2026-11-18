@@ -885,7 +885,10 @@ static void XSStartRefresh(void) {
     // The first time, the local network page comes first (iOS asks while this browses).
     XSExplainNetworkThenOr(^{
         BOOL fr = XSFrench();
-        XSPillContent *asking = XSPill(fr ? @"Demande de rafraîchissement à ton Mac…" : @"Asking your Mac for a refresh…",
+        // When « Sauvegarder les données » is on, the refresh snapshots the data first, so say so.
+        BOOL backs = XSSettingBool(XSCurrentSettings(), @"backupData");
+        XSPillContent *asking = XSPill(backs ? (fr ? @"Sauvegarde et rafraîchissement demandés à ton Mac…" : @"Backup and refresh asked of your Mac…")
+                                             : (fr ? @"Demande de rafraîchissement à ton Mac…" : @"Asking your Mac for a refresh…"),
                                        fr ? @"S'il accepte, l'app se fermera une fois rafraîchie ; rouvre-la ensuite."
                                           : @"If it accepts, the app will close once refreshed; open it again then.", XSPillToneNeutral, 0);
         asking.busy = YES;
@@ -926,7 +929,9 @@ static void XSStartRefreshExchange(void) {
             XSAcceptedAt = NSDate.date;
             // Stays (with its spinner) until the outcome: the success closes the app, a failure
             // or silence replaces it (device feedback round 1, B3).
-            XSPillContent *accepted = XSPill(french ? @"Rafraîchissement demandé à ton Mac" : @"Refresh asked of your Mac",
+            BOOL backs = XSSettingBool(XSCurrentSettings(), @"backupData");
+            XSPillContent *accepted = XSPill(backs ? (french ? @"Sauvegarde et rafraîchissement demandés à ton Mac" : @"Backup and refresh asked of your Mac")
+                                                   : (french ? @"Rafraîchissement demandé à ton Mac" : @"Refresh asked of your Mac"),
                                              french ? @"L'app va se fermer quand ce sera fait (≈ 1 min) ; rouvre-la ensuite."
                                                     : @"The app will close when it's done (about 1 min); open it again then.",
                                              XSPillToneNeutral, 0);

@@ -120,9 +120,9 @@ extension SettingsSection {
             ("title.backupData", "Sauvegarder les données"), ("title.backupCaches", "Inclure les caches"),
             ("title.backupBeforeUpdate", "Sauvegarder avant une mise à jour"),
             ("title.backupNow", "Sauvegarder maintenant"),
-            ("footer.backupNow", "Crée une sauvegarde des données à la prochaine ouverture de l'app."),
+            ("footer.backupNow", "📲 À la prochaine ouverture de l'app : crée une sauvegarde des données, puis XSide rafraîchit l'app."),
             ("title.restoreFrom", "Restaurer depuis"),
-            ("footer.restore", "⚠️ Remplace les données actuelles de l'app par la sauvegarde choisie, à la prochaine ouverture."),
+            ("footer.restore", "📲 À la prochaine ouverture de l'app. ⚠️ Remplace les données actuelles par la sauvegarde choisie."),
             ("footer.data", "L'export et l'import d'archives restent sur ton Mac."),
             ("title.duoCompatibility", "Compatibilité iPhone Duo"), ("title.iCloudSignedOut", "Simuler iCloud déconnecté"),
             ("footer.compat", "Ces réglages s'appliquent au prochain rafraîchissement de l'app."),
@@ -134,7 +134,7 @@ extension SettingsSection {
             ("updateFrequency.atRefresh", "À chaque rafraîchissement"), ("updateFrequency.never", "Jamais"),
             ("updateFrequency.custom", "Personnalisé"),
             ("title.checkUpdates", "Vérifier maintenant"),
-            ("footer.checkUpdates", "Lance une recherche de mises à jour à la prochaine ouverture de l'app."),
+            ("footer.checkUpdates", "📲 À la prochaine ouverture de l'app : XSide recherche les mises à jour du dépôt suivi."),
             ("footer.status", "Rafraîchi par ton Mac. Ces infos sont réécrites dans ta langue à l'ouverture de l'app."),
             ("footer.autoRefresh", "Activé : XSide rafraîchit l'app avant qu'elle expire. Désactivé : elle expirera à sa date."),
             ("footer.updatesRepo", "Le dépôt GitHub d'où viennent les mises à jour. Pour en changer, passe par ton Mac."),
@@ -156,8 +156,8 @@ extension SettingsSection {
             ("title.refreshOnLaunch", "Rafraîchir à la prochaine ouverture"),
             // Asked at the next launch or return to the app (XSWantsRefreshOnLaunch), the Mac
             // accepts on its own. "cet appareil": the same page is written for an iPad.
-            ("footer.refreshOnLaunch", "Rafraîchit l'app la prochaine fois que tu l'ouvres, sans rien faire sur ton Mac : "
-                + "il suffit qu'XSide soit ouvert sur ton Mac et que cet appareil soit sur le même Wi-Fi ou branché en USB."),
+            ("footer.refreshOnLaunch", "📲 À la prochaine ouverture de l'app : rafraîchit l'app, sans rien faire sur ton Mac. "
+                + "Il suffit qu'XSide soit ouvert sur ton Mac et que cet appareil soit sur le même Wi-Fi ou branché en USB."),
             ("title.connection", "Connexion au Mac"), ("title.lastRefresh", "Dernier rafraîchissement"),
             ("title.showValidity", "Afficher la validité à l'ouverture"),
             ("title.alertLate", "Alerter si pas rafraîchie"),
@@ -183,9 +183,9 @@ extension SettingsSection {
             ("title.backupData", "Back up data"), ("title.backupCaches", "Include caches"),
             ("title.backupBeforeUpdate", "Back up before an update"),
             ("title.backupNow", "Back up now"),
-            ("footer.backupNow", "Backs up the data the next time you open the app."),
+            ("footer.backupNow", "📲 Next time you open the app: backs up the data, then XSide refreshes the app."),
             ("title.restoreFrom", "Restore from"),
-            ("footer.restore", "⚠️ Replaces the app's current data with the chosen backup, at the next launch."),
+            ("footer.restore", "📲 Next time you open the app. ⚠️ Replaces the current data with the chosen backup."),
             ("footer.data", "Exporting and importing archives stays on your Mac."),
             ("title.duoCompatibility", "iPhone Duo compatibility"), ("title.iCloudSignedOut", "Simulate signed-out iCloud"),
             ("footer.compat", "These apply at the app's next refresh."),
@@ -197,7 +197,7 @@ extension SettingsSection {
             ("updateFrequency.atRefresh", "At each refresh"), ("updateFrequency.never", "Never"),
             ("updateFrequency.custom", "Custom"),
             ("title.checkUpdates", "Check now"),
-            ("footer.checkUpdates", "Runs an update check the next time you open the app."),
+            ("footer.checkUpdates", "📲 Next time you open the app: XSide checks the tracked repo for updates."),
             ("footer.status", "Refreshed by your Mac. These are rewritten in your language when you open the app."),
             ("footer.autoRefresh", "On: XSide refreshes the app before it expires. Off: it will expire on its date."),
             ("footer.updatesRepo", "The GitHub repo updates come from. To change it, use your Mac."),
@@ -217,7 +217,7 @@ extension SettingsSection {
             ("title.validUntil", "Valid until"), ("title.refreshedOn", "Last refreshed"),
             ("title.version", "Version"), ("title.installedOn", "Installed on"),
             ("title.refreshOnLaunch", "Refresh at next launch"),
-            ("footer.refreshOnLaunch", "Refreshes the app the next time you open it, with nothing to do on your Mac: "
+            ("footer.refreshOnLaunch", "📲 Next time you open the app: refreshes it, with nothing to do on your Mac. "
                 + "XSide just needs to be open on your Mac, with this device on the same Wi-Fi or plugged in with USB."),
             ("title.connection", "Connection to the Mac"), ("title.lastRefresh", "Last refresh"),
             ("title.showValidity", "Show validity when opening"),

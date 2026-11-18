@@ -196,10 +196,10 @@ struct SettingsBundleTests {
         #expect(!FileManager.default.fileExists(atPath: elsewhere.appendingPathComponent("Root.plist").path))
     }
 
-    static let refreshFooterEN = "Refreshes the app the next time you open it, with nothing to do on your Mac: "
+    static let refreshFooterEN = "📲 Next time you open the app: refreshes it, with nothing to do on your Mac. "
         + "XSide just needs to be open on your Mac, with this device on the same Wi-Fi or plugged in with USB."
-    static let refreshFooterFR = "Rafraîchit l'app la prochaine fois que tu l'ouvres, sans rien faire sur ton Mac : "
-        + "il suffit qu'XSide soit ouvert sur ton Mac et que cet appareil soit sur le même Wi-Fi ou branché en USB."
+    static let refreshFooterFR = "📲 À la prochaine ouverture de l'app : rafraîchit l'app, sans rien faire sur ton Mac. "
+        + "Il suffit qu'XSide soit ouvert sur ton Mac et que cet appareil soit sur le même Wi-Fi ou branché en USB."
 
     private func xsideSection(language: String = "en") -> SettingsSection {
         SettingsSection.xside(validUntil: "12 nov.", refreshedOn: "5 nov.", version: "1.2", installedOn: "1 nov.",
