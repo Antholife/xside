@@ -124,6 +124,8 @@ private struct DeviceSyncRow: View {
         case .updateMode: return L("inApp.field.value", L("inApp.updateMode"),
                                    L(s.updateMode.value == .auto ? "inApp.updateMode.auto" : "inApp.updateMode.notify"))
         case .updateFrequency: return L("inApp.field.value", L("inApp.updateFrequency"), frequencyLabel(s.updateFrequency.value))
+        case .duoCompatibility: return L("inApp.field.value", L("inApp.duoCompatibility"), onOff(s.duoCompatibility.value))
+        case .iCloudSignedOut: return L("inApp.field.value", L("inApp.iCloudSignedOut"), onOff(s.iCloudSignedOut.value))
         }
     }
 

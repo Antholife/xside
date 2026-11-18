@@ -535,17 +535,18 @@ public actor SideloadPipeline {
             }
             await progress(.welcome)
             Self.logger.info("\(what): adding the welcome popup")
+            // Per device: this job's choice, else the installation's. Computed before the facts so
+            // the phone's « Compatibilité » page is seeded with what this signing actually applies.
+            let duoAsked = duo ?? (previous?.duoCompatibility == true)
+            let iCloudAsked = iCloud ?? (previous?.iCloudSignedOut == true)
             let facts = signingFacts(recordID: recordID, deviceID: device.id, previous: previous, draft: draft,
                                      appVersion: record.options.version ?? record.version,
-                                     updateSource: record.updateSource, at: now())
+                                     updateSource: record.updateSource, duo: duoAsked, iCloud: iCloudAsked, at: now())
             var options = record.options
             // Off for this device only (a crash's fix) wins over the app's choice.
             options.withoutXSideFeatures = previous?.withoutXSideFeaturesHere == true
                 || options.resolvedWithoutXSideFeatures(default: withoutXSideFeaturesByDefault())
-            // Per device: this job's choice, else the installation's.
-            let duoAsked = duo ?? (previous?.duoCompatibility == true)
             options.duoCompatibility = duoAsked
-            let iCloudAsked = iCloud ?? (previous?.iCloudSignedOut == true)
             options.iCloudSignedOut = iCloudAsked
             options.paidTeamICloud = paidICloud
             let iCloudSkip = ICloudSkipBox()
@@ -728,7 +729,7 @@ public actor SideloadPipeline {
     /// outcome.
     private nonisolated func signingFacts(recordID: UUID, deviceID: String, previous: Installation?,
                                           draft: InAppDraft?, appVersion: String?, updateSource: UpdateSource?,
-                                          at date: Date) -> InstallationFacts {
+                                          duo: Bool, iCloud: Bool, at date: Date) -> InstallationFacts {
         var inApp = previous?.inApp ?? inAppDefaults(date)
         var macEdited = false
         if let draft {
@@ -743,10 +744,19 @@ public actor SideloadPipeline {
         // are always seeded from it here, stamped by the Mac: a phone's later change wins, the Mac's
         // own change (which re-stamps the installations, see Library.setUpdateSource) wins over a
         // stale phone value. An app with no source keeps « notify » / « global » (inert).
-        if let source = updateSource {
-            inApp = inApp.setting(\.updateMode, to: source.mode, at: date, by: .mac)
-            inApp = inApp.setting(\.updateFrequency, to: UpdateFrequency.from(source.checkInterval), at: date, by: .mac)
+        // Re-stamp a seeded field only when its value actually changes, so two identical signings
+        // produce identical settings (an unchanged value keeps its earlier stamp).
+        func seed<V: Equatable>(_ keyPath: WritableKeyPath<InAppSettings, Field<V>>, _ value: V) {
+            if inApp[keyPath: keyPath].value != value { inApp = inApp.setting(keyPath, to: value, at: date, by: .mac) }
         }
+        if let source = updateSource {
+            seed(\.updateMode, source.mode)
+            seed(\.updateFrequency, UpdateFrequency.from(source.checkInterval))
+        }
+        // Compatibility is a per-device install option, applied at the next signing: seed the phone's
+        // « Compatibilité » page with what this signing applies.
+        seed(\.duoCompatibility, duo)
+        seed(\.iCloudSignedOut, iCloud)
         var facts = InstallationFacts(
             installationID: ChannelEnvelope.installationID(recordID: recordID, deviceID: deviceID),
             channelSecret: ChannelEnvelope.newSecret(), inApp: inApp,

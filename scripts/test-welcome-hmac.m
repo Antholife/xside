@@ -45,6 +45,8 @@ static NSDictionary *fixtureSettings(void) {
         @"autoRefresh": field(@YES, 1799999005007, @"mac"),
         @"updateMode": field(@"auto", 1799999006000, @"device"),
         @"updateFrequency": field(@"daily", 1799999007000, @"device"),
+        @"duoCompatibility": field(@YES, 1799999008000, @"device"),
+        @"iCloudSignedOut": field(@NO, 1799999009000, @"mac"),
     };
 }
 

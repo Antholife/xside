@@ -686,6 +686,8 @@
 "inApp.updateMode.auto" = "Installer seul";
 "inApp.updateFrequency" = "Fréquence de vérification";
 "inApp.freq.global" = "Réglage global";
+"inApp.duoCompatibility" = "Compatibilité iPhone Duo";
+"inApp.iCloudSignedOut" = "Simuler iCloud déconnecté";
 "inApp.preview" = "Aperçu";
 "inApp.preview.validFor" = "Valable encore ";
 "inApp.preview.days5" = "5 jours";

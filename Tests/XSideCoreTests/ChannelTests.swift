@@ -113,7 +113,8 @@ import CryptoKit
                              alertLate: f(false, 1_799_999_001_000, .device), refreshCard: f(true, 1_799_999_002_000, .mac),
                              reminder: f(false, 1_799_999_003_000, .mac), language: f(.fr, 1_799_999_004_000, .device),
                              autoRefresh: f(true, 1_799_999_005_007, .mac), updateMode: f(.auto, 1_799_999_006_000, .device),
-                             updateFrequency: f(.daily, 1_799_999_007_000, .device))
+                             updateFrequency: f(.daily, 1_799_999_007_000, .device),
+                             duoCompatibility: f(true, 1_799_999_008_000, .device), iCloudSignedOut: f(false, 1_799_999_009_000, .mac))
     }()
     /// The outcome the Mac sends back with the check-in's settings (a failure the phone missed).
     static let fixtureOutcome = RefreshOutcome(at: Date(timeIntervalSince1970: 1_799_995_000.25), succeeded: false,

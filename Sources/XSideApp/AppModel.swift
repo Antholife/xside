@@ -1627,6 +1627,8 @@ final class AppModel {
         case .autoRefresh: return d(s.autoRefresh)
         case .updateMode: return d(s.updateMode)
         case .updateFrequency: return d(s.updateFrequency)
+        case .duoCompatibility: return d(s.duoCompatibility)
+        case .iCloudSignedOut: return d(s.iCloudSignedOut)
         }
     }
 

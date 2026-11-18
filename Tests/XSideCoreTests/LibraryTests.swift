@@ -87,6 +87,26 @@ struct LibraryTests {
         #expect(await lib.records().first?.updateSource?.checkInterval == 604_800)
     }
 
+    /// Duo/iCloud are per-device install options: a phone change is mirrored onto the installation
+    /// (applied at the next refresh), and a Mac change re-stamps the settings so it syncs back.
+    @Test func compatibilityRidesBothWays() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let lib = AppLibrary(root: tmp.appendingPathComponent("lib"))
+        let rec = try await lib.importIPA(try makeIPA(in: tmp), info: info, teamID: "TEAM123456")
+        var i = inst("dev1")
+        i.inApp = InAppSettings.defaults(reminder: true, at: Date(timeIntervalSince1970: 2_000_000))
+        try await lib.upsert(i, for: rec.id)
+        // Phone turns Duo on.
+        let phone = i.inApp!.setting(\.duoCompatibility, to: true, at: Date().addingTimeInterval(60), by: .device)
+        _ = try await lib.applyCheckIn(phone, checkIn: Date().addingTimeInterval(60), outcome: nil, recordID: rec.id, deviceID: "dev1")
+        #expect(await lib.records().first?.installations.first?.duoCompatibility == true)
+        // Mac turns iCloud shim on: the installation's settings carry it, stamped by the Mac.
+        _ = try await lib.setICloudSignedOut(true, recordID: rec.id, deviceID: "dev1")
+        let stored = try #require(await lib.records().first?.installations.first?.inApp)
+        #expect(stored.iCloudSignedOut.value == true)
+        #expect(stored.iCloudSignedOut.changedBy == .mac)
+    }
+
     @Test func persistsAcrossInstances() async throws {
         let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
         let root = tmp.appendingPathComponent("lib")

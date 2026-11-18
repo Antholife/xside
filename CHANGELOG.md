@@ -6,7 +6,8 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 
 ### Changed
 
-- **La page « Réglages XSide » dans les Réglages iOS passe en master-détail** : un menu avec le statut en tête, puis une sous-page par thème (Rafraîchissement, Mises à jour, Affichage dans l'app), chacune accessible d'un tap, pour piloter l'app depuis l'iPhone.
+- **La page « Réglages XSide » dans les Réglages iOS passe en master-détail** : un menu avec le statut en tête, puis une sous-page par thème (Rafraîchissement, Mises à jour, Compatibilité, Affichage dans l'app), chacune accessible d'un tap, pour piloter l'app depuis l'iPhone.
+- **Régler la compatibilité (iPhone Duo, iCloud déconnecté) depuis l'iPhone.** La sous-page « Compatibilité » expose les deux options d'installation ; le choix se synchronise avec le Mac et s'applique au prochain rafraîchissement de l'app.
 - **Choisir depuis l'iPhone ce que XSide fait quand une version sort, et à quelle fréquence vérifier.** Pour une app qui suit un dépôt GitHub, la sous-page « Mises à jour » montre le dépôt suivi et laisse régler « Quand une version sort » (Me prévenir / Installer seul) et « Vérifier » (Réglage global, 6 h, 1 jour, 1 semaine, à chaque rafraîchissement, jamais) ; les deux se synchronisent avec le Mac comme les autres réglages (le dernier changement gagne). Une fréquence personnalisée réglée sur le Mac s'affiche en lecture seule. Le dépôt et la variante restent pilotés depuis le Mac.
 
 ### Added

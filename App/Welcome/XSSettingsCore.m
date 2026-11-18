@@ -3,12 +3,13 @@
 #import "XSSettingsCore.h"
 
 static NSArray<NSString *> *XSBoolFields(void) {
-    return @[@"showValidity", @"alertLate", @"refreshCard", @"reminder", @"autoRefresh"];
+    return @[@"showValidity", @"alertLate", @"refreshCard", @"reminder", @"autoRefresh",
+             @"duoCompatibility", @"iCloudSignedOut"];
 }
 
 NSArray<NSString *> *XSSettingFields(void) {
     return @[@"showValidity", @"alertLate", @"refreshCard", @"reminder", @"language", @"autoRefresh",
-             @"updateMode", @"updateFrequency"];
+             @"updateMode", @"updateFrequency", @"duoCompatibility", @"iCloudSignedOut"];
 }
 
 /// The strings a choice field accepts; nil for a Bool field.
@@ -56,6 +57,8 @@ NSDictionary *XSSettingsDefaults(BOOL reminder, NSDate *at) {
         @"autoRefresh": XSField(@"autoRefresh", @YES, at, @"mac"),
         @"updateMode": XSField(@"updateMode", @"notify", at, @"mac"), // seeded from the app's source on the Mac
         @"updateFrequency": XSField(@"updateFrequency", @"global", at, @"mac"),
+        @"duoCompatibility": XSField(@"duoCompatibility", @NO, at, @"mac"),
+        @"iCloudSignedOut": XSField(@"iCloudSignedOut", @NO, at, @"mac"),
     };
 }
 
@@ -228,6 +231,8 @@ static NSString *XSFieldTitle(NSString *field, BOOL fr) {
         @"language": @[@"Langue des messages XSide", @"XSide messages language"],
         @"updateMode": @[@"Quand une version sort", @"When a version is out"],
         @"updateFrequency": @[@"Vérifier", @"Check"],
+        @"duoCompatibility": @[@"Compatibilité iPhone Duo", @"iPhone Duo compatibility"],
+        @"iCloudSignedOut": @[@"Simuler iCloud déconnecté", @"Simulate signed-out iCloud"],
     };
     NSArray<NSString *> *pair = titles[field];
     return pair ? pair[fr ? 0 : 1] : field;

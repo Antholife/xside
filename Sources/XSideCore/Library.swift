@@ -792,6 +792,10 @@ public actor AppLibrary {
         let previous = items
         items[index].installations[i].duoCompatibility = on ? true : nil
         if !on { items[index].installations[i].duoCompatibilityMissing = nil } // nothing asked, nothing missing
+        // Keep the synced setting in step, so the phone shows it and a stale value can't revert it.
+        if let inApp = items[index].installations[i].inApp {
+            items[index].installations[i].inApp = inApp.setting(\.duoCompatibility, to: on, at: Date(), by: .mac)
+        }
         do { try save() } catch { items = previous; throw error }
         return true
     }
@@ -822,6 +826,9 @@ public actor AppLibrary {
         if !on {
             items[index].installations[i].iCloudSignedOutMissing = nil
             items[index].installations[i].iCloudSignedOutSkippedForModule = nil
+        }
+        if let inApp = items[index].installations[i].inApp {
+            items[index].installations[i].inApp = inApp.setting(\.iCloudSignedOut, to: on, at: Date(), by: .mac)
         }
         do { try save() } catch { items = previous; throw error }
         return true
@@ -900,6 +907,20 @@ public actor AppLibrary {
             installation.pausedUntil = nil
             if !paused { installation.lastAttempt = nil }
             change = paused
+        }
+        // Compatibility options ride in the settings too: mirror the phone's choice onto the
+        // installation (applied at the next refresh), clearing the « missing » marks when turned off,
+        // exactly as setDuoCompatibility / setICloudSignedOut do.
+        if installation.duoCompatibility != (merged.duoCompatibility.value ? true : nil) {
+            installation.duoCompatibility = merged.duoCompatibility.value ? true : nil
+            if !merged.duoCompatibility.value { installation.duoCompatibilityMissing = nil }
+        }
+        if installation.iCloudSignedOut != (merged.iCloudSignedOut.value ? true : nil) {
+            installation.iCloudSignedOut = merged.iCloudSignedOut.value ? true : nil
+            if !merged.iCloudSignedOut.value {
+                installation.iCloudSignedOutMissing = nil
+                installation.iCloudSignedOutSkippedForModule = nil
+            }
         }
         items[index].installations[i] = installation
         // The update mode and frequency ride in the settings but belong to the app's shared source:

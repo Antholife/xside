@@ -70,6 +70,14 @@ extension SettingsSection {
                                 strings: texts))
         }
 
+        // Compatibilité: the per-device install options (the Duo fix, the signed-out-iCloud shim),
+        // which take effect at the next refresh (re-sign), synced like the other settings.
+        let compatPage = SettingsSection(
+            titleKey: title("menu.compat"), footerKey: p + "footer.compat",
+            rows: [.toggle(titleKey: title("duoCompatibility"), key: "duoCompatibility", defaultValue: s.duoCompatibility.value),
+                   .toggle(titleKey: title("iCloudSignedOut"), key: "iCloudSignedOut", defaultValue: s.iCloudSignedOut.value)],
+            strings: texts)
+
         // Affichage dans l'app: how XSide shows up in the app ("Messages XSide" is derived from the
         // four switches, see InAppSettings.derivedLevel) and the messages' language.
         let displayPage = SettingsSection(
@@ -86,6 +94,7 @@ extension SettingsSection {
         var rest: [Row] = [.group(key: "menu.rest", footerKey: p + "footer"),
                            .childPane(titleKey: title("menu.refresh"), key: "pane.refresh", fileSuffix: "refresh", page: refreshPage)]
         if let updatesPage { rest.append(updatesPage) }
+        rest.append(.childPane(titleKey: title("menu.compat"), key: "pane.compat", fileSuffix: "compat", page: compatPage))
         rest.append(.childPane(titleKey: title("menu.display"), key: "pane.display", fileSuffix: "display", page: displayPage))
         let menu = SettingsSection(
             titleKey: title("group"), footerKey: nil,
@@ -102,7 +111,10 @@ extension SettingsSection {
         let fr = table([
             ("title.group", "Réglages XSide"),
             ("title.menu.status", "Statut"), ("title.menu.refresh", "Rafraîchissement"),
-            ("title.menu.updates", "Mises à jour"), ("title.menu.display", "Affichage dans l'app"),
+            ("title.menu.updates", "Mises à jour"), ("title.menu.compat", "Compatibilité"),
+            ("title.menu.display", "Affichage dans l'app"),
+            ("title.duoCompatibility", "Compatibilité iPhone Duo"), ("title.iCloudSignedOut", "Simuler iCloud déconnecté"),
+            ("footer.compat", "Ces réglages s'appliquent au prochain rafraîchissement de l'app."),
             ("title.updates.repo", "Dépôt suivi"), ("title.updateMode", "Quand une version sort"),
             ("updateMode.notify", "Me prévenir"), ("updateMode.auto", "Installer seul"),
             ("title.updateFrequency", "Vérifier"),
@@ -137,7 +149,10 @@ extension SettingsSection {
         let en = table([
             ("title.group", "XSide Settings"),
             ("title.menu.status", "Status"), ("title.menu.refresh", "Refresh"),
-            ("title.menu.updates", "Updates"), ("title.menu.display", "In-app display"),
+            ("title.menu.updates", "Updates"), ("title.menu.compat", "Compatibility"),
+            ("title.menu.display", "In-app display"),
+            ("title.duoCompatibility", "iPhone Duo compatibility"), ("title.iCloudSignedOut", "Simulate signed-out iCloud"),
+            ("footer.compat", "These apply at the app's next refresh."),
             ("title.updates.repo", "Tracked repo"), ("title.updateMode", "When a version is out"),
             ("updateMode.notify", "Notify me"), ("updateMode.auto", "Install on its own"),
             ("title.updateFrequency", "Check"),

@@ -181,7 +181,8 @@ public enum ChannelHandler {
         return InAppSettings(showValidity: c(s.showValidity), alertLate: c(s.alertLate),
                              refreshCard: c(s.refreshCard), reminder: c(s.reminder), language: c(s.language),
                              autoRefresh: c(s.autoRefresh), updateMode: c(s.updateMode),
-                             updateFrequency: c(s.updateFrequency))
+                             updateFrequency: c(s.updateFrequency),
+                             duoCompatibility: c(s.duoCompatibility), iCloudSignedOut: c(s.iCloudSignedOut))
     }
 
     /// The signed reply line for an authenticated request, in the request's `version` (always

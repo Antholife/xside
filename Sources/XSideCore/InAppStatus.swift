@@ -127,6 +127,8 @@ extension SettingsDelivery {
             case .autoRefresh: pending(s.autoRefresh)
             case .updateMode: pending(s.updateMode)
             case .updateFrequency: pending(s.updateFrequency)
+            case .duoCompatibility: pending(s.duoCompatibility)
+            case .iCloudSignedOut: pending(s.iCloudSignedOut)
             }
         }
     }
@@ -140,6 +142,7 @@ private extension Field {
 /// One of the in-app settings, to say which ones the install window's user touched.
 public enum InAppField: String, CaseIterable, Sendable {
     case showValidity, alertLate, refreshCard, reminder, language, autoRefresh, updateMode, updateFrequency
+    case duoCompatibility, iCloudSignedOut
 }
 
 /// The install window's step ③: the values shown and the fields the user changed there.
@@ -174,6 +177,8 @@ extension InAppSettings {
         adopt(.autoRefresh, \.autoRefresh)
         adopt(.updateMode, \.updateMode)
         adopt(.updateFrequency, \.updateFrequency)
+        adopt(.duoCompatibility, \.duoCompatibility)
+        adopt(.iCloudSignedOut, \.iCloudSignedOut)
         return copy
     }
 
@@ -188,6 +193,8 @@ extension InAppSettings {
         if autoRefresh.value != other.autoRefresh.value { result.insert(.autoRefresh) }
         if updateMode.value != other.updateMode.value { result.insert(.updateMode) }
         if updateFrequency.value != other.updateFrequency.value { result.insert(.updateFrequency) }
+        if duoCompatibility.value != other.duoCompatibility.value { result.insert(.duoCompatibility) }
+        if iCloudSignedOut.value != other.iCloudSignedOut.value { result.insert(.iCloudSignedOut) }
         return result
     }
 

@@ -64,28 +64,38 @@ public struct InAppSettings: Codable, Equatable, Sendable {
     /// How often the app's source is checked (see `UpdateFrequency`), riding here like `updateMode`
     /// and kept in step with `UpdateSource.checkInterval` by the Mac. Inert for an app with no source.
     public var updateFrequency: Field<UpdateFrequency>
+    /// Compatibility install options (per device, applied at the next signing): the Duo fix and the
+    /// signed-out-iCloud shim. Ride here so the phone can set them; the Mac keeps `Installation`'s own
+    /// `duoCompatibility` / `iCloudSignedOut` in step (see `Library.applyCheckIn`).
+    public var duoCompatibility: Field<Bool>
+    public var iCloudSignedOut: Field<Bool>
 
     public init(showValidity: Field<Bool>, alertLate: Field<Bool>,
                 refreshCard: Field<Bool>, reminder: Field<Bool>, language: Field<MessageLanguage>,
                 autoRefresh: Field<Bool>, updateMode: Field<UpdateMode>? = nil,
-                updateFrequency: Field<UpdateFrequency>? = nil) {
+                updateFrequency: Field<UpdateFrequency>? = nil,
+                duoCompatibility: Field<Bool>? = nil, iCloudSignedOut: Field<Bool>? = nil) {
         self.showValidity = showValidity
         self.alertLate = alertLate
         self.refreshCard = refreshCard
         self.reminder = reminder
         self.language = language
         self.autoRefresh = autoRefresh
-        // Older state has no updateMode / updateFrequency: default them to the autoRefresh field's
+        // Older state has no update / compatibility fields: default them to the autoRefresh field's
         // stamp (a safe past date), so decoding never fails and a seeded value always wins.
-        self.updateMode = updateMode ?? Field(value: .notify, changedAt: autoRefresh.changedAt, changedBy: .mac)
-        self.updateFrequency = updateFrequency ?? Field(value: .global, changedAt: autoRefresh.changedAt, changedBy: .mac)
+        let past = autoRefresh.changedAt
+        self.updateMode = updateMode ?? Field(value: .notify, changedAt: past, changedBy: .mac)
+        self.updateFrequency = updateFrequency ?? Field(value: .global, changedAt: past, changedBy: .mac)
+        self.duoCompatibility = duoCompatibility ?? Field(value: false, changedAt: past, changedBy: .mac)
+        self.iCloudSignedOut = iCloudSignedOut ?? Field(value: false, changedAt: past, changedBy: .mac)
     }
 
     // Custom Codable so state and channel JSON from before these fields (older XSide, older dylibs)
-    // still decode: a missing `updateMode` / `updateFrequency` is defaulted, not an error. Extra keys
+    // still decode: a missing update / compatibility field is defaulted, not an error. Extra keys
     // stay ignored.
     private enum CodingKeys: String, CodingKey {
-        case showValidity, alertLate, refreshCard, reminder, language, autoRefresh, updateMode, updateFrequency
+        case showValidity, alertLate, refreshCard, reminder, language, autoRefresh
+        case updateMode, updateFrequency, duoCompatibility, iCloudSignedOut
     }
 
     public init(from decoder: Decoder) throws {
@@ -97,7 +107,9 @@ public struct InAppSettings: Codable, Equatable, Sendable {
                   language: try c.decode(Field<MessageLanguage>.self, forKey: .language),
                   autoRefresh: try c.decode(Field<Bool>.self, forKey: .autoRefresh),
                   updateMode: try c.decodeIfPresent(Field<UpdateMode>.self, forKey: .updateMode),
-                  updateFrequency: try c.decodeIfPresent(Field<UpdateFrequency>.self, forKey: .updateFrequency))
+                  updateFrequency: try c.decodeIfPresent(Field<UpdateFrequency>.self, forKey: .updateFrequency),
+                  duoCompatibility: try c.decodeIfPresent(Field<Bool>.self, forKey: .duoCompatibility),
+                  iCloudSignedOut: try c.decodeIfPresent(Field<Bool>.self, forKey: .iCloudSignedOut))
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -110,6 +122,8 @@ public struct InAppSettings: Codable, Equatable, Sendable {
         try c.encode(autoRefresh, forKey: .autoRefresh)
         try c.encode(updateMode, forKey: .updateMode)
         try c.encode(updateFrequency, forKey: .updateFrequency)
+        try c.encode(duoCompatibility, forKey: .duoCompatibility)
+        try c.encode(iCloudSignedOut, forKey: .iCloudSignedOut)
     }
 
     /// Mac defaults for a new installation: the reminder is seeded from the global Mac setting,
@@ -119,7 +133,8 @@ public struct InAppSettings: Codable, Equatable, Sendable {
         func f<V>(_ v: V) -> Field<V> { Field(value: v, changedAt: at, changedBy: .mac) }
         return InAppSettings(showValidity: f(true), alertLate: f(true),
                              refreshCard: f(true), reminder: f(reminder), language: f(.automatic),
-                             autoRefresh: f(true), updateMode: f(.notify), updateFrequency: f(.global))
+                             autoRefresh: f(true), updateMode: f(.notify), updateFrequency: f(.global),
+                             duoCompatibility: f(false), iCloudSignedOut: f(false))
     }
 
     /// Field-by-field merge (see `Field.merge`). Symmetric: `merge(a, b) == merge(b, a)`.
@@ -131,7 +146,9 @@ public struct InAppSettings: Codable, Equatable, Sendable {
                       language: .merge(a.language, b.language),
                       autoRefresh: .merge(a.autoRefresh, b.autoRefresh),
                       updateMode: .merge(a.updateMode, b.updateMode),
-                      updateFrequency: .merge(a.updateFrequency, b.updateFrequency))
+                      updateFrequency: .merge(a.updateFrequency, b.updateFrequency),
+                      duoCompatibility: .merge(a.duoCompatibility, b.duoCompatibility),
+                      iCloudSignedOut: .merge(a.iCloudSignedOut, b.iCloudSignedOut))
     }
 
     /// "fr" or "en": the language of the plain texts XSide writes into the app at signing (Settings
