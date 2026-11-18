@@ -79,17 +79,22 @@ public struct BackupService: DataBackingUp {
 
         let excluded = Self.excludedPrefixes(includeCaches: includeCaches)
         if let entries = try await container.listFiles(signedBundleID: signedBundleID, deviceID: deviceID) {
-            let paths = Self.pullPaths(entries, excluded: excluded)
-            let sizes = Dictionary(entries.map { ($0.relativePath, Int64($0.size ?? 0)) }, uniquingKeysWith: { a, _ in a })
-            let bytesTotal = paths.reduce(Int64(0)) { $0 + (sizes[$1] ?? 0) }
-            var bytesDone: Int64 = 0
-            for (i, path) in paths.enumerated() {
-                try Task.checkCancellation() // Cancel stops between files; the defer removes the temp
-                let dest = temp.appendingPathComponent(path)
-                try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try await container.pull(signedBundleID: signedBundleID, deviceID: deviceID, relativePath: path, to: dest)
-                bytesDone += sizes[path] ?? 0
-                progress(i + 1, paths.count, bytesDone, bytesTotal)
+            // Copy whole clean directories in one devicectl call each, not file by file: an app with
+            // hundreds of tiny files (YouTube's logs) is pulled in a handful of calls, not hundreds.
+            let targets = Self.copyTargets(entries, excluded: excluded)
+            let filesTotal = targets.reduce(0) { $0 + $1.files }
+            let bytesTotal = targets.reduce(Int64(0)) { $0 + $1.bytes }
+            var filesDone = 0, bytesDone: Int64 = 0
+            for t in targets {
+                try Task.checkCancellation() // Cancel stops between copies; the defer removes the temp
+                let dest = t.path.isEmpty ? temp : temp.appendingPathComponent(t.path)
+                let source = t.path.isEmpty ? "/" : (t.isDirectory ? String(t.path.dropLast()) : t.path)
+                // devicectl drops the source's contents into an existing destination directory.
+                try fm.createDirectory(at: t.isDirectory ? dest : dest.deletingLastPathComponent(),
+                                       withIntermediateDirectories: true)
+                try await container.pull(signedBundleID: signedBundleID, deviceID: deviceID, relativePath: source, to: dest)
+                filesDone += t.files; bytesDone += t.bytes
+                progress(filesDone, filesTotal, bytesDone, bytesTotal)
             }
         } else {
             // Listing unavailable (unsupported, or the device blinked): copy everything, then prune.
@@ -140,5 +145,55 @@ public struct BackupService: DataBackingUp {
     static func pullPaths(_ entries: [ContainerEntry], excluded: [String]) -> [String] {
         entries.filter { !$0.isDirectory && !excluded.contains(where: $0.relativePath.hasPrefix) }
             .map(\.relativePath).sorted()
+    }
+
+    /// One devicectl copy: a whole directory (`isDirectory`, path ends in `/`, `""` = the whole
+    /// container) or a single file. `files`/`bytes` are the kept entries it carries, for progress.
+    struct CopyTarget: Equatable {
+        let path: String
+        let isDirectory: Bool
+        let files: Int
+        let bytes: Int64
+    }
+
+    /// Groups the container's kept files into the fewest copies. A directory is copied whole in one
+    /// call unless an excluded subtree (caches, tmp) lies within it — then its ancestors are
+    /// "split" and we descend past them to the first directory that is clean. So an app with
+    /// hundreds of tiny files under one folder is pulled in a single call, not one call per file.
+    /// Derived from file entries only, so it doesn't depend on the listing carrying directory ones.
+    static func copyTargets(_ entries: [ContainerEntry], excluded: [String]) -> [CopyTarget] {
+        // Every proper directory ancestor of an excluded prefix must be descended into, never copied
+        // whole (that would pull the excluded subtree). The container root is "".
+        var split: Set<String> = []
+        for prefix in excluded {
+            let comps = prefix.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+            var acc = ""
+            split.insert(acc)
+            for c in comps.dropLast() { acc += c + "/"; split.insert(acc) }
+        }
+        // The shallowest directory ancestor of `path` that is clean (not split); if every one is
+        // split, the file sits directly in a split directory and is copied on its own.
+        func root(of path: String) -> (String, Bool) {
+            let dirs = path.split(separator: "/", omittingEmptySubsequences: true).map(String.init).dropLast()
+            var acc = ""
+            var i = 0
+            while split.contains(acc) {
+                guard i < dirs.count else { return (path, false) }
+                acc += dirs[i] + "/"; i += 1
+            }
+            return (acc, true)
+        }
+        var order: [String] = []
+        var carried: [String: (isDir: Bool, files: Int, bytes: Int64)] = [:]
+        for e in entries where !e.isDirectory && !excluded.contains(where: e.relativePath.hasPrefix) {
+            let (key, isDir) = root(of: e.relativePath)
+            if carried[key] == nil { order.append(key) }
+            var agg = carried[key] ?? (isDir, 0, 0)
+            agg.files += 1; agg.bytes += Int64(e.size ?? 0)
+            carried[key] = agg
+        }
+        return order.sorted().map {
+            CopyTarget(path: $0, isDirectory: carried[$0]!.isDir, files: carried[$0]!.files, bytes: carried[$0]!.bytes)
+        }
     }
 }

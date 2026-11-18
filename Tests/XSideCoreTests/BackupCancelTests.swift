@@ -2,7 +2,8 @@ import Testing
 import Foundation
 @testable import XSideCore
 
-/// A devicectl that lists three files, and cancels the backup's task while pulling the first.
+/// A devicectl that lists three files in three folders (so three copies), and cancels the backup's
+/// task while pulling the first.
 private final class CancellingRunner: CommandRunning, @unchecked Sendable {
     private let lock = NSLock()
     private var _task: Task<BackupSnapshot?, Error>?
@@ -14,7 +15,7 @@ private final class CancellingRunner: CommandRunning, @unchecked Sendable {
         let ok = CommandResult(status: 0, stdout: Data(), stderr: "")
         if arguments.starts(with: ["devicectl", "device", "info", "files"]) {
             let i = arguments.firstIndex(of: "--json-output")!
-            let files = ["Documents/a", "Documents/b", "Documents/c"].map {
+            let files = ["Documents/a", "Media/b", "Store/c"].map {
                 ["relativePath": $0, "resources": ["isDirectory": false], "metadata": ["size": 1]] as [String: Any]
             }
             try JSONSerialization.data(withJSONObject: ["result": ["files": files]]).write(to: URL(fileURLWithPath: arguments[i + 1]))
@@ -22,16 +23,17 @@ private final class CancellingRunner: CommandRunning, @unchecked Sendable {
         }
         if arguments.starts(with: ["devicectl", "device", "copy", "from"]) {
             let dest = URL(fileURLWithPath: arguments[arguments.firstIndex(of: "--destination")! + 1])
-            try Data("x".utf8).write(to: dest)
+            try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+            try Data("x".utf8).write(to: dest.appendingPathComponent("f"))
             let first = lock.withLock { _pulls.append(dest); return _pulls.count == 1 }
-            if first { task?.cancel() } // the user taps Cancel mid-backup; this pull still completes
+            if first { task?.cancel() } // the user taps Cancel mid-backup; this copy still completes
         }
         return ok
     }
 }
 
 @Suite struct BackupCancelTests {
-    @Test func cancel_stopsBetweenFiles_throwsAndLeavesNoSnapshotNorTemp() async throws {
+    @Test func cancel_stopsBetweenCopies_throwsAndLeavesNoSnapshotNorTemp() async throws {
         let runner = CancellingRunner()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("bc-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
@@ -43,7 +45,7 @@ private final class CancellingRunner: CommandRunning, @unchecked Sendable {
             _ = try await task.value
             Issue.record("expected CancellationError")
         } catch is CancellationError {}
-        #expect(runner.pulls.count == 1) // stopped before the 2nd of 3 files
+        #expect(runner.pulls.count == 1) // stopped before the 2nd of 3 copies
         let temp = try #require(runner.pulls.first?.deletingLastPathComponent().pathComponents.first { $0.hasPrefix("xside-backup-") })
         #expect(!FileManager.default.fileExists(atPath: FileManager.default.temporaryDirectory.appendingPathComponent(temp).path))
         #expect(await store.list(signedBundleID: "b.T", deviceID: "D").isEmpty)

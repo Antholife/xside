@@ -63,7 +63,7 @@ private final class Ticks: @unchecked Sendable {
         return (BackupService(store: AppDataBackup(root: root), container: AppDataContainer(runner: runner)), root)
     }
 
-    @Test func reportsOneTickPerPulledFile_excludedNotCounted() async throws {
+    @Test func reportsOneTickPerCopiedGroup_excludedNotCounted() async throws {
         let runner = ProgressTreeRunner()
         runner.tree = ["Documents/a": "1", "Documents/b": "22", "Library/Prefs/p": "333", "tmp/x": "4444", "Library/Caches/c": "55555"]
         let (service, root) = make(runner)
@@ -71,9 +71,10 @@ private final class Ticks: @unchecked Sendable {
         let ticks = Ticks()
         _ = try await service.backUp(signedBundleID: "b.T", deviceID: "D", deviceName: "n", appVersion: nil,
                                      includeCaches: false, progress: { ticks.add($0, $1, $2, $3) })
-        #expect(ticks.all.count == 3)
+        // Two copies — the whole « Documents/ » (a, b) then « Library/Prefs/ » (p); caches and tmp excluded.
+        #expect(ticks.all.count == 2)
         #expect(ticks.all.last == [3, 3, 6, 6])
-        #expect(ticks.all.map { $0[0] } == [1, 2, 3])
+        #expect(ticks.all.map { $0[0] } == [2, 3])
     }
 
     @Test func fallbackWholePull_reportsUnknownTotalOnce() async throws {
