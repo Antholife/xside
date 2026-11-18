@@ -11,6 +11,9 @@ public enum InstallationUpdate: Equatable, Sendable {
     case paused(Bool, by: ChangeOrigin)
     /// Run a manual refresh of this installation; its outcome is sent as a second reply line.
     case refreshRequested
+    /// Check the app's GitHub source for a newer release now; the outcome is told by XSide's usual
+    /// update notification, not a reply (the `accepted` reply just says the request was taken).
+    case checkUpdatesRequested
 }
 
 /// What became of one received request line (see the wire format in Channel.swift).
@@ -140,6 +143,9 @@ public enum ChannelHandler {
             if installation.refreshPaused { return (.paused(by: installation.pausedBy ?? .mac), .none) }
             if phoneRefreshTooSoon(installation, now: now) { return (.busy, .none) }
             return (.accepted, .refreshRequested)
+        case .checkUpdates:
+            // Light and read-only on the Mac (no re-sign): always taken; the outcome is a notification.
+            return (.accepted, .checkUpdatesRequested)
         case .bye:
             // Only meaningful on a watch (read there, never answered); on its own connection: nothing.
             return (.accepted, .none)

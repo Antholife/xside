@@ -73,6 +73,8 @@ NSData *XSSealRequest(NSDictionary *body, NSString *installationID, NSData *secr
 
 NSDictionary *XSRefreshBody(void) { return @{@"type": @"refresh"}; }
 
+NSDictionary *XSCheckUpdatesBody(void) { return @{@"type": @"checkUpdates"}; }
+
 NSDictionary *XSSetAutoRefreshBody(BOOL on) { return @{@"type": @"setAutoRefresh", @"on": on ? @YES : @NO}; }
 
 NSDictionary *XSCheckInBody(NSDictionary *settings, NSDictionary *lastRefresh, NSString *appVersion,

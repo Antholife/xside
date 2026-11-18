@@ -127,6 +127,24 @@ extension AppModel {
         }
     }
 
+    /// « Vérifier maintenant » asked from the iPhone: check every source of this record now, whatever
+    /// its cadence, and notify / auto-install like the background pass.
+    func checkUpdatesForRecord(recordID: UUID) {
+        guard hasLoadedRecords, !updateCheckRunning, let record = records.first(where: { $0.id == recordID }) else { return }
+        let targets = updateTargets(of: record)
+        guard !targets.isEmpty else { return }
+        updateCheckRunning = true
+        Task { [weak self] in
+            guard let self else { return }
+            defer { updateCheckRunning = false }
+            let reports = await runUpdateChecks(targets)
+            let reached = zip(targets, reports).compactMap { t, r -> UpdateTarget? in
+                if case .failed = r.result { nil } else { t }
+            }
+            await markChecked(reached, at: Date())
+        }
+    }
+
     /// Stamps `lastCheckedAt` on each source's library entry so its own cadence advances.
     private func markChecked(_ targets: [UpdateTarget], at now: Date) async {
         guard !targets.isEmpty else { return }

@@ -30,6 +30,7 @@ NSData *_Nullable XSSealRequest(NSDictionary *body, NSString *installationID, NS
 
 /// Bodies of the three requests.
 NSDictionary *XSRefreshBody(void);
+NSDictionary *XSCheckUpdatesBody(void);
 NSDictionary *XSSetAutoRefreshBody(BOOL on);
 /// `lastRefresh`: {at (NSDate), succeeded (Bool), reasonKey (optional)}; `appVersion` optional.
 /// `pollEvery`: seconds to the next foreground poll (15, 45 in Low Power Mode), so the Mac says

@@ -877,6 +877,7 @@ static void XSLaunch(void) {
     // Asked from iOS Settings: the same as the Refresh quick action, once the app is on screen
     // (its pills replace the launch pill). After this launch decided on the sheet: it waits for it.
     if (XSWantsRefreshOnLaunch()) dispatch_async(dispatch_get_main_queue(), ^{ XSWhenForeground(1.0, ^{ XSRequestRefresh(); }); });
+    if (XSTakeCheckUpdatesOnLaunch()) dispatch_async(dispatch_get_main_queue(), ^{ XSWhenForeground(1.0, ^{ XSRequestCheckUpdates(); }); });
     NSDate *expiry = XSExpirationDate();
     if (!expiry) return;
     XSNoteSignature(expiry);
@@ -939,6 +940,7 @@ static void XSLaunch(void) {
 static void XSReturn(void) {
     // Coming back from iOS Settings right after turning it on is the usual way to use it.
     if (XSWantsRefreshOnLaunch()) XSWhenForeground(0.5, ^{ XSRequestRefresh(); });
+    if (XSTakeCheckUpdatesOnLaunch()) XSWhenForeground(0.5, ^{ XSRequestCheckUpdates(); });
     BOOL changed = XSLoadSettings();
     // The answer to a Refresh that came while the person was away (final review minor 6).
     XSWhenForeground(0.3, ^{ XSShowKeptAnswer(); });

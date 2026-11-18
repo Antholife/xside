@@ -66,7 +66,11 @@ extension SettingsSection {
                                 titleKey: title("menu.updates"), footerKey: p + "footer.updates",
                                 rows: [.value(titleKey: title("updates.repo"), key: "updates.repo", defaultValue: repo),
                                        choice("updateMode", ["notify", "auto"], s.updateMode.value.rawValue),
-                                       frequencyRow],
+                                       frequencyRow,
+                                       // An action (iOS Settings can't run one now): a switch the app
+                                       // turns back off and acts on at its next launch, like refresh-on-launch.
+                                       .group(key: "updates.action", footerKey: p + "footer.checkUpdates"),
+                                       .toggle(titleKey: title("checkUpdates"), key: "checkUpdatesOnLaunch", defaultValue: false)],
                                 strings: texts))
         }
 
@@ -122,6 +126,8 @@ extension SettingsSection {
             ("updateFrequency.daily", "Chaque jour"), ("updateFrequency.weekly", "Chaque semaine"),
             ("updateFrequency.atRefresh", "À chaque rafraîchissement"), ("updateFrequency.never", "Jamais"),
             ("updateFrequency.custom", "Personnalisé"),
+            ("title.checkUpdates", "Vérifier maintenant"),
+            ("footer.checkUpdates", "Lance une recherche de mises à jour à la prochaine ouverture de l'app."),
             ("footer.updates", "Pour changer le dépôt suivi ou la variante, passe par ton Mac."),
             ("title.validUntil", "Valable jusqu'au"), ("title.refreshedOn", "Rafraîchie le"),
             ("title.version", "Version"), ("title.installedOn", "Installée le"),
@@ -160,6 +166,8 @@ extension SettingsSection {
             ("updateFrequency.daily", "Every day"), ("updateFrequency.weekly", "Every week"),
             ("updateFrequency.atRefresh", "At each refresh"), ("updateFrequency.never", "Never"),
             ("updateFrequency.custom", "Custom"),
+            ("title.checkUpdates", "Check now"),
+            ("footer.checkUpdates", "Runs an update check the next time you open the app."),
             ("footer.updates", "To change the tracked repo or the variant, use your Mac."),
             ("title.validUntil", "Valid until"), ("title.refreshedOn", "Last refreshed"),
             ("title.version", "Version"), ("title.installedOn", "Installed on"),

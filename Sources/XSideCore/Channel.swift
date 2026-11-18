@@ -156,6 +156,9 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
                  previousRun: PreviousRun? = nil)
     /// "Refresh now" from the phone.
     case refresh
+    /// "Check for updates now" from the phone (the app's GitHub source). Answered `accepted` at
+    /// once; the outcome reaches the person through XSide's usual update notification, not a reply.
+    case checkUpdates
     /// Pause (`false`) or resume (`true`) automatic refresh for this installation.
     case setAutoRefresh(Bool)
     /// A check-in that keeps the connection open while the app is in front: the Mac's changes are
@@ -188,6 +191,7 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
                           previousRun: try PreviousRun.decode(from: c))
         case "bye": self = .bye
         case "refresh": self = .refresh
+        case "checkUpdates": self = .checkUpdates
         case "setAutoRefresh": self = .setAutoRefresh(try c.decode(Bool.self, forKey: .on))
         case let other:
             throw DecodingError.dataCorruptedError(forKey: .type, in: c, debugDescription: "unknown request \(other)")
@@ -213,6 +217,7 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
             try previousRun?.encode(into: &c)
         case .bye: try c.encode("bye", forKey: .type)
         case .refresh: try c.encode("refresh", forKey: .type)
+        case .checkUpdates: try c.encode("checkUpdates", forKey: .type)
         case let .setAutoRefresh(on):
             try c.encode("setAutoRefresh", forKey: .type)
             try c.encode(on, forKey: .on)
@@ -223,7 +228,7 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
     public var checkInReport: (settings: InAppSettings, lastRefresh: RefreshOutcome?)? {
         switch self {
         case let .checkIn(settings, lastRefresh, _, _, _), let .watch(settings, lastRefresh, _, _, _): (settings, lastRefresh)
-        case .refresh, .setAutoRefresh, .bye: nil
+        case .refresh, .checkUpdates, .setAutoRefresh, .bye: nil
         }
     }
 
@@ -231,7 +236,7 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
     public var previousRun: PreviousRun? {
         switch self {
         case let .checkIn(_, _, _, _, run), let .watch(_, _, _, _, run): run
-        case .refresh, .setAutoRefresh, .bye: nil
+        case .refresh, .checkUpdates, .setAutoRefresh, .bye: nil
         }
     }
 

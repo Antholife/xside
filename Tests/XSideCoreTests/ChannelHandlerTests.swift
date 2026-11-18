@@ -18,6 +18,18 @@ import Foundation
 
     // MARK: handle
 
+    @Test func checkUpdatesIsAcceptedAndAsksForACheck() {
+        let (reply, update) = ChannelHandler.handle(.checkUpdates, installation: installation(), now: now, reminder: true)
+        #expect(reply == .accepted)
+        #expect(update == .checkUpdatesRequested)
+    }
+
+    @Test func checkUpdatesRequestRoundTrips() throws {
+        let env = try ChannelEnvelope.seal(.checkUpdates, installationID: "rec|dev", secret: secret, now: now, nonce: "n1")
+        var seen = NonceCache()
+        #expect(try ChannelEnvelope.decode(line: env.encodedLine()).open(secret: secret, now: now, seen: &seen) == .checkUpdates)
+    }
+
     @Test func checkInMergesAndReturnsTheMergedSettings() {
         let mac = InAppSettings.defaults(reminder: true, at: now.addingTimeInterval(-3600))
             .setting(\.refreshCard, to: false, at: now.addingTimeInterval(-60), by: .mac)

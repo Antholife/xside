@@ -1051,3 +1051,33 @@ static void XSResumeAutoRefreshNow(void) {
         XSShowAnswer(c);
     }) start];
 }
+
+static void XSRequestCheckUpdatesNow(void);
+
+void XSRequestCheckUpdates(void) {
+    if (!XSInstallationID() || !XSChannelSecret()) return; // no link with XSide yet: nothing to ask
+    XSAfterSheet(^{ XSExplainNetworkThen(^{ XSRequestCheckUpdatesNow(); }); });
+}
+
+static void XSRequestCheckUpdatesNow(void) {
+    BOOL fr = XSFrench();
+    XSPillContent *asking = XSPill(fr ? @"Recherche de mises à jour…" : @"Checking for updates…",
+                                   fr ? @"XSide regarde le dépôt suivi sur ton Mac." : @"XSide is checking the tracked repo on your Mac.",
+                                   XSPillToneNeutral, 0);
+    asking.busy = YES;
+    XSShowAnswer(asking);
+    [XSPatientExchange(XSCheckUpdatesBody(), NO, ^(XSChannelResult result, NSDictionary *reply, BOOL final) {
+        BOOL f = XSFrench();
+        if (result == XSChannelWaiting) { XSShowWaitingPill(YES); return; }
+        if (result != XSChannelReplied) { XSShowAnswer(XSUnansweredPill(result)); return; }
+        if ([reply[@"type"] isEqual:@"busy"]) {
+            XSShowAnswer(XSPill(f ? @"XSide est occupé" : @"XSide is busy",
+                                f ? @"Réessaie dans un instant." : @"Try again in a moment.", XSPillToneNeutral, 6));
+            return;
+        }
+        // accepted: the Mac took it; a newer version (if any) arrives as an update notification.
+        XSShowAnswer(XSPill(f ? @"Recherche de mises à jour lancée" : @"Update check started",
+                            f ? @"Si une nouvelle version existe, XSide te préviendra." : @"If a new version exists, XSide will let you know.",
+                            XSPillToneNeutral, 6));
+    }) start];
+}

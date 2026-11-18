@@ -138,6 +138,8 @@ void XSNoteSignature(NSDate *expiry);
 void XSWriteStatusRows(NSDate *_Nullable expiry);
 /// The "Rafraîchir à la prochaine ouverture" switch was on: turns it back off and returns YES.
 BOOL XSWantsRefreshOnLaunch(void);
+/// The "Vérifier maintenant" switch was on: consumes it (turns it back off) and returns YES.
+BOOL XSTakeCheckUpdatesOnLaunch(void);
 /// The person allowed the local network once (after tapping Refresh): checking in at launch is fine.
 BOOL XSChannelGranted(void);
 void XSSetChannelGranted(void);

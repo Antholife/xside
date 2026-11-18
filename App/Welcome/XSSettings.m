@@ -314,6 +314,17 @@ BOOL XSWantsRefreshOnLaunch(void) {
     return [on isKindOfClass:NSNumber.class] && [on boolValue];
 }
 
+static NSString *XSCheckUpdatesKey(void) { return [XSRowPrefix stringByAppendingString:@"checkUpdatesOnLaunch"]; }
+
+BOOL XSTakeCheckUpdatesOnLaunch(void) {
+    // "Vérifier maintenant": a lighter action than a refresh (no re-sign), so it is consumed at
+    // once — turned back off here and asked. A miss just means the person taps it again.
+    id on = [XSDefaults() objectForKey:XSCheckUpdatesKey()];
+    BOOL wants = [on isKindOfClass:NSNumber.class] && [on boolValue];
+    if (wants) [XSDefaults() setObject:@NO forKey:XSCheckUpdatesKey()];
+    return wants;
+}
+
 BOOL XSChannelGranted(void) { return [XSDefaults() boolForKey:XSChannelGrantedKey]; }
 void XSSetChannelGranted(void) { [XSDefaults() setBool:YES forKey:XSChannelGrantedKey]; }
 BOOL XSNetworkExplained(void) { return [XSDefaults() boolForKey:XSNetworkExplainedKey]; }

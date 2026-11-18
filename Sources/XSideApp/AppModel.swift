@@ -1553,6 +1553,10 @@ final class AppModel {
                 await reply(.accepted)
                 if let outcome = await waitForOutcome(task) { await reply(outcome) }
             }
+        case .checkUpdatesRequested:
+            Self.channelLogger.notice("channel: check-updates asked for \(found.recordID) from \(job.deviceID)")
+            checkUpdatesForRecord(recordID: job.recordID)
+            await reply(.accepted)
         }
     }
 
@@ -1638,6 +1642,7 @@ final class AppModel {
         case .watch: "watch" + Self.describeRun(request)
         case .bye: "bye"
         case .refresh: "refresh"
+        case .checkUpdates: "check-updates"
         case .setAutoRefresh(let on): "automatic refresh \(on ? "on" : "off")"
         }
     }

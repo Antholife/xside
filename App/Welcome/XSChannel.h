@@ -14,6 +14,11 @@ NS_ASSUME_NONNULL_BEGIN
 /// pill, and a failure that arrives later in a notification. Main thread.
 void XSRequestRefresh(void);
 
+/// "Vérifier maintenant" from the phone: asks XSide to check the app's GitHub source now. A light
+/// request (no re-sign): the pill says it was taken, the outcome arrives as XSide's usual update
+/// notification. Main thread.
+void XSRequestCheckUpdates(void);
+
 /// The silent check-in (≤ 3 s): sends this phone's settings and last refresh, adopts the merged
 /// settings and the refresh outcome XSide answers. Only once the local network was allowed.
 /// `done` (main queue) runs in every case, after the answer if any, with the one pill saying what
