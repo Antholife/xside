@@ -102,7 +102,10 @@ extension SettingsSection {
         var rest: [Row] = [.group(key: "menu.rest", footerKey: p + "footer"), refreshPane]
         if let updatesPane { rest.append(updatesPane) }
         rest.append(contentsOf: [compatPane, dataPane, displayPane])
-        let menu = SettingsSection(titleKey: title("group"), footerKey: nil, rows: [statusPage] + rest, strings: texts)
+        // A note near the top (the leading group's footer, under « Statut »): changes here are read
+        // when the app next runs, iOS can't tell it sooner.
+        let menu = SettingsSection(titleKey: title("group"), footerKey: p + "footer.intro",
+                                   rows: [statusPage] + rest, strings: texts)
         return menu.plainText(in: language)
     }
 
@@ -135,6 +138,7 @@ extension SettingsSection {
             ("updateFrequency.custom", "Personnalisé"),
             ("title.checkUpdates", "Vérifier maintenant"),
             ("footer.checkUpdates", "📲 À la prochaine ouverture de l'app : XSide recherche les mises à jour du dépôt suivi."),
+            ("footer.intro", "📲 Un changement ici s'applique à la prochaine ouverture de l'app (ou quand tu y reviens) : XSide le lit alors et prévient ton Mac. iOS ne permet pas de le faire pendant que l'app est fermée."),
             ("footer.status", "Rafraîchi par ton Mac. Ces infos sont réécrites dans ta langue à l'ouverture de l'app."),
             ("footer.autoRefresh", "Activé : XSide rafraîchit l'app avant qu'elle expire. Désactivé : elle expirera à sa date."),
             ("footer.updatesRepo", "Le dépôt GitHub d'où viennent les mises à jour. Pour en changer, passe par ton Mac."),
@@ -198,6 +202,7 @@ extension SettingsSection {
             ("updateFrequency.custom", "Custom"),
             ("title.checkUpdates", "Check now"),
             ("footer.checkUpdates", "📲 Next time you open the app: XSide checks the tracked repo for updates."),
+            ("footer.intro", "📲 A change here applies the next time you open the app (or come back to it): XSide reads it then and tells your Mac. iOS can't do it while the app is closed."),
             ("footer.status", "Refreshed by your Mac. These are rewritten in your language when you open the app."),
             ("footer.autoRefresh", "On: XSide refreshes the app before it expires. Off: it will expire on its date."),
             ("footer.updatesRepo", "The GitHub repo updates come from. To change it, use your Mac."),

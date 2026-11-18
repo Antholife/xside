@@ -255,7 +255,8 @@ struct SettingsBundleTests {
         #expect(menu.count == 7)
         #expect(menu[0]["Type"] as? String == "PSGroupSpecifier")
         #expect(menu[0]["Key"] as? String == p + "section")
-        #expect(menu[0]["FooterText"] == nil)
+        // The leading group carries the « read at next launch » note.
+        #expect((menu[0]["FooterText"] as? String)?.hasPrefix("📲") == true)
         #expect(menu[1]["Type"] as? String == "PSChildPaneSpecifier")
         #expect(menu[1]["Title"] as? String == "Status")
         #expect(menu[1]["File"] as? String == "XSide-status")
