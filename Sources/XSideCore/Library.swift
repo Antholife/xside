@@ -608,14 +608,18 @@ public actor AppLibrary {
     public func setUpdateSource(_ source: UpdateSource?, forRecord id: UUID) throws {
         let index = try indexOf(id)
         let previous = items
-        let oldMode = items[index].updateSource?.mode
+        let old = items[index].updateSource
         items[index].updateSource = source
-        if let mode = source?.mode, mode != oldMode {
+        if let source {
             let now = Date()
+            let newFrequency = UpdateFrequency.from(source.checkInterval)
             for i in items[index].installations.indices {
-                if let inApp = items[index].installations[i].inApp {
-                    items[index].installations[i].inApp = inApp.setting(\.updateMode, to: mode, at: now, by: .mac)
+                guard var inApp = items[index].installations[i].inApp else { continue }
+                if source.mode != old?.mode { inApp = inApp.setting(\.updateMode, to: source.mode, at: now, by: .mac) }
+                if source.checkInterval != old?.checkInterval {
+                    inApp = inApp.setting(\.updateFrequency, to: newFrequency, at: now, by: .mac)
                 }
+                items[index].installations[i].inApp = inApp
             }
         }
         do { try save() } catch { items = previous; throw error }
@@ -898,13 +902,17 @@ public actor AppLibrary {
             change = paused
         }
         items[index].installations[i] = installation
-        // The update mode rides in the settings but belongs to the app's shared source: keep the
-        // source in step (last change wins) so the background pass and the Updates tab follow what
-        // the phone now shows. The Mac's own mode changes re-stamp the installations (see
-        // setUpdateSource), so they win over a stale phone value through the merge above.
-        if var source = items[index].updateSource, source.mode != merged.updateMode.value {
-            source.mode = merged.updateMode.value
-            items[index].updateSource = source
+        // The update mode and frequency ride in the settings but belong to the app's shared source:
+        // keep the source in step (last change wins) so the background pass and the Updates tab
+        // follow what the phone now shows. The Mac's own changes re-stamp the installations (see
+        // setUpdateSource), so they win over a stale phone value through the merge above. A custom
+        // interval the phone can't name maps back to itself, so it is never clobbered.
+        if var source = items[index].updateSource {
+            var changed = false
+            if source.mode != merged.updateMode.value { source.mode = merged.updateMode.value; changed = true }
+            let interval = merged.updateFrequency.value.checkInterval(current: source.checkInterval)
+            if source.checkInterval != interval { source.checkInterval = interval; changed = true }
+            if changed { items[index].updateSource = source }
         }
         do { try save() } catch { items = previous; throw error }
         rememberConnection(bundleID: items[index].originalBundleID, deviceID: deviceID, at: checkIn)

@@ -123,6 +123,18 @@ private struct DeviceSyncRow: View {
         case .autoRefresh: return L("inApp.field.value", L("inApp.autoRefresh"), onOff(s.autoRefresh.value))
         case .updateMode: return L("inApp.field.value", L("inApp.updateMode"),
                                    L(s.updateMode.value == .auto ? "inApp.updateMode.auto" : "inApp.updateMode.notify"))
+        case .updateFrequency: return L("inApp.field.value", L("inApp.updateFrequency"), frequencyLabel(s.updateFrequency.value))
+        }
+    }
+
+    /// A frequency's short label (« 6 h », « Réglage global », « À chaque rafraîchissement »…).
+    static func frequencyLabel(_ f: UpdateFrequency) -> String {
+        switch f {
+        case .global: return L("inApp.freq.global")
+        case .atRefresh: return L("update.interval.atRefresh")
+        case .never: return L("update.interval.never")
+        case .custom: return L("update.interval.custom")
+        case .sixHours, .daily, .weekly: return IntervalLabel.short(f.checkInterval(current: nil) ?? 0)
         }
     }
 

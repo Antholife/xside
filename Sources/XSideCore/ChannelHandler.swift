@@ -180,7 +180,8 @@ public enum ChannelHandler {
         }
         return InAppSettings(showValidity: c(s.showValidity), alertLate: c(s.alertLate),
                              refreshCard: c(s.refreshCard), reminder: c(s.reminder), language: c(s.language),
-                             autoRefresh: c(s.autoRefresh), updateMode: c(s.updateMode))
+                             autoRefresh: c(s.autoRefresh), updateMode: c(s.updateMode),
+                             updateFrequency: c(s.updateFrequency))
     }
 
     /// The signed reply line for an authenticated request, in the request's `version` (always

@@ -61,25 +61,31 @@ public struct InAppSettings: Codable, Equatable, Sendable {
     /// syncs like the other settings; the Mac keeps `UpdateSource.mode` in step (see
     /// `Library.applyCheckIn` and `setUpdateSource`). Inert for an app with no source.
     public var updateMode: Field<UpdateMode>
+    /// How often the app's source is checked (see `UpdateFrequency`), riding here like `updateMode`
+    /// and kept in step with `UpdateSource.checkInterval` by the Mac. Inert for an app with no source.
+    public var updateFrequency: Field<UpdateFrequency>
 
     public init(showValidity: Field<Bool>, alertLate: Field<Bool>,
                 refreshCard: Field<Bool>, reminder: Field<Bool>, language: Field<MessageLanguage>,
-                autoRefresh: Field<Bool>, updateMode: Field<UpdateMode>? = nil) {
+                autoRefresh: Field<Bool>, updateMode: Field<UpdateMode>? = nil,
+                updateFrequency: Field<UpdateFrequency>? = nil) {
         self.showValidity = showValidity
         self.alertLate = alertLate
         self.refreshCard = refreshCard
         self.reminder = reminder
         self.language = language
         self.autoRefresh = autoRefresh
-        // Older state has no updateMode: default it to the autoRefresh field's stamp (a safe past
-        // date), value « notify », so decoding never fails and a seeded value always wins.
+        // Older state has no updateMode / updateFrequency: default them to the autoRefresh field's
+        // stamp (a safe past date), so decoding never fails and a seeded value always wins.
         self.updateMode = updateMode ?? Field(value: .notify, changedAt: autoRefresh.changedAt, changedBy: .mac)
+        self.updateFrequency = updateFrequency ?? Field(value: .global, changedAt: autoRefresh.changedAt, changedBy: .mac)
     }
 
-    // Custom Codable so state and channel JSON from before `updateMode` (older XSide, older dylibs)
-    // still decode: a missing `updateMode` is defaulted, not an error. Extra keys stay ignored.
+    // Custom Codable so state and channel JSON from before these fields (older XSide, older dylibs)
+    // still decode: a missing `updateMode` / `updateFrequency` is defaulted, not an error. Extra keys
+    // stay ignored.
     private enum CodingKeys: String, CodingKey {
-        case showValidity, alertLate, refreshCard, reminder, language, autoRefresh, updateMode
+        case showValidity, alertLate, refreshCard, reminder, language, autoRefresh, updateMode, updateFrequency
     }
 
     public init(from decoder: Decoder) throws {
@@ -90,7 +96,8 @@ public struct InAppSettings: Codable, Equatable, Sendable {
                   reminder: try c.decode(Field<Bool>.self, forKey: .reminder),
                   language: try c.decode(Field<MessageLanguage>.self, forKey: .language),
                   autoRefresh: try c.decode(Field<Bool>.self, forKey: .autoRefresh),
-                  updateMode: try c.decodeIfPresent(Field<UpdateMode>.self, forKey: .updateMode))
+                  updateMode: try c.decodeIfPresent(Field<UpdateMode>.self, forKey: .updateMode),
+                  updateFrequency: try c.decodeIfPresent(Field<UpdateFrequency>.self, forKey: .updateFrequency))
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -102,6 +109,7 @@ public struct InAppSettings: Codable, Equatable, Sendable {
         try c.encode(language, forKey: .language)
         try c.encode(autoRefresh, forKey: .autoRefresh)
         try c.encode(updateMode, forKey: .updateMode)
+        try c.encode(updateFrequency, forKey: .updateFrequency)
     }
 
     /// Mac defaults for a new installation: the reminder is seeded from the global Mac setting,
@@ -111,7 +119,7 @@ public struct InAppSettings: Codable, Equatable, Sendable {
         func f<V>(_ v: V) -> Field<V> { Field(value: v, changedAt: at, changedBy: .mac) }
         return InAppSettings(showValidity: f(true), alertLate: f(true),
                              refreshCard: f(true), reminder: f(reminder), language: f(.automatic),
-                             autoRefresh: f(true), updateMode: f(.notify))
+                             autoRefresh: f(true), updateMode: f(.notify), updateFrequency: f(.global))
     }
 
     /// Field-by-field merge (see `Field.merge`). Symmetric: `merge(a, b) == merge(b, a)`.
@@ -122,7 +130,8 @@ public struct InAppSettings: Codable, Equatable, Sendable {
                       reminder: .merge(a.reminder, b.reminder),
                       language: .merge(a.language, b.language),
                       autoRefresh: .merge(a.autoRefresh, b.autoRefresh),
-                      updateMode: .merge(a.updateMode, b.updateMode))
+                      updateMode: .merge(a.updateMode, b.updateMode),
+                      updateFrequency: .merge(a.updateFrequency, b.updateFrequency))
     }
 
     /// "fr" or "en": the language of the plain texts XSide writes into the app at signing (Settings

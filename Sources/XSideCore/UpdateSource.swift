@@ -3,6 +3,44 @@ import Foundation
 /// What XSide does when a newer release of an app's or tweak's GitHub source shows up.
 public enum UpdateMode: String, Codable, Sendable { case notify, auto }
 
+/// How often an app's source is checked, as the iPhone offers it: a fixed set the phone can list,
+/// plus `custom` for any other `checkInterval` the Mac set (shown read-only on the phone, kept as
+/// is). Rides in the synced settings (`InAppSettings.updateFrequency`); the Mac maps it to and from
+/// `UpdateSource.checkInterval` (see `Library.applyCheckIn` and `setUpdateSource`).
+public enum UpdateFrequency: String, Codable, Sendable {
+    case global, sixHours, daily, weekly, atRefresh, never, custom
+
+    /// The values the phone lists as an editable choice (in order); `custom` is not one of them.
+    public static let choices: [UpdateFrequency] = [.global, .sixHours, .daily, .weekly, .atRefresh, .never]
+
+    /// The frequency a stored `checkInterval` stands for (`nil` = follow the global default).
+    public static func from(_ checkInterval: TimeInterval?) -> UpdateFrequency {
+        guard let s = checkInterval else { return .global }
+        if s == UpdateSchedule.atRefresh { return .atRefresh }
+        if s <= 0 { return .never }
+        switch s {
+        case 21_600: return .sixHours
+        case 86_400: return .daily
+        case 604_800: return .weekly
+        default: return .custom
+        }
+    }
+
+    /// The `checkInterval` to store for this frequency; `custom` keeps `current` (the Mac's own
+    /// value, which the phone can't name), so a phone that never touched it never changes it.
+    public func checkInterval(current: TimeInterval?) -> TimeInterval? {
+        switch self {
+        case .global: nil
+        case .atRefresh: UpdateSchedule.atRefresh
+        case .never: 0
+        case .sixHours: 21_600
+        case .daily: 86_400
+        case .weekly: 604_800
+        case .custom: current
+        }
+    }
+}
+
 /// Re-picks the same release asset across releases whose names embed version numbers
 /// (`YTKACE_1.1.8_YouTube_21.46.3.ipa` then `YTKACE_1.1.9_YouTube_21.47.0.ipa`): the name tokens
 /// that stay (`stableTokens`) must all be there, and the other variant's (`excludedTokens`) none.

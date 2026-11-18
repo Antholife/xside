@@ -313,6 +313,25 @@ struct SettingsBundleTests {
         #expect(mode["Values"] as? [String] == ["notify", "auto"])
         #expect(mode["Titles"] as? [String] == ["Me prévenir", "Installer seul"])
         #expect(mode["DefaultValue"] as? String == "notify")
+        // A standard frequency is an editable choice (the presets, no « custom » value).
+        let freq = try #require(updates.first { $0["Key"] as? String == "io.github.xside.settings.updateFrequency" })
+        #expect(freq["Type"] as? String == "PSMultiValueSpecifier")
+        #expect(freq["Values"] as? [String] == ["global", "sixHours", "daily", "weekly", "atRefresh", "never"])
+        #expect(freq["DefaultValue"] as? String == "global")
+    }
+
+    /// A custom interval the phone can't name is shown read-only (changed from the Mac).
+    @Test func customFrequencyIsReadOnly() throws {
+        let app = try makeApp()
+        let section = SettingsSection.xside(validUntil: "12 nov.", refreshedOn: "5 nov.", version: "1.2", installedOn: "1 nov.",
+                                            inApp: InAppSettings.defaults(reminder: false, at: Date(timeIntervalSince1970: 0)),
+                                            updateRepo: "o/r", updateFrequency: .custom, customFrequencyLabel: "90 min", language: "fr")
+        try SettingsBundle.add(section, to: app)
+        let updates = try subpage(app, "updates")
+        #expect(updates.first { $0["Key"] as? String == "io.github.xside.settings.updateFrequency" } == nil)
+        let row = try #require(updates.first { $0["Key"] as? String == "io.github.xside.settings.updateFreq.custom" })
+        #expect(row["Type"] as? String == "PSTitleValueSpecifier")
+        #expect(row["DefaultValue"] as? String == "90 min")
     }
 
     /// No source: no « Mises à jour » row and no plist for it.

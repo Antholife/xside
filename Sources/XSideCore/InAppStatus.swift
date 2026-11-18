@@ -126,6 +126,7 @@ extension SettingsDelivery {
             case .language: pending(s.language)
             case .autoRefresh: pending(s.autoRefresh)
             case .updateMode: pending(s.updateMode)
+            case .updateFrequency: pending(s.updateFrequency)
             }
         }
     }
@@ -138,7 +139,7 @@ private extension Field {
 
 /// One of the in-app settings, to say which ones the install window's user touched.
 public enum InAppField: String, CaseIterable, Sendable {
-    case showValidity, alertLate, refreshCard, reminder, language, autoRefresh, updateMode
+    case showValidity, alertLate, refreshCard, reminder, language, autoRefresh, updateMode, updateFrequency
 }
 
 /// The install window's step ③: the values shown and the fields the user changed there.
@@ -172,6 +173,7 @@ extension InAppSettings {
         adopt(.language, \.language)
         adopt(.autoRefresh, \.autoRefresh)
         adopt(.updateMode, \.updateMode)
+        adopt(.updateFrequency, \.updateFrequency)
         return copy
     }
 
@@ -185,6 +187,7 @@ extension InAppSettings {
         if language.value != other.language.value { result.insert(.language) }
         if autoRefresh.value != other.autoRefresh.value { result.insert(.autoRefresh) }
         if updateMode.value != other.updateMode.value { result.insert(.updateMode) }
+        if updateFrequency.value != other.updateFrequency.value { result.insert(.updateFrequency) }
         return result
     }
 

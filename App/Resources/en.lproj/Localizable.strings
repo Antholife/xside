@@ -684,6 +684,8 @@
 "inApp.updateMode" = "When a version is out";
 "inApp.updateMode.notify" = "Notify me";
 "inApp.updateMode.auto" = "Install on its own";
+"inApp.updateFrequency" = "Check frequency";
+"inApp.freq.global" = "Global setting";
 "inApp.preview" = "Preview";
 "inApp.preview.validFor" = "Valid for ";
 "inApp.preview.days5" = "5 more days";

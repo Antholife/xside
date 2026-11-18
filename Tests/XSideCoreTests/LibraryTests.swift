@@ -22,9 +22,9 @@ private func inst(_ device: String, _ days: Double = 7) -> Installation {
 }
 
 struct LibraryTests {
-    private static func source(_ mode: UpdateMode) -> UpdateSource {
+    private static func source(_ mode: UpdateMode, interval: TimeInterval? = nil) -> UpdateSource {
         UpdateSource(repo: GitHubSource(owner: "o", repo: "r"),
-                     variant: VariantSelector(stableTokens: [], excludedTokens: []), mode: mode)
+                     variant: VariantSelector(stableTokens: [], excludedTokens: []), mode: mode, checkInterval: interval)
     }
 
     /// The update mode rides in the settings but belongs to the app's source: a phone's newer
@@ -55,10 +55,36 @@ struct LibraryTests {
         var i = inst("dev1")
         i.inApp = InAppSettings.defaults(reminder: true, at: Date(timeIntervalSince1970: 2_000_000))
         try await lib.upsert(i, for: rec.id)
-        try await lib.setUpdateSource(Self.source(.auto), forRecord: rec.id)
+        try await lib.setUpdateSource(Self.source(.auto, interval: 604_800), forRecord: rec.id)
         let stored = try #require(await lib.records().first?.installations.first?.inApp)
         #expect(stored.updateMode.value == .auto)
         #expect(stored.updateMode.changedBy == .mac)
+        #expect(stored.updateFrequency.value == .weekly)
+        #expect(stored.updateFrequency.changedBy == .mac)
+    }
+
+    /// A phone's frequency change is mapped onto the source's checkInterval; a custom interval the
+    /// phone can't name is never clobbered.
+    @Test func checkInPropagatesFrequencyButKeepsACustomInterval() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let lib = AppLibrary(root: tmp.appendingPathComponent("lib"))
+        let rec = try await lib.importIPA(try makeIPA(in: tmp), info: info, teamID: "TEAM123456")
+        var i = inst("dev1")
+        i.inApp = InAppSettings.defaults(reminder: true, at: Date(timeIntervalSince1970: 2_000_000))
+        try await lib.upsert(i, for: rec.id)
+        // The Mac has a custom 90-minute interval the phone shows read-only.
+        try await lib.setUpdateSource(Self.source(.notify, interval: 5_400), forRecord: rec.id)
+        // The phone checks in without touching the frequency (still .custom from the re-stamp).
+        let stored = try #require(await lib.records().first?.installations.first?.inApp)
+        #expect(stored.updateFrequency.value == .custom)
+        _ = try await lib.applyCheckIn(stored, checkIn: Date().addingTimeInterval(60), outcome: nil,
+                                       recordID: rec.id, deviceID: "dev1")
+        #expect(await lib.records().first?.updateSource?.checkInterval == 5_400) // kept
+        // Now the phone sets it to weekly.
+        let weekly = stored.setting(\.updateFrequency, to: .weekly, at: Date().addingTimeInterval(120), by: .device)
+        _ = try await lib.applyCheckIn(weekly, checkIn: Date().addingTimeInterval(120), outcome: nil,
+                                       recordID: rec.id, deviceID: "dev1")
+        #expect(await lib.records().first?.updateSource?.checkInterval == 604_800)
     }
 
     @Test func persistsAcrossInstances() async throws {

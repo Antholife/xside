@@ -427,6 +427,10 @@ final class AppModel {
             lastRefresh: outcome.map { ($0.succeeded ? "✓ " : "✕ ") + $0.at.formatted(style) } ?? "—",
             inApp: facts?.inApp ?? inAppDefaults(at: now),
             updateRepo: facts?.updateSource.map { "\($0.repo.owner)/\($0.repo.repo)" },
+            updateFrequency: facts?.updateSource.map { UpdateFrequency.from($0.checkInterval) } ?? .global,
+            customFrequencyLabel: facts?.updateSource.flatMap {
+                UpdateFrequency.from($0.checkInterval) == .custom ? $0.checkInterval.map(IntervalLabel.short) : nil
+            },
             language: textLanguage(facts))
     }
 
@@ -1622,6 +1626,7 @@ final class AppModel {
         case .language: return d(s.language)
         case .autoRefresh: return d(s.autoRefresh)
         case .updateMode: return d(s.updateMode)
+        case .updateFrequency: return d(s.updateFrequency)
         }
     }
 

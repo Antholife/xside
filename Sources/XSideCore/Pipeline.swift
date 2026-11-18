@@ -739,11 +739,14 @@ public actor SideloadPipeline {
             macEdited = previous?.inApp != nil && inApp != base
         }
         if !inApp.autoRefresh.value { inApp = inApp.setting(\.autoRefresh, to: true, at: date, by: .mac) }
-        // The update mode belongs to the app's source (shared by every device), so it is always
-        // seeded from it here, stamped by the Mac: a phone's later change wins, the Mac's own
-        // change (which re-stamps the installations, see Library.setUpdateSource) wins over a stale
-        // phone value. An app with no source keeps « notify » (inert).
-        if let mode = updateSource?.mode { inApp = inApp.setting(\.updateMode, to: mode, at: date, by: .mac) }
+        // The update mode and frequency belong to the app's source (shared by every device), so they
+        // are always seeded from it here, stamped by the Mac: a phone's later change wins, the Mac's
+        // own change (which re-stamps the installations, see Library.setUpdateSource) wins over a
+        // stale phone value. An app with no source keeps « notify » / « global » (inert).
+        if let source = updateSource {
+            inApp = inApp.setting(\.updateMode, to: source.mode, at: date, by: .mac)
+            inApp = inApp.setting(\.updateFrequency, to: UpdateFrequency.from(source.checkInterval), at: date, by: .mac)
+        }
         var facts = InstallationFacts(
             installationID: ChannelEnvelope.installationID(recordID: recordID, deviceID: deviceID),
             channelSecret: ChannelEnvelope.newSecret(), inApp: inApp,

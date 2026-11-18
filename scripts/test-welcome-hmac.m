@@ -44,6 +44,7 @@ static NSDictionary *fixtureSettings(void) {
         @"language": field(@"fr", 1799999004000, @"device"),
         @"autoRefresh": field(@YES, 1799999005007, @"mac"),
         @"updateMode": field(@"auto", 1799999006000, @"device"),
+        @"updateFrequency": field(@"daily", 1799999007000, @"device"),
     };
 }
 

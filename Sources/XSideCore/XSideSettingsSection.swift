@@ -16,7 +16,9 @@ extension SettingsSection {
     /// Titles are plain text in `language` ("fr" or "en", see `SettingsSection.plainText(in:)`).
     public static func xside(validUntil: String, refreshedOn: String, version: String, installedOn: String,
                              connection: String = "—", lastRefresh: String = "—",
-                             inApp: InAppSettings? = nil, updateRepo: String? = nil, language: String = "en") -> SettingsSection {
+                             inApp: InAppSettings? = nil, updateRepo: String? = nil,
+                             updateFrequency: UpdateFrequency = .global, customFrequencyLabel: String? = nil,
+                             language: String = "en") -> SettingsSection {
         let s = inApp ?? InAppSettings.defaults(reminder: true, at: Date())
         let p = SettingsBundle.keyPrefix
         func title(_ name: String) -> String { p + "title." + name }
@@ -53,12 +55,19 @@ extension SettingsSection {
         // on the Mac), then « Quand une version sort » (notify / install on its own), synced like the
         // other settings. The frequency and « Vérifier maintenant » follow later.
         let updatesPage: Row? = updateRepo.map { repo in
-            .childPane(titleKey: title("menu.updates"), key: "pane.updates", fileSuffix: "updates",
-                       page: SettingsSection(
-                        titleKey: title("menu.updates"), footerKey: p + "footer.updates",
-                        rows: [.value(titleKey: title("updates.repo"), key: "updates.repo", defaultValue: repo),
-                               choice("updateMode", ["notify", "auto"], s.updateMode.value.rawValue)],
-                        strings: texts))
+            // « Vérifier » : an editable choice for the standard presets, a read-only line when the
+            // Mac set a custom interval (changed from the Mac, as the footer says).
+            let frequencyRow: Row = updateFrequency == .custom
+                ? .value(titleKey: title("updateFrequency"), key: "updateFreq.custom",
+                         defaultValue: customFrequencyLabel ?? (p + "updateFrequency.custom"))
+                : choice("updateFrequency", UpdateFrequency.choices.map(\.rawValue), updateFrequency.rawValue)
+            return .childPane(titleKey: title("menu.updates"), key: "pane.updates", fileSuffix: "updates",
+                              page: SettingsSection(
+                                titleKey: title("menu.updates"), footerKey: p + "footer.updates",
+                                rows: [.value(titleKey: title("updates.repo"), key: "updates.repo", defaultValue: repo),
+                                       choice("updateMode", ["notify", "auto"], s.updateMode.value.rawValue),
+                                       frequencyRow],
+                                strings: texts))
         }
 
         // Affichage dans l'app: how XSide shows up in the app ("Messages XSide" is derived from the
@@ -96,6 +105,11 @@ extension SettingsSection {
             ("title.menu.updates", "Mises à jour"), ("title.menu.display", "Affichage dans l'app"),
             ("title.updates.repo", "Dépôt suivi"), ("title.updateMode", "Quand une version sort"),
             ("updateMode.notify", "Me prévenir"), ("updateMode.auto", "Installer seul"),
+            ("title.updateFrequency", "Vérifier"),
+            ("updateFrequency.global", "Réglage global"), ("updateFrequency.sixHours", "Toutes les 6 h"),
+            ("updateFrequency.daily", "Chaque jour"), ("updateFrequency.weekly", "Chaque semaine"),
+            ("updateFrequency.atRefresh", "À chaque rafraîchissement"), ("updateFrequency.never", "Jamais"),
+            ("updateFrequency.custom", "Personnalisé"),
             ("footer.updates", "Pour changer le dépôt suivi ou la variante, passe par ton Mac."),
             ("title.validUntil", "Valable jusqu'au"), ("title.refreshedOn", "Rafraîchie le"),
             ("title.version", "Version"), ("title.installedOn", "Installée le"),
@@ -126,6 +140,11 @@ extension SettingsSection {
             ("title.menu.updates", "Updates"), ("title.menu.display", "In-app display"),
             ("title.updates.repo", "Tracked repo"), ("title.updateMode", "When a version is out"),
             ("updateMode.notify", "Notify me"), ("updateMode.auto", "Install on its own"),
+            ("title.updateFrequency", "Check"),
+            ("updateFrequency.global", "Global setting"), ("updateFrequency.sixHours", "Every 6 h"),
+            ("updateFrequency.daily", "Every day"), ("updateFrequency.weekly", "Every week"),
+            ("updateFrequency.atRefresh", "At each refresh"), ("updateFrequency.never", "Never"),
+            ("updateFrequency.custom", "Custom"),
             ("footer.updates", "To change the tracked repo or the variant, use your Mac."),
             ("title.validUntil", "Valid until"), ("title.refreshedOn", "Last refreshed"),
             ("title.version", "Version"), ("title.installedOn", "Installed on"),

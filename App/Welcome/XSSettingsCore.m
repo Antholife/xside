@@ -7,13 +7,16 @@ static NSArray<NSString *> *XSBoolFields(void) {
 }
 
 NSArray<NSString *> *XSSettingFields(void) {
-    return @[@"showValidity", @"alertLate", @"refreshCard", @"reminder", @"language", @"autoRefresh", @"updateMode"];
+    return @[@"showValidity", @"alertLate", @"refreshCard", @"reminder", @"language", @"autoRefresh",
+             @"updateMode", @"updateFrequency"];
 }
 
 /// The strings a choice field accepts; nil for a Bool field.
 static NSArray<NSString *> *XSChoices(NSString *field) {
     if ([field isEqualToString:@"language"]) return @[@"automatic", @"fr", @"en"];
     if ([field isEqualToString:@"updateMode"]) return @[@"notify", @"auto"];
+    if ([field isEqualToString:@"updateFrequency"])
+        return @[@"global", @"sixHours", @"daily", @"weekly", @"atRefresh", @"never", @"custom"];
     return nil;
 }
 
@@ -52,6 +55,7 @@ NSDictionary *XSSettingsDefaults(BOOL reminder, NSDate *at) {
         @"language": XSField(@"language", @"automatic", at, @"mac"),
         @"autoRefresh": XSField(@"autoRefresh", @YES, at, @"mac"),
         @"updateMode": XSField(@"updateMode", @"notify", at, @"mac"), // seeded from the app's source on the Mac
+        @"updateFrequency": XSField(@"updateFrequency", @"global", at, @"mac"),
     };
 }
 
@@ -223,6 +227,7 @@ static NSString *XSFieldTitle(NSString *field, BOOL fr) {
         @"autoRefresh": @[@"Rafraîchissement automatique", @"Automatic refresh"],
         @"language": @[@"Langue des messages XSide", @"XSide messages language"],
         @"updateMode": @[@"Quand une version sort", @"When a version is out"],
+        @"updateFrequency": @[@"Vérifier", @"Check"],
     };
     NSArray<NSString *> *pair = titles[field];
     return pair ? pair[fr ? 0 : 1] : field;
@@ -238,6 +243,15 @@ static NSString *XSFieldValueText(NSString *field, id value, BOOL fr) {
     if ([field isEqualToString:@"updateMode"]) {
         if ([value isEqual:@"auto"]) return fr ? @"Installer seul" : @"Install on its own";
         return fr ? @"Me prévenir" : @"Notify me";
+    }
+    if ([field isEqualToString:@"updateFrequency"]) {
+        if ([value isEqual:@"sixHours"]) return fr ? @"Toutes les 6 h" : @"Every 6 h";
+        if ([value isEqual:@"daily"]) return fr ? @"Chaque jour" : @"Every day";
+        if ([value isEqual:@"weekly"]) return fr ? @"Chaque semaine" : @"Every week";
+        if ([value isEqual:@"atRefresh"]) return fr ? @"À chaque rafraîchissement" : @"At each refresh";
+        if ([value isEqual:@"never"]) return fr ? @"Jamais" : @"Never";
+        if ([value isEqual:@"custom"]) return fr ? @"Personnalisé" : @"Custom";
+        return fr ? @"Réglage global" : @"Global setting";
     }
     BOOL on = [value isKindOfClass:NSNumber.class] && [value boolValue];
     return fr ? (on ? @"activé" : @"désactivé") : (on ? @"on" : @"off");
