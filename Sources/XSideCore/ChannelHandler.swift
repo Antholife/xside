@@ -92,7 +92,13 @@ public enum ChannelHandler {
     /// Shortest time between two refreshes the phone asks for, for one installation, counted from
     /// the last one XSide started for it (`Installation.lastDeviceRefreshRequest`, which nothing the
     /// phone sends can reset): sooner, the request is answered `busy`. XSide's own attempts don't count.
-    public static let refreshInterval: TimeInterval = 10 * 60
+    /// Debug hook `XSIDE_FAST_UPDATES=1` drops it to 20 s so a tester doesn't wait 10 minutes.
+    public static var refreshInterval: TimeInterval {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["XSIDE_FAST_UPDATES"] == "1" { return 20 }
+        #endif
+        return 10 * 60
+    }
 
     /// The phone asked for a refresh less than `refreshInterval` ago, and may not retry it.
     public static func phoneRefreshTooSoon(_ installation: Installation, now: Date) -> Bool {
