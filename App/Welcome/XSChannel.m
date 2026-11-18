@@ -6,6 +6,7 @@
 #import "XSSettingsCore.h"
 #import "XSPill.h"
 #import "XSRunMarker.h"
+#import "XSRefreshModal.h"
 #import <Network/Network.h>
 
 static const int XSPolicyDenied = -65570; // kDNSServiceErr_PolicyDenied: local network not allowed
@@ -884,15 +885,9 @@ static XSPillContent *XSRefreshUnansweredPill(XSChannelResult result) {
 static void XSStartRefresh(void) {
     // The first time, the local network page comes first (iOS asks while this browses).
     XSExplainNetworkThenOr(^{
-        BOOL fr = XSFrench();
-        // When « Sauvegarder les données » is on, the refresh snapshots the data first, so say so.
+        // A real modal (Anthony): connexion à ton Mac → sauvegarde (si activée) → rafraîchissement.
         BOOL backs = XSSettingBool(XSCurrentSettings(), @"backupData");
-        XSPillContent *asking = XSPill(backs ? (fr ? @"Sauvegarde et rafraîchissement demandés à ton Mac…" : @"Backup and refresh asked of your Mac…")
-                                             : (fr ? @"Demande de rafraîchissement à ton Mac…" : @"Asking your Mac for a refresh…"),
-                                       fr ? @"S'il accepte, l'app se fermera une fois rafraîchie ; rouvre-la ensuite."
-                                          : @"If it accepts, the app will close once refreshed; open it again then.", XSPillToneNeutral, 0);
-        asking.busy = YES;
-        XSShowAnswer(asking);
+        XSRefreshModalShow(backs);
         XSStartRefreshExchange();
     }, ^{
         // Its "Réseau local" page had no screen: no refresh asked, the next Refresh can start
@@ -905,15 +900,17 @@ static void XSStartRefreshExchange(void) {
     [XSPatientExchange(XSRefreshBody(), YES, ^(XSChannelResult result, NSDictionary *reply, BOOL final) {
         BOOL french = XSFrench();
         NSString *type = reply[@"type"];
-        if (result == XSChannelWaiting) { XSShowWaitingPill(YES); return; }
+        void (^retry)(void) = ^{ XSRequestRefresh(); };
+        if (result == XSChannelWaiting) { return; } // the modal already shows « connexion… »
         if (final) {
             XSRefreshRunning = NO;
             XSEndRefreshTask();
         }
         if (result == XSChannelNoOutcome) {
-            // Accepted, then silence (app suspended, connection lost, 2 min passed). A success
-            // replaces the app, whose new signature clears this; otherwise it must not vanish:
-            // remembered, and XSide asked at once how it went.
+            // Accepted, then silence (app suspended, connection lost, 2 min passed). Ambiguous: a
+            // success replaces the app (its new signature clears this), otherwise the next launch
+            // resolves it. The modal can't say; drop it and keep the pending-failure pill flow.
+            XSRefreshModalDismiss();
             XSSetPendingFailure(XSNoOutcomeKey, XSAcceptedAt ?: NSDate.date);
             XSCheckIn(^(XSPillContent *news) {
                 XSShowPendingPill();
@@ -922,21 +919,13 @@ static void XSStartRefreshExchange(void) {
             return;
         }
         if (result != XSChannelReplied) {
-            XSShowAnswer(XSRefreshUnansweredPill(result));
+            XSPillContent *u = XSRefreshUnansweredPill(result);
+            XSRefreshModalError(u.lead, u.hint, retry);
             return;
         }
         if ([type isEqual:@"accepted"]) {
             XSAcceptedAt = NSDate.date;
-            // Stays (with its spinner) until the outcome: the success closes the app, a failure
-            // or silence replaces it (device feedback round 1, B3).
-            BOOL backs = XSSettingBool(XSCurrentSettings(), @"backupData");
-            XSPillContent *accepted = XSPill(backs ? (french ? @"Sauvegarde et rafraîchissement demandés à ton Mac" : @"Backup and refresh asked of your Mac")
-                                                   : (french ? @"Rafraîchissement demandé à ton Mac" : @"Refresh asked of your Mac"),
-                                             french ? @"L'app va se fermer quand ce sera fait (≈ 1 min) ; rouvre-la ensuite."
-                                                    : @"The app will close when it's done (about 1 min); open it again then.",
-                                             XSPillToneNeutral, 0);
-            accepted.busy = YES;
-            XSShowAnswer(accepted);
+            XSRefreshModalWorking();
             // Keeps the connection a little if the person leaves the app, to hear a failure.
             XSEndRefreshTask();
             XSRefreshTask = [UIApplication.sharedApplication beginBackgroundTaskWithName:@"XSide refresh"
@@ -944,40 +933,29 @@ static void XSStartRefreshExchange(void) {
             XSHasRefreshTask = XSRefreshTask != UIBackgroundTaskInvalid;
         } else if ([type isEqual:@"refreshed"]) {
             XSRecordRefresh(YES, nil, NSDate.date); // the new app replaces this one right after
-            XSShowAnswer(XSPill(french ? @"App rafraîchie, elle va se fermer" : @"App refreshed, it's about to close",
-                              french ? @"Rouvre-la ensuite." : @"Open it again then.", XSPillToneNeutral, 6));
+            XSRefreshModalStep(french ? @"Rafraîchie" : @"Refreshed",
+                               french ? @"L’app va se fermer, rouvre-la ensuite." : @"The app will close, open it again then.", 1.0);
         } else if ([type isEqual:@"failed"]) {
             NSString *reason = [reply[@"reasonKey"] isKindOfClass:NSString.class] ? reply[@"reasonKey"] : @"unknown";
             XSRecordRefresh(NO, reason, NSDate.date);
-            XSTellFailure(reason);
+            XSRefreshModalError(french ? @"Le rafraîchissement a échoué" : @"The refresh failed", XSReasonText(reason, french), retry);
         } else if ([type isEqual:@"busy"]) {
-            XSShowAnswer(XSPill(french ? @"XSide la rafraîchit déjà, ou vient de le faire"
-                                     : @"XSide is already refreshing it, or just did",
-                              [NSString stringWithFormat:french ? @"Une demande depuis l'%@ toutes les 10 minutes au plus. Réessaie un peu plus tard."
-                                                                : @"One request from the %@ every 10 minutes at most. Try again a little later.",
-                                                         XSDeviceKind()],
-                              XSPillToneNeutral, 6));
+            XSRefreshModalError(french ? @"XSide la rafraîchit déjà, ou vient de le faire" : @"XSide is already refreshing it, or just did",
+                [NSString stringWithFormat:french ? @"Une demande depuis l'%@ toutes les 10 minutes au plus. Réessaie un peu plus tard."
+                                                  : @"One request from the %@ every 10 minutes at most. Try again a little later.", XSDeviceKind()], retry);
         } else if ([type isEqual:@"deviceUnreachable"]) {
-            NSString *device = XSDeviceKind();
-            XSShowAnswer(XSPill([NSString stringWithFormat:french ? @"Ton Mac ne voit pas cet %@" : @"Your Mac can't see this %@", device],
-                              french ? @"Déverrouille-le, et vérifie qu'il est sur le même Wi-Fi que le Mac ou branché en USB."
-                                     : @"Unlock it, and check it's on the same Wi-Fi as the Mac or plugged in over USB.",
-                              XSPillToneOrange, 8));
+            XSRefreshModalError([NSString stringWithFormat:french ? @"Ton Mac ne voit pas cet %@" : @"Your Mac can't see this %@", XSDeviceKind()],
+                french ? @"Déverrouille-le, et vérifie qu'il est sur le même Wi-Fi que le Mac ou branché en USB."
+                       : @"Unlock it, and check it's on the same Wi-Fi as the Mac or plugged in over USB.", retry);
         } else if ([type isEqual:@"paused"]) {
             BOOL byDevice = [reply[@"by"] isEqual:@"device"];
             NSString *who = byDevice ? [NSString stringWithFormat:french ? @"cet %@" : @"this %@", XSDeviceKind()]
                                      : (french ? @"le Mac" : @"the Mac");
-            XSPillContent *c = XSPill(french ? @"Rafraîchissement automatique désactivé pour cette app"
-                                             : @"Automatic refresh is off for this app",
-                                      [NSString stringWithFormat:french ? @"Désactivé depuis %@. Réactive-le pour que XSide la rafraîchisse."
-                                                                        : @"Turned off from %@. Turn it back on for XSide to refresh it.", who],
-                                      XSPillToneOrange, 8);
-            c.buttonTitle = french ? @"Réactiver" : @"Turn on";
-            c.action = ^{ XSResumeAutoRefresh(); };
-            XSShowAnswer(c);
+            XSRefreshModalError(french ? @"Rafraîchissement automatique désactivé pour cette app" : @"Automatic refresh is off for this app",
+                [NSString stringWithFormat:french ? @"Désactivé depuis %@. Réactive-le dans les Réglages XSide." : @"Turned off from %@. Turn it back on in XSide Settings.", who],
+                ^{ XSResumeAutoRefresh(); });
         } else {
-            XSShowAnswer(XSPill(french ? @"XSide n'a pas pu lancer le rafraîchissement" : @"XSide couldn't start the refresh",
-                              nil, XSPillToneOrange, 6));
+            XSRefreshModalError(french ? @"XSide n'a pas pu lancer le rafraîchissement" : @"XSide couldn't start the refresh", nil, retry);
         }
     }) start];
 }
