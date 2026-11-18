@@ -1565,11 +1565,16 @@ final class AppModel {
             if let entry = entry(recordID: job.recordID, deviceID: job.deviceID) {
                 Task { [weak self] in
                     guard let self else { return }
-                    _ = await self.backUpNow(entry)
-                    // Then refresh, so the phone's « Données » page (rewritten at signing) lists the
-                    // new snapshot (Anthony: « on refresh derrière »). Best effort: it does nothing
-                    // if a job is already running or the device went away.
-                    _ = self.startRefresh(RefreshJob(recordID: job.recordID, deviceID: job.deviceID), automatic: true)
+                    // Only refresh when a new snapshot was actually made, and through the SAME gates
+                    // as a phone refresh (rate limit, pause, device availability), so « Sauvegarder
+                    // maintenant » can't be used to bypass the refresh rate limit (Anthony: « on
+                    // refresh derrière », but gated).
+                    guard case .saved = await self.backUpNow(entry) else { return }
+                    guard let fresh = await self.library.installation(channelID: installationID)?.installation else { return }
+                    let now = Date()
+                    guard case .success = self.refreshFromDevice(job, stored: fresh, now: now) else { return }
+                    try? await self.library.markDeviceRefreshRequest(at: now, recordID: job.recordID,
+                                                                     deviceID: job.deviceID, retry: false)
                 }
             }
             await reply(.accepted)
