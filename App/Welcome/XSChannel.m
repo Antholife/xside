@@ -1154,13 +1154,14 @@ static void XSRequestCheckUpdatesNow(void) {
                 NSString *dir = [reply[@"downloadDir"] isKindOfClass:NSString.class] ? reply[@"downloadDir"] : nil;
                 NSString *title = version ? [NSString stringWithFormat:(f ? @"Version %@ disponible" : @"Version %@ available"), version]
                                           : (f ? @"Mise à jour disponible" : @"Update available");
-                // Name the real folder XSide downloads into (its cache, inside the library the person
-                // chose on the Mac), with the path, rather than a vague « ton dossier » (Anthony).
+                // When « Conserver les IPA » is on, the Mac sends the folder it keeps a copy in (the
+                // one the person chose, e.g. le Bureau); otherwise the download is temporary and
+                // nothing is kept (Anthony: « j'ai bien choisi Desktop donc "rien gardé" c'est faux »).
                 NSString *msg = dir.length
-                    ? [NSString stringWithFormat:(f ? @"XSide la télécharge dans son cache puis l'installe, et ne garde rien :\n%@\nL'app se fermera à la fin."
-                                                    : @"XSide downloads it to its cache then installs it, keeping nothing:\n%@\nThe app closes at the end."), dir]
-                    : (f ? @"XSide la télécharge dans son cache puis l'installe. L'app se fermera à la fin."
-                         : @"XSide downloads it to its cache then installs it. The app closes at the end.");
+                    ? [NSString stringWithFormat:(f ? @"XSide la télécharge, l'installe, et en garde une copie dans :\n%@\nL'app se fermera à la fin."
+                                                    : @"XSide downloads it, installs it, and keeps a copy in:\n%@\nThe app closes at the end."), dir]
+                    : (f ? @"XSide la télécharge, l'installe, et ne garde rien. L'app se fermera à la fin."
+                         : @"XSide downloads it, installs it, and keeps nothing. The app closes at the end.");
                 XSUpdateModalOffer(title, msg,
                     f ? @"Télécharger et installer" : @"Download and install",
                     ^{ XSStartInstallUpdateExchange(tag, asset); });

@@ -285,10 +285,13 @@ extension AppModel {
         case .needsVariantChoice: return .update(state: "needsMac")
         case .failed: return .failed(reasonKey: "updateFailed")
         case let .available(found, version, _):
-            // Tell the phone where it will be downloaded (XSide's cache, inside the library folder the
-            // person chose), so the offer can name it instead of a vague « ton dossier » (Anthony).
+            // A copy is KEPT in the person's chosen folder only when « Conserver les IPA téléchargés »
+            // is on with a folder set; otherwise the download is temporary (XSide's cache) and nothing
+            // is kept. Tell the phone which, and the folder, so the offer is accurate (Anthony: he had
+            // chosen the Desktop, so « rien gardé » was wrong).
+            let keptFolder = Self.keepDownloads ? Self.downloadsFolder?.path : nil
             return .update(state: "available", version: version, tag: found.tag, asset: found.asset.name,
-                           downloadDir: libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).path)
+                           downloadDir: keptFolder)
         }
     }
 
@@ -317,6 +320,9 @@ extension AppModel {
             try? await Task.sleep(for: .milliseconds(300))
         }
         _ = await waiter.value
+        if case let .failed(reason) = box.result {
+            Self.updateLogger.error("phone update install failed for \(recordID, privacy: .public): \(reason, privacy: .public)")
+        }
         await frame(Self.modalReply(for: box.result))
     }
 
@@ -331,8 +337,23 @@ extension AppModel {
         case .upToDate: .update(state: "upToDate")
         case let .available(version, _, tag, asset): .update(state: "available", version: version, tag: tag, asset: asset)
         case .needsVariantChoice, .changed: .update(state: "needsMac")
-        case .failed: .failed(reasonKey: "updateFailed")
+        case let .failed(reason): .failed(reasonKey: updateFailureKey(reason))
         }
+    }
+
+    /// Maps the update install's free-form failure string to a reason key the phone can word plainly,
+    /// so the modal says where it failed (download / file / install / …) instead of a flat
+    /// « erreur inattendue » (Anthony: « l'installation a encore échoué »). The raw reason is logged.
+    private static func updateFailureKey(_ reason: String) -> String {
+        let r = reason.lowercased()
+        if r.hasPrefix("download") { return "updateDownloadFailed" }
+        if r.hasPrefix("inspect") || r.hasPrefix("analyze") { return "updateFileUnreadable" }
+        if r.hasPrefix("install") { return "installFailed" }
+        if r.hasPrefix("update not applied") { return "updateNotApplied" }
+        if r.contains("incompatible") { return "updateIncompatible" }
+        if r.contains("device") { return "deviceUnavailable" }
+        if r.contains("gone") || r.contains("no source") || r.contains("not allowed") { return "recordNotFound" }
+        return "updateFailed"
     }
 
     private func route(_ outcome: UpdateOutcome, for target: UpdateTarget, userInitiated: Bool = false) async -> UpdateCheckResult {

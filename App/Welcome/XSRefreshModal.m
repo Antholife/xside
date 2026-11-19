@@ -149,6 +149,10 @@ static XSLinkKind XSLinkCurrent = XSLinkUnknown; // the transport the last chann
 
     // badge on the Mac node (hidden until connected / error)
     _macBadge = [UIView new]; _macBadge.layer.cornerRadius = 9.5; _macBadge.hidden = YES;
+    // A ring in the background colour around the badge, so its ✓ reads as a solid disc instead of
+    // blending into the (same-coloured) node border behind it (Anthony: « le v est transparent, on
+    // voit la bordure derrière, faut un fond »). Standard iOS badge separation; adapts to dark mode.
+    _macBadge.layer.borderWidth = 2; _macBadge.layer.borderColor = UIColor.systemBackgroundColor.CGColor;
     _macBadge.translatesAutoresizingMaskIntoConstraints = NO;
     _macBadgeMark = [UILabel new]; _macBadgeMark.font = [UIFont systemFontOfSize:12 weight:UIFontWeightBold];
     _macBadgeMark.textColor = UIColor.whiteColor; _macBadgeMark.textAlignment = NSTextAlignmentCenter;

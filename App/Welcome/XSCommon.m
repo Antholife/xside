@@ -185,6 +185,12 @@ NSString *XSReasonText(NSString *key, BOOL fr) {
         @"timedOut": @[@"Xcode ne répondait plus", @"Xcode stopped responding"],
         @"invalidBundleID": @[@"l'identifiant de l'app n'est pas valide", @"the app's identifier isn't valid"],
         @"cancelled": @[@"arrêté sur le Mac", @"stopped on the Mac"],
+        @"updateFailed": @[@"la mise à jour a échoué (le détail est dans XSide sur ton Mac)",
+                           @"the update failed (the details are in XSide on your Mac)"],
+        @"updateDownloadFailed": @[@"le téléchargement de la mise à jour a échoué", @"the update download failed"],
+        @"updateFileUnreadable": @[@"le fichier de la mise à jour n'est pas lisible", @"the update file can't be read"],
+        @"updateNotApplied": @[@"la mise à jour ne s'est pas appliquée", @"the update didn't apply"],
+        @"updateIncompatible": @[@"la mise à jour ne correspond pas à cette app", @"the update doesn't match this app"],
     };
     NSArray<NSString *> *pair = [key isKindOfClass:NSString.class] ? texts[key] : nil;
     if (!pair) pair = @[@"une erreur inattendue (le détail est dans XSide sur ton Mac)",
@@ -325,6 +331,12 @@ void XSOpenAppSettings(void) {
         g.startPoint = CGPointMake(0, 0);
         g.endPoint = CGPointMake(1, 1);
         g.cornerRadius = 14;
+        // Horizontal breathing room so a long title (« Télécharger et installer ») isn't edge to edge
+        // (Anthony). contentEdgeInsets is deprecated but still the simplest fit for this styled button.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        self.contentEdgeInsets = UIEdgeInsetsMake(0, 18, 0, 18);
+#pragma clang diagnostic pop
     }
     return self;
 }
