@@ -2468,6 +2468,7 @@ final class AppModel {
                     // Cleared on purpose: the person re-confirms which release this IPA is, so the
                     // baseline matches what's actually installed (Anthony). « Suivant » blocks until set.
                     flow.draft.updateInstalledTag = nil
+                    flow.draft.updateInstalledName = nil
                 }
                 flow.duoDevices = Set(existing?.installations.filter { $0.duoCompatibility == true }.map(\.deviceID) ?? [])
                 flow.iCloudDevices = Set(existing?.installations.filter { $0.iCloudSignedOut == true }.map(\.deviceID) ?? [])

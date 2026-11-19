@@ -152,6 +152,7 @@ struct UpdateSourceSection: View {
         flow.draft.updateVariantName = nil
         flow.draft.updateSourceURL = ""
         flow.draft.updateInstalledTag = nil
+        flow.draft.updateInstalledName = nil
         flow.updateLinkError = false
         flow.updateTagError = false
     }
@@ -181,7 +182,7 @@ struct UpdateSourceSheet: View {
 
     private enum Phase: Equatable { case verifying, failed, noAsset, ready([String]) }
     @State private var phase: Phase = .verifying
-    @State private var all: [(tag: String, isPrerelease: Bool, asset: ReleaseAsset)] = []
+    @State private var all: [(tag: String, isPrerelease: Bool, asset: ReleaseAsset, name: String?)] = []
     @State private var picked: String?        // the variant asset name
     @State private var installedTag: String?  // the release the person is on (baseline)
     @State private var mode: UpdateMode = .notify
@@ -526,6 +527,7 @@ struct UpdateSourceSheet: View {
         flow.draft.updateMode = mode
         flow.draft.updateInterval = interval
         flow.draft.updateInstalledTag = installedTag
+        flow.draft.updateInstalledName = all.first { $0.tag == installedTag }?.name // the release title, for the Status/row
         persistFolderIfRemembered()
         flow.updateLinkError = false
         flow.updateTagError = false // the release is now set

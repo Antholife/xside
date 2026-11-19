@@ -395,6 +395,9 @@ struct OptionsDraft: Equatable {
     /// The release tag this install corresponds to (the baseline for future update checks), chosen
     /// in the source sheet. `nil` = not set (no update detection until a baseline exists).
     var updateInstalledTag: String?
+    /// The chosen release's GitHub title (e.g. « YTKACE v1.1.8 »), captured when the tag is picked in
+    /// the source sheet, so the Status and the app row can show it, not just the tag.
+    var updateInstalledName: String?
     var updateVariant: VariantSelector?
     /// The repo and file name `updateVariant` was derived from: the variant is only valid for that
     /// repo (`UpdateSourceSection` clears all three when the link points elsewhere).

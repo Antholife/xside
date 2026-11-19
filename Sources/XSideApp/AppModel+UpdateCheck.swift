@@ -541,7 +541,7 @@ extension AppModel {
 extension AppModel {
     /// The `.ipa` assets of a repo's releases, newest first, for the install window's
     /// "Source de mise à jour" (the fetch runs off the main actor).
-    func installableIPAs(of repo: GitHubSource) async throws -> [(tag: String, isPrerelease: Bool, asset: ReleaseAsset)] {
+    func installableIPAs(of repo: GitHubSource) async throws -> [(tag: String, isPrerelease: Bool, asset: ReleaseAsset, name: String?)] {
         let work = libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent("updates-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: work) }
         return try await ReleaseFinder.fetchInstallableAssets(source: repo, kind: .ipa, fetcher: repoFetcher, workDir: work)
@@ -552,7 +552,8 @@ extension AppModel {
     func persistUpdateSource(from draft: OptionsDraft, recordID: UUID) {
         guard let repo = GitHubSource.parse(draft.updateSourceURL), let variant = draft.updateVariant else { return }
         let source = UpdateSource(repo: repo, variant: variant, mode: draft.updateMode, lastSeenTrigger: nil,
-                                  installedTag: draft.updateInstalledTag, checkInterval: draft.updateInterval)
+                                  installedTag: draft.updateInstalledTag, installedName: draft.updateInstalledName,
+                                  checkInterval: draft.updateInterval)
         Task {
             do {
                 try await library.setUpdateSource(source, forRecord: recordID)

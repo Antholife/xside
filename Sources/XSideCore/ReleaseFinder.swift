@@ -46,8 +46,8 @@ public enum ReleaseFinder {
     private typealias Entry = (tag: String, isPrerelease: Bool, asset: ReleaseAsset, updatedAt: String, name: String?)
 
     public static func installableAssets(_ listJSON: Data, source: GitHubSource, kind: ReleaseKind) throws
-        -> [(tag: String, isPrerelease: Bool, asset: ReleaseAsset)] {
-        entries(listJSON, source: source, kind: kind).map { ($0.tag, $0.isPrerelease, $0.asset) }
+        -> [(tag: String, isPrerelease: Bool, asset: ReleaseAsset, name: String?)] {
+        entries(listJSON, source: source, kind: kind).map { ($0.tag, $0.isPrerelease, $0.asset, $0.name) }
     }
 
     public static func choose(_ listJSON: Data, source: GitHubSource, kind: ReleaseKind,
@@ -108,7 +108,7 @@ extension ReleaseFinder {
     /// installable assets of `kind`, newest first. Throws when the list can't be fetched or read.
     public static func fetchInstallableAssets(source: GitHubSource, kind: ReleaseKind, fetcher: HTTPFetching,
                                               workDir: URL) async throws
-        -> [(tag: String, isPrerelease: Bool, asset: ReleaseAsset)] {
+        -> [(tag: String, isPrerelease: Bool, asset: ReleaseAsset, name: String?)] {
         let fm = FileManager.default
         try fm.createDirectory(at: workDir, withIntermediateDirectories: true)
         let file = workDir.appendingPathComponent("releases-\(UUID().uuidString).json")
