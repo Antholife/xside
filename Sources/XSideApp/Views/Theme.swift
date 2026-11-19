@@ -98,11 +98,12 @@ extension ToggleStyle where Self == XSideSwitchStyle {
     static var xside: XSideSwitchStyle { XSideSwitchStyle() }
 }
 
-/// The switch itself: focusable with Tab (keyboard navigation), Space toggles it, and a focus
-/// ring in the system's accent color shows where the focus is.
+/// The switch itself. Not keyboard-focusable: macOS hands initial focus to the first focusable
+/// control, which put a focus ring on whatever toggle sat at the top of a settings page the moment
+/// it opened (Anthony: « enlève »). Clicking still works, and VoiceOver reads it through the
+/// style's `accessibilityRepresentation`.
 private struct XSideSwitch: View {
     @Binding var isOn: Bool
-    @FocusState private var isFocused: Bool
     @Environment(\.controlSize) private var controlSize
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -136,20 +137,5 @@ private struct XSideSwitch: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .focusable(isEnabled)
-        .focused($isFocused)
-        .focusEffectDisabled() // the ring below follows the capsule, not a rectangle
-        .overlay {
-            if isFocused {
-                Capsule()
-                    .strokeBorder(Color.accentColor.opacity(0.6), lineWidth: 3)
-                    .padding(-3)
-                    .allowsHitTesting(false)
-            }
-        }
-        .onKeyPress(.space) {
-            toggle()
-            return .handled
-        }
     }
 }
