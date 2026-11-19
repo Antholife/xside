@@ -318,6 +318,7 @@ extension AppModel {
         // « Signature / Installation… · étape X/Y », not a frozen 100% (Anthony: « ça reste bloqué à
         // 100% au lieu de voir les steps d'install »). The install claims jobs[installKey] once it
         // starts; until then we're still downloading.
+        AppModel.debugTrace("install-stream start key=\(installKey.recordID)|\(installKey.deviceID)")
         var last: ChannelReply?
         while !box.done {
             let next: ChannelReply?
@@ -328,9 +329,10 @@ extension AppModel {
             } else {
                 next = nil
             }
-            if let next, next != last { await frame(next); last = next }
+            if let next, next != last { await frame(next); last = next; AppModel.debugTrace("stream frame: \(next) (jobs=\(String(describing: jobs[installKey])))") }
             try? await Task.sleep(for: .milliseconds(150))
         }
+        AppModel.debugTrace("install-stream end result=\(box.result)")
         _ = await waiter.value
         if case let .failed(reason) = box.result {
             Self.updateLogger.error("phone update install failed for \(recordID, privacy: .public): \(reason, privacy: .public)")

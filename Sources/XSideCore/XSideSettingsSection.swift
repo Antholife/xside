@@ -15,7 +15,7 @@ extension SettingsSection {
     /// language (automatic|fr|en), autoRefresh (boolean).
     /// Titles are plain text in `language` ("fr" or "en", see `SettingsSection.plainText(in:)`).
     public static func xside(validUntil: String, refreshedOn: String, version: String, installedOn: String,
-                             connection: String = "—", lastRefresh: String = "—",
+                             connection: String = "—", lastRefresh: String = "—", releaseTag: String? = nil,
                              inApp: InAppSettings? = nil, updateRepo: String? = nil,
                              updateFrequency: UpdateFrequency = .global, customFrequencyLabel: String? = nil,
                              dataBackups: [(id: String, label: String)] = [],
@@ -46,12 +46,16 @@ extension SettingsSection {
         func value(_ name: String, _ key: String, _ v: String) -> Row { .value(titleKey: title(name), key: key, defaultValue: v) }
 
         // Statut: read-only rows the dylib rewrites in the device's locale at launch (one footer).
+        var statusRows: [Row] = [value("validUntil", "validUntil", validUntil), value("refreshedOn", "refreshedOn", refreshedOn),
+                                 value("version", "version", version)]
+        // The tracked release's tag (e.g. 1.1.5), next to the app's own version (Anthony: « faudrait
+        // voir 1.1.5 aussi »). Only with a GitHub source that has installed a tag.
+        if let releaseTag, !releaseTag.isEmpty { statusRows.append(value("releaseTag", "releaseTag", releaseTag)) }
+        statusRows.append(contentsOf: [value("installedOn", "installedOn", installedOn),
+                                       value("connection", "connection", connection), value("lastRefresh", "lastRefresh", lastRefresh)])
         let statusPage: Row = .childPane(titleKey: title("menu.status"), key: "pane.status", fileSuffix: "status",
             page: SettingsSection(titleKey: title("menu.status"), footerKey: p + "footer.status",
-                rows: [value("validUntil", "validUntil", validUntil), value("refreshedOn", "refreshedOn", refreshedOn),
-                       value("version", "version", version), value("installedOn", "installedOn", installedOn),
-                       value("connection", "connection", connection), value("lastRefresh", "lastRefresh", lastRefresh)],
-                strings: texts))
+                rows: statusRows, strings: texts))
 
         // Rafraîchissement: the "refresh at next launch" action, then automatic refresh.
         let refreshPane = pane("refresh", [
@@ -156,7 +160,7 @@ extension SettingsSection {
             ("footer.reminder", "Un rappel avant que l'app expire."),
             ("footer.language", "La langue des messages d'XSide dans l'app."),
             ("title.validUntil", "Valable jusqu'au"), ("title.refreshedOn", "Rafraîchie le"),
-            ("title.version", "Version"), ("title.installedOn", "Installée le"),
+            ("title.version", "Version"), ("title.releaseTag", "Version de la release"), ("title.installedOn", "Installée le"),
             ("title.refreshOnLaunch", "Rafraîchir à la prochaine ouverture"),
             // Asked at the next launch or return to the app (XSWantsRefreshOnLaunch), the Mac
             // accepts on its own. "cet appareil": the same page is written for an iPad.
@@ -220,7 +224,7 @@ extension SettingsSection {
             ("footer.reminder", "A reminder before the app expires."),
             ("footer.language", "The language of XSide's messages in the app."),
             ("title.validUntil", "Valid until"), ("title.refreshedOn", "Last refreshed"),
-            ("title.version", "Version"), ("title.installedOn", "Installed on"),
+            ("title.version", "Version"), ("title.releaseTag", "Release version"), ("title.installedOn", "Installed on"),
             ("title.refreshOnLaunch", "Refresh at next launch"),
             ("footer.refreshOnLaunch", "📲 Next time you open the app: refreshes it, with nothing to do on your Mac. "
                 + "XSide just needs to be open on your Mac, with this device on the same Wi-Fi or plugged in with USB."),

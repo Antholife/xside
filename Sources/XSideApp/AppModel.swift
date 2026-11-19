@@ -172,6 +172,18 @@ final class AppModel {
     /// the installation, so a `.cancelRequested` from the modal can stop it. Set when the held
     /// connection starts streaming, cleared when it ends.
     @ObservationIgnored var phoneOpCancels: [JobKey: () -> Void] = [:]
+
+    /// Debug-only trace to ~/Desktop/xside-stream.log, to diagnose the phone modal streaming/cancel
+    /// when os_log isn't reachable. Compiled out of release.
+    static func debugTrace(_ s: String) {
+        #if DEBUG
+        let line = "\(Date()): \(s)\n"
+        let url = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Desktop/xside-stream.log")
+        guard let data = line.data(using: .utf8) else { return }
+        if let h = try? FileHandle(forWritingTo: url) { defer { try? h.close() }; h.seekToEndOfFile(); h.write(data) }
+        else { try? data.write(to: url) }
+        #endif
+    }
     /// Running background auto-install tasks, so the « Mises à jour » tab can cancel one.
     @ObservationIgnored var autoInstallTasks: [JobKey: Task<Applied, Never>] = [:]
     /// Entries (`AppEntry.id`) with a backup, restore or import running: the fiche shows a spinner.
@@ -429,6 +441,7 @@ final class AppModel {
             installedOn: (facts?.firstInstalledAt ?? now).formatted(style),
             connection: facts?.lastCheckIn.map { "✓ " + $0.formatted(style) } ?? "—",
             lastRefresh: outcome.map { ($0.succeeded ? "✓ " : "✕ ") + $0.at.formatted(style) } ?? "—",
+            releaseTag: facts?.updateSource?.installedTag,
             inApp: facts?.inApp ?? inAppDefaults(at: now),
             updateRepo: facts?.updateSource.map { "\($0.repo.owner)/\($0.repo.repo)" },
             updateFrequency: facts?.updateSource.map { UpdateFrequency.from($0.checkInterval) } ?? .global,
@@ -1616,7 +1629,9 @@ final class AppModel {
             Self.channelLogger.notice("channel: cancel asked for \(found.recordID) from \(job.deviceID)")
             // Stop the running phone operation (refresh or update install) for this installation, if
             // any; its held connection then ends it as cancelled. No-op when nothing is running.
-            phoneOpCancels[JobKey(recordID: job.recordID, deviceID: job.deviceID)]?()
+            let cancelKey = JobKey(recordID: job.recordID, deviceID: job.deviceID)
+            Self.debugTrace("cancel received key=\(cancelKey.recordID)|\(cancelKey.deviceID) found=\(phoneOpCancels[cancelKey] != nil)")
+            phoneOpCancels[cancelKey]?()
             await reply(.accepted)
         }
     }
