@@ -261,7 +261,14 @@ static BOOL XSIsPolicyDenied(nw_error_t error) {
         if (state == nw_connection_state_ready) {
             // Tell the modal's hero which transport this connection actually uses (Wi-Fi, else USB).
             nw_path_t path = nw_connection_copy_current_path(connection);
-            if (path) XSSetLinkKind(nw_path_uses_interface_type(path, nw_interface_type_wifi) ? XSLinkWiFi : XSLinkUSB);
+            if (path) {
+                // USB only for a real wired/USB link. A Wi-Fi Personal Hotspot is NOT flagged `wifi`
+                // by iOS (it shows as « other »), so « not wifi → USB » mislabeled it (Anthony: hotspot
+                // Wi-Fi, pas de câble, et ça disait USB). So: wired → USB, everything else → Wi-Fi.
+                BOOL wired = nw_path_uses_interface_type(path, nw_interface_type_wired);
+                BOOL wifi = nw_path_uses_interface_type(path, nw_interface_type_wifi);
+                XSSetLinkKind(wired && !wifi ? XSLinkUSB : XSLinkWiFi);
+            }
             dispatch_data_t data = dispatch_data_create(line.bytes, line.length, self->_queue, DISPATCH_DATA_DESTRUCTOR_DEFAULT);
             nw_connection_send(connection, data, NW_CONNECTION_DEFAULT_MESSAGE_CONTEXT, true, ^(nw_error_t sendError) {});
             [self receiveOn:connection generation:generation];
