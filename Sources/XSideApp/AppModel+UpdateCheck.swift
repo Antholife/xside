@@ -255,6 +255,13 @@ extension AppModel {
             let progress: @Sendable (Double) -> Void = { [weak self] f in
                 Task { @MainActor in self?.updateFraction[key] = f }
             }
+            // Claim the job for the whole download + install (after canManage above, so its « jobs
+            // must be nil » guard still passed), so the Mac panel shows activity and the spinner
+            // animates throughout, not only once the install steps begin. Ref-counted: the install's
+            // own claim nests inside this one.
+            let jobKey = JobKey(recordID: record.id, deviceID: device.id)
+            claim(jobKey, stage: .preparing)
+            defer { release(jobKey) }
             switch await apply(target, device: device, found: found, stable: stable, userInitiated: true, approved: approved, progress: progress) {
             case .installed(let v):
                 await markInstalled(found, for: target)
@@ -314,11 +321,8 @@ extension AppModel {
         }
         phoneOpCancels[installKey] = { waiter.cancel() } // « Annuler » in the modal stops the update
         defer { phoneOpCancels[installKey] = nil }
-        // Claim the job for the whole op (download + install) so the Mac panel shows activity and the
-        // spinner animates throughout, not only once the install's own steps start (Anthony: « aucune
-        // info dans le pannel »). Ref-counted: the install's own claim nests inside this one.
-        claim(installKey, stage: .preparing)
-        defer { release(installKey) }
+        // NB: the job is claimed inside installUpdateNow, AFTER its canManage guard (which requires
+        // jobs[key] == nil) — claiming here would make that guard fail (« not allowed »).
         // Download first (its %), then the install steps — streamed like a refresh so the modal shows
         // « Signature / Installation… · étape X/Y », not a frozen 100% (Anthony: « ça reste bloqué à
         // 100% au lieu de voir les steps d'install »). The install claims jobs[installKey] once it
@@ -372,7 +376,8 @@ extension AppModel {
         if r.hasPrefix("update not applied") { return "updateNotApplied" }
         if r.contains("incompatible") { return "updateIncompatible" }
         if r.contains("device") { return "deviceUnavailable" }
-        if r.contains("gone") || r.contains("no source") || r.contains("not allowed") { return "recordNotFound" }
+        if r.contains("not allowed") { return "updateBusy" } // canManage false: a job is already running
+        if r.contains("gone") || r.contains("no source") { return "recordNotFound" }
         return "updateFailed"
     }
 

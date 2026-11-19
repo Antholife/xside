@@ -191,6 +191,8 @@ NSString *XSReasonText(NSString *key, BOOL fr) {
         @"updateFileUnreadable": @[@"le fichier de la mise à jour n'est pas lisible", @"the update file can't be read"],
         @"updateNotApplied": @[@"la mise à jour ne s'est pas appliquée", @"the update didn't apply"],
         @"updateIncompatible": @[@"la mise à jour ne correspond pas à cette app", @"the update doesn't match this app"],
+        @"updateBusy": @[@"XSide est déjà occupé avec cette app, réessaie dans un instant",
+                         @"XSide is already busy with this app, try again shortly"],
     };
     NSArray<NSString *> *pair = [key isKindOfClass:NSString.class] ? texts[key] : nil;
     if (!pair) pair = @[@"une erreur inattendue (le détail est dans XSide sur ton Mac)",
