@@ -34,6 +34,10 @@ public enum ProgressStep: Int, CaseIterable, Sendable {
         }
     }
 
+    /// A stable string for the channel's `progress` frame (Slice 2); the phone maps it to its modal
+    /// step. Pinned by a test, since the phone depends on these exact words across versions.
+    public var key: String { String(describing: self) }
+
     /// The list for a run; Wi-Fi verification only exists after a first install, the Duo step
     /// only when the option is on for the device, the iCloud one likewise, the tweak one only
     /// when the device has an enabled tweak.

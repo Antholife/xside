@@ -1554,7 +1554,18 @@ final class AppModel {
                     Self.channelLogger.error("channel: refresh request not recorded: \(String(describing: error))")
                 }
                 await reply(.accepted)
-                if let outcome = await waitForOutcome(task) { await reply(outcome) }
+                // Slice 2: stream the live step to the phone's refresh modal while the pipeline runs,
+                // then the outcome. Every write stays in THIS task so the lines stay ordered; a
+                // background waiter only flips the box when the outcome (or the 2-min wait) is in.
+                let box = RefreshOutcomeBox()
+                let waiter = Task { @MainActor in box.outcome = await self.waitForOutcome(task); box.done = true }
+                var last: ChannelReply?
+                while !box.done {
+                    if let frame = refreshProgressFrame(key), frame != last { await reply(frame); last = frame }
+                    try? await Task.sleep(for: .milliseconds(300))
+                }
+                _ = await waiter.value
+                if let outcome = box.outcome { await reply(outcome) }
             }
         case .checkUpdatesRequested:
             Self.channelLogger.notice("channel: check-updates asked for \(found.recordID) from \(job.deviceID)")
@@ -1619,6 +1630,21 @@ final class AppModel {
         }
         guard let task = startRefresh(job, automatic: false) else { return .failure(Refusal(reply: .busy)) }
         return .success(task)
+    }
+
+    /// The live step of a running refresh, as a `progress` frame for the phone's modal, or nil
+    /// before any real step (the modal already shows « connexion… »). `percent` rides along when the
+    /// step reports one (the backup's, mainly), so the modal's ring fills.
+    private func refreshProgressFrame(_ key: JobKey) -> ChannelReply? {
+        guard case let .step(step) = jobs[key] else { return nil }
+        return .progress(stageKey: ProgressStep(step).key, percent: stepPercent[key])
+    }
+
+    /// Holds a refresh's outcome across the streaming loop and its background waiter. Only ever
+    /// touched on the main actor (the loop and the waiter both run there), so the race is only apparent.
+    private final class RefreshOutcomeBox: @unchecked Sendable {
+        var outcome: ChannelReply?
+        var done = false
     }
 
     /// The refresh's outcome line, or nil when it takes longer than the phone waits. A job stopped

@@ -322,8 +322,12 @@ public enum ChannelReply: Codable, Equatable, Sendable {
     case live(seq: Int, InAppSettings, lastRefresh: RefreshOutcome? = nil, pausedUntil: Date? = nil)
     /// On a watch: nothing to say for a while, the connection is alive.
     case alive(seq: Int)
+    /// While a phone-asked refresh runs, the live step for its modal (Slice 2): `stageKey` is a
+    /// `ProgressStep.key` ("backingUp", "signing", …), `percent` its 0…100 when the step reports one.
+    /// Sent between `accepted` and the outcome on the same held connection; never on a watch.
+    case progress(stageKey: String, percent: Int?)
 
-    private enum CodingKeys: String, CodingKey { case type, settings, lastRefresh, reasonKey, by, seq, pausedUntil }
+    private enum CodingKeys: String, CodingKey { case type, settings, lastRefresh, reasonKey, by, seq, pausedUntil, stageKey, percent }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -344,6 +348,9 @@ public enum ChannelReply: Codable, Equatable, Sendable {
                          lastRefresh: try c.decodeIfPresent(RefreshOutcome.self, forKey: .lastRefresh),
                          pausedUntil: try c.decodeIfPresent(Date.self, forKey: .pausedUntil))
         case "alive": self = .alive(seq: try c.decode(Int.self, forKey: .seq))
+        case "progress":
+            self = .progress(stageKey: try c.decode(String.self, forKey: .stageKey),
+                             percent: try c.decodeIfPresent(Int.self, forKey: .percent))
         case let other:
             throw DecodingError.dataCorruptedError(forKey: .type, in: c, debugDescription: "unknown reply \(other)")
         }
@@ -377,6 +384,10 @@ public enum ChannelReply: Codable, Equatable, Sendable {
         case let .alive(seq):
             try c.encode("alive", forKey: .type)
             try c.encode(seq, forKey: .seq)
+        case let .progress(stageKey, percent):
+            try c.encode("progress", forKey: .type)
+            try c.encode(stageKey, forKey: .stageKey)
+            try c.encodeIfPresent(percent, forKey: .percent)
         }
     }
 

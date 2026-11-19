@@ -10,6 +10,15 @@ import Testing
         #expect(firstRun.last == .wifiCheck)
     }
 
+    @Test func stageKeysThePhoneDependsOn() {
+        // The phone's refresh modal maps these exact strings; don't rename without the dylib.
+        #expect(ProgressStep.backingUp.key == "backingUp")
+        #expect(ProgressStep.signing.key == "signing")
+        #expect(ProgressStep.installing.key == "installing")
+        #expect(ProgressStep.preparing.key == "preparing")
+        #expect(ProgressStep.welcome.key == "welcome")
+    }
+
     @Test func restoreIsItsOwnVisibleStep() {
         #expect(ProgressStep(.restoring) == .restoring)
         #expect(ProgressStep(.backingUp) == .backingUp)

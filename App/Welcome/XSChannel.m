@@ -323,6 +323,19 @@ static BOOL XSIsPolicyDenied(nw_error_t error) {
     });
 }
 
+/// After « accepted », give up only once XSOutcomeTimeout has passed since the LAST line: every
+/// progress frame (Slice 2) pushes `_lastLine` forward, so streaming re-arms this instead of tripping it.
+- (void)scheduleOutcomeTimeout:(NSUInteger)generation {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(XSOutcomeTimeout * NSEC_PER_SEC)), _queue, ^{
+        if (generation != self->_generation || self->_finished) return;
+        if (CFAbsoluteTimeGetCurrent() - self->_lastLine >= XSOutcomeTimeout) {
+            [self finish:XSChannelNoOutcome reply:nil];
+        } else {
+            [self scheduleOutcomeTimeout:generation];
+        }
+    });
+}
+
 - (void)handleLine:(NSData *)line {
     NSDictionary *reply = nil;
     if (_watching) {
@@ -355,14 +368,14 @@ static BOOL XSIsPolicyDenied(nw_error_t error) {
         if (_waitsOutcome && [reply[@"type"] isEqual:@"accepted"]) {
             // The refresh started: no other XSide is needed; the outcome comes on this connection.
             _accepted = YES;
+            _lastLine = CFAbsoluteTimeGetCurrent();
             if (_browser) nw_browser_cancel(_browser);
             _browser = nil;
             [_pending removeAllObjects];
             [self deliver:XSChannelReplied reply:reply final:NO];
-            NSUInteger generation = _generation;
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(XSOutcomeTimeout * NSEC_PER_SEC)), _queue, ^{
-                if (generation == self->_generation) [self finish:XSChannelNoOutcome reply:nil];
-            });
+            // The outcome (or a progress frame, Slice 2) must come within XSOutcomeTimeout of the
+            // last line, not of « accepted »: streaming keeps pushing _lastLine forward.
+            [self scheduleOutcomeTimeout:_generation];
             return;
         }
         if (_watches && [reply[@"type"] isEqual:@"settings"]) {
@@ -377,6 +390,13 @@ static BOOL XSIsPolicyDenied(nw_error_t error) {
             [self checkKeepAlive:_generation];
             return;
         }
+    }
+    if (_accepted && [reply[@"type"] isEqual:@"progress"]) {
+        // A live step of the running refresh (Slice 2): keep the connection open for the next line
+        // and feed the modal. Not final; the outcome (or the app being replaced) ends the exchange.
+        _lastLine = CFAbsoluteTimeGetCurrent();
+        [self deliver:XSChannelReplied reply:reply final:NO];
+        return;
     }
     [self finish:XSChannelReplied reply:reply];
 }
@@ -931,6 +951,19 @@ static void XSStartRefreshExchange(void) {
             XSRefreshTask = [UIApplication.sharedApplication beginBackgroundTaskWithName:@"XSide refresh"
                                                                      expirationHandler:^{ XSEndRefreshTask(); }];
             XSHasRefreshTask = XSRefreshTask != UIBackgroundTaskInvalid;
+        } else if ([type isEqual:@"progress"]) {
+            // A live step of the running refresh (Slice 2). The backup fills the ring; the re-sign and
+            // install can't complete here (the new app replaces this one), so they stay indeterminate.
+            NSString *stage = [reply[@"stageKey"] isKindOfClass:NSString.class] ? reply[@"stageKey"] : @"";
+            NSNumber *pct = [reply[@"percent"] isKindOfClass:NSNumber.class] ? reply[@"percent"] : nil;
+            if ([stage isEqual:@"backingUp"]) {
+                XSRefreshModalStep(french ? @"Sauvegarde des données" : @"Backing up data",
+                                   french ? @"XSide copie tes données avant de rafraîchir." : @"XSide is copying your data before refreshing.",
+                                   pct ? pct.doubleValue / 100.0 : -1);
+            } else {
+                XSRefreshModalStep(french ? @"Rafraîchissement" : @"Refreshing",
+                                   french ? @"L’app va se fermer, rouvre-la ensuite." : @"The app will close, open it again then.", -1);
+            }
         } else if ([type isEqual:@"refreshed"]) {
             XSRecordRefresh(YES, nil, NSDate.date); // the new app replaces this one right after
             XSRefreshModalStep(french ? @"Rafraîchie" : @"Refreshed",

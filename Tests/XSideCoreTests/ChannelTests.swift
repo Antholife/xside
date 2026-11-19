@@ -516,10 +516,13 @@ import CryptoKit
         let s = InAppSettings.defaults(reminder: false, at: now)
         let all: [ChannelReply] = [.settings(s), .settings(s, lastRefresh: RefreshOutcome(at: now, succeeded: false, reasonKey: "k")),
                                    .accepted, .refreshed, .failed(reasonKey: "r"), .busy,
-                                   .deviceUnreachable, .paused(by: .mac), .paused(by: .device), .rejected]
+                                   .deviceUnreachable, .paused(by: .mac), .paused(by: .device), .rejected,
+                                   .progress(stageKey: "backingUp", percent: 42), .progress(stageKey: "signing", percent: nil)]
         for r in all {
             #expect(try ChannelReply.decode(body: r.encodedBody()) == r)
         }
+        // A progress frame omits the percent when it has none (e.g. the signing step).
+        #expect(!String(decoding: try ChannelReply.progress(stageKey: "signing", percent: nil).encodedBody(), as: UTF8.self).contains("percent"))
         #expect(String(decoding: try ChannelReply.paused(by: .mac).encodedBody(), as: UTF8.self) == #"{"by":"mac","type":"paused"}"#)
         // The outcome is optional: absent from the JSON when nil, and older replies still decode.
         let plain = String(decoding: try ChannelReply.settings(s).encodedBody(), as: UTF8.self)
