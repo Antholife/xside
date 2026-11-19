@@ -1513,6 +1513,8 @@
 "update.source.noAsset" = "Ce dépôt ne publie pas d'IPA (rien à installer sur un appareil)";
 "update.source.failed" = "Impossible de lire les releases. Vérifie le lien et ta connexion.";
 "update.source.tracking" = "Suivi : %@";
+"update.source.installedRelease" = "Release suivie : %@";
+"update.source.setRelease" = "⚠︎ Définis la release installée (Modifier) pour suivre les mises à jour.";
 "update.source.multiple" = "Ce dépôt propose plusieurs fichiers installables. Choisis celui que tu installes.";
 "update.source.choose" = "Choisir";
 "settings.updateFrequency" = "Vérifier les mises à jour des apps";

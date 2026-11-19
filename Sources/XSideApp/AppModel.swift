@@ -441,7 +441,7 @@ final class AppModel {
             installedOn: (facts?.firstInstalledAt ?? now).formatted(style),
             connection: facts?.lastCheckIn.map { "✓ " + $0.formatted(style) } ?? "—",
             lastRefresh: outcome.map { ($0.succeeded ? "✓ " : "✕ ") + $0.at.formatted(style) } ?? "—",
-            releaseTag: facts?.updateSource?.installedTag,
+            releaseTag: facts?.updateSource.flatMap { $0.installedName ?? $0.installedTag },
             inApp: facts?.inApp ?? inAppDefaults(at: now),
             updateRepo: facts?.updateSource.map { "\($0.repo.owner)/\($0.repo.repo)" },
             updateFrequency: facts?.updateSource.map { UpdateFrequency.from($0.checkInterval) } ?? .global,
@@ -2465,7 +2465,9 @@ final class AppModel {
                     flow.draft.updateVariantSource = src.repo
                     flow.draft.updateMode = src.mode
                     flow.draft.updateInterval = src.checkInterval
-                    flow.draft.updateInstalledTag = src.installedTag
+                    // Cleared on purpose: the person re-confirms which release this IPA is, so the
+                    // baseline matches what's actually installed (Anthony). « Suivant » blocks until set.
+                    flow.draft.updateInstalledTag = nil
                 }
                 flow.duoDevices = Set(existing?.installations.filter { $0.duoCompatibility == true }.map(\.deviceID) ?? [])
                 flow.iCloudDevices = Set(existing?.installations.filter { $0.iCloudSignedOut == true }.map(\.deviceID) ?? [])

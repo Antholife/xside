@@ -144,6 +144,19 @@ final class InstallFlow {
     /// Set when « Suivant »/Install was stopped by a pending link, to highlight the field; cleared on edit.
     var updateLinkError = false
 
+    /// A valid source is configured but no release tag is chosen for what's being installed. On a
+    /// reinstall of a sourced app the tag is cleared on purpose (XSide can't read it from the IPA),
+    /// so the person re-confirms which release this is — otherwise the baseline would stay stale
+    /// (Anthony: « force à définir le tag »). « Suivant »/Install stop on the options step until set.
+    var needsInstalledTag: Bool {
+        guard !updateLinkPending else { return false } // the link guard handles an unconfirmed source
+        let url = draft.updateSourceURL.trimmingCharacters(in: .whitespaces)
+        guard !url.isEmpty, GitHubSource.parse(url) != nil else { return false }
+        return draft.updateInstalledTag == nil
+    }
+    /// Set when « Suivant »/Install was stopped because the release tag is unset, to prompt for it.
+    var updateTagError = false
+
     /// Shows step `index`; from the summary, editing turns the steps on.
     func go(to index: Int) {
         reviewsSteps = true

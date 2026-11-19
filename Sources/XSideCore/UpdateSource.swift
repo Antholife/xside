@@ -97,6 +97,9 @@ public struct UpdateSource: Codable, Equatable, Sendable {
     /// release in the repo = an update. Set when the source is added (the install sheet asks) and
     /// updated each time XSide installs an update.
     public var installedTag: String?
+    /// The baseline release's GitHub title (e.g. « YTKACE v1.1.8 »), to show next to the tag. nil
+    /// when the release had no title or it isn't known.
+    public var installedName: String?
     /// The full trigger (`tag|asset|updatedAt`) of the baseline release. Lets a check catch a new
     /// build published under the SAME tag (a rolling tag like `nightly`), which the tag alone can't.
     /// `nil` until learned on the first check (or set when XSide installs an update).
@@ -108,13 +111,14 @@ public struct UpdateSource: Codable, Equatable, Sendable {
     public var lastCheckedAt: Date?
 
     public init(repo: GitHubSource, variant: VariantSelector, mode: UpdateMode = .notify,
-                lastSeenTrigger: String? = nil, installedTag: String? = nil, installedTrigger: String? = nil,
-                checkInterval: TimeInterval? = nil, lastCheckedAt: Date? = nil) {
+                lastSeenTrigger: String? = nil, installedTag: String? = nil, installedName: String? = nil,
+                installedTrigger: String? = nil, checkInterval: TimeInterval? = nil, lastCheckedAt: Date? = nil) {
         self.repo = repo
         self.variant = variant
         self.mode = mode
         self.lastSeenTrigger = lastSeenTrigger
         self.installedTag = installedTag
+        self.installedName = installedName
         self.installedTrigger = installedTrigger
         self.checkInterval = checkInterval
         self.lastCheckedAt = lastCheckedAt

@@ -19,12 +19,15 @@ public struct FoundRelease: Equatable, Sendable {
     public let asset: ReleaseAsset
     /// `<tag>|<asset name>|<updated_at>`: changes when the release or its file is replaced.
     public let trigger: String
+    /// The GitHub release's title (its `name`, e.g. « YTKACE v1.1.8 »), nil when the release has none.
+    public let name: String?
 
-    public init(tag: String, isPrerelease: Bool, asset: ReleaseAsset, trigger: String) {
+    public init(tag: String, isPrerelease: Bool, asset: ReleaseAsset, trigger: String, name: String? = nil) {
         self.tag = tag
         self.isPrerelease = isPrerelease
         self.asset = asset
         self.trigger = trigger
+        self.name = name
     }
 }
 
@@ -40,7 +43,7 @@ public enum ReleaseFind: Equatable, Sendable {
 /// `AuthorReleaseClient.choose` (which picks a dependency's `.deb`); asset URLs go through the
 /// same validator.
 public enum ReleaseFinder {
-    private typealias Entry = (tag: String, isPrerelease: Bool, asset: ReleaseAsset, updatedAt: String)
+    private typealias Entry = (tag: String, isPrerelease: Bool, asset: ReleaseAsset, updatedAt: String, name: String?)
 
     public static func installableAssets(_ listJSON: Data, source: GitHubSource, kind: ReleaseKind) throws
         -> [(tag: String, isPrerelease: Bool, asset: ReleaseAsset)] {
@@ -60,7 +63,7 @@ public enum ReleaseFinder {
             case 1:
                 let e = matching[0]
                 return .found(FoundRelease(tag: e.tag, isPrerelease: e.isPrerelease, asset: e.asset,
-                                           trigger: "\(e.tag)|\(e.asset.name)|\(e.updatedAt)"))
+                                           trigger: "\(e.tag)|\(e.asset.name)|\(e.updatedAt)", name: e.name))
             default: return .ambiguous(assets: matching.map(\.asset))
             }
         }
@@ -75,6 +78,7 @@ public enum ReleaseFinder {
             if release["draft"] as? Bool == true { continue }
             guard let tag = release["tag_name"] as? String, !tag.isEmpty else { continue }
             let pre = release["prerelease"] as? Bool == true
+            let releaseName = (release["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } // the release title, when set
             for case let asset as [String: Any] in (release["assets"] as? [Any] ?? []).prefix(AuthorReleases.maxAssets) {
                 guard let name = asset["name"] as? String, name.utf8.count <= 256,
                       name.lowercased().hasSuffix(suffix),
@@ -82,7 +86,7 @@ public enum ReleaseFinder {
                       let link = asset["browser_download_url"] as? String,
                       let url = AuthorReleaseClient.assetURL(link, of: source) else { continue }
                 let updated = asset["updated_at"] as? String ?? ""
-                out.append((tag, pre, ReleaseAsset(name: name, url: url, size: size), updated))
+                out.append((tag, pre, ReleaseAsset(name: name, url: url, size: size), updated, releaseName))
             }
         }
         return out

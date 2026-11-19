@@ -201,8 +201,8 @@ struct AppRow: View {
                     }
                     // The tracked release tag (e.g. v1.1.8), next to the app's own version, so the
                     // two are visible together (Anthony: « à côté de la version, le tag lié »).
-                    if let tag = entry.record.updateSource?.installedTag, !tag.isEmpty {
-                        Text(tag)
+                    if let src = entry.record.updateSource, let label = src.installedName ?? src.installedTag, !label.isEmpty {
+                        Text(label)
                             .font(.system(size: 9.5, weight: .semibold, design: .rounded))
                             .foregroundStyle(Theme.violet)
                             .padding(.horizontal, 5).padding(.vertical, 1)

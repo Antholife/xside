@@ -1513,6 +1513,8 @@
 "update.source.noAsset" = "This repo publishes no IPA (nothing to install on a device)";
 "update.source.failed" = "Couldn't read the releases. Check the link and your connection.";
 "update.source.tracking" = "Following: %@";
+"update.source.installedRelease" = "Tracked release: %@";
+"update.source.setRelease" = "⚠︎ Set the installed release (Edit) to track updates.";
 "update.source.multiple" = "This repository offers several installable files. Choose the one you're installing.";
 "update.source.choose" = "Choose";
 "settings.updateFrequency" = "Check apps for updates";

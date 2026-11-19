@@ -506,7 +506,7 @@ extension AppModel {
     /// XSide installed this release: it becomes the baseline, so a check is up to date until a newer
     /// release appears. Its trigger is marked announced too (no stale "available" notice).
     private func markInstalled(_ found: FoundRelease, for target: UpdateTarget) async {
-        await mutateSource(for: target) { $0.installedTag = found.tag; $0.installedTrigger = found.trigger; $0.lastSeenTrigger = found.trigger }
+        await mutateSource(for: target) { $0.installedTag = found.tag; $0.installedName = found.name; $0.installedTrigger = found.trigger; $0.lastSeenTrigger = found.trigger }
     }
 
     /// Reads the source again (an update that swapped a tweak changed its id), applies `change`, and

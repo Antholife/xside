@@ -519,16 +519,23 @@ struct InstallSheet: View {
     private func goNext() {
         if flow.step == InstallFlow.optionsStep && flow.updateLinkPending {
             withAnimation(.smooth(duration: 0.2)) { flow.updateLinkError = true }
+        } else if flow.step == InstallFlow.optionsStep && flow.needsInstalledTag {
+            withAnimation(.smooth(duration: 0.2)) { flow.updateTagError = true }
         } else {
             withAnimation(.smooth(duration: 0.2)) { flow.go(to: flow.step + 1) }
         }
     }
 
-    /// Install: the same link guard, in case the last step was reached straight from the step bar.
+    /// Install: the same guards, in case the last step was reached straight from the step bar.
     private func attemptInstall() {
         if flow.updateLinkPending {
             withAnimation(.smooth(duration: 0.2)) {
                 flow.updateLinkError = true
+                flow.go(to: InstallFlow.optionsStep)
+            }
+        } else if flow.needsInstalledTag {
+            withAnimation(.smooth(duration: 0.2)) {
+                flow.updateTagError = true
                 flow.go(to: InstallFlow.optionsStep)
             }
         } else {

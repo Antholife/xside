@@ -42,7 +42,7 @@ struct UpdateSourceSection: View {
             }
             .background(Theme.cardFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(flow.updateLinkError ? Color(nsColor: .systemOrange) : .clear, lineWidth: 1.5))
+                .strokeBorder(flow.updateLinkError || flow.updateTagError ? Color(nsColor: .systemOrange) : .clear, lineWidth: 1.5))
             .disabled(flow.isRunning)
         }
         .sheet(isPresented: $showsSheet) {
@@ -116,6 +116,18 @@ struct UpdateSourceSection: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
+                // The followed release: its tag once set, otherwise a prompt to set it (a reinstall
+                // clears it so the person confirms which release this IPA is). Highlighted when it
+                // blocked « Suivant ».
+                if let tag = flow.draft.updateInstalledTag {
+                    Text(L("update.source.installedRelease", UpdateChecker.displayTag(tag)))
+                        .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                } else {
+                    Text(L("update.source.setRelease"))
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color(nsColor: .systemOrange))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer(minLength: 8)
             Button(L("install.summary.edit")) { showsSheet = true }
@@ -139,7 +151,9 @@ struct UpdateSourceSection: View {
         flow.draft.updateVariantSource = nil
         flow.draft.updateVariantName = nil
         flow.draft.updateSourceURL = ""
+        flow.draft.updateInstalledTag = nil
         flow.updateLinkError = false
+        flow.updateTagError = false
     }
 
     @ViewBuilder private var statusPill: some View {
@@ -514,6 +528,7 @@ struct UpdateSourceSheet: View {
         flow.draft.updateInstalledTag = installedTag
         persistFolderIfRemembered()
         flow.updateLinkError = false
+        flow.updateTagError = false // the release is now set
         dismiss()
     }
 }
