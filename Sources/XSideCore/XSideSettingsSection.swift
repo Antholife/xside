@@ -239,6 +239,19 @@ extension SettingsSection {
                 + "(\"Automatic refresh\" only changes then)\n"
                 + "github.com/Antholife/xside"),
         ])
-        return ["fr": fr, "en": en]
+        // A short reminder under each editable setting that it is registered when the app reopens
+        // (Anthony: « des wordings de rappel un peu partout, genre mise à jour »). The intro note says
+        // it once at the top; these repeat it per option. Compat/Duo/iCloud and the action toggles
+        // already carry their own (« au prochain rafraîchissement » / « À la prochaine ouverture »).
+        let syncKeys = ["footer.autoRefresh", "footer.updateMode", "footer.updateFrequency",
+                        "footer.showValidity", "footer.alertLate", "footer.refreshCard", "footer.reminder",
+                        "footer.language", "footer.backupData", "footer.backupCaches", "footer.backupBeforeUpdate"]
+        var frM = fr, enM = en
+        for k in syncKeys {
+            let key = p + k
+            if let v = frM[key] { frM[key] = v + "\n📲 Pris en compte à la prochaine ouverture de l'app." }
+            if let v = enM[key] { enM[key] = v + "\n📲 Taken into account next time you open the app." }
+        }
+        return ["fr": frM, "en": enM]
     }()
 }
