@@ -353,9 +353,13 @@ public enum ChannelReply: Codable, Equatable, Sendable {
     /// vague « ton dossier » (Anthony). Rides with "available" only.
     case update(state: String, version: String? = nil, tag: String? = nil, asset: String? = nil, percent: Int? = nil,
                 downloadDir: String? = nil)
+    /// Right after `accepted`, on the held connection: the transport the Mac actually reaches this
+    /// device over ("usb" | "wifi"), so the phone's modal hero is right. The Mac knows it reliably
+    /// (devicectl), where the phone can't tell a Wi-Fi hotspot from a cable (Anthony).
+    case link(transport: String)
 
     private enum CodingKeys: String, CodingKey {
-        case type, settings, lastRefresh, reasonKey, by, seq, pausedUntil, stageKey, index, total, percent, state, version, tag, asset, downloadDir
+        case type, settings, lastRefresh, reasonKey, by, seq, pausedUntil, stageKey, index, total, percent, state, version, tag, asset, downloadDir, transport
     }
 
     public init(from decoder: Decoder) throws {
@@ -382,6 +386,8 @@ public enum ChannelReply: Codable, Equatable, Sendable {
                              index: try c.decodeIfPresent(Int.self, forKey: .index) ?? 1,
                              total: try c.decodeIfPresent(Int.self, forKey: .total) ?? 1,
                              percent: try c.decodeIfPresent(Int.self, forKey: .percent))
+        case "link":
+            self = .link(transport: try c.decode(String.self, forKey: .transport))
         case "update":
             self = .update(state: try c.decode(String.self, forKey: .state),
                            version: try c.decodeIfPresent(String.self, forKey: .version),
@@ -403,6 +409,9 @@ public enum ChannelReply: Codable, Equatable, Sendable {
             try c.encodeIfPresent(lastRefresh, forKey: .lastRefresh)
             try c.encodeIfPresent(pausedUntil.flatMap(channelClamped), forKey: .pausedUntil)
         case .accepted: try c.encode("accepted", forKey: .type)
+        case let .link(transport):
+            try c.encode("link", forKey: .type)
+            try c.encode(transport, forKey: .transport)
         case .refreshed: try c.encode("refreshed", forKey: .type)
         case let .failed(key):
             try c.encode("failed", forKey: .type)

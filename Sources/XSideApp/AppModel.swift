@@ -1572,6 +1572,7 @@ final class AppModel {
                     Self.channelLogger.error("channel: refresh request not recorded: \(String(describing: error))")
                 }
                 await reply(.accepted)
+                await reply(linkReply(job.deviceID)) // tell the phone the real transport for its hero
                 // Slice 2: stream the live step to the phone's refresh modal while the pipeline runs,
                 // then the outcome. Every write stays in THIS task so the lines stay ordered; a
                 // background waiter only flips the box when the outcome (or the 2-min wait) is in.
@@ -1592,10 +1593,12 @@ final class AppModel {
             // Slice 3: the phone's modal is up; check and stream the outcome (the connection is held
             // between accepted and this line, like a refresh). The person confirms any install.
             await reply(.accepted)
+            await reply(linkReply(job.deviceID))
             await reply(await modalUpdateCheckReply(recordID: job.recordID))
         case let .installUpdateRequested(tag, asset):
             Self.channelLogger.notice("channel: install-update \(tag) asked for \(found.recordID) from \(job.deviceID)")
             await reply(.accepted)
+            await reply(linkReply(job.deviceID))
             await streamModalInstallUpdate(recordID: job.recordID, deviceID: job.deviceID, tag: tag, asset: asset, frame: reply)
         case .backupRequested:
             Self.channelLogger.notice("channel: backup asked for \(found.recordID) from \(job.deviceID)")
@@ -1669,6 +1672,12 @@ final class AppModel {
     /// The live step of a running refresh, as a `progress` frame for the phone's modal, or nil
     /// before any real step (the modal already shows « connexion… »). `percent` rides along when the
     /// step reports one (the backup's, mainly), so the modal's ring fills.
+    /// The transport the Mac reaches this device over, for the phone modal's hero (the phone can't
+    /// tell a Wi-Fi hotspot from a cable; the Mac knows it via devicectl).
+    private func linkReply(_ deviceID: String) -> ChannelReply {
+        .link(transport: devices.first { $0.id == deviceID }?.transport == .usb ? "usb" : "wifi")
+    }
+
     /// A `progress` frame for a running job's modal (refresh or a phone update install). `countBackup`
     /// false for an update install, whose pipeline has no backup step (the pre-update snapshot is
     /// separate), so « étape X/Y » counts right.

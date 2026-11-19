@@ -260,15 +260,9 @@ static BOOL XSIsPolicyDenied(nw_error_t error) {
         if (generation != self->_generation || self->_finished) return;
         if (state == nw_connection_state_ready) {
             // Tell the modal's hero which transport this connection actually uses (Wi-Fi, else USB).
-            nw_path_t path = nw_connection_copy_current_path(connection);
-            if (path) {
-                // USB only for a real wired/USB link. A Wi-Fi Personal Hotspot is NOT flagged `wifi`
-                // by iOS (it shows as « other »), so « not wifi → USB » mislabeled it (Anthony: hotspot
-                // Wi-Fi, pas de câble, et ça disait USB). So: wired → USB, everything else → Wi-Fi.
-                BOOL wired = nw_path_uses_interface_type(path, nw_interface_type_wired);
-                BOOL wifi = nw_path_uses_interface_type(path, nw_interface_type_wifi);
-                XSSetLinkKind(wired && !wifi ? XSLinkUSB : XSLinkWiFi);
-            }
+            // The transport for the modal's hero comes from the Mac (a `link` reply after `accepted`):
+            // it knows it reliably via devicectl, where the phone can't tell a Wi-Fi hotspot from a
+            // cable (iOS reports both oddly). See the `link` branch in the reply reader.
             dispatch_data_t data = dispatch_data_create(line.bytes, line.length, self->_queue, DISPATCH_DATA_DESTRUCTOR_DEFAULT);
             nw_connection_send(connection, data, NW_CONNECTION_DEFAULT_MESSAGE_CONTEXT, true, ^(nw_error_t sendError) {});
             [self receiveOn:connection generation:generation];
@@ -400,6 +394,15 @@ static BOOL XSIsPolicyDenied(nw_error_t error) {
             [self checkKeepAlive:_generation];
             return;
         }
+    }
+    if (_accepted && [reply[@"type"] isEqual:@"link"]) {
+        // The Mac's authoritative transport for the hero (usb | wifi). Not final; handlers ignore it.
+        NSString *t = [reply[@"transport"] isKindOfClass:NSString.class] ? reply[@"transport"] : nil;
+        if ([t isEqual:@"usb"]) XSSetLinkKind(XSLinkUSB);
+        else if ([t isEqual:@"wifi"]) XSSetLinkKind(XSLinkWiFi);
+        _lastLine = CFAbsoluteTimeGetCurrent();
+        [self deliver:XSChannelReplied reply:reply final:NO];
+        return;
     }
     if (_accepted && [reply[@"type"] isEqual:@"progress"]) {
         // A live step of the running refresh (Slice 2): keep the connection open for the next line
@@ -1028,6 +1031,8 @@ static void XSStartRefreshExchange(void) {
             XSRefreshTask = [UIApplication.sharedApplication beginBackgroundTaskWithName:@"XSide refresh"
                                                                      expirationHandler:^{ XSEndRefreshTask(); }];
             XSHasRefreshTask = XSRefreshTask != UIBackgroundTaskInvalid;
+        } else if ([type isEqual:@"link"]) {
+            // The hero's transport, already applied by the reply reader; nothing to do here.
         } else if ([type isEqual:@"progress"]) {
             // A live step of the running refresh (Slice 2): named step + « Étape X/Y » + the ring,
             // the overall % big in its centre. Shared with the update install.
