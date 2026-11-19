@@ -292,7 +292,7 @@ NSDictionary<NSString *, NSString *> *XSChangeTexts(NSArray<NSString *> *fields,
                       : [NSString stringWithFormat:@"\"%@\" %@", title, on ? @"turned on" : @"turned off"];
             if (byMac) return @{@"lead": [what stringByAppendingString:fr ? @" depuis ton Mac" : @" from your Mac"]};
         }
-        return @{@"lead": [what stringByAppendingString:fr ? @" : XSide sur ton Mac est au courant" : @": XSide on your Mac knows"]};
+        return @{@"lead": what};
     }
     NSString *lead = byMac ? (fr ? @"Réglages mis à jour depuis ton Mac" : @"Settings updated from your Mac")
                            : (fr ? @"Réglages envoyés à XSide sur ton Mac" : @"Settings sent to XSide on your Mac");

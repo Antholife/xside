@@ -24,7 +24,7 @@
     NSArray<CAShapeLayer *> *_fans;          // 6 Wi-Fi arcs: 0-2 iPhone (violet), 3-5 Mac (pink)
     CALayer *_pulseV, *_pulseP;              // F4: the two crossing data pulses
     CAShapeLayer *_usbCable; NSArray<CALayer *> *_usbDots; NSArray<CALayer *> *_usbPlugs;
-    UIView *_macBadge; UILabel *_macBadgeMark;
+    UIView *_macBadge; UILabel *_macBadgeMark; BOOL _macOk; // _macOk tracks the badge's shown state
     UIView *_chip; UIImageView *_chipIcon; UILabel *_chipText;
     XSLinkKind _linkKind;
     BOOL _connecting;
@@ -349,6 +349,10 @@ static XSLinkKind XSLinkCurrent = XSLinkUnknown; // the transport the last chann
 }
 
 - (void)heroConnectedOk:(BOOL)ok {
+    // Idempotent: once the badge is shown in a state, don't re-pop it. The update flow calls this on
+    // every download %, which made the ✓ blink each time (Anthony). Re-run only when the state flips.
+    if (!_macBadge.hidden && _macOk == ok) return;
+    _macOk = ok;
     [self pulseMac:NO];
     // The link keeps flowing while the Mac works (data really is moving); it is stopped only at the
     // end, in drawMark. So the transport animation stays visible for the whole refresh, not a blink.
@@ -560,4 +564,90 @@ void XSSetLinkKind(XSLinkKind kind) {
     if (![NSThread isMainThread]) { dispatch_async(dispatch_get_main_queue(), ^{ XSSetLinkKind(kind); }); return; }
     XSLinkCurrent = kind;
     [XSModalVC applyLinkKind:kind];
+}
+
+#pragma mark - Info modal (a settings change, shown full screen with OK)
+
+static void XSInfoModalDismiss(void);
+
+@interface XSInfoModalController : UIViewController
+@property (nonatomic, copy, nullable) NSString *infoTitle;
+@property (nonatomic, copy, nullable) NSString *infoMessage;
+@property (nonatomic, weak, nullable) UILabel *titleLabel;
+@property (nonatomic, weak, nullable) UILabel *messageLabel;
+@end
+
+@implementation XSInfoModalController
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.view.backgroundColor = UIColor.systemBackgroundColor;
+
+    CGFloat S = 46;
+    UIImageView *logo = [UIImageView new];
+    NSData *data = [[NSData alloc] initWithBase64EncodedString:XSLogoBase64 options:0];
+    logo.image = [UIImage imageWithData:data scale:UIScreen.mainScreen.scale];
+    logo.contentMode = UIViewContentModeScaleAspectFit;
+    logo.layer.cornerRadius = S * 0.225; logo.layer.cornerCurve = kCACornerCurveContinuous; logo.layer.masksToBounds = YES;
+    [NSLayoutConstraint activateConstraints:@[[logo.widthAnchor constraintEqualToConstant:S], [logo.heightAnchor constraintEqualToConstant:S]]];
+
+    UILabel *kicker = [UILabel new];
+    kicker.text = @"XSIDE"; kicker.font = XSScaledFont(11, UIFontWeightHeavy);
+    kicker.textColor = XSViolet(); kicker.textAlignment = NSTextAlignmentCenter;
+
+    UILabel *t = [UILabel new];
+    t.text = self.infoTitle; t.font = XSScaledFont(20, UIFontWeightBold);
+    t.numberOfLines = 0; t.textAlignment = NSTextAlignmentCenter; t.adjustsFontForContentSizeCategory = YES;
+    self.titleLabel = t;
+
+    UILabel *m = [UILabel new];
+    m.text = self.infoMessage; m.font = XSScaledFont(14, UIFontWeightRegular);
+    m.textColor = UIColor.secondaryLabelColor; m.numberOfLines = 0; m.textAlignment = NSTextAlignmentCenter;
+    m.adjustsFontForContentSizeCategory = YES;
+    self.messageLabel = m;
+
+    XSGradientButton *ok = [XSGradientButton buttonWithType:UIButtonTypeCustom];
+    [ok setTitle:@"OK" forState:UIControlStateNormal];
+    [ok setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
+    ok.titleLabel.font = XSScaledFont(15, UIFontWeightSemibold);
+    [ok addTarget:self action:@selector(tapOK) forControlEvents:UIControlEventTouchUpInside];
+    [NSLayoutConstraint activateConstraints:@[[ok.heightAnchor constraintEqualToConstant:46],
+                                              [ok.widthAnchor constraintGreaterThanOrEqualToConstant:160]]];
+
+    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[logo, kicker, t, m, ok]];
+    stack.axis = UILayoutConstraintAxisVertical; stack.alignment = UIStackViewAlignmentCenter;
+    stack.translatesAutoresizingMaskIntoConstraints = NO;
+    [stack setCustomSpacing:9 afterView:logo];
+    [stack setCustomSpacing:6 afterView:kicker];
+    [stack setCustomSpacing:8 afterView:t];
+    [stack setCustomSpacing:26 afterView:m];
+    [self.view addSubview:stack];
+    [NSLayoutConstraint activateConstraints:@[
+        [stack.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [stack.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor],
+        [stack.leadingAnchor constraintGreaterThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor constant:32],
+        [stack.trailingAnchor constraintLessThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor constant:-32]]];
+}
+- (void)tapOK { XSInfoModalDismiss(); }
+@end
+
+static UIWindow *XSInfoWindow;
+static __weak XSInfoModalController *XSInfoVC;
+
+static void XSInfoModalDismiss(void) { XSInfoWindow.hidden = YES; XSInfoWindow = nil; }
+
+void XSInfoModalShow(NSString *title, NSString *message) {
+    if (![NSThread isMainThread]) { dispatch_async(dispatch_get_main_queue(), ^{ XSInfoModalShow(title, message); }); return; }
+    UIWindowScene *scene = XSScene();
+    if (!scene) return;
+    if (XSInfoWindow) { // one already up: replace its text rather than stack a second window
+        XSInfoVC.infoTitle = title; XSInfoVC.infoMessage = message;
+        XSInfoVC.titleLabel.text = title; XSInfoVC.messageLabel.text = message;
+        return;
+    }
+    XSInfoModalController *vc = [XSInfoModalController new];
+    vc.infoTitle = title; vc.infoMessage = message;
+    UIWindow *w = [[UIWindow alloc] initWithWindowScene:scene];
+    w.rootViewController = vc; w.windowLevel = UIWindowLevelAlert + 100; // below the refresh modal (+101)
+    XSInfoWindow = w; XSInfoVC = vc;
+    w.hidden = NO;
 }

@@ -285,7 +285,10 @@ extension AppModel {
         case .needsVariantChoice: return .update(state: "needsMac")
         case .failed: return .failed(reasonKey: "updateFailed")
         case let .available(found, version, _):
-            return .update(state: "available", version: version, tag: found.tag, asset: found.asset.name)
+            // Tell the phone where it will be downloaded (XSide's cache, inside the library folder the
+            // person chose), so the offer can name it instead of a vague « ton dossier » (Anthony).
+            return .update(state: "available", version: version, tag: found.tag, asset: found.asset.name,
+                           downloadDir: libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).path)
         }
     }
 

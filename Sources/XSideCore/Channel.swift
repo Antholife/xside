@@ -342,10 +342,14 @@ public enum ChannelReply: Codable, Equatable, Sendable {
     /// `state` is "upToDate" | "available" | "downloading" | "installing" | "installed" | "needsMac".
     /// `version`/`tag`/`asset` ride with "available" (the phone keeps `tag`/`asset` to ask for the
     /// install) and `version` with "installed"; `percent` with "downloading". A failure stays `failed`.
-    case update(state: String, version: String? = nil, tag: String? = nil, asset: String? = nil, percent: Int? = nil)
+    /// `downloadDir`: where the Mac will download the update before installing it (XSide's cache,
+    /// inside the library folder the person picked), so the phone's offer can name it instead of a
+    /// vague « ton dossier » (Anthony). Rides with "available" only.
+    case update(state: String, version: String? = nil, tag: String? = nil, asset: String? = nil, percent: Int? = nil,
+                downloadDir: String? = nil)
 
     private enum CodingKeys: String, CodingKey {
-        case type, settings, lastRefresh, reasonKey, by, seq, pausedUntil, stageKey, index, total, percent, state, version, tag, asset
+        case type, settings, lastRefresh, reasonKey, by, seq, pausedUntil, stageKey, index, total, percent, state, version, tag, asset, downloadDir
     }
 
     public init(from decoder: Decoder) throws {
@@ -377,7 +381,8 @@ public enum ChannelReply: Codable, Equatable, Sendable {
                            version: try c.decodeIfPresent(String.self, forKey: .version),
                            tag: try c.decodeIfPresent(String.self, forKey: .tag),
                            asset: try c.decodeIfPresent(String.self, forKey: .asset),
-                           percent: try c.decodeIfPresent(Int.self, forKey: .percent))
+                           percent: try c.decodeIfPresent(Int.self, forKey: .percent),
+                           downloadDir: try c.decodeIfPresent(String.self, forKey: .downloadDir))
         case let other:
             throw DecodingError.dataCorruptedError(forKey: .type, in: c, debugDescription: "unknown reply \(other)")
         }
@@ -417,13 +422,14 @@ public enum ChannelReply: Codable, Equatable, Sendable {
             try c.encode(index, forKey: .index)
             try c.encode(total, forKey: .total)
             try c.encodeIfPresent(percent, forKey: .percent)
-        case let .update(state, version, tag, asset, percent):
+        case let .update(state, version, tag, asset, percent, downloadDir):
             try c.encode("update", forKey: .type)
             try c.encode(state, forKey: .state)
             try c.encodeIfPresent(version, forKey: .version)
             try c.encodeIfPresent(tag, forKey: .tag)
             try c.encodeIfPresent(asset, forKey: .asset)
             try c.encodeIfPresent(percent, forKey: .percent)
+            try c.encodeIfPresent(downloadDir, forKey: .downloadDir)
         }
     }
 

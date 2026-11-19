@@ -439,48 +439,44 @@ static void XSCheckInEnded(void) {
 static XSPillContent *XSUnansweredPill(XSChannelResult result);
 
 /// "Touche pour voir Réglages > Apps > YouTube > Réglages XSide.": where the settings are.
-static NSString *XSWhereHint(BOOL fr) {
-    return [NSString stringWithFormat:fr ? @"Touche pour voir %@ > %@." : @"Tap to see %@ > %@.",
-            XSSettingsPath(), XSSettingsRowShown()];
-}
-
-/// The one pill for a change of settings (device feedback round 2, P2): which one and how when it
-/// is one ("XSide : rafraîchissement automatique réactivé depuis XSide sur ton Mac"), else the
-/// list. From the Mac (`byMac`) a tap (or Voir) opens the app's page in iOS Settings, where XSide's
-/// row is. `others`: fields the Mac changed in the reply to the phone's own change.
 /// The end of the Mac's pause of a while, from the last adopted reply (review D–G, minor 7).
 static NSDate *XSMacPauseEnd;
 
-static XSPillContent *XSChangePill(NSArray<NSString *> *fields, BOOL byMac, NSArray<NSString *> *others) {
+/// A settings change shown as a full-screen modal with OK (Anthony: « plus de popup en haut » pour
+/// les réglages, « une vraie modale »). `fields`: what changed on the side being announced; `byMac`
+/// YES when the Mac made them (then the title says so). `macOthers`: fields the Mac changed at the
+/// same time as a phone change (listed under the phone ones). The wording comes from XSChangeTexts.
+static void XSShowSettingsModal(NSArray<NSString *> *fields, BOOL byMac, NSArray<NSString *> *macOthers) {
+    if (!fields.count && !macOthers.count) return;
     BOOL fr = XSFrench();
     NSDictionary *now = XSCurrentSettings();
-    NSDictionary *texts = XSChangeTexts(fields, now, byMac, fr);
-    XSPillContent *c = [XSPillContent new];
-    c.lead = texts[@"lead"];
-    NSMutableArray<NSString *> *hint = [NSMutableArray array];
-    if (texts[@"list"]) [hint addObject:texts[@"list"]];
+    NSMutableArray<NSString *> *lines = [NSMutableArray array];
+    if (fields.count) {
+        NSDictionary *t = XSChangeTexts(fields, now, NO, fr); // bare phrase; the origin is in the title
+        NSString *what = t[@"list"] ?: t[@"lead"];
+        if (what) [lines addObject:what];
+    }
     // Paused from the Mac for a while: say it comes back by itself, and when.
-    BOOL macPause = (byMac && [fields containsObject:@"autoRefresh"]) || [others containsObject:@"autoRefresh"];
+    BOOL macPause = (byMac && [fields containsObject:@"autoRefresh"]) || [macOthers containsObject:@"autoRefresh"];
     if (macPause && ![XSSettingValue(now, @"autoRefresh") boolValue] && XSMacPauseEnd.timeIntervalSinceNow > 0) {
-        [hint addObject:XSPauseEndHint(XSMacPauseEnd, fr, NSTimeZone.localTimeZone)];
+        [lines addObject:XSPauseEndHint(XSMacPauseEnd, fr, NSTimeZone.localTimeZone)];
     }
-    if (others.count) {
-        // One: "« Rappel avant l'expiration » désactivé depuis ton Mac"; several: listed.
-        NSDictionary *more = XSChangeTexts(others, now, YES, fr);
-        [hint addObject:more[@"list"] ? [NSString stringWithFormat:fr ? @"Mis à jour depuis ton Mac : %@" : @"Updated from your Mac: %@",
-                                         more[@"list"]]
-                                      : more[@"lead"]];
+    if (macOthers.count) {
+        NSDictionary *more = XSChangeTexts(macOthers, now, NO, fr);
+        NSString *what = more[@"list"] ?: more[@"lead"];
+        if (what) [lines addObject:[NSString stringWithFormat:fr ? @"Depuis ton Mac : %@" : @"From your Mac: %@", what]];
     }
-    BOOL opens = byMac || others.count;
-    if (opens) [hint addObject:XSWhereHint(fr)];
-    c.hint = hint.count ? [hint componentsJoinedByString:@"\n"] : nil;
-    c.duration = opens ? 7 : 5;
-    if (opens) {
-        c.buttonTitle = fr ? @"Voir" : @"See";
-        c.action = ^{ XSOpenAppSettings(); };
-        c.tapAction = c.action;
+    BOOL many = fields.count + macOthers.count > 1;
+    NSString *title;
+    if (byMac) {
+        title = fr ? (many ? @"Réglages modifiés depuis ton Mac" : @"Réglage modifié depuis ton Mac")
+                   : (many ? @"Settings changed from your Mac" : @"Setting changed from your Mac");
+    } else {
+        [lines addObject:(fr ? @"Synchronisé avec XSide sur ton Mac." : @"Synced with XSide on your Mac.")];
+        title = fr ? (many ? @"Réglages enregistrés" : @"Réglage enregistré")
+                   : (many ? @"Settings saved" : @"Setting saved");
     }
-    return c;
+    XSInfoModalShow(title, [lines componentsJoinedByString:@"\n"]);
 }
 
 /// A check-in's answer: the merged settings and the last refresh adopted. Returns the fields whose
@@ -523,18 +519,17 @@ static NSArray<NSString *> *XSAdoptCheckInReply(XSChannelResult result, NSDictio
     return byMac;
 }
 
-/// The one pill for what the Mac changed (nil when nothing changed, or every message is off before
-/// and after: XSShowsMacUpdatePill). Told even when the change itself turned every message off.
-static XSPillContent *XSMacChangePill(NSArray<NSString *> *byMac) {
-    if (!byMac.count) return nil;
+/// What the Mac changed, shown as a full-screen modal (nil-gated like the old pill: nothing when
+/// every XSide message is off, before and after: XSShowsMacUpdatePill). Told even when the change
+/// itself turned every message off.
+static void XSShowMacSettingsChange(NSArray<NSString *> *byMac) {
+    if (!byMac.count) return;
     NSDictionary *after = XSCurrentSettings();
     if (!XSShowsMacUpdatePill(XSSettingsBeforeAdopt ?: after, after)) {
-        NSLog(@"XSide: pill: change from the Mac not shown, every XSide message is off");
-        return nil;
+        NSLog(@"XSide: change from the Mac not shown, every XSide message is off");
+        return;
     }
-    XSPillContent *c = XSChangePill(byMac, YES, nil);
-    c.answer = !XSShowsPills(after); // the last one before "Aucun": said all the same
-    return c;
+    XSShowSettingsModal(byMac, YES, nil);
 }
 
 /// The poll interval a check-in states (device feedback 5, G3): the foreground one while the app is
@@ -567,8 +562,8 @@ static void XSRunCheckIn(NSTimeInterval find, BOOL anyway, void (^handler)(XSCha
 void XSCheckIn(void (^done)(XSPillContent *news)) {
     // Silent and short (spec: ≤ 3 s): nothing is shown here; the caller shows what the Mac changed.
     XSRunCheckIn(3, NO, ^(XSChannelResult result, NSArray *byMac) {
-        XSPillContent *news = XSMacChangePill(byMac);
-        if (done) done(news);
+        XSShowMacSettingsChange(byMac); // a Mac change shows as a full-screen modal now, not a pill
+        if (done) done(nil);
     });
 }
 
@@ -601,7 +596,8 @@ void XSSendSettings(NSArray<NSString *> *fields, void (^done)(XSPillContent *res
     XSRunCheckIn(5, NO, ^(XSChannelResult result, NSArray *byMac) {
         BOOL fr = XSFrench(); // the language may just have changed
         if (result == XSChannelReplied && byMac) {
-            done(XSChangePill(fields, NO, byMac));
+            XSShowSettingsModal(fields, NO, byMac); // the confirmation is a full-screen modal now
+            done(nil);
             return;
         }
         XSPillContent *c;
@@ -648,12 +644,11 @@ static XSChannelExchange *XSWatch;
 static NSDate *XSWatchRetryAt;
 static void XSPollNow(void);
 
-/// What the Mac changed, told once (the same pill as a poll's).
+/// What the Mac changed, told once (a full-screen modal now, not a pill).
 static void XSTellLiveChange(NSArray<NSString *> *byMac, NSString *how) {
     if (!byMac.count) return;
     NSLog(@"XSide: %@: live update from the Mac: %@", how, byMac);
-    XSPillContent *pill = XSMacChangePill(byMac);
-    if (pill) XSShowPillWhenFree(pill);
+    XSShowMacSettingsChange(byMac);
 }
 
 static void XSOpenWatch(void) {
@@ -1061,19 +1056,19 @@ static void XSTellAutoRefreshChangeNow(void) {
             XSShowPill(c);
             return;
         }
-        // One pill for the change (device feedback round 2, P1): what XSide now knows, unless the
+        // One modal for the change (device feedback round 2, P1): what XSide now knows, unless the
         // Mac held a newer change of its own, which then is what applies.
         BOOL now = XSSettingBool(XSCurrentSettings(), @"autoRefresh");
         if (now != on) {
-            XSShowPill(XSPill(now ? (fr ? @"Réactivé entre-temps depuis le Mac" : @"Turned back on from the Mac meanwhile")
-                                  : (fr ? @"Désactivé entre-temps depuis le Mac" : @"Turned off from the Mac meanwhile"),
-                              fr ? @"Rafraîchissement automatique : c'est le changement le plus récent qui compte."
-                                 : @"Automatic refresh: the most recent change wins.", XSPillToneNeutral, 6));
+            XSInfoModalShow(now ? (fr ? @"Réactivé entre-temps depuis le Mac" : @"Turned back on from the Mac meanwhile")
+                                : (fr ? @"Désactivé entre-temps depuis le Mac" : @"Turned off from the Mac meanwhile"),
+                            fr ? @"Rafraîchissement automatique : c'est le changement le plus récent qui compte."
+                               : @"Automatic refresh: the most recent change wins.");
             return;
         }
         NSMutableArray<NSString *> *others = [byMac mutableCopy];
         [others removeObject:@"autoRefresh"];
-        XSShowPill(XSChangePill(@[@"autoRefresh"], NO, others));
+        XSShowSettingsModal(@[@"autoRefresh"], NO, others);
     }) start];
 }
 
@@ -1156,10 +1151,17 @@ static void XSRequestCheckUpdatesNow(void) {
             } else if ([state isEqual:@"available"]) {
                 NSString *tag = [reply[@"tag"] isKindOfClass:NSString.class] ? reply[@"tag"] : @"";
                 NSString *asset = [reply[@"asset"] isKindOfClass:NSString.class] ? reply[@"asset"] : @"";
+                NSString *dir = [reply[@"downloadDir"] isKindOfClass:NSString.class] ? reply[@"downloadDir"] : nil;
                 NSString *title = version ? [NSString stringWithFormat:(f ? @"Version %@ disponible" : @"Version %@ available"), version]
                                           : (f ? @"Mise à jour disponible" : @"Update available");
-                XSUpdateModalOffer(title,
-                    f ? @"XSide va la télécharger dans ton dossier puis l'installer. L'app se fermera à la fin." : @"XSide will download it to your folder then install it. The app closes at the end.",
+                // Name the real folder XSide downloads into (its cache, inside the library the person
+                // chose on the Mac), with the path, rather than a vague « ton dossier » (Anthony).
+                NSString *msg = dir.length
+                    ? [NSString stringWithFormat:(f ? @"XSide la télécharge dans son cache puis l'installe, et ne garde rien :\n%@\nL'app se fermera à la fin."
+                                                    : @"XSide downloads it to its cache then installs it, keeping nothing:\n%@\nThe app closes at the end."), dir]
+                    : (f ? @"XSide la télécharge dans son cache puis l'installe. L'app se fermera à la fin."
+                         : @"XSide downloads it to its cache then installs it. The app closes at the end.");
+                XSUpdateModalOffer(title, msg,
                     f ? @"Télécharger et installer" : @"Download and install",
                     ^{ XSStartInstallUpdateExchange(tag, asset); });
             }

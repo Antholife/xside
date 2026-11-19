@@ -187,7 +187,8 @@ NSString *XSReasonText(NSString *key, BOOL fr) {
         @"cancelled": @[@"arrêté sur le Mac", @"stopped on the Mac"],
     };
     NSArray<NSString *> *pair = [key isKindOfClass:NSString.class] ? texts[key] : nil;
-    if (!pair) pair = @[@"erreur inattendue sur le Mac", @"unexpected error on the Mac"];
+    if (!pair) pair = @[@"une erreur inattendue (le détail est dans XSide sur ton Mac)",
+                        @"an unexpected error (the details are in XSide on your Mac)"];
     return fr ? pair[0] : pair[1];
 }
 

@@ -31,6 +31,12 @@ void XSUpdateModalWorking(NSString *title, NSString *_Nullable detail, double fr
 /// otherwise a red cross. For « à jour », « installée », « à regarder sur le Mac ».
 void XSUpdateModalDone(NSString *title, NSString *_Nullable message, BOOL ok);
 
+/// A plain full-screen modal with a title, a message and a single « OK » button, in XSide's look.
+/// Anthony wanted settings changes shown like the refresh modal, not as a top pill. Its own window,
+/// below the refresh modal's level, so a refresh in progress stays on top. Safe from any thread;
+/// does nothing when there is no scene. A second call replaces the text of the one already up.
+void XSInfoModalShow(NSString *title, NSString *message);
+
 /// How the phone reaches the Mac right now, so the hero draws the link to match (read from the
 /// channel connection's path: Wi-Fi arcs, or a USB-C cable).
 typedef NS_ENUM(NSInteger, XSLinkKind) { XSLinkUnknown = 0, XSLinkWiFi, XSLinkUSB };
