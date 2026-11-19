@@ -145,6 +145,11 @@ BOOL XSTakeBackupOnLaunch(void);
 /// A snapshot id picked in "Restaurer depuis…": consumes it (sets it back to none) and returns it,
 /// nil when none was chosen.
 NSString *_Nullable XSTakeRestoreFrom(void);
+/// Peek (without consuming) the pending launch actions, so one can be chosen and the others kept for
+/// a later launch (an action that restarts the app would otherwise lose the ones queued behind it).
+BOOL XSHasCheckUpdatesOnLaunch(void);
+BOOL XSHasBackupOnLaunch(void);
+NSString *_Nullable XSPeekRestoreFrom(void);
 /// The person allowed the local network once (after tapping Refresh): checking in at launch is fine.
 BOOL XSChannelGranted(void);
 void XSSetChannelGranted(void);

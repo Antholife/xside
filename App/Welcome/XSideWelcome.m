@@ -867,6 +867,29 @@ static void XSShowLaunchPill(NSDate *expiry, XSPillContent *news) {
     else if (!content) XSOfferNotificationsIfNeeded(^{});
 }
 
+/// Runs the one highest-priority pending launch action (refresh > check-updates > backup > restore),
+/// and leaves the others' flags set for a later launch. A refresh — and the update install, backup
+/// (it refreshes after) and restore — restarts the app, so running several would lose the ones
+/// queued behind; only the chosen one is consumed (Anthony). Settings sync is separate (it never
+/// restarts) and runs regardless.
+static void XSRunOneLaunchAction(NSTimeInterval delay) {
+    if (XSWantsRefreshOnLaunch()) {
+        dispatch_async(dispatch_get_main_queue(), ^{ XSWhenForeground(delay, ^{ XSRequestRefresh(); }); });
+    } else if (XSHasCheckUpdatesOnLaunch()) {
+        XSTakeCheckUpdatesOnLaunch();
+        dispatch_async(dispatch_get_main_queue(), ^{ XSWhenForeground(delay, ^{ XSRequestCheckUpdates(); }); });
+    } else if (XSHasBackupOnLaunch()) {
+        XSTakeBackupOnLaunch();
+        dispatch_async(dispatch_get_main_queue(), ^{ XSWhenForeground(delay, ^{ XSRequestBackup(); }); });
+    } else {
+        NSString *restoreID = XSPeekRestoreFrom();
+        if (restoreID) {
+            XSTakeRestoreFrom();
+            dispatch_async(dispatch_get_main_queue(), ^{ XSWhenForeground(delay, ^{ XSRequestRestore(restoreID); }); });
+        }
+    }
+}
+
 /// What this cold launch shows: the sheet or the card for a new signature (when the settings
 /// allow it), else the pill; never both (spec §1).
 static void XSLaunch(void) {
@@ -879,13 +902,12 @@ static void XSLaunch(void) {
     // not ask for another one (which the Mac would refuse as too soon). Same for the other actions.
     NSDate *expiry = XSExpirationDate();
     if (expiry) XSNoteSignature(expiry);
-    // Asked from iOS Settings: the same as the Refresh quick action, once the app is on screen
-    // (its pills replace the launch pill). After this launch decided on the sheet: it waits for it.
-    if (XSWantsRefreshOnLaunch()) dispatch_async(dispatch_get_main_queue(), ^{ XSWhenForeground(1.0, ^{ XSRequestRefresh(); }); });
-    if (XSTakeCheckUpdatesOnLaunch()) dispatch_async(dispatch_get_main_queue(), ^{ XSWhenForeground(1.0, ^{ XSRequestCheckUpdates(); }); });
-    if (XSTakeBackupOnLaunch()) dispatch_async(dispatch_get_main_queue(), ^{ XSWhenForeground(1.0, ^{ XSRequestBackup(); }); });
-    NSString *restoreID = XSTakeRestoreFrom();
-    if (restoreID) dispatch_async(dispatch_get_main_queue(), ^{ XSWhenForeground(1.0, ^{ XSRequestRestore(restoreID); }); });
+    // One launch action at a time (Anthony): a refresh — and an update install, « sauvegarder »
+    // (which refreshes after) and « restaurer » — RESTARTS the app, so anything queued behind it
+    // would be lost. Run the top-priority pending one; the others keep their flag and run on a later
+    // launch. Only the chosen action is consumed. Settings sync (below) is separate: it never
+    // restarts and runs anyway.
+    XSRunOneLaunchAction(1.0);
     if (!expiry) return;
     XSWriteStatusRows(expiry);
     XSScheduleReminder(expiry, NO); // asked only after the sheet's "Notifications" page
@@ -944,12 +966,9 @@ static void XSLaunch(void) {
 /// from the panel) must reach an app that was only in the background, not only a cold launch
 /// (device feedback 2026-11-08). Not again within a few seconds of the last check-in.
 static void XSReturn(void) {
-    // Coming back from iOS Settings right after turning it on is the usual way to use it.
-    if (XSWantsRefreshOnLaunch()) XSWhenForeground(0.5, ^{ XSRequestRefresh(); });
-    if (XSTakeCheckUpdatesOnLaunch()) XSWhenForeground(0.5, ^{ XSRequestCheckUpdates(); });
-    if (XSTakeBackupOnLaunch()) XSWhenForeground(0.5, ^{ XSRequestBackup(); });
-    NSString *restoreID2 = XSTakeRestoreFrom();
-    if (restoreID2) XSWhenForeground(0.5, ^{ XSRequestRestore(restoreID2); });
+    // Coming back from iOS Settings right after turning it on is the usual way to use it. One action
+    // at a time, by priority (see XSRunOneLaunchAction): a restart would lose the others.
+    XSRunOneLaunchAction(0.5);
     BOOL changed = XSLoadSettings();
     // The answer to a Refresh that came while the person was away (final review minor 6).
     XSWhenForeground(0.3, ^{ XSShowKeptAnswer(); });

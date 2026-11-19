@@ -334,7 +334,22 @@ BOOL XSTakeBackupOnLaunch(void) {
     return wants;
 }
 
+BOOL XSHasCheckUpdatesOnLaunch(void) {
+    id on = [XSDefaults() objectForKey:XSCheckUpdatesKey()];
+    return [on isKindOfClass:NSNumber.class] && [on boolValue];
+}
+
+BOOL XSHasBackupOnLaunch(void) {
+    id on = [XSDefaults() objectForKey:XSBackupNowKey()];
+    return [on isKindOfClass:NSNumber.class] && [on boolValue];
+}
+
 static NSString *XSRestoreFromKey(void) { return [XSRowPrefix stringByAppendingString:@"restoreFrom"]; }
+
+NSString *XSPeekRestoreFrom(void) {
+    id value = [XSDefaults() objectForKey:XSRestoreFromKey()];
+    return ([value isKindOfClass:NSString.class] && [value length]) ? value : nil;
+}
 
 NSString *XSTakeRestoreFrom(void) {
     // A snapshot id the person picked in « Restaurer depuis… »: consumed at once (set back to none),
