@@ -422,6 +422,9 @@ static BOOL XSIsPolicyDenied(nw_error_t error) {
 static BOOL XSCheckInRunning;
 /// A Refresh asked from here is in progress.
 static BOOL XSRefreshRunning;
+/// YES while a cancel the person tapped on THIS device is in flight, so the « annulé » outcome is
+/// worded « Opération annulée » rather than « … par le Mac ». Reset when an operation starts.
+static BOOL XSCancelFromPhone;
 /// An "Rafraîchissement automatique" change to tell once the running check-in ends (mega review
 /// minor 2: that check-in may have been built before the change was loaded, so it can't be
 /// trusted to carry it).
@@ -962,10 +965,17 @@ static void XSShowProgressFrame(NSDictionary *reply, BOOL french) {
     XSRefreshModalStep(name, sub, overall);
 }
 
+/// The « annulé » terminal title: « par le Mac » unless the person tapped Annuler here.
+static NSString *XSCancelTitle(BOOL french) {
+    if (XSCancelFromPhone) return french ? @"Opération annulée" : @"Operation cancelled";
+    return french ? @"Opération annulée par le Mac" : @"Operation cancelled from the Mac";
+}
+
 /// « Annuler » in the modal: ask the Mac to stop the running operation (its held connection then
 /// ends it as « annulé »). Sent on its own connection; best effort.
 static void XSRequestCancel(void) {
     BOOL fr = XSFrench();
+    XSCancelFromPhone = YES; // this device asked for it
     XSRefreshModalStep(fr ? @"Annulation…" : @"Cancelling…", nil, -1); // keep the ring; the spinner shows work
     if (!XSInstallationID() || !XSChannelSecret()) { XSRefreshModalDismiss(); return; }
     [[[XSChannelExchange alloc] initWithBody:XSCancelBody() findTimeout:5 waitsOutcome:NO
@@ -975,6 +985,7 @@ static void XSRequestCancel(void) {
 }
 
 static void XSStartRefreshExchange(void) {
+    XSCancelFromPhone = NO;
     XSRefreshModalSetCancel(^{ XSRequestCancel(); });
     [XSPatientExchange(XSRefreshBody(), YES, ^(XSChannelResult result, NSDictionary *reply, BOOL final) {
         BOOL french = XSFrench();
@@ -1021,7 +1032,7 @@ static void XSStartRefreshExchange(void) {
         } else if ([type isEqual:@"failed"]) {
             NSString *reason = [reply[@"reasonKey"] isKindOfClass:NSString.class] ? reply[@"reasonKey"] : @"unknown";
             XSRecordRefresh(NO, reason, NSDate.date);
-            if ([reason isEqual:@"cancelled"]) { XSRefreshModalDismiss(); } // « Annuler » from the modal: just close
+            if ([reason isEqual:@"cancelled"]) { XSUpdateModalDone(XSCancelTitle(french), nil, NO); } // red ✕ + Fermer
             else XSRefreshModalError(french ? @"Le rafraîchissement a échoué" : @"The refresh failed", XSReasonText(reason, french), retry);
         } else if ([type isEqual:@"busy"]) {
             XSRefreshModalError(french ? @"XSide la rafraîchit déjà, ou vient de le faire" : @"XSide is already refreshing it, or just did",
@@ -1189,6 +1200,7 @@ static void XSRequestCheckUpdatesNow(void) {
 }
 
 static void XSStartInstallUpdateExchange(NSString *tag, NSString *asset) {
+    XSCancelFromPhone = NO;
     XSRefreshModalSetCancel(^{ XSRequestCancel(); });
     [XSPatientExchange(XSInstallUpdateBody(tag, asset), YES, ^(XSChannelResult result, NSDictionary *reply, BOOL final) {
         BOOL f = XSFrench();
@@ -1211,7 +1223,7 @@ static void XSStartInstallUpdateExchange(NSString *tag, NSString *asset) {
         if ([type isEqual:@"progress"]) { XSShowProgressFrame(reply, f); return; } // the install steps, after the download
         if ([type isEqual:@"failed"]) {
             NSString *r = [reply[@"reasonKey"] isKindOfClass:NSString.class] ? reply[@"reasonKey"] : @"unknown";
-            if ([r isEqual:@"cancelled"]) { XSRefreshModalDismiss(); return; } // « Annuler » from the modal
+            if ([r isEqual:@"cancelled"]) { XSUpdateModalDone(XSCancelTitle(f), nil, NO); return; } // red ✕ + Fermer
             XSRefreshModalError(f ? @"L'installation a échoué" : @"The install failed", XSReasonText(r, f), retry);
             return;
         }
