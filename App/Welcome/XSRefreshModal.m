@@ -96,10 +96,17 @@ static XSLinkKind XSLinkCurrent = XSLinkUnknown; // the transport the last chann
     [stack setCustomSpacing:16 afterView:_stepSub];
     [stack setCustomSpacing:22 afterView:_spinner];
     [self.view addSubview:stack];
+    // Centred column, capped so it doesn't stretch edge to edge on a wide screen (iPhone Duo:
+    // Anthony « c'est pas centré, ça prend toute la width »). On a normal phone the safe-area cap
+    // wins (full width minus margins); on a wide screen the 460 cap wins and it stays centred.
+    NSLayoutConstraint *wide = [stack.widthAnchor constraintEqualToConstant:460];
+    wide.priority = UILayoutPriorityDefaultHigh; // grow to 460 when there's room, but never past the margins
     [NSLayoutConstraint activateConstraints:@[
         [stack.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor],
-        [stack.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor constant:28],
-        [stack.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor constant:-28],
+        [stack.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [stack.widthAnchor constraintLessThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.widthAnchor constant:-56],
+        [stack.widthAnchor constraintLessThanOrEqualToConstant:460],
+        wide,
         [_acts.widthAnchor constraintEqualToAnchor:stack.widthAnchor],
     ]];
 }
@@ -632,11 +639,13 @@ static void XSInfoModalDismiss(void);
     [stack setCustomSpacing:8 afterView:t];
     [stack setCustomSpacing:26 afterView:m];
     [self.view addSubview:stack];
+    NSLayoutConstraint *iWide = [stack.widthAnchor constraintEqualToConstant:460];
+    iWide.priority = UILayoutPriorityDefaultHigh;
     [NSLayoutConstraint activateConstraints:@[
         [stack.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [stack.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor],
-        [stack.leadingAnchor constraintGreaterThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor constant:32],
-        [stack.trailingAnchor constraintLessThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor constant:-32]]];
+        [stack.widthAnchor constraintLessThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.widthAnchor constant:-56],
+        [stack.widthAnchor constraintLessThanOrEqualToConstant:460], iWide]];
 }
 - (void)tapOK { XSInfoModalDismiss(); }
 @end

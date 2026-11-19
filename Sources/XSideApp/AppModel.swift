@@ -1561,7 +1561,7 @@ final class AppModel {
                 let waiter = Task { @MainActor in box.outcome = await self.waitForOutcome(task); box.done = true }
                 var last: ChannelReply?
                 while !box.done {
-                    if let frame = refreshProgressFrame(key), frame != last { await reply(frame); last = frame }
+                    if let frame = jobProgressFrame(key), frame != last { await reply(frame); last = frame }
                     try? await Task.sleep(for: .milliseconds(150)) // fine enough to catch brief steps
                 }
                 _ = await waiter.value
@@ -1641,7 +1641,10 @@ final class AppModel {
     /// The live step of a running refresh, as a `progress` frame for the phone's modal, or nil
     /// before any real step (the modal already shows « connexion… »). `percent` rides along when the
     /// step reports one (the backup's, mainly), so the modal's ring fills.
-    private func refreshProgressFrame(_ key: JobKey) -> ChannelReply? {
+    /// A `progress` frame for a running job's modal (refresh or a phone update install). `countBackup`
+    /// false for an update install, whose pipeline has no backup step (the pre-update snapshot is
+    /// separate), so « étape X/Y » counts right.
+    func jobProgressFrame(_ key: JobKey, countBackup: Bool = true) -> ChannelReply? {
         let stageKey: String
         let percent: Int?
         switch jobs[key] {
@@ -1649,21 +1652,21 @@ final class AppModel {
         case .preparing, .waiting: stageKey = ProgressStep.preparing.key; percent = nil // « Préparation » shows early
         case .none: return nil
         }
-        let place = refreshStepPlace(key)
+        let place = jobStepPlace(key, countBackup: countBackup)
         return .progress(stageKey: stageKey, index: place.index, total: place.total, percent: percent)
     }
 
-    /// The running refresh's 1-based position and its run's step total, built the same way the Mac's
-    /// pending bar lists a refresh's steps (optional ones gated on the installation's options), so the
-    /// phone's modal can show « étape X/Y » for every step without guessing which a refresh includes.
-    private func refreshStepPlace(_ key: JobKey) -> (index: Int, total: Int) {
+    /// The running job's 1-based position and its step total, built the same way the Mac's pending bar
+    /// lists a run's steps (optional ones gated on the installation's options), so the phone's modal
+    /// can show « étape X/Y » for every step without guessing which the run includes.
+    private func jobStepPlace(_ key: JobKey, countBackup: Bool) -> (index: Int, total: Int) {
         guard let entry = entry(recordID: key.recordID, deviceID: key.deviceID) else { return (1, 1) }
         let installation = entry.installation
         let steps = ProgressStep.list(includingWifiCheck: false, includingDuo: installation.duoCompatibility == true,
                                       includingLegacy32: entry.record.legacy32 == true,
                                       includingICloud: installation.iCloudSignedOut == true,
                                       includingTweaks: !installation.enabledTweakIDs.isEmpty,
-                                      includingBackup: entry.record.options.backupData != false)
+                                      includingBackup: countBackup && entry.record.options.backupData != false)
         let timeline = StepTimeline(steps: steps, stage: jobs[key])
         return (timeline.position, timeline.total)
     }

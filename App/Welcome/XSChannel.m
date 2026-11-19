@@ -944,6 +944,24 @@ static NSString *XSRefreshStepName(NSString *stage, BOOL french) {
     return french ? @"Préparation" : @"Preparing"; // preparing, or an unknown key
 }
 
+/// Renders a `progress` frame on the modal: named step + « Étape X/Y » + the ring filled from the
+/// 1-based place and the step's own % (the Mac sends the place and total). Shared by the refresh and
+/// the phone update install, so both read the same.
+static void XSShowProgressFrame(NSDictionary *reply, BOOL french) {
+    NSString *stage = [reply[@"stageKey"] isKindOfClass:NSString.class] ? reply[@"stageKey"] : @"";
+    NSNumber *pct = [reply[@"percent"] isKindOfClass:NSNumber.class] ? reply[@"percent"] : nil;
+    int idx = [reply[@"index"] isKindOfClass:NSNumber.class] ? [reply[@"index"] intValue] : 1;
+    int total = [reply[@"total"] isKindOfClass:NSNumber.class] ? [reply[@"total"] intValue] : 1;
+    if (total < 1) total = 1;
+    if (idx < 1) idx = 1;
+    if (idx > total) idx = total;
+    NSString *name = XSRefreshStepName(stage, french);
+    double stepFrac = pct ? pct.doubleValue / 100.0 : 0.5;
+    double overall = ((idx - 1) + stepFrac) / total;
+    NSString *sub = [NSString stringWithFormat:(french ? @"Étape %d/%d" : @"Step %d/%d"), idx, total];
+    XSRefreshModalStep(name, sub, overall);
+}
+
 static void XSStartRefreshExchange(void) {
     [XSPatientExchange(XSRefreshBody(), YES, ^(XSChannelResult result, NSDictionary *reply, BOOL final) {
         BOOL french = XSFrench();
@@ -980,24 +998,9 @@ static void XSStartRefreshExchange(void) {
                                                                      expirationHandler:^{ XSEndRefreshTask(); }];
             XSHasRefreshTask = XSRefreshTask != UIBackgroundTaskInvalid;
         } else if ([type isEqual:@"progress"]) {
-            // A live step of the running refresh (Slice 2), shown as « nom · étape X/Y · % ». The Mac
-            // sends the step's 1-based place and the run's total (it alone knows which optional steps
-            // this refresh includes), so the phone just names the stage and fills the ring from X/Y
-            // plus the step's own % when it reports one.
-            NSString *stage = [reply[@"stageKey"] isKindOfClass:NSString.class] ? reply[@"stageKey"] : @"";
-            NSNumber *pct = [reply[@"percent"] isKindOfClass:NSNumber.class] ? reply[@"percent"] : nil;
-            int idx = [reply[@"index"] isKindOfClass:NSNumber.class] ? [reply[@"index"] intValue] : 1;
-            int total = [reply[@"total"] isKindOfClass:NSNumber.class] ? [reply[@"total"] intValue] : 1;
-            if (total < 1) total = 1;
-            if (idx < 1) idx = 1;
-            if (idx > total) idx = total;
-            NSString *name = XSRefreshStepName(stage, french);
-            double stepFrac = pct ? pct.doubleValue / 100.0 : 0.5;
-            double overall = ((idx - 1) + stepFrac) / total;
-            // The overall % now sits big in the ring's centre (XSRefreshModal); the sub just numbers
-            // the step, so the two don't show two different numbers.
-            NSString *sub = [NSString stringWithFormat:(french ? @"Étape %d/%d" : @"Step %d/%d"), idx, total];
-            XSRefreshModalStep(name, sub, overall);
+            // A live step of the running refresh (Slice 2): named step + « Étape X/Y » + the ring,
+            // the overall % big in its centre. Shared with the update install.
+            XSShowProgressFrame(reply, french);
         } else if ([type isEqual:@"refreshed"]) {
             XSRecordRefresh(YES, nil, NSDate.date); // the new app replaces this one right after
             XSRefreshModalStep(french ? @"Rafraîchie ✓" : @"Refreshed ✓",
@@ -1190,6 +1193,7 @@ static void XSStartInstallUpdateExchange(NSString *tag, NSString *asset) {
         }
         if ([type isEqual:@"busy"]) { XSUpdateModalDone(f ? @"XSide est occupé" : @"XSide is busy", f ? @"Réessaie dans un instant." : @"Try again in a moment.", NO); return; }
         if ([type isEqual:@"accepted"]) { XSUpdateModalWorking(f ? @"Téléchargement…" : @"Downloading…", nil, 0); return; }
+        if ([type isEqual:@"progress"]) { XSShowProgressFrame(reply, f); return; } // the install steps, after the download
         if ([type isEqual:@"failed"]) {
             NSString *r = [reply[@"reasonKey"] isKindOfClass:NSString.class] ? reply[@"reasonKey"] : @"unknown";
             XSRefreshModalError(f ? @"L'installation a échoué" : @"The install failed", XSReasonText(r, f), retry);

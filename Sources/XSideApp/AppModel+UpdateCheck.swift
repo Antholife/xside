@@ -311,13 +311,23 @@ extension AppModel {
                                                      expectedAsset: asset, approved: [.notifyMode, .prerelease])
             box.done = true
         }
-        var lastPct = -1
+        // Download first (its %), then the install steps — streamed like a refresh so the modal shows
+        // « Signature / Installation… · étape X/Y », not a frozen 100% (Anthony: « ça reste bloqué à
+        // 100% au lieu de voir les steps d'install »). The install claims jobs[installKey] once it
+        // starts; until then we're still downloading.
+        let installKey = JobKey(recordID: recordID, deviceID: deviceID)
+        var last: ChannelReply?
         while !box.done {
-            if let f = updateFraction[key] {
-                let pct = max(0, min(100, Int((f * 100).rounded())))
-                if pct != lastPct { await frame(.update(state: "downloading", percent: pct)); lastPct = pct }
+            let next: ChannelReply?
+            if jobs[installKey] != nil {
+                next = jobProgressFrame(installKey, countBackup: false) // no backup step in an update install
+            } else if let f = updateFraction[key] {
+                next = .update(state: "downloading", percent: max(0, min(100, Int((f * 100).rounded()))))
+            } else {
+                next = nil
             }
-            try? await Task.sleep(for: .milliseconds(300))
+            if let next, next != last { await frame(next); last = next }
+            try? await Task.sleep(for: .milliseconds(150))
         }
         _ = await waiter.value
         if case let .failed(reason) = box.result {
