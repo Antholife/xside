@@ -475,6 +475,9 @@ extension AppModel {
     /// Best-effort: it cancels the download, then the install at its next cancellation point.
     func cancelAutoInstall(recordID: UUID) {
         for (key, task) in autoInstallTasks where key.recordID == recordID { task.cancel() }
+        // A phone-started update (or refresh) runs as a held-connection op, not an auto-install, so
+        // cancel those too — otherwise « Annuler » on the Mac did nothing for an iPhone-launched update.
+        for (key, cancel) in phoneOpCancels where key.recordID == recordID { cancel() }
     }
 
     /// Auto mode but no reachable device: notify that the update is pending. Returns whether delivered.

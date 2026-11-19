@@ -199,17 +199,16 @@ struct AppRow: View {
                             .lineLimit(1)
                             .layoutPriority(-1)
                     }
-                    // The tracked release tag (e.g. v1.1.8), next to the app's own version, so the
-                    // two are visible together (Anthony: « à côté de la version, le tag lié »).
-                    if let src = entry.record.updateSource, let label = src.installedName ?? src.installedTag, !label.isEmpty {
-                        Text(label)
-                            .font(.system(size: 9.5, weight: .semibold, design: .rounded))
-                            .foregroundStyle(Theme.violet)
-                            .padding(.horizontal, 5).padding(.vertical, 1)
-                            .background(Theme.violet.opacity(0.12), in: Capsule())
-                            .lineLimit(1)
-                            .layoutPriority(-1)
-                    }
+                }
+                // The tracked release (title or tag, e.g. « YTKACE v1.1.8 ») on its own line, under
+                // the name and version (Anthony: « met-le en dessous du nom et de sa version »).
+                if let src = entry.record.updateSource, let label = src.installedName ?? src.installedTag, !label.isEmpty {
+                    Text(label)
+                        .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Theme.violet)
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background(Theme.violet.opacity(0.12), in: Capsule())
+                        .lineLimit(1)
                 }
                 let subtitle = subtitle(validity: validity, now: now)
                 Text(subtitle + tweakCaption)

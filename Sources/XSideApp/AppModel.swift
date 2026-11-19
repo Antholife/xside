@@ -442,6 +442,7 @@ final class AppModel {
             connection: facts?.lastCheckIn.map { "✓ " + $0.formatted(style) } ?? "—",
             lastRefresh: outcome.map { ($0.succeeded ? "✓ " : "✕ ") + $0.at.formatted(style) } ?? "—",
             releaseTag: facts?.updateSource.flatMap { $0.installedName ?? $0.installedTag },
+            xsideVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
             inApp: facts?.inApp ?? inAppDefaults(at: now),
             updateRepo: facts?.updateSource.map { "\($0.repo.owner)/\($0.repo.repo)" },
             updateFrequency: facts?.updateSource.map { UpdateFrequency.from($0.checkInterval) } ?? .global,
