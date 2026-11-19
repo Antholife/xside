@@ -2455,6 +2455,17 @@ final class AppModel {
                     flow.draft.updateMode = seed.mode
                     flow.draft.updateInterval = seed.interval
                     flow.draft.updateInstalledTag = seed.installedTag
+                } else if let src = existing?.updateSource {
+                    // Reinstalling a known app: carry its update source into the window (it lives on
+                    // the record, not in `options`, so the draft didn't have it), so it's shown and
+                    // kept instead of looking unset (Anthony: « c'est la même app, il devrait la
+                    // reprendre »). The tag can then be adjusted for the version being installed.
+                    flow.draft.updateSourceURL = src.repo.page.absoluteString
+                    flow.draft.updateVariant = src.variant
+                    flow.draft.updateVariantSource = src.repo
+                    flow.draft.updateMode = src.mode
+                    flow.draft.updateInterval = src.checkInterval
+                    flow.draft.updateInstalledTag = src.installedTag
                 }
                 flow.duoDevices = Set(existing?.installations.filter { $0.duoCompatibility == true }.map(\.deviceID) ?? [])
                 flow.iCloudDevices = Set(existing?.installations.filter { $0.iCloudSignedOut == true }.map(\.deviceID) ?? [])
