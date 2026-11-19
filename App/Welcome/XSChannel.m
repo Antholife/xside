@@ -932,17 +932,18 @@ static void XSStartRefresh(void) {
 }
 
 /// A user-facing name for a refresh step, by its stable key (XSideCore's `ProgressStep.key`), in the
-/// device's language. Covers every step the pipeline streams, so none shows as « Préparation » by
-/// default any more (Anthony: « il manque des étapes, autorisation d'Apple etc »).
+/// device's language. Word for word the Mac's own step labels (install.step.* in Localizable.strings),
+/// so the modal reads exactly like the install list on the Mac (Anthony: « faut les mêmes steps que
+/// l'install sur le Mac »). Keep these in sync with ProgressStep.label.
 static NSString *XSRefreshStepName(NSString *stage, BOOL french) {
-    if ([stage isEqual:@"profile"]) return french ? @"Autorisation Apple" : @"Apple authorization";
-    if ([stage isEqual:@"welcome"]) return french ? @"Préparation de l’app" : @"Preparing the app";
-    if ([stage isEqual:@"legacy32"]) return french ? @"Nettoyage du code 32 bits" : @"Cleaning up 32-bit code";
-    if ([stage isEqual:@"duo"]) return french ? @"Compatibilité iPhone Duo" : @"iPhone Duo compatibility";
-    if ([stage isEqual:@"icloud"]) return french ? @"Configuration iCloud" : @"iCloud setup";
-    if ([stage isEqual:@"tweaks"]) return french ? @"Injection des tweaks" : @"Injecting tweaks";
+    if ([stage isEqual:@"profile"]) return french ? @"Autorisation d'Apple" : @"Apple permission";
+    if ([stage isEqual:@"welcome"]) return french ? @"Injection du module XSide" : @"Injecting the XSide module";
+    if ([stage isEqual:@"legacy32"]) return french ? @"Retrait de l'ancienne version 32 bits" : @"Removing the old 32-bit code";
+    if ([stage isEqual:@"duo"]) return french ? @"Ajout de la compatibilité iPhone Duo" : @"Adding iPhone Duo compatibility";
+    if ([stage isEqual:@"icloud"]) return french ? @"Ajout du mode iCloud déconnecté" : @"Adding signed-out iCloud";
+    if ([stage isEqual:@"tweaks"]) return french ? @"Ajout des tweaks" : @"Adding tweaks";
     if ([stage isEqual:@"backingUp"]) return french ? @"Sauvegarde des données" : @"Backing up data";
-    if ([stage isEqual:@"signing"]) return french ? @"Signature de l’app" : @"Signing the app";
+    if ([stage isEqual:@"signing"]) return french ? @"Signature" : @"Signing";
     if ([stage isEqual:@"installing"]) return french ? @"Installation" : @"Installing";
     if ([stage isEqual:@"restoring"]) return french ? @"Restauration des données" : @"Restoring data";
     return french ? @"Préparation" : @"Preparing"; // preparing, or an unknown key
