@@ -517,7 +517,9 @@ import CryptoKit
         let all: [ChannelReply] = [.settings(s), .settings(s, lastRefresh: RefreshOutcome(at: now, succeeded: false, reasonKey: "k")),
                                    .accepted, .refreshed, .failed(reasonKey: "r"), .busy,
                                    .deviceUnreachable, .paused(by: .mac), .paused(by: .device), .rejected,
-                                   .progress(stageKey: "backingUp", percent: 42), .progress(stageKey: "signing", percent: nil)]
+                                   .progress(stageKey: "backingUp", percent: 42), .progress(stageKey: "signing", percent: nil),
+                                   .update(state: "upToDate"), .update(state: "available", version: "2.1", tag: "v2.1", asset: "a.ipa"),
+                                   .update(state: "downloading", percent: 30), .update(state: "installed", version: "2.1")]
         for r in all {
             #expect(try ChannelReply.decode(body: r.encodedBody()) == r)
         }
@@ -532,7 +534,8 @@ import CryptoKit
     }
 
     @Test func requestsRoundTripAndUseFlatJSON() throws {
-        for r in [ChannelRequest.refresh, .setAutoRefresh(true), .checkIn(settings: .defaults(reminder: true, at: now), lastRefresh: nil, appVersion: nil)] {
+        for r in [ChannelRequest.refresh, .setAutoRefresh(true), .checkIn(settings: .defaults(reminder: true, at: now), lastRefresh: nil, appVersion: nil),
+                  .checkUpdates, .installUpdate(tag: "v2.1", asset: "app.ipa"), .restore(backupID: "b-1")] {
             let body = try ChannelEnvelope.encodeBody(r)
             #expect(try JSONDecoder.channel.decode(ChannelRequest.self, from: body) == r)
         }

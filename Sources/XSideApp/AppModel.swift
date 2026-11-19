@@ -1569,8 +1569,14 @@ final class AppModel {
             }
         case .checkUpdatesRequested:
             Self.channelLogger.notice("channel: check-updates asked for \(found.recordID) from \(job.deviceID)")
-            checkUpdatesForRecord(recordID: job.recordID)
+            // Slice 3: the phone's modal is up; check and stream the outcome (the connection is held
+            // between accepted and this line, like a refresh). The person confirms any install.
             await reply(.accepted)
+            await reply(await modalUpdateCheckReply(recordID: job.recordID))
+        case let .installUpdateRequested(tag, asset):
+            Self.channelLogger.notice("channel: install-update \(tag) asked for \(found.recordID) from \(job.deviceID)")
+            await reply(.accepted)
+            await streamModalInstallUpdate(recordID: job.recordID, deviceID: job.deviceID, tag: tag, asset: asset, frame: reply)
         case .backupRequested:
             Self.channelLogger.notice("channel: backup asked for \(found.recordID) from \(job.deviceID)")
             if let entry = entry(recordID: job.recordID, deviceID: job.deviceID) {
@@ -1711,6 +1717,7 @@ final class AppModel {
         case .bye: "bye"
         case .refresh: "refresh"
         case .checkUpdates: "check-updates"
+        case .installUpdate(let tag, _): "install-update \(tag)"
         case .backupNow: "backup-now"
         case .restore(let id): "restore \(id)"
         case .setAutoRefresh(let on): "automatic refresh \(on ? "on" : "off")"

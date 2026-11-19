@@ -269,6 +269,69 @@ extension AppModel {
         }
     }
 
+    // MARK: - Phone update modal (Slice 3)
+
+    /// The phone asked to check for an update (its modal is up). A pure check of the APP's source (no
+    /// auto-install: the person asked, so they confirm the install), as a `ChannelReply` to stream.
+    /// Tweaks and variant choices are left to the Mac (`needsMac`), where their UI already lives.
+    func modalUpdateCheckReply(recordID: UUID) async -> ChannelReply {
+        guard let record = records.first(where: { $0.id == recordID }), let source = record.updateSource else {
+            return .update(state: "upToDate")
+        }
+        let work = libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent("updates-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: work) }
+        switch await UpdateChecker(fetcher: repoFetcher, workDir: work).check(source: source, kind: .ipa) {
+        case .upToDate: return .update(state: "upToDate")
+        case .needsVariantChoice: return .update(state: "needsMac")
+        case .failed: return .failed(reasonKey: "updateFailed")
+        case let .available(found, version, _):
+            return .update(state: "available", version: version, tag: found.tag, asset: found.asset.name)
+        }
+    }
+
+    /// The phone confirmed the offered update. Installs it (app only) and streams `downloading` with
+    /// its percent, then the terminal state, through `frame`. `tag`/`asset` pin the offered release.
+    func streamModalInstallUpdate(recordID: UUID, deviceID: String, tag: String, asset: String,
+                                  frame: (ChannelReply) async -> Void) async {
+        guard let record = records.first(where: { $0.id == recordID }),
+              let installation = record.installations.first(where: { $0.deviceID == deviceID }) else {
+            await frame(.failed(reasonKey: "updateFailed")); return
+        }
+        let entry = AppEntry(record: record, installation: installation)
+        let key = Self.updateFractionKey(recordID: recordID, tweakPackageID: nil)
+        let box = ModalInstallBox()
+        let waiter = Task { @MainActor in
+            box.result = await self.installUpdateNow(entry, tweakPackageID: nil, expectedTag: tag,
+                                                     expectedAsset: asset, approved: [.notifyMode, .prerelease])
+            box.done = true
+        }
+        var lastPct = -1
+        while !box.done {
+            if let f = updateFraction[key] {
+                let pct = max(0, min(100, Int((f * 100).rounded())))
+                if pct != lastPct { await frame(.update(state: "downloading", percent: pct)); lastPct = pct }
+            }
+            try? await Task.sleep(for: .milliseconds(300))
+        }
+        _ = await waiter.value
+        await frame(Self.modalReply(for: box.result))
+    }
+
+    private final class ModalInstallBox: @unchecked Sendable {
+        var result: UpdateCheckResult = .failed("updateFailed")
+        var done = false
+    }
+
+    private static func modalReply(for result: UpdateCheckResult) -> ChannelReply {
+        switch result {
+        case let .installed(version): .update(state: "installed", version: version)
+        case .upToDate: .update(state: "upToDate")
+        case let .available(version, _, tag, asset): .update(state: "available", version: version, tag: tag, asset: asset)
+        case .needsVariantChoice, .changed: .update(state: "needsMac")
+        case .failed: .failed(reasonKey: "updateFailed")
+        }
+    }
+
     private func route(_ outcome: UpdateOutcome, for target: UpdateTarget, userInitiated: Bool = false) async -> UpdateCheckResult {
         switch outcome {
         case .upToDate(let trigger):

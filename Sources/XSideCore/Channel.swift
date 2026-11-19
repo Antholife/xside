@@ -156,9 +156,14 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
                  previousRun: PreviousRun? = nil)
     /// "Refresh now" from the phone.
     case refresh
-    /// "Check for updates now" from the phone (the app's GitHub source). Answered `accepted` at
-    /// once; the outcome reaches the person through XSide's usual update notification, not a reply.
+    /// "Check for updates now" from the phone (the app's GitHub source). The Mac holds the
+    /// connection and streams the outcome for the phone's modal (Slice 3): `upToDate`, an
+    /// `update(available)` the phone can then install, or — in auto mode — the install's progress.
     case checkUpdates
+    /// "Install the update I was just offered" from the phone, after it showed `update(available)`:
+    /// `tag`/`asset` are that release's, so a release that changed since isn't installed blindly.
+    /// The Mac holds the connection and streams the download/install for the modal.
+    case installUpdate(tag: String, asset: String)
     /// "Back up this app's data now" from the phone. Answered `accepted`; the Mac pulls a snapshot.
     case backupNow
     /// "Restore this app's data from backup `<id>`" from the phone (DESTRUCTIVE: the current data is
@@ -177,7 +182,7 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
     case bye
 
     private enum CodingKeys: String, CodingKey {
-        case type, settings, lastRefresh, appVersion, pollEvery, on, saysBye, previousRunEnded, previousRunSince, backupID
+        case type, settings, lastRefresh, appVersion, pollEvery, on, saysBye, previousRunEnded, previousRunSince, backupID, tag, asset
     }
 
     public init(from decoder: Decoder) throws {
@@ -198,6 +203,7 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
         case "bye": self = .bye
         case "refresh": self = .refresh
         case "checkUpdates": self = .checkUpdates
+        case "installUpdate": self = .installUpdate(tag: try c.decode(String.self, forKey: .tag), asset: try c.decode(String.self, forKey: .asset))
         case "backupNow": self = .backupNow
         case "restore": self = .restore(backupID: try c.decode(String.self, forKey: .backupID))
         case "setAutoRefresh": self = .setAutoRefresh(try c.decode(Bool.self, forKey: .on))
@@ -226,6 +232,10 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
         case .bye: try c.encode("bye", forKey: .type)
         case .refresh: try c.encode("refresh", forKey: .type)
         case .checkUpdates: try c.encode("checkUpdates", forKey: .type)
+        case let .installUpdate(tag, asset):
+            try c.encode("installUpdate", forKey: .type)
+            try c.encode(tag, forKey: .tag)
+            try c.encode(asset, forKey: .asset)
         case .backupNow: try c.encode("backupNow", forKey: .type)
         case let .restore(backupID):
             try c.encode("restore", forKey: .type)
@@ -240,7 +250,7 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
     public var checkInReport: (settings: InAppSettings, lastRefresh: RefreshOutcome?)? {
         switch self {
         case let .checkIn(settings, lastRefresh, _, _, _), let .watch(settings, lastRefresh, _, _, _): (settings, lastRefresh)
-        case .refresh, .checkUpdates, .backupNow, .restore, .setAutoRefresh, .bye: nil
+        case .refresh, .checkUpdates, .installUpdate, .backupNow, .restore, .setAutoRefresh, .bye: nil
         }
     }
 
@@ -248,7 +258,7 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
     public var previousRun: PreviousRun? {
         switch self {
         case let .checkIn(_, _, _, _, run), let .watch(_, _, _, _, run): run
-        case .refresh, .checkUpdates, .backupNow, .restore, .setAutoRefresh, .bye: nil
+        case .refresh, .checkUpdates, .installUpdate, .backupNow, .restore, .setAutoRefresh, .bye: nil
         }
     }
 
@@ -326,8 +336,15 @@ public enum ChannelReply: Codable, Equatable, Sendable {
     /// `ProgressStep.key` ("backingUp", "signing", …), `percent` its 0…100 when the step reports one.
     /// Sent between `accepted` and the outcome on the same held connection; never on a watch.
     case progress(stageKey: String, percent: Int?)
+    /// The update modal's state (Slice 3), streamed on the held check/install connection:
+    /// `state` is "upToDate" | "available" | "downloading" | "installing" | "installed" | "needsMac".
+    /// `version`/`tag`/`asset` ride with "available" (the phone keeps `tag`/`asset` to ask for the
+    /// install) and `version` with "installed"; `percent` with "downloading". A failure stays `failed`.
+    case update(state: String, version: String? = nil, tag: String? = nil, asset: String? = nil, percent: Int? = nil)
 
-    private enum CodingKeys: String, CodingKey { case type, settings, lastRefresh, reasonKey, by, seq, pausedUntil, stageKey, percent }
+    private enum CodingKeys: String, CodingKey {
+        case type, settings, lastRefresh, reasonKey, by, seq, pausedUntil, stageKey, percent, state, version, tag, asset
+    }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -351,6 +368,12 @@ public enum ChannelReply: Codable, Equatable, Sendable {
         case "progress":
             self = .progress(stageKey: try c.decode(String.self, forKey: .stageKey),
                              percent: try c.decodeIfPresent(Int.self, forKey: .percent))
+        case "update":
+            self = .update(state: try c.decode(String.self, forKey: .state),
+                           version: try c.decodeIfPresent(String.self, forKey: .version),
+                           tag: try c.decodeIfPresent(String.self, forKey: .tag),
+                           asset: try c.decodeIfPresent(String.self, forKey: .asset),
+                           percent: try c.decodeIfPresent(Int.self, forKey: .percent))
         case let other:
             throw DecodingError.dataCorruptedError(forKey: .type, in: c, debugDescription: "unknown reply \(other)")
         }
@@ -387,6 +410,13 @@ public enum ChannelReply: Codable, Equatable, Sendable {
         case let .progress(stageKey, percent):
             try c.encode("progress", forKey: .type)
             try c.encode(stageKey, forKey: .stageKey)
+            try c.encodeIfPresent(percent, forKey: .percent)
+        case let .update(state, version, tag, asset, percent):
+            try c.encode("update", forKey: .type)
+            try c.encode(state, forKey: .state)
+            try c.encodeIfPresent(version, forKey: .version)
+            try c.encodeIfPresent(tag, forKey: .tag)
+            try c.encodeIfPresent(asset, forKey: .asset)
             try c.encodeIfPresent(percent, forKey: .percent)
         }
     }

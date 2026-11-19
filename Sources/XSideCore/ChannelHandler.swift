@@ -14,6 +14,9 @@ public enum InstallationUpdate: Equatable, Sendable {
     /// Check the app's GitHub source for a newer release now; the outcome is told by XSide's usual
     /// update notification, not a reply (the `accepted` reply just says the request was taken).
     case checkUpdatesRequested
+    /// Install the update the phone was just offered (tag/asset of that release); the caller holds
+    /// the connection and streams the download/install for the phone's modal.
+    case installUpdateRequested(tag: String, asset: String)
     /// Pull a fresh data snapshot of this installation now.
     case backupRequested
     /// Restore this installation's data from the snapshot with this id (DESTRUCTIVE).
@@ -154,8 +157,11 @@ public enum ChannelHandler {
             if phoneRefreshTooSoon(installation, now: now) { return (.busy, .none) }
             return (.accepted, .refreshRequested)
         case .checkUpdates:
-            // Light and read-only on the Mac (no re-sign): always taken; the outcome is a notification.
+            // Light and read-only on the Mac (no re-sign): always taken; the Mac holds the connection
+            // and streams the outcome (up to date, an offer, or an auto-install's progress).
             return (.accepted, .checkUpdatesRequested)
+        case let .installUpdate(tag, asset):
+            return (.accepted, .installUpdateRequested(tag: tag, asset: asset))
         case .backupNow:
             return (.accepted, .backupRequested)
         case let .restore(backupID):

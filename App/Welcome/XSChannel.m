@@ -398,6 +398,18 @@ static BOOL XSIsPolicyDenied(nw_error_t error) {
         [self deliver:XSChannelReplied reply:reply final:NO];
         return;
     }
+    if (_accepted && [reply[@"type"] isEqual:@"update"]) {
+        // The update flow (Slice 3): « downloading »/« installing » keep streaming; every other
+        // state (upToDate, available, installed, needsMac) is the end of this exchange.
+        NSString *state = reply[@"state"];
+        if ([state isEqual:@"downloading"] || [state isEqual:@"installing"]) {
+            _lastLine = CFAbsoluteTimeGetCurrent();
+            [self deliver:XSChannelReplied reply:reply final:NO];
+            return;
+        }
+        [self finish:XSChannelReplied reply:reply];
+        return;
+    }
     [self finish:XSChannelReplied reply:reply];
 }
 @end
@@ -1075,26 +1087,102 @@ void XSRequestCheckUpdates(void) {
     XSAfterSheet(^{ XSExplainNetworkThen(^{ XSRequestCheckUpdatesNow(); }); });
 }
 
+static void XSStartInstallUpdateExchange(NSString *tag, NSString *asset);
+
 static void XSRequestCheckUpdatesNow(void) {
-    BOOL fr = XSFrench();
-    XSPillContent *asking = XSPill(fr ? @"Recherche de mises à jour…" : @"Checking for updates…",
-                                   fr ? @"XSide regarde le dépôt suivi sur ton Mac." : @"XSide is checking the tracked repo on your Mac.",
-                                   XSPillToneNeutral, 0);
-    asking.busy = YES;
-    XSShowAnswer(asking);
-    [XSPatientExchange(XSCheckUpdatesBody(), NO, ^(XSChannelResult result, NSDictionary *reply, BOOL final) {
+    // A real modal (Slice 3), like the refresh: connexion → recherche → « à jour » / une version
+    // proposée (« Télécharger et installer ») / « à regarder sur le Mac ».
+    XSUpdateModalShow();
+    [XSPatientExchange(XSCheckUpdatesBody(), YES, ^(XSChannelResult result, NSDictionary *reply, BOOL final) {
         BOOL f = XSFrench();
-        if (result == XSChannelWaiting) { XSShowWaitingPill(YES); return; }
-        if (result != XSChannelReplied) { XSShowAnswer(XSUnansweredPill(result)); return; }
-        if ([reply[@"type"] isEqual:@"busy"]) {
-            XSShowAnswer(XSPill(f ? @"XSide est occupé" : @"XSide is busy",
-                                f ? @"Réessaie dans un instant." : @"Try again in a moment.", XSPillToneNeutral, 6));
+        NSString *type = reply[@"type"];
+        if (result == XSChannelWaiting) { return; } // the modal already shows « connexion… »
+        if (result == XSChannelNoOutcome) {
+            XSUpdateModalDone(f ? @"Pas de réponse de ton Mac" : @"No answer from your Mac",
+                              f ? @"Réessaie dans un instant." : @"Try again in a moment.", NO);
             return;
         }
-        // accepted: the Mac took it; a newer version (if any) arrives as an update notification.
-        XSShowAnswer(XSPill(f ? @"Recherche de mises à jour lancée" : @"Update check started",
-                            f ? @"Si une nouvelle version existe, XSide te préviendra." : @"If a new version exists, XSide will let you know.",
-                            XSPillToneNeutral, 6));
+        if (result != XSChannelReplied) {
+            XSPillContent *u = XSUnansweredPill(result);
+            XSRefreshModalError(u.lead, u.hint, ^{ XSRequestCheckUpdates(); });
+            return;
+        }
+        if ([type isEqual:@"busy"]) {
+            XSUpdateModalDone(f ? @"XSide est occupé" : @"XSide is busy",
+                              f ? @"Réessaie dans un instant." : @"Try again in a moment.", NO);
+            return;
+        }
+        if ([type isEqual:@"accepted"]) {
+            XSUpdateModalWorking(f ? @"Recherche de mises à jour…" : @"Checking for updates…",
+                                 f ? @"XSide regarde le dépôt suivi." : @"XSide is checking the tracked repo.", -1);
+            return;
+        }
+        if ([type isEqual:@"update"]) {
+            NSString *state = reply[@"state"];
+            NSString *version = [reply[@"version"] isKindOfClass:NSString.class] ? reply[@"version"] : nil;
+            if ([state isEqual:@"upToDate"]) {
+                XSUpdateModalDone(f ? @"Tu es à jour" : @"You're up to date",
+                                  f ? @"Tu as déjà la dernière version." : @"You already have the latest version.", YES);
+            } else if ([state isEqual:@"needsMac"]) {
+                XSUpdateModalDone(f ? @"À regarder sur ton Mac" : @"Look on your Mac",
+                                  f ? @"Un choix de version ou une mise à jour t'attend dans XSide sur le Mac." : @"A version choice or an update is waiting in XSide on the Mac.", YES);
+            } else if ([state isEqual:@"available"]) {
+                NSString *tag = [reply[@"tag"] isKindOfClass:NSString.class] ? reply[@"tag"] : @"";
+                NSString *asset = [reply[@"asset"] isKindOfClass:NSString.class] ? reply[@"asset"] : @"";
+                NSString *title = version ? [NSString stringWithFormat:(f ? @"Version %@ disponible" : @"Version %@ available"), version]
+                                          : (f ? @"Mise à jour disponible" : @"Update available");
+                XSUpdateModalOffer(title,
+                    f ? @"XSide va la télécharger dans ton dossier puis l'installer. L'app se fermera à la fin." : @"XSide will download it to your folder then install it. The app closes at the end.",
+                    f ? @"Télécharger et installer" : @"Download and install",
+                    ^{ XSStartInstallUpdateExchange(tag, asset); });
+            }
+            return;
+        }
+    }) start];
+}
+
+static void XSStartInstallUpdateExchange(NSString *tag, NSString *asset) {
+    [XSPatientExchange(XSInstallUpdateBody(tag, asset), YES, ^(XSChannelResult result, NSDictionary *reply, BOOL final) {
+        BOOL f = XSFrench();
+        NSString *type = reply[@"type"];
+        void (^retry)(void) = ^{ XSStartInstallUpdateExchange(tag, asset); };
+        if (result == XSChannelWaiting) { return; }
+        if (result == XSChannelNoOutcome) {
+            // The app is likely being replaced (success kills it); otherwise the next launch tells.
+            XSUpdateModalDone(f ? @"Installation en cours sur ton Mac" : @"Installing on your Mac",
+                              f ? @"Si l'app ne se ferme pas, rouvre-la dans un instant." : @"If the app doesn't close, reopen it in a moment.", YES);
+            return;
+        }
+        if (result != XSChannelReplied) {
+            XSPillContent *u = XSUnansweredPill(result);
+            XSRefreshModalError(u.lead, u.hint, retry);
+            return;
+        }
+        if ([type isEqual:@"busy"]) { XSUpdateModalDone(f ? @"XSide est occupé" : @"XSide is busy", f ? @"Réessaie dans un instant." : @"Try again in a moment.", NO); return; }
+        if ([type isEqual:@"accepted"]) { XSUpdateModalWorking(f ? @"Téléchargement…" : @"Downloading…", nil, 0); return; }
+        if ([type isEqual:@"failed"]) {
+            NSString *r = [reply[@"reasonKey"] isKindOfClass:NSString.class] ? reply[@"reasonKey"] : @"unknown";
+            XSRefreshModalError(f ? @"L'installation a échoué" : @"The install failed", XSReasonText(r, f), retry);
+            return;
+        }
+        if ([type isEqual:@"update"]) {
+            NSString *state = reply[@"state"];
+            NSString *version = [reply[@"version"] isKindOfClass:NSString.class] ? reply[@"version"] : nil;
+            if ([state isEqual:@"downloading"]) {
+                NSNumber *pct = [reply[@"percent"] isKindOfClass:NSNumber.class] ? reply[@"percent"] : nil;
+                XSUpdateModalWorking(f ? @"Téléchargement…" : @"Downloading…", nil, pct ? pct.doubleValue / 100.0 : -1);
+            } else if ([state isEqual:@"installing"]) {
+                XSUpdateModalWorking(f ? @"Installation…" : @"Installing…", f ? @"L'app va se fermer." : @"The app will close.", -1);
+            } else if ([state isEqual:@"installed"]) {
+                XSUpdateModalDone(version ? [NSString stringWithFormat:(f ? @"Version %@ installée" : @"Version %@ installed"), version] : (f ? @"Installée" : @"Installed"),
+                                  f ? @"L'app va se fermer, rouvre-la ensuite." : @"The app will close, open it again then.", YES);
+            } else if ([state isEqual:@"needsMac"]) {
+                XSUpdateModalDone(f ? @"À regarder sur ton Mac" : @"Look on your Mac", nil, YES);
+            } else if ([state isEqual:@"upToDate"]) {
+                XSUpdateModalDone(f ? @"Déjà à jour" : @"Already up to date", nil, YES);
+            }
+            return;
+        }
     }) start];
 }
 

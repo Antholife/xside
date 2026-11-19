@@ -75,6 +75,10 @@ NSDictionary *XSRefreshBody(void) { return @{@"type": @"refresh"}; }
 
 NSDictionary *XSCheckUpdatesBody(void) { return @{@"type": @"checkUpdates"}; }
 
+NSDictionary *XSInstallUpdateBody(NSString *tag, NSString *asset) {
+    return @{@"type": @"installUpdate", @"tag": tag ?: @"", @"asset": asset ?: @""};
+}
+
 NSDictionary *XSBackupNowBody(void) { return @{@"type": @"backupNow"}; }
 
 NSDictionary *XSRestoreBody(NSString *backupID) { return @{@"type": @"restore", @"backupID": backupID ?: @""}; }

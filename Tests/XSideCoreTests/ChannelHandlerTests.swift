@@ -43,6 +43,17 @@ import Foundation
                 == .restore(backupID: "2026-11-17T10:00:00Z"))
     }
 
+    @Test func installUpdateIsAcceptedAndRoundTrips() throws {
+        let (reply, update) = ChannelHandler.handle(.installUpdate(tag: "v2.1", asset: "app.ipa"),
+                                                    installation: installation(), now: now, reminder: true)
+        #expect(reply == .accepted && update == .installUpdateRequested(tag: "v2.1", asset: "app.ipa"))
+        let env = try ChannelEnvelope.seal(.installUpdate(tag: "v2.1", asset: "app.ipa"), installationID: "rec|dev",
+                                           secret: secret, now: now, nonce: "nu")
+        var seen = NonceCache()
+        #expect(try ChannelEnvelope.decode(line: env.encodedLine()).open(secret: secret, now: now, seen: &seen)
+                == .installUpdate(tag: "v2.1", asset: "app.ipa"))
+    }
+
     @Test func checkInMergesAndReturnsTheMergedSettings() {
         let mac = InAppSettings.defaults(reminder: true, at: now.addingTimeInterval(-3600))
             .setting(\.refreshCard, to: false, at: now.addingTimeInterval(-60), by: .mac)

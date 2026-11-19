@@ -19,4 +19,16 @@ void XSRefreshModalError(NSString *title, NSString *_Nullable message, void (^_N
 /// Remove the modal (nothing if it isn't up).
 void XSRefreshModalDismiss(void);
 
+// Update flow (Slice 3): the same modal, worded for « Mise à jour ». Reuses Step/Error/Dismiss above.
+/// Show it in its « checking the repo on your Mac » state.
+void XSUpdateModalShow(void);
+/// An update is available: show `title`/`message` with a primary button (`button`, e.g. « Télécharger
+/// et installer ») that runs `install`, and a « Plus tard ». `install` leaves the modal up (working).
+void XSUpdateModalOffer(NSString *title, NSString *message, NSString *button, void (^_Nullable install)(void));
+/// Move to a working state with a title (download/install), `fraction` 0…1 fills the ring, < 0 keeps it.
+void XSUpdateModalWorking(NSString *title, NSString *_Nullable detail, double fraction);
+/// A terminal state with a single « Fermer » (the app isn't always replaced): `ok` shows a check,
+/// otherwise a red cross. For « à jour », « installée », « à regarder sur le Mac ».
+void XSUpdateModalDone(NSString *title, NSString *_Nullable message, BOOL ok);
+
 NS_ASSUME_NONNULL_END

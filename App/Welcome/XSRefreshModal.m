@@ -9,6 +9,10 @@
 @interface XSRefreshModalController : UIViewController
 @property (nonatomic) BOOL willBackUp;
 @property (nonatomic, copy, nullable) void (^retry)(void);
+/// For the update flow (Slice 3): a different title/lead, and the install action of the offer state.
+@property (nonatomic, copy, nullable) NSString *titleText;
+@property (nonatomic, copy, nullable) NSString *leadText;
+@property (nonatomic, copy, nullable) void (^offerAction)(void);
 @end
 
 @implementation XSRefreshModalController {
@@ -38,12 +42,12 @@ static CGFloat const kRing = 150, kRingW = 8, kNode = 54, kLink = 118;
     kicker.textColor = XSViolet(); kicker.textAlignment = NSTextAlignmentCenter;
 
     _title = [UILabel new];
-    _title.text = fr ? @"Tu as demandé un rafraîchissement" : @"You asked for a refresh";
+    _title.text = self.titleText ?: (fr ? @"Tu as demandé un rafraîchissement" : @"You asked for a refresh");
     _title.font = XSScaledFont(20, UIFontWeightBold); _title.numberOfLines = 0;
     _title.textAlignment = NSTextAlignmentCenter; _title.adjustsFontForContentSizeCategory = YES;
 
     _lead = [UILabel new];
-    _lead.text = fr ? @"Ton Mac s’en occupe" : @"Your Mac is on it";
+    _lead.text = self.leadText ?: (fr ? @"Ton Mac s’en occupe" : @"Your Mac is on it");
     _lead.font = XSScaledFont(13, UIFontWeightRegular); _lead.textColor = UIColor.secondaryLabelColor;
     _lead.textAlignment = NSTextAlignmentCenter; _lead.numberOfLines = 0;
 
@@ -270,6 +274,70 @@ static CGFloat const kRing = 150, kRingW = 8, kNode = 54, kLink = 118;
 - (void)tapRetry { void (^r)(void) = self.retry; XSRefreshModalDismiss(); if (r) r(); }
 - (void)tapClose { XSRefreshModalDismiss(); }
 
+// MARK: - Update flow (Slice 3)
+
+/// Connected, and now working on something that isn't a refresh (an update's download/install): a
+/// plain « working » with a title, no « the app will close » line.
+- (void)workingTitle:(NSString *)t detail:(NSString *)d {
+    [self heroConnectedOk:YES];
+    _stepTitle.text = t; _stepSub.text = d ?: @""; _lead.text = @"";
+    [self setRing:0.9];
+}
+
+/// An update is available: show it with a primary button (its block) and « Plus tard ».
+- (void)offerTitle:(NSString *)t message:(NSString *)m button:(NSString *)b {
+    [self heroConnectedOk:YES];
+    if (_spinner.isAnimating) { [_spinner stopAnimating]; _spinner.hidden = YES; }
+    BOOL fr = XSFrench();
+    _stepTitle.text = t; _stepSub.text = m ?: @""; _lead.text = @"";
+    for (UIView *v in _acts.arrangedSubviews) [v removeFromSuperview];
+    XSGradientButton *install = [XSGradientButton buttonWithType:UIButtonTypeCustom];
+    [install setTitle:b forState:UIControlStateNormal];
+    [install setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
+    install.titleLabel.font = XSScaledFont(15, UIFontWeightSemibold);
+    install.titleLabel.numberOfLines = 1; install.titleLabel.adjustsFontSizeToFitWidth = YES;
+    [install addTarget:self action:@selector(tapOffer) forControlEvents:UIControlEventTouchUpInside];
+    UIButton *later = [UIButton buttonWithType:UIButtonTypeSystem];
+    [later setTitle:(fr ? @"Plus tard" : @"Later") forState:UIControlStateNormal];
+    later.titleLabel.font = XSScaledFont(15, UIFontWeightSemibold);
+    later.tintColor = UIColor.labelColor; later.backgroundColor = UIColor.secondarySystemBackgroundColor;
+    later.layer.cornerRadius = 14; later.layer.cornerCurve = kCACornerCurveContinuous;
+    [later addTarget:self action:@selector(tapClose) forControlEvents:UIControlEventTouchUpInside];
+    for (UIButton *bb in @[install, later]) [bb.heightAnchor constraintEqualToConstant:46].active = YES;
+    [_acts addArrangedSubview:install]; [_acts addArrangedSubview:later];
+    _acts.hidden = NO;
+}
+
+/// A terminal state for the update flow with a single « Fermer » (the app isn't always replaced, so
+/// unlike a refresh it needs a way out): a check when `ok`, a red cross otherwise.
+- (void)doneTitle:(NSString *)t message:(NSString *)m ok:(BOOL)ok {
+    [self heroConnectedOk:ok];
+    if (_spinner.isAnimating) { [_spinner stopAnimating]; _spinner.hidden = YES; }
+    _ringFill.colors = ok ? @[(id)XSViolet().CGColor, (id)XSPink().CGColor]
+                          : @[(id)UIColor.systemRedColor.CGColor, (id)UIColor.systemRedColor.CGColor];
+    [self drawMark:ok];
+    _stepTitle.text = t; _stepSub.text = m ?: @""; _lead.text = @"";
+    for (UIView *v in _acts.arrangedSubviews) [v removeFromSuperview];
+    UIButton *close = [UIButton buttonWithType:UIButtonTypeSystem];
+    [close setTitle:(XSFrench() ? @"Fermer" : @"Close") forState:UIControlStateNormal];
+    close.titleLabel.font = XSScaledFont(15, UIFontWeightSemibold);
+    close.tintColor = UIColor.labelColor; close.backgroundColor = UIColor.secondarySystemBackgroundColor;
+    close.layer.cornerRadius = 14; close.layer.cornerCurve = kCACornerCurveContinuous;
+    [close.heightAnchor constraintEqualToConstant:46].active = YES;
+    [close addTarget:self action:@selector(tapClose) forControlEvents:UIControlEventTouchUpInside];
+    [_acts addArrangedSubview:close];
+    _acts.hidden = NO;
+}
+
+/// The person tapped « Télécharger et installer »: hide the buttons, go back to working, run it.
+- (void)tapOffer {
+    void (^a)(void) = self.offerAction;
+    _acts.hidden = YES;
+    for (UIView *v in _acts.arrangedSubviews) [v removeFromSuperview];
+    [self workingTitle:(XSFrench() ? @"Téléchargement…" : @"Downloading…") detail:nil];
+    if (a) a();
+}
+
 @end
 
 #pragma mark - C API + window
@@ -277,15 +345,23 @@ static CGFloat const kRing = 150, kRingW = 8, kNode = 54, kLink = 118;
 static UIWindow *XSModalWindow;
 static __weak XSRefreshModalController *XSModalVC;
 
-static XSRefreshModalController *XSModalEnsure(BOOL willBackUp) {
+static XSRefreshModalController *XSModalEnsureCore(BOOL willBackUp, NSString *title, NSString *lead) {
     UIWindowScene *scene = XSScene();
     if (!scene) return nil;
     if (XSModalWindow) return XSModalVC;
-    XSRefreshModalController *vc = [XSRefreshModalController new]; vc.willBackUp = willBackUp;
+    XSRefreshModalController *vc = [XSRefreshModalController new];
+    vc.willBackUp = willBackUp; vc.titleText = title; vc.leadText = lead;
     UIWindow *w = [[UIWindow alloc] initWithWindowScene:scene];
     w.rootViewController = vc; w.windowLevel = UIWindowLevelAlert + 101; XSModalWindow = w; XSModalVC = vc;
     w.hidden = NO;
     return vc;
+}
+
+static XSRefreshModalController *XSModalEnsure(BOOL willBackUp) { return XSModalEnsureCore(willBackUp, nil, nil); }
+
+static XSRefreshModalController *XSUpdateModalEnsure(void) {
+    BOOL fr = XSFrench();
+    return XSModalEnsureCore(NO, fr ? @"Mise à jour" : @"Update", fr ? @"Ton Mac vérifie le dépôt suivi" : @"Your Mac is checking the tracked repo");
 }
 
 void XSRefreshModalShow(BOOL willBackUp) {
@@ -308,4 +384,21 @@ void XSRefreshModalError(NSString *title, NSString *message, void (^retry)(void)
 void XSRefreshModalDismiss(void) {
     if (![NSThread isMainThread]) { dispatch_async(dispatch_get_main_queue(), ^{ XSRefreshModalDismiss(); }); return; }
     XSModalWindow.hidden = YES; XSModalWindow = nil;
+}
+void XSUpdateModalShow(void) {
+    if (![NSThread isMainThread]) { dispatch_async(dispatch_get_main_queue(), ^{ XSUpdateModalShow(); }); return; }
+    XSUpdateModalEnsure();
+}
+void XSUpdateModalOffer(NSString *title, NSString *message, NSString *button, void (^install)(void)) {
+    if (![NSThread isMainThread]) { dispatch_async(dispatch_get_main_queue(), ^{ XSUpdateModalOffer(title, message, button, install); }); return; }
+    XSRefreshModalController *vc = XSUpdateModalEnsure();
+    vc.offerAction = install; [vc offerTitle:title message:message button:button];
+}
+void XSUpdateModalWorking(NSString *title, NSString *detail, double fraction) {
+    if (![NSThread isMainThread]) { dispatch_async(dispatch_get_main_queue(), ^{ XSUpdateModalWorking(title, detail, fraction); }); return; }
+    [XSModalVC workingTitle:title detail:detail]; if (fraction >= 0) [XSModalVC stepTitle:title detail:detail fraction:fraction];
+}
+void XSUpdateModalDone(NSString *title, NSString *message, BOOL ok) {
+    if (![NSThread isMainThread]) { dispatch_async(dispatch_get_main_queue(), ^{ XSUpdateModalDone(title, message, ok); }); return; }
+    XSRefreshModalController *vc = XSUpdateModalEnsure(); [vc doneTitle:title message:message ok:ok];
 }

@@ -31,6 +31,7 @@ NSData *_Nullable XSSealRequest(NSDictionary *body, NSString *installationID, NS
 /// Bodies of the three requests.
 NSDictionary *XSRefreshBody(void);
 NSDictionary *XSCheckUpdatesBody(void);
+NSDictionary *XSInstallUpdateBody(NSString *tag, NSString *asset);
 NSDictionary *XSBackupNowBody(void);
 NSDictionary *XSRestoreBody(NSString *backupID);
 NSDictionary *XSSetAutoRefreshBody(BOOL on);
