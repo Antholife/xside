@@ -1514,6 +1514,12 @@
 "update.source.failed" = "Impossible de lire les releases. Vérifie le lien et ta connexion.";
 "update.source.tracking" = "Suivi : %@";
 "update.source.installedRelease" = "Release suivie : %@";
+"confirmRelease.title" = "Quelle release installes-tu ?";
+"confirmRelease.note" = "Cette app suit déjà un dépôt. XSide ne peut pas lire la release depuis l'IPA : confirme laquelle tu installes pour garder le suivi des mises à jour juste.";
+"confirmRelease.previous" = "Avant : %@";
+"confirmRelease.loading" = "Lecture des releases du dépôt…";
+"confirmRelease.failed" = "Impossible de lister les releases du dépôt. Réessaie, ou définis la source depuis la carte.";
+"confirmRelease.detected" = "Détecté d'après le fichier";
 "update.source.setRelease" = "⚠︎ Définis la release installée (Modifier) pour suivre les mises à jour.";
 "update.source.multiple" = "Ce dépôt propose plusieurs fichiers installables. Choisis celui que tu installes.";
 "update.source.choose" = "Choisir";

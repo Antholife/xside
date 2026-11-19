@@ -205,6 +205,17 @@ struct InstallSheet: View {
             model.pendingIPA = url
             return true
         }
+        // « Confirme la release » when a known app's source needs its tag set for this version.
+        .sheet(isPresented: Binding(get: { flow.promptForTag }, set: { flow.promptForTag = $0 })) {
+            if let repo = GitHubSource.parse(flow.draft.updateSourceURL), let variant = flow.draft.updateVariant {
+                ConfirmReleaseSheet(model: model, flow: flow, repo: repo, variant: variant,
+                                    previousTag: flow.existing?.updateSource?.installedTag) {
+                    if flow.step == InstallFlow.optionsStep && flow.step < flow.stepCount - 1 {
+                        withAnimation(.smooth(duration: 0.2)) { flow.go(to: flow.step + 1) }
+                    }
+                }
+            }
+        }
     }
 
     /// Room left for the scrolling middle on the current screen: what's left once the header, the
@@ -520,7 +531,7 @@ struct InstallSheet: View {
         if flow.step == InstallFlow.optionsStep && flow.updateLinkPending {
             withAnimation(.smooth(duration: 0.2)) { flow.updateLinkError = true }
         } else if flow.step == InstallFlow.optionsStep && flow.needsInstalledTag {
-            withAnimation(.smooth(duration: 0.2)) { flow.updateTagError = true }
+            flow.promptForTag = true // open the « confirm the release » sheet
         } else {
             withAnimation(.smooth(duration: 0.2)) { flow.go(to: flow.step + 1) }
         }
@@ -534,10 +545,8 @@ struct InstallSheet: View {
                 flow.go(to: InstallFlow.optionsStep)
             }
         } else if flow.needsInstalledTag {
-            withAnimation(.smooth(duration: 0.2)) {
-                flow.updateTagError = true
-                flow.go(to: InstallFlow.optionsStep)
-            }
+            withAnimation(.smooth(duration: 0.2)) { flow.go(to: InstallFlow.optionsStep) }
+            flow.promptForTag = true
         } else {
             model.startInstall()
         }
@@ -1158,5 +1167,103 @@ struct ErrorText: View {
         }
         .font(.system(size: 12))
         .foregroundStyle(Color(nsColor: .systemRed))
+    }
+}
+
+/// Shown from « Suivant »/Install when a known app already has an update source but the release tag
+/// for the version being (re)installed isn't set: XSide can't read the tag from the IPA, so the
+/// person confirms which release of the repo this is. The tag is preselected when XSide can match
+/// the IPA to a release by its file name. Confirming records the tag and its title.
+private struct ConfirmReleaseSheet: View {
+    let model: AppModel
+    let flow: InstallFlow
+    let repo: GitHubSource
+    let variant: VariantSelector
+    let previousTag: String?
+    let onConfirm: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    private enum Phase { case loading, ready, failed }
+    @State private var phase: Phase = .loading
+    @State private var releases: [(tag: String, name: String?, pre: Bool)] = []
+    @State private var picked: String?
+    @State private var autoDetected: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "tag.circle.fill")
+                    .font(.system(size: 28)).foregroundStyle(Theme.violet)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L("confirmRelease.title")).font(.system(size: 16, weight: .semibold))
+                    Text(L("confirmRelease.note")).font(.system(size: 12)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let previousTag {
+                        Text(L("confirmRelease.previous", UpdateChecker.displayTag(previousTag)))
+                            .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            switch phase {
+            case .loading:
+                HStack(spacing: 8) { ProgressView().controlSize(.small)
+                    Text(L("confirmRelease.loading")).font(.system(size: 12)).foregroundStyle(.secondary) }
+                    .frame(maxWidth: .infinity, alignment: .center).padding(.vertical, 8)
+            case .failed:
+                Text(L("confirmRelease.failed")).font(.system(size: 12)).foregroundStyle(Color(nsColor: .systemOrange))
+                    .fixedSize(horizontal: false, vertical: true)
+            case .ready:
+                Picker("", selection: $picked) {
+                    ForEach(releases, id: \.tag) { r in Text(label(r)).tag(Optional(r.tag)) }
+                }
+                .labelsHidden().pickerStyle(.menu)
+                if let picked, picked == autoDetected {
+                    Label(L("confirmRelease.detected"), systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 11)).foregroundStyle(Color(nsColor: .systemGreen))
+                }
+            }
+            HStack(spacing: 10) {
+                Spacer()
+                Button(L("install.cancel")) { dismiss() }.controlSize(.large).keyboardShortcut(.cancelAction)
+                Button(L("install.next")) { confirm() }
+                    .buttonStyle(GradientButtonStyle()).controlSize(.large).frame(minWidth: 120)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(picked == nil || phase != .ready)
+            }
+        }
+        .padding(20).frame(width: 460)
+        .task { await load() }
+    }
+
+    private func label(_ r: (tag: String, name: String?, pre: Bool)) -> String {
+        let base = r.name ?? UpdateChecker.displayTag(r.tag)
+        return r.pre ? L("update.tag.beta", base) : base
+    }
+
+    private func load() async {
+        do {
+            let all = try await model.installableIPAs(of: repo)
+            var seen = Set<String>(); var out: [(String, String?, Bool)] = []
+            for e in all where variant.matches(e.asset.name) && !seen.contains(e.tag) {
+                seen.insert(e.tag); out.append((e.tag, e.name, e.isPrerelease))
+            }
+            releases = out
+            if let v = flow.info?.version, !v.isEmpty {
+                autoDetected = all.first { variant.matches($0.asset.name) && $0.asset.name.contains(v) }?.tag
+            }
+            picked = autoDetected ?? out.first?.0
+            phase = out.isEmpty ? .failed : .ready
+        } catch {
+            phase = .failed
+        }
+    }
+
+    private func confirm() {
+        guard let picked else { return }
+        flow.draft.updateInstalledTag = picked
+        flow.draft.updateInstalledName = releases.first { $0.tag == picked }?.name
+        flow.updateTagError = false
+        dismiss()
+        onConfirm()
     }
 }

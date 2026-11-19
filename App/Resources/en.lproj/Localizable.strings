@@ -1514,6 +1514,12 @@
 "update.source.failed" = "Couldn't read the releases. Check the link and your connection.";
 "update.source.tracking" = "Following: %@";
 "update.source.installedRelease" = "Tracked release: %@";
+"confirmRelease.title" = "Which release are you installing?";
+"confirmRelease.note" = "This app already follows a repo. XSide can't read the release from the IPA: confirm which one you're installing so update tracking stays correct.";
+"confirmRelease.previous" = "Before: %@";
+"confirmRelease.loading" = "Reading the repo's releases…";
+"confirmRelease.failed" = "Couldn't list the repo's releases. Try again, or set the source from the card.";
+"confirmRelease.detected" = "Detected from the file";
 "update.source.setRelease" = "⚠︎ Set the installed release (Edit) to track updates.";
 "update.source.multiple" = "This repository offers several installable files. Choose the one you're installing.";
 "update.source.choose" = "Choose";

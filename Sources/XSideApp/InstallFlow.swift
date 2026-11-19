@@ -156,6 +156,9 @@ final class InstallFlow {
     }
     /// Set when « Suivant »/Install was stopped because the release tag is unset, to prompt for it.
     var updateTagError = false
+    /// Opens the « confirm the release » sheet (a known app's source needs its tag re-confirmed for
+    /// the version being installed). Cleared when the sheet is dismissed.
+    var promptForTag = false
 
     /// Shows step `index`; from the summary, editing turns the steps on.
     func go(to index: Int) {
