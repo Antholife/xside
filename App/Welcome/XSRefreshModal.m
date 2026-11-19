@@ -2,6 +2,7 @@
 // UIKit + CoreAnimation; degrades to nothing when there is no scene. Never blocks or crashes.
 
 #import "XSRefreshModal.h"
+#import "XSLogoPNG.h"
 #import <QuartzCore/QuartzCore.h>
 
 #pragma mark - Controller
@@ -117,30 +118,23 @@ static XSLinkKind XSLinkCurrent = XSLinkUnknown; // the transport the last chann
     return v;
 }
 
-/// The XSide app icon, drawn as vectors (no asset to bundle in the host app): a violet rounded
-/// square, a white phone, a yellow pill and the sweeping yellow arrow.
+/// The real XSide app icon (the one in the README), embedded as a PNG so the injected dylib can show
+/// it without a bundled resource. Its rounded-square shape is already baked into the image.
 - (UIView *)buildLogo {
-    CGFloat S = 42, k = S / 44.0;
-    UIView *v = [UIView new]; v.translatesAutoresizingMaskIntoConstraints = NO;
-    [NSLayoutConstraint activateConstraints:@[[v.widthAnchor constraintEqualToConstant:S], [v.heightAnchor constraintEqualToConstant:S]]];
-    UIColor *yellow = [UIColor colorWithRed:0.965 green:0.788 blue:0.271 alpha:1];
-    CAGradientLayer *g = [CAGradientLayer layer]; g.frame = CGRectMake(0, 0, S, S);
-    g.colors = @[(id)[UIColor colorWithRed:0.608 green:0.525 blue:0.941 alpha:1].CGColor, (id)XSViolet().CGColor];
-    g.startPoint = CGPointMake(0, 0); g.endPoint = CGPointMake(1, 1);
-    g.cornerRadius = 11.5 * k; g.cornerCurve = kCACornerCurveContinuous; [v.layer addSublayer:g];
-    CALayer *phone = [CALayer layer]; phone.frame = CGRectMake(15.5*k, 8.5*k, 13*k, 23*k);
-    phone.backgroundColor = UIColor.whiteColor.CGColor; phone.cornerRadius = 5*k; phone.cornerCurve = kCACornerCurveContinuous; [v.layer addSublayer:phone];
-    CALayer *pill = [CALayer layer]; pill.frame = CGRectMake(19.3*k, 11.8*k, 5.4*k, 2.3*k);
-    pill.backgroundColor = yellow.CGColor; pill.cornerRadius = 1.15*k; [v.layer addSublayer:pill];
-    CAShapeLayer *arrow = [CAShapeLayer layer]; arrow.frame = v.bounds;
-    UIBezierPath *ap = [UIBezierPath bezierPath];
-    [ap moveToPoint:CGPointMake(11.5*k, 27*k)]; [ap addQuadCurveToPoint:CGPointMake(32.5*k, 24.5*k) controlPoint:CGPointMake(22*k, 39*k)];
-    arrow.path = ap.CGPath; arrow.fillColor = nil; arrow.strokeColor = yellow.CGColor; arrow.lineWidth = 3.1*k; arrow.lineCap = kCALineCapRound; [v.layer addSublayer:arrow];
-    CAShapeLayer *head = [CAShapeLayer layer]; head.frame = v.bounds;
-    UIBezierPath *hp = [UIBezierPath bezierPath];
-    [hp moveToPoint:CGPointMake(33.8*k, 20*k)]; [hp addLineToPoint:CGPointMake(36.1*k, 26.4*k)]; [hp addLineToPoint:CGPointMake(29.9*k, 24.8*k)]; [hp closePath];
-    head.path = hp.CGPath; head.fillColor = yellow.CGColor; [v.layer addSublayer:head];
-    return v;
+    CGFloat S = 46;
+    UIView *box = [UIView new]; box.translatesAutoresizingMaskIntoConstraints = NO;
+    box.layer.shadowColor = XSViolet().CGColor; box.layer.shadowRadius = 10; box.layer.shadowOpacity = 0.3; box.layer.shadowOffset = CGSizeMake(0, 4);
+    UIImageView *v = [UIImageView new]; v.translatesAutoresizingMaskIntoConstraints = NO;
+    v.contentMode = UIViewContentModeScaleAspectFit;
+    NSData *data = [[NSData alloc] initWithBase64EncodedString:XSLogoBase64 options:0];
+    v.image = [UIImage imageWithData:data scale:UIScreen.mainScreen.scale];
+    v.layer.cornerRadius = S * 0.225; v.layer.cornerCurve = kCACornerCurveContinuous; v.layer.masksToBounds = YES;
+    [box addSubview:v];
+    [NSLayoutConstraint activateConstraints:@[
+        [box.widthAnchor constraintEqualToConstant:S], [box.heightAnchor constraintEqualToConstant:S],
+        [v.topAnchor constraintEqualToAnchor:box.topAnchor], [v.bottomAnchor constraintEqualToAnchor:box.bottomAnchor],
+        [v.leadingAnchor constraintEqualToAnchor:box.leadingAnchor], [v.trailingAnchor constraintEqualToAnchor:box.trailingAnchor]]];
+    return box;
 }
 
 - (UIView *)buildHero {
@@ -348,9 +342,9 @@ static XSLinkKind XSLinkCurrent = XSLinkUnknown; // the transport the last chann
 }
 
 - (void)heroConnectedOk:(BOOL)ok {
-    _connecting = NO;
-    [self stopLinkAnims];
     [self pulseMac:NO];
+    // The link keeps flowing while the Mac works (data really is moving); it is stopped only at the
+    // end, in drawMark. So the transport animation stays visible for the whole refresh, not a blink.
     UIColor *c = ok ? UIColor.systemGreenColor : UIColor.systemRedColor;
     _macNode.layer.borderColor = c.CGColor; if (ok) _iphNode.layer.borderColor = c.CGColor;
     _macBadge.backgroundColor = c; _macBadgeMark.text = ok ? @"✓" : @"✕"; _macBadge.hidden = NO;
@@ -366,6 +360,8 @@ static XSLinkKind XSLinkCurrent = XSLinkUnknown; // the transport the last chann
 }
 
 - (void)drawMark:(BOOL)ok {
+    _connecting = NO;
+    [self stopLinkAnims]; // the end: the data stops flowing
     [_spinner stopAnimating]; _spinner.hidden = YES;
     CGPoint ctr = CGPointMake(kRing/2, kRing/2);
     UIBezierPath *p = [UIBezierPath bezierPath];

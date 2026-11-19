@@ -1562,7 +1562,7 @@ final class AppModel {
                 var last: ChannelReply?
                 while !box.done {
                     if let frame = refreshProgressFrame(key), frame != last { await reply(frame); last = frame }
-                    try? await Task.sleep(for: .milliseconds(300))
+                    try? await Task.sleep(for: .milliseconds(150)) // fine enough to catch brief steps
                 }
                 _ = await waiter.value
                 if let outcome = box.outcome { await reply(outcome) }
@@ -1642,8 +1642,11 @@ final class AppModel {
     /// before any real step (the modal already shows « connexion… »). `percent` rides along when the
     /// step reports one (the backup's, mainly), so the modal's ring fills.
     private func refreshProgressFrame(_ key: JobKey) -> ChannelReply? {
-        guard case let .step(step) = jobs[key] else { return nil }
-        return .progress(stageKey: ProgressStep(step).key, percent: stepPercent[key])
+        switch jobs[key] {
+        case let .step(step): return .progress(stageKey: ProgressStep(step).key, percent: stepPercent[key])
+        case .preparing, .waiting: return .progress(stageKey: ProgressStep.preparing.key, percent: nil) // « Préparation » shows early
+        case .none: return nil
+        }
     }
 
     /// Holds a refresh's outcome across the streaming loop and its background waiter. Only ever

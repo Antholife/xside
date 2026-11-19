@@ -967,21 +967,26 @@ static void XSStartRefreshExchange(void) {
                                                                      expirationHandler:^{ XSEndRefreshTask(); }];
             XSHasRefreshTask = XSRefreshTask != UIBackgroundTaskInvalid;
         } else if ([type isEqual:@"progress"]) {
-            // A live step of the running refresh (Slice 2). The backup fills the ring; the re-sign and
-            // install can't complete here (the new app replaces this one), so they stay indeterminate.
+            // A live step of the running refresh (Slice 2), shown as « nom · étape X/Y · % ». The phone
+            // knows whether a backup is in the run (backupData), so it numbers the steps itself; the
+            // ring follows the overall progress (step by step, + the step's own % when it reports one).
             NSString *stage = [reply[@"stageKey"] isKindOfClass:NSString.class] ? reply[@"stageKey"] : @"";
             NSNumber *pct = [reply[@"percent"] isKindOfClass:NSNumber.class] ? reply[@"percent"] : nil;
-            if ([stage isEqual:@"backingUp"]) {
-                XSRefreshModalStep(french ? @"Sauvegarde des données" : @"Backing up data",
-                                   french ? @"XSide copie tes données avant de rafraîchir." : @"XSide is copying your data before refreshing.",
-                                   pct ? pct.doubleValue / 100.0 : -1);
-            } else {
-                XSRefreshModalStep(french ? @"Rafraîchissement" : @"Refreshing",
-                                   french ? @"L’app va se fermer, rouvre-la ensuite." : @"The app will close, open it again then.", -1);
-            }
+            BOOL backs = XSSettingBool(XSCurrentSettings(), @"backupData");
+            int total = backs ? 4 : 3;
+            int idx; NSString *name;
+            if ([stage isEqual:@"backingUp"]) { idx = 2; name = french ? @"Sauvegarde des données" : @"Backing up data"; }
+            else if ([stage isEqual:@"signing"]) { idx = backs ? 3 : 2; name = french ? @"Signature de l’app" : @"Signing the app"; }
+            else if ([stage isEqual:@"installing"]) { idx = backs ? 4 : 3; name = french ? @"Installation" : @"Installing"; }
+            else { idx = 1; name = french ? @"Préparation" : @"Preparing"; } // preparing / welcome / duo / iCloud / 32-bit / tweaks
+            double stepFrac = pct ? pct.doubleValue / 100.0 : 0.5;
+            double overall = ((idx - 1) + stepFrac) / total;
+            NSString *sub = [NSString stringWithFormat:(french ? @"Étape %d/%d" : @"Step %d/%d"), idx, total];
+            if (pct) sub = [sub stringByAppendingFormat:@" · %d%%", pct.intValue];
+            XSRefreshModalStep(name, sub, overall);
         } else if ([type isEqual:@"refreshed"]) {
             XSRecordRefresh(YES, nil, NSDate.date); // the new app replaces this one right after
-            XSRefreshModalStep(french ? @"Rafraîchie" : @"Refreshed",
+            XSRefreshModalStep(french ? @"Rafraîchie ✓" : @"Refreshed ✓",
                                french ? @"L’app va se fermer, rouvre-la ensuite." : @"The app will close, open it again then.", 1.0);
         } else if ([type isEqual:@"failed"]) {
             NSString *reason = [reply[@"reasonKey"] isKindOfClass:NSString.class] ? reply[@"reasonKey"] : @"unknown";
