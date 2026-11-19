@@ -517,14 +517,15 @@ import CryptoKit
         let all: [ChannelReply] = [.settings(s), .settings(s, lastRefresh: RefreshOutcome(at: now, succeeded: false, reasonKey: "k")),
                                    .accepted, .refreshed, .failed(reasonKey: "r"), .busy,
                                    .deviceUnreachable, .paused(by: .mac), .paused(by: .device), .rejected,
-                                   .progress(stageKey: "backingUp", percent: 42), .progress(stageKey: "signing", percent: nil),
+                                   .progress(stageKey: "backingUp", index: 3, total: 5, percent: 42),
+                                   .progress(stageKey: "signing", index: 4, total: 5, percent: nil),
                                    .update(state: "upToDate"), .update(state: "available", version: "2.1", tag: "v2.1", asset: "a.ipa"),
                                    .update(state: "downloading", percent: 30), .update(state: "installed", version: "2.1")]
         for r in all {
             #expect(try ChannelReply.decode(body: r.encodedBody()) == r)
         }
         // A progress frame omits the percent when it has none (e.g. the signing step).
-        #expect(!String(decoding: try ChannelReply.progress(stageKey: "signing", percent: nil).encodedBody(), as: UTF8.self).contains("percent"))
+        #expect(!String(decoding: try ChannelReply.progress(stageKey: "signing", index: 4, total: 5, percent: nil).encodedBody(), as: UTF8.self).contains("percent"))
         #expect(String(decoding: try ChannelReply.paused(by: .mac).encodedBody(), as: UTF8.self) == #"{"by":"mac","type":"paused"}"#)
         // The outcome is optional: absent from the JSON when nil, and older replies still decode.
         let plain = String(decoding: try ChannelReply.settings(s).encodedBody(), as: UTF8.self)

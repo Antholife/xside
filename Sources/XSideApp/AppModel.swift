@@ -1642,11 +1642,30 @@ final class AppModel {
     /// before any real step (the modal already shows « connexion… »). `percent` rides along when the
     /// step reports one (the backup's, mainly), so the modal's ring fills.
     private func refreshProgressFrame(_ key: JobKey) -> ChannelReply? {
+        let stageKey: String
+        let percent: Int?
         switch jobs[key] {
-        case let .step(step): return .progress(stageKey: ProgressStep(step).key, percent: stepPercent[key])
-        case .preparing, .waiting: return .progress(stageKey: ProgressStep.preparing.key, percent: nil) // « Préparation » shows early
+        case let .step(step): stageKey = ProgressStep(step).key; percent = stepPercent[key]
+        case .preparing, .waiting: stageKey = ProgressStep.preparing.key; percent = nil // « Préparation » shows early
         case .none: return nil
         }
+        let place = refreshStepPlace(key)
+        return .progress(stageKey: stageKey, index: place.index, total: place.total, percent: percent)
+    }
+
+    /// The running refresh's 1-based position and its run's step total, built the same way the Mac's
+    /// pending bar lists a refresh's steps (optional ones gated on the installation's options), so the
+    /// phone's modal can show « étape X/Y » for every step without guessing which a refresh includes.
+    private func refreshStepPlace(_ key: JobKey) -> (index: Int, total: Int) {
+        guard let entry = entry(recordID: key.recordID, deviceID: key.deviceID) else { return (1, 1) }
+        let installation = entry.installation
+        let steps = ProgressStep.list(includingWifiCheck: false, includingDuo: installation.duoCompatibility == true,
+                                      includingLegacy32: entry.record.legacy32 == true,
+                                      includingICloud: installation.iCloudSignedOut == true,
+                                      includingTweaks: !installation.enabledTweakIDs.isEmpty,
+                                      includingBackup: entry.record.options.backupData != false)
+        let timeline = StepTimeline(steps: steps, stage: jobs[key])
+        return (timeline.position, timeline.total)
     }
 
     /// Holds a refresh's outcome across the streaming loop and its background waiter. Only ever

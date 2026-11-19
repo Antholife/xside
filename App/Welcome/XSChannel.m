@@ -931,6 +931,23 @@ static void XSStartRefresh(void) {
     });
 }
 
+/// A user-facing name for a refresh step, by its stable key (XSideCore's `ProgressStep.key`), in the
+/// device's language. Covers every step the pipeline streams, so none shows as « Préparation » by
+/// default any more (Anthony: « il manque des étapes, autorisation d'Apple etc »).
+static NSString *XSRefreshStepName(NSString *stage, BOOL french) {
+    if ([stage isEqual:@"profile"]) return french ? @"Autorisation Apple" : @"Apple authorization";
+    if ([stage isEqual:@"welcome"]) return french ? @"Préparation de l’app" : @"Preparing the app";
+    if ([stage isEqual:@"legacy32"]) return french ? @"Nettoyage du code 32 bits" : @"Cleaning up 32-bit code";
+    if ([stage isEqual:@"duo"]) return french ? @"Compatibilité iPhone Duo" : @"iPhone Duo compatibility";
+    if ([stage isEqual:@"icloud"]) return french ? @"Configuration iCloud" : @"iCloud setup";
+    if ([stage isEqual:@"tweaks"]) return french ? @"Injection des tweaks" : @"Injecting tweaks";
+    if ([stage isEqual:@"backingUp"]) return french ? @"Sauvegarde des données" : @"Backing up data";
+    if ([stage isEqual:@"signing"]) return french ? @"Signature de l’app" : @"Signing the app";
+    if ([stage isEqual:@"installing"]) return french ? @"Installation" : @"Installing";
+    if ([stage isEqual:@"restoring"]) return french ? @"Restauration des données" : @"Restoring data";
+    return french ? @"Préparation" : @"Preparing"; // preparing, or an unknown key
+}
+
 static void XSStartRefreshExchange(void) {
     [XSPatientExchange(XSRefreshBody(), YES, ^(XSChannelResult result, NSDictionary *reply, BOOL final) {
         BOOL french = XSFrench();
@@ -967,18 +984,18 @@ static void XSStartRefreshExchange(void) {
                                                                      expirationHandler:^{ XSEndRefreshTask(); }];
             XSHasRefreshTask = XSRefreshTask != UIBackgroundTaskInvalid;
         } else if ([type isEqual:@"progress"]) {
-            // A live step of the running refresh (Slice 2), shown as « nom · étape X/Y · % ». The phone
-            // knows whether a backup is in the run (backupData), so it numbers the steps itself; the
-            // ring follows the overall progress (step by step, + the step's own % when it reports one).
+            // A live step of the running refresh (Slice 2), shown as « nom · étape X/Y · % ». The Mac
+            // sends the step's 1-based place and the run's total (it alone knows which optional steps
+            // this refresh includes), so the phone just names the stage and fills the ring from X/Y
+            // plus the step's own % when it reports one.
             NSString *stage = [reply[@"stageKey"] isKindOfClass:NSString.class] ? reply[@"stageKey"] : @"";
             NSNumber *pct = [reply[@"percent"] isKindOfClass:NSNumber.class] ? reply[@"percent"] : nil;
-            BOOL backs = XSSettingBool(XSCurrentSettings(), @"backupData");
-            int total = backs ? 4 : 3;
-            int idx; NSString *name;
-            if ([stage isEqual:@"backingUp"]) { idx = 2; name = french ? @"Sauvegarde des données" : @"Backing up data"; }
-            else if ([stage isEqual:@"signing"]) { idx = backs ? 3 : 2; name = french ? @"Signature de l’app" : @"Signing the app"; }
-            else if ([stage isEqual:@"installing"]) { idx = backs ? 4 : 3; name = french ? @"Installation" : @"Installing"; }
-            else { idx = 1; name = french ? @"Préparation" : @"Preparing"; } // preparing / welcome / duo / iCloud / 32-bit / tweaks
+            int idx = [reply[@"index"] isKindOfClass:NSNumber.class] ? [reply[@"index"] intValue] : 1;
+            int total = [reply[@"total"] isKindOfClass:NSNumber.class] ? [reply[@"total"] intValue] : 1;
+            if (total < 1) total = 1;
+            if (idx < 1) idx = 1;
+            if (idx > total) idx = total;
+            NSString *name = XSRefreshStepName(stage, french);
             double stepFrac = pct ? pct.doubleValue / 100.0 : 0.5;
             double overall = ((idx - 1) + stepFrac) / total;
             NSString *sub = [NSString stringWithFormat:(french ? @"Étape %d/%d" : @"Step %d/%d"), idx, total];

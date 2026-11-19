@@ -333,9 +333,11 @@ public enum ChannelReply: Codable, Equatable, Sendable {
     /// On a watch: nothing to say for a while, the connection is alive.
     case alive(seq: Int)
     /// While a phone-asked refresh runs, the live step for its modal (Slice 2): `stageKey` is a
-    /// `ProgressStep.key` ("backingUp", "signing", …), `percent` its 0…100 when the step reports one.
-    /// Sent between `accepted` and the outcome on the same held connection; never on a watch.
-    case progress(stageKey: String, percent: Int?)
+    /// `ProgressStep.key` ("profile", "backingUp", "signing", …), `index`/`total` its 1-based place
+    /// in this run's own step list (the Mac knows which optional steps the run includes, the phone
+    /// can't), `percent` its 0…100 when the step reports one. Sent between `accepted` and the
+    /// outcome on the same held connection; never on a watch.
+    case progress(stageKey: String, index: Int, total: Int, percent: Int?)
     /// The update modal's state (Slice 3), streamed on the held check/install connection:
     /// `state` is "upToDate" | "available" | "downloading" | "installing" | "installed" | "needsMac".
     /// `version`/`tag`/`asset` ride with "available" (the phone keeps `tag`/`asset` to ask for the
@@ -343,7 +345,7 @@ public enum ChannelReply: Codable, Equatable, Sendable {
     case update(state: String, version: String? = nil, tag: String? = nil, asset: String? = nil, percent: Int? = nil)
 
     private enum CodingKeys: String, CodingKey {
-        case type, settings, lastRefresh, reasonKey, by, seq, pausedUntil, stageKey, percent, state, version, tag, asset
+        case type, settings, lastRefresh, reasonKey, by, seq, pausedUntil, stageKey, index, total, percent, state, version, tag, asset
     }
 
     public init(from decoder: Decoder) throws {
@@ -367,6 +369,8 @@ public enum ChannelReply: Codable, Equatable, Sendable {
         case "alive": self = .alive(seq: try c.decode(Int.self, forKey: .seq))
         case "progress":
             self = .progress(stageKey: try c.decode(String.self, forKey: .stageKey),
+                             index: try c.decodeIfPresent(Int.self, forKey: .index) ?? 1,
+                             total: try c.decodeIfPresent(Int.self, forKey: .total) ?? 1,
                              percent: try c.decodeIfPresent(Int.self, forKey: .percent))
         case "update":
             self = .update(state: try c.decode(String.self, forKey: .state),
@@ -407,9 +411,11 @@ public enum ChannelReply: Codable, Equatable, Sendable {
         case let .alive(seq):
             try c.encode("alive", forKey: .type)
             try c.encode(seq, forKey: .seq)
-        case let .progress(stageKey, percent):
+        case let .progress(stageKey, index, total, percent):
             try c.encode("progress", forKey: .type)
             try c.encode(stageKey, forKey: .stageKey)
+            try c.encode(index, forKey: .index)
+            try c.encode(total, forKey: .total)
             try c.encodeIfPresent(percent, forKey: .percent)
         case let .update(state, version, tag, asset, percent):
             try c.encode("update", forKey: .type)
