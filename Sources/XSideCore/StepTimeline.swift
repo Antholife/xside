@@ -14,9 +14,10 @@ public enum ProgressStep: Int, CaseIterable, Sendable {
     /// `duo`: adding iPhone Duo compatibility, listed only for a run that asked for it.
     /// `legacy32`: removing the old 32-bit code, listed only for an app that has some.
     /// `icloud`: adding the signed-out iCloud library, listed only for a run that asked for it.
-    /// `backingUp`: the data snapshot after a refresh, listed only when the app's backup is on.
+    /// `backingUp`: the data snapshot taken before the re-sign on a refresh (so the phone's
+    /// « Données » page counts it), listed only when the app's backup is on.
     /// `tweaks`: injecting the device's enabled tweaks, listed only for a device that has some.
-    case preparing, profile, welcome, legacy32, duo, icloud, tweaks, signing, installing, backingUp, restoring, wifiCheck
+    case preparing, profile, welcome, legacy32, duo, icloud, tweaks, backingUp, signing, installing, restoring, wifiCheck
 
     public init(_ step: InstallStep) {
         switch step {

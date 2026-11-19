@@ -452,10 +452,10 @@ private struct AppSettingsContent: View {
                         }
                     } else {
                         Text(L("popover.app.uninstallFrom", deviceName))
-                            .foregroundStyle(canManage ? Color(nsColor: .systemRed) : .secondary)
+                            .foregroundStyle(canActOnDevice ? Color(nsColor: .systemRed) : .secondary)
                     }
                 }
-                .disabled(!canManage)
+                .disabled(!canActOnDevice)
                 Spacer(minLength: 0)
             }
             .help(blockedReason ?? "")
@@ -510,6 +510,9 @@ private struct AppSettingsContent: View {
     // MARK: Actions (the panel row's, see `AppActions`)
 
     private var canManage: Bool { model.canManage(entry) }
+    /// For actions that reach the device at once (back up, import, uninstall): they grey out when
+    /// the device is away, like « Rafraîchir », unlike settings that only apply at the next launch.
+    private var canActOnDevice: Bool { model.canActOnDevice(entry) }
     private var blockedReason: String? { model.manageBlockedReason(entry) }
     private var isUninstalling: Bool { model.uninstalling.contains(entry.id) }
 
@@ -587,7 +590,7 @@ private struct AppSettingsContent: View {
             Button(L("menu.backUpNow"), systemImage: "externaldrive.badge.timemachine") {
                 AppDataActions.startBackUp(entry, model: model)
             }
-            .disabled(!canManage)
+            .disabled(!canActOnDevice)
             .help(blockedReason ?? "")
         case .exportData:
             Button(L("menu.exportData"), systemImage: "square.and.arrow.up") {
@@ -599,7 +602,7 @@ private struct AppSettingsContent: View {
             Button(L("menu.importData"), systemImage: "square.and.arrow.down") {
                 Task { await AppDataActions.importData(entry, appName: appName, deviceName: deviceName, model: model) }
             }
-            .disabled(!canManage)
+            .disabled(!canActOnDevice)
             .help(blockedReason ?? "")
         case .ipaContent:
             // Read only: never greyed.
@@ -613,7 +616,7 @@ private struct AppSettingsContent: View {
         case .uninstall:
             Button(isUninstalling ? L("popover.app.uninstalling") : L("popover.app.uninstallFrom", deviceName),
                    systemImage: "trash", role: .destructive, action: uninstall)
-                .disabled(!canManage)
+                .disabled(!canActOnDevice)
                 .help(blockedReason ?? "")
         }
     }

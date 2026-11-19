@@ -192,6 +192,7 @@ private struct PopoverContent: View {
                         ForEach(group.apps) { entry in
                             AppRow(entry: entry, step: model.jobs[entry.id], canRefresh: model.canRefresh(entry),
                                    canManage: model.canManage(entry),
+                                   canActOnDevice: model.canActOnDevice(entry),
                                    isUninstalling: model.uninstalling.contains(entry.id),
                                    isDataBusy: model.dataBusy.contains(entry.id),
                                    needsUSB: group.needsUSB, deviceName: group.name,

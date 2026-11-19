@@ -15,7 +15,7 @@ import Testing
         #expect(ProgressStep(.backingUp) == .backingUp)
         #expect(!run.contains(.backingUp))
         let withBackup = ProgressStep.list(includingWifiCheck: false, includingRestore: true, includingBackup: true)
-        #expect(withBackup == [.preparing, .profile, .welcome, .signing, .installing, .backingUp, .restoring])
+        #expect(withBackup == [.preparing, .profile, .welcome, .backingUp, .signing, .installing, .restoring])
         #expect(!run.contains(.restoring))
         let withRestore = ProgressStep.list(includingWifiCheck: false, includingRestore: true)
         #expect(withRestore == [.preparing, .profile, .welcome, .signing, .installing, .restoring])

@@ -1745,6 +1745,13 @@ final class AppModel {
         jobs[entry.id] == nil && !removingDevices.contains(entry.installation.deviceID)
     }
 
+    /// Manageable AND the device is here now: for actions that reach the device immediately (back up,
+    /// uninstall). Settings that only apply at the next launch stay on `canManage`, so they can be
+    /// changed with the device away; these can't, so their buttons grey out like « Rafraîchir ».
+    func canActOnDevice(_ entry: AppEntry) -> Bool {
+        canManage(entry) && devices.contains { $0.id == entry.installation.deviceID && $0.isAvailable }
+    }
+
     /// Removes the app from its device, then stops managing it there (see `forgetInstallation`).
     /// Runs on the device's pipeline chain, after any job already queued there; the row stays
     /// claimed meanwhile, so no refresh can start on it. Throws `deviceUnavailable` at once when

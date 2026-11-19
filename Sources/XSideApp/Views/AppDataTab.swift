@@ -110,6 +110,9 @@ struct AppDataTab: View {
     private var backupOn: Bool { options.backupData != false }
     /// The action buttons are off while busy; the Cancel button, beside them, stays live.
     private var actionsOff: Bool { working || !model.canManage(entry) }
+    /// Back up and import reach the device now, so they also need it present (like « Rafraîchir »);
+    /// export only reads a snapshot from disk, so it stays on `actionsOff`.
+    private var actionsOffDevice: Bool { working || !model.canActOnDevice(entry) }
     private var working: Bool { busy || model.dataBusy.contains(entry.id) }
     private var workingText: String {
         switch action {
@@ -156,14 +159,14 @@ struct AppDataTab: View {
                     if AppDataActions.startBackUp(entry, model: model, then: { await reload(); busy = false }) { busy = true }
                 }
                     .buttonStyle(.borderedProminent)
-                    .disabled(actionsOff)
+                    .disabled(actionsOffDevice)
                 Button(L("fiche.data.export")) { run(.export) { await AppDataActions.exportLatest(entry, model: model) } }
                     .disabled(snaps.isEmpty || actionsOff)
                     .help(L("fiche.data.export.help"))
                 Button(L("fiche.data.import")) {
                     run(.importData) { await AppDataActions.importData(entry, appName: appName, deviceName: deviceName, model: model) }
                 }
-                .disabled(actionsOff)
+                .disabled(actionsOffDevice)
                 if working {
                     // A backup of known size shows a real bar; otherwise the spinner.
                     if action == .backup, let fraction = model.backupFraction[entry.id] {
@@ -224,6 +227,7 @@ struct AppDataTab: View {
             }
             Spacer(minLength: 0)
             Button(L("settings.appData.restore")) { restore(snap) }
+                .disabled(!model.canActOnDevice(entry)) // pushes to the device: needs it present
             Button(L("settings.appData.export")) { run(.export) { await AppDataActions.export(snap, model: model) } }
             Button(L("fiche.data.delete"), role: .destructive) { deleteSnap(snap) }
         }

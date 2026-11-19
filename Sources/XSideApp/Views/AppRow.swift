@@ -11,6 +11,8 @@ struct AppRow: View {
     let canRefresh: Bool
     /// No job runs on the row: it can be uninstalled, paused, resumed or removed from the list.
     let canManage: Bool
+    /// Manageable AND the device is here now: for back up / uninstall, which reach the device at once.
+    let canActOnDevice: Bool
     let isUninstalling: Bool
     /// A data backup, restore or import is running for this row.
     var isDataBusy = false
@@ -96,6 +98,7 @@ struct AppRow: View {
         // VoiceOver can't hover: the menu's actions are actions of the row.
         .accessibilityElement(children: .combine)
         .modifier(RowActions(isPaused: isPaused, canRefresh: canRefresh, canManage: canManage,
+                             canActOnDevice: canActOnDevice,
                              deviceName: deviceName, onRefresh: onRefresh, onUninstall: onUninstall,
                              onStopRefreshing: onStopRefreshing, onResume: onResume,
                              onRemoveFromList: onRemoveFromList))
@@ -122,18 +125,18 @@ struct AppRow: View {
             Divider()
             Button(L("popover.app.uninstallFrom", deviceName), systemImage: "trash", role: .destructive,
                    action: onUninstall)
-                .disabled(!canManage)
+                .disabled(!canActOnDevice)
             Button(L("popover.app.removeFromList"), systemImage: "minus.circle", action: onRemoveFromList)
                 .disabled(!canManage)
         } else {
             Button(L("popover.refreshNow"), systemImage: "arrow.clockwise", action: onRefresh)
                 .disabled(!canRefresh)
             Button(L("menu.backUpNow"), systemImage: "externaldrive.badge.timemachine", action: onBackUpNow)
-                .disabled(!canManage)
+                .disabled(!canActOnDevice)
             Divider()
             Button(L("popover.app.uninstallFrom", deviceName), systemImage: "trash", role: .destructive,
                    action: onUninstall)
-                .disabled(!canManage)
+                .disabled(!canActOnDevice)
             // Like the panel's Pause, for this app alone (device feedback 3, E5).
             Menu {
                 AppPauseDurations(onPause: onPause, onStopRefreshing: onStopRefreshing)
@@ -442,6 +445,7 @@ private struct RowActions: ViewModifier {
     let isPaused: Bool
     let canRefresh: Bool
     let canManage: Bool
+    let canActOnDevice: Bool
     let deviceName: String
     let onRefresh: () -> Void
     let onUninstall: () -> Void
@@ -453,12 +457,12 @@ private struct RowActions: ViewModifier {
         if isPaused {
             content
                 .accessibilityAction(named: L("popover.app.resumeRefreshing")) { if canManage { onResume() } }
-                .accessibilityAction(named: L("popover.app.uninstallFrom", deviceName)) { if canManage { onUninstall() } }
+                .accessibilityAction(named: L("popover.app.uninstallFrom", deviceName)) { if canActOnDevice { onUninstall() } }
                 .accessibilityAction(named: L("popover.app.removeFromList")) { if canManage { onRemoveFromList() } }
         } else {
             content
                 .accessibilityAction(named: L("popover.refreshNow")) { if canRefresh { onRefresh() } }
-                .accessibilityAction(named: L("popover.app.uninstallFrom", deviceName)) { if canManage { onUninstall() } }
+                .accessibilityAction(named: L("popover.app.uninstallFrom", deviceName)) { if canActOnDevice { onUninstall() } }
                 .accessibilityAction(named: L("popover.app.stopRefreshing")) { if canManage { onStopRefreshing() } }
         }
     }
