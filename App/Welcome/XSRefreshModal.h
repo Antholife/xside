@@ -31,4 +31,11 @@ void XSUpdateModalWorking(NSString *title, NSString *_Nullable detail, double fr
 /// otherwise a red cross. For « à jour », « installée », « à regarder sur le Mac ».
 void XSUpdateModalDone(NSString *title, NSString *_Nullable message, BOOL ok);
 
+/// How the phone reaches the Mac right now, so the hero draws the link to match (read from the
+/// channel connection's path: Wi-Fi arcs, or a USB-C cable).
+typedef NS_ENUM(NSInteger, XSLinkKind) { XSLinkUnknown = 0, XSLinkWiFi, XSLinkUSB };
+/// Tell the modal which transport the connection uses. Safe from any thread, any time: it updates a
+/// live modal's hero and is remembered for the next one.
+void XSSetLinkKind(XSLinkKind kind);
+
 NS_ASSUME_NONNULL_END

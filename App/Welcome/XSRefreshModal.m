@@ -13,14 +13,20 @@
 @property (nonatomic, copy, nullable) NSString *titleText;
 @property (nonatomic, copy, nullable) NSString *leadText;
 @property (nonatomic, copy, nullable) void (^offerAction)(void);
+- (void)applyLinkKind:(XSLinkKind)kind;
 @end
 
 @implementation XSRefreshModalController {
     // hero
     UIView *_macNode, *_iphNode, *_link;
-    CAShapeLayer *_baseLine;
-    NSArray<CALayer *> *_dots; // 0,1 forward (violet) ; 2,3 backward (pink)
+    CALayer *_wifiLayer, *_usbLayer;        // the two link styles; one is shown
+    NSArray<CAShapeLayer *> *_fans;          // 6 Wi-Fi arcs: 0-2 iPhone (violet), 3-5 Mac (pink)
+    CALayer *_pulseV, *_pulseP;              // F4: the two crossing data pulses
+    CAShapeLayer *_usbCable; NSArray<CALayer *> *_usbDots; NSArray<CALayer *> *_usbPlugs;
     UIView *_macBadge; UILabel *_macBadgeMark;
+    UIView *_chip; UIImageView *_chipIcon; UILabel *_chipText;
+    XSLinkKind _linkKind;
+    BOOL _connecting;
     // ring
     UIView *_ringBox; CAShapeLayer *_ringTrack, *_ringMask; CAGradientLayer *_ringFill;
     UIActivityIndicatorView *_spinner; CAShapeLayer *_mark; // check / cross
@@ -30,12 +36,15 @@
     double _fraction;
 }
 
-static CGFloat const kRing = 150, kRingW = 8, kNode = 54, kLink = 118;
+static CGFloat const kRing = 150, kRingW = 8, kNode = 54, kLink = 118, kLinkH = 54;
+static XSLinkKind XSLinkCurrent = XSLinkUnknown; // the transport the last channel connection used
 
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = UIColor.systemBackgroundColor;
     BOOL fr = XSFrench();
+
+    UIView *logo = [self buildLogo];
 
     UILabel *kicker = [UILabel new];
     kicker.text = @"XSIDE"; kicker.font = XSScaledFont(11, UIFontWeightHeavy);
@@ -52,6 +61,7 @@ static CGFloat const kRing = 150, kRingW = 8, kNode = 54, kLink = 118;
     _lead.textAlignment = NSTextAlignmentCenter; _lead.numberOfLines = 0;
 
     UIView *hero = [self buildHero];
+    UIView *chip = [self buildChip];
     _ringBox = [self buildRing];
 
     _stepTitle = [UILabel new];
@@ -66,13 +76,15 @@ static CGFloat const kRing = 150, kRingW = 8, kNode = 54, kLink = 118;
     _acts.axis = UILayoutConstraintAxisHorizontal; _acts.spacing = 9; _acts.distribution = UIStackViewDistributionFillEqually;
     _acts.hidden = YES;
 
-    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[kicker, _title, _lead, hero, _ringBox, _stepTitle, _stepSub, _acts]];
+    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[logo, kicker, _title, _lead, hero, chip, _ringBox, _stepTitle, _stepSub, _acts]];
     stack.axis = UILayoutConstraintAxisVertical; stack.alignment = UIStackViewAlignmentCenter;
     stack.translatesAutoresizingMaskIntoConstraints = NO;
+    [stack setCustomSpacing:9 afterView:logo];
     [stack setCustomSpacing:6 afterView:kicker];
     [stack setCustomSpacing:2 afterView:_title];
-    [stack setCustomSpacing:24 afterView:_lead];
-    [stack setCustomSpacing:22 afterView:hero];
+    [stack setCustomSpacing:22 afterView:_lead];
+    [stack setCustomSpacing:14 afterView:hero];
+    [stack setCustomSpacing:18 afterView:chip];
     [stack setCustomSpacing:12 afterView:_ringBox];
     [stack setCustomSpacing:2 afterView:_stepTitle];
     [stack setCustomSpacing:22 afterView:_stepSub];
@@ -105,6 +117,32 @@ static CGFloat const kRing = 150, kRingW = 8, kNode = 54, kLink = 118;
     return v;
 }
 
+/// The XSide app icon, drawn as vectors (no asset to bundle in the host app): a violet rounded
+/// square, a white phone, a yellow pill and the sweeping yellow arrow.
+- (UIView *)buildLogo {
+    CGFloat S = 42, k = S / 44.0;
+    UIView *v = [UIView new]; v.translatesAutoresizingMaskIntoConstraints = NO;
+    [NSLayoutConstraint activateConstraints:@[[v.widthAnchor constraintEqualToConstant:S], [v.heightAnchor constraintEqualToConstant:S]]];
+    UIColor *yellow = [UIColor colorWithRed:0.965 green:0.788 blue:0.271 alpha:1];
+    CAGradientLayer *g = [CAGradientLayer layer]; g.frame = CGRectMake(0, 0, S, S);
+    g.colors = @[(id)[UIColor colorWithRed:0.608 green:0.525 blue:0.941 alpha:1].CGColor, (id)XSViolet().CGColor];
+    g.startPoint = CGPointMake(0, 0); g.endPoint = CGPointMake(1, 1);
+    g.cornerRadius = 11.5 * k; g.cornerCurve = kCACornerCurveContinuous; [v.layer addSublayer:g];
+    CALayer *phone = [CALayer layer]; phone.frame = CGRectMake(15.5*k, 8.5*k, 13*k, 23*k);
+    phone.backgroundColor = UIColor.whiteColor.CGColor; phone.cornerRadius = 5*k; phone.cornerCurve = kCACornerCurveContinuous; [v.layer addSublayer:phone];
+    CALayer *pill = [CALayer layer]; pill.frame = CGRectMake(19.3*k, 11.8*k, 5.4*k, 2.3*k);
+    pill.backgroundColor = yellow.CGColor; pill.cornerRadius = 1.15*k; [v.layer addSublayer:pill];
+    CAShapeLayer *arrow = [CAShapeLayer layer]; arrow.frame = v.bounds;
+    UIBezierPath *ap = [UIBezierPath bezierPath];
+    [ap moveToPoint:CGPointMake(11.5*k, 27*k)]; [ap addQuadCurveToPoint:CGPointMake(32.5*k, 24.5*k) controlPoint:CGPointMake(22*k, 39*k)];
+    arrow.path = ap.CGPath; arrow.fillColor = nil; arrow.strokeColor = yellow.CGColor; arrow.lineWidth = 3.1*k; arrow.lineCap = kCALineCapRound; [v.layer addSublayer:arrow];
+    CAShapeLayer *head = [CAShapeLayer layer]; head.frame = v.bounds;
+    UIBezierPath *hp = [UIBezierPath bezierPath];
+    [hp moveToPoint:CGPointMake(33.8*k, 20*k)]; [hp addLineToPoint:CGPointMake(36.1*k, 26.4*k)]; [hp addLineToPoint:CGPointMake(29.9*k, 24.8*k)]; [hp closePath];
+    head.path = hp.CGPath; head.fillColor = yellow.CGColor; [v.layer addSublayer:head];
+    return v;
+}
+
 - (UIView *)buildHero {
     _iphNode = [self nodeWithSymbol:@"iphone"];
     _macNode = [self nodeWithSymbol:@"laptopcomputer"];
@@ -125,24 +163,89 @@ static CGFloat const kRing = 150, kRingW = 8, kNode = 54, kLink = 118;
         [_macBadgeMark.centerYAnchor constraintEqualToAnchor:_macBadge.centerYAnchor]]];
 
     _link = [UIView new]; _link.translatesAutoresizingMaskIntoConstraints = NO;
-    _baseLine = [CAShapeLayer layer]; _baseLine.strokeColor = UIColor.separatorColor.CGColor;
-    _baseLine.lineWidth = 2; _baseLine.lineCap = kCALineCapRound;
-    [_link.layer addSublayer:_baseLine];
-    NSMutableArray *dots = [NSMutableArray array];
-    for (int i = 0; i < 4; i++) {
-        CALayer *d = [CALayer layer];
-        d.bounds = CGRectMake(0, 0, 7, 7); d.cornerRadius = 3.5;
-        UIColor *c = i < 2 ? XSViolet() : XSPink();
-        d.backgroundColor = c.CGColor; d.shadowColor = c.CGColor; d.shadowRadius = 5; d.shadowOpacity = .9; d.shadowOffset = CGSizeZero;
-        d.opacity = 0; [_link.layer addSublayer:d]; [dots addObject:d];
-    }
-    _dots = dots;
+    _wifiLayer = [CALayer layer]; _wifiLayer.frame = CGRectMake(0, 0, kLink, kLinkH); [_link.layer addSublayer:_wifiLayer];
+    _usbLayer = [CALayer layer]; _usbLayer.frame = CGRectMake(0, 0, kLink, kLinkH); _usbLayer.hidden = YES; [_link.layer addSublayer:_usbLayer];
+    [self buildWifiArt]; [self buildUSBArt];
 
     UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[_iphNode, _link, _macNode]];
     row.alignment = UIStackViewAlignmentCenter; row.spacing = 2;
     [NSLayoutConstraint activateConstraints:@[
-        [_link.widthAnchor constraintEqualToConstant:kLink], [_link.heightAnchor constraintEqualToConstant:36]]];
+        [_link.widthAnchor constraintEqualToConstant:kLink], [_link.heightAnchor constraintEqualToConstant:kLinkH]]];
     return row;
+}
+
+/// Two small Wi-Fi fans hugging each node (violet on the iPhone, pink on the Mac) and two data
+/// pulses that cross in the gap (F4): the transport, as a Wi-Fi signal.
+- (void)buildWifiArt {
+    CGFloat cy = kLinkH / 2;
+    NSMutableArray *fans = [NSMutableArray array];
+    CGFloat centers[2] = {8, kLink - 8};
+    for (int side = 0; side < 2; side++) {
+        CGFloat ox = centers[side];
+        UIColor *c = side == 0 ? XSViolet() : XSPink();
+        CGFloat a0 = side == 0 ? -50 : 130, a1 = side == 0 ? 50 : 230; // degrees, fan points inward
+        CALayer *dot = [CALayer layer]; dot.bounds = CGRectMake(0, 0, 5, 5); dot.cornerRadius = 2.5;
+        dot.position = CGPointMake(ox, cy); dot.backgroundColor = c.CGColor; [_wifiLayer addSublayer:dot];
+        CGFloat radii[3] = {8, 13, 18};
+        for (int i = 0; i < 3; i++) {
+            CAShapeLayer *arc = [CAShapeLayer layer];
+            arc.path = [UIBezierPath bezierPathWithArcCenter:CGPointMake(ox, cy) radius:radii[i]
+                                                  startAngle:a0 * M_PI / 180 endAngle:a1 * M_PI / 180 clockwise:YES].CGPath;
+            arc.fillColor = nil; arc.strokeColor = c.CGColor; arc.lineWidth = 2.6; arc.lineCap = kCALineCapRound; arc.opacity = 0.16;
+            [_wifiLayer addSublayer:arc]; [fans addObject:arc];
+        }
+    }
+    _fans = fans;
+    _pulseV = [self pulseDot:XSViolet() at:CGPointMake(30, cy)];
+    _pulseP = [self pulseDot:XSPink() at:CGPointMake(kLink - 30, cy)];
+    [_wifiLayer addSublayer:_pulseV]; [_wifiLayer addSublayer:_pulseP];
+}
+
+- (CALayer *)pulseDot:(UIColor *)c at:(CGPoint)p {
+    CALayer *d = [CALayer layer]; d.bounds = CGRectMake(0, 0, 8, 8); d.cornerRadius = 4;
+    d.backgroundColor = c.CGColor; d.shadowColor = c.CGColor; d.shadowRadius = 5; d.shadowOpacity = .9; d.shadowOffset = CGSizeZero;
+    d.position = p; d.opacity = 0; return d;
+}
+
+/// A cable with a USB-C connector at each end, and data flowing through it.
+- (void)buildUSBArt {
+    CGFloat cy = kLinkH / 2;
+    UIColor *wire = UIColor.tertiaryLabelColor;
+    _usbCable = [CAShapeLayer layer];
+    UIBezierPath *cp = [UIBezierPath bezierPath]; [cp moveToPoint:CGPointMake(24, cy)]; [cp addLineToPoint:CGPointMake(kLink - 24, cy)];
+    _usbCable.path = cp.CGPath; _usbCable.strokeColor = wire.CGColor; _usbCable.lineWidth = 4; _usbCable.lineCap = kCALineCapRound; [_usbLayer addSublayer:_usbCable];
+    NSMutableArray *plugs = [NSMutableArray array];
+    CGFloat px[2] = {2, kLink - 24};
+    for (int i = 0; i < 2; i++) {
+        CALayer *plug = [CALayer layer]; plug.frame = CGRectMake(px[i], cy - 7, 22, 14);
+        plug.cornerRadius = 7; plug.cornerCurve = kCACornerCurveContinuous; plug.backgroundColor = wire.CGColor;
+        plug.shadowColor = (i == 0 ? XSViolet() : XSPink()).CGColor; plug.shadowRadius = 6; plug.shadowOffset = CGSizeZero; plug.shadowOpacity = 0;
+        CALayer *slot = [CALayer layer]; slot.frame = CGRectMake(4, 3, 14, 8); slot.cornerRadius = 3;
+        slot.backgroundColor = UIColor.systemBackgroundColor.CGColor; [plug addSublayer:slot];
+        [_usbLayer addSublayer:plug]; [plugs addObject:plug];
+    }
+    _usbPlugs = plugs;
+    CALayer *fwd = [self pulseDot:XSViolet() at:CGPointMake(28, cy)]; fwd.bounds = CGRectMake(0, 0, 7, 7); fwd.cornerRadius = 3.5;
+    CALayer *bwd = [self pulseDot:XSPink() at:CGPointMake(kLink - 28, cy)]; bwd.bounds = CGRectMake(0, 0, 7, 7); bwd.cornerRadius = 3.5;
+    [_usbLayer addSublayer:fwd]; [_usbLayer addSublayer:bwd];
+    _usbDots = @[fwd, bwd];
+}
+
+- (UIView *)buildChip {
+    _chip = [UIView new]; _chip.translatesAutoresizingMaskIntoConstraints = NO; _chip.hidden = YES;
+    _chip.backgroundColor = UIColor.secondarySystemBackgroundColor;
+    _chip.layer.cornerRadius = 12; _chip.layer.cornerCurve = kCACornerCurveContinuous;
+    _chipIcon = [UIImageView new]; _chipIcon.translatesAutoresizingMaskIntoConstraints = NO; _chipIcon.contentMode = UIViewContentModeScaleAspectFit;
+    _chipText = [UILabel new]; _chipText.translatesAutoresizingMaskIntoConstraints = NO;
+    _chipText.font = XSScaledFont(12.5, UIFontWeightSemibold);
+    UIStackView *s = [[UIStackView alloc] initWithArrangedSubviews:@[_chipIcon, _chipText]];
+    s.spacing = 5; s.alignment = UIStackViewAlignmentCenter; s.translatesAutoresizingMaskIntoConstraints = NO;
+    [_chip addSubview:s];
+    [NSLayoutConstraint activateConstraints:@[
+        [s.leadingAnchor constraintEqualToAnchor:_chip.leadingAnchor constant:11], [s.trailingAnchor constraintEqualToAnchor:_chip.trailingAnchor constant:-11],
+        [s.topAnchor constraintEqualToAnchor:_chip.topAnchor constant:5], [s.bottomAnchor constraintEqualToAnchor:_chip.bottomAnchor constant:-5],
+        [_chipIcon.widthAnchor constraintEqualToConstant:15], [_chipIcon.heightAnchor constraintEqualToConstant:15]]];
+    return _chip;
 }
 
 - (UIView *)buildRing {
@@ -175,19 +278,65 @@ static CGFloat const kRing = 150, kRingW = 8, kNode = 54, kLink = 118;
 #pragma mark states
 
 - (void)startConnecting {
-    for (int i = 0; i < 4; i++) {
-        CALayer *d = _dots[i]; BOOL fwd = i < 2;
-        CGFloat y = 18; CGFloat x0 = fwd ? 3 : kLink - 3, x1 = fwd ? kLink - 3 : 3;
-        CAKeyframeAnimation *op = [CAKeyframeAnimation animationWithKeyPath:@"opacity"];
-        op.values = @[@0, @1, @1, @0]; op.keyTimes = @[@0, @.15, @.85, @1];
-        CABasicAnimation *mv = [CABasicAnimation animationWithKeyPath:@"position.x"];
-        mv.fromValue = @(x0); mv.toValue = @(x1);
-        CAAnimationGroup *g = [CAAnimationGroup animation];
-        g.animations = @[op, mv]; g.duration = 1.2; g.repeatCount = HUGE_VALF;
-        g.beginTime = CACurrentMediaTime() + (fwd ? (i*0.6) : (0.3 + (i-2)*0.6));
-        d.position = CGPointMake(x1, y); [d addAnimation:g forKey:@"flow"];
-    }
+    _connecting = YES;
+    [self applyLinkKind:XSLinkCurrent];
     [self pulseMac:YES];
+}
+
+/// Switch the hero's link to the transport in use (Wi-Fi arcs or a USB-C cable) and relabel the chip.
+- (void)applyLinkKind:(XSLinkKind)k {
+    _linkKind = k;
+    BOOL usb = (k == XSLinkUSB);
+    _usbLayer.hidden = !usb; _wifiLayer.hidden = usb;
+    NSString *sym = usb ? @"cable.connector" : @"wifi";
+    _chipIcon.image = [UIImage systemImageNamed:sym withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:12 weight:UIImageSymbolWeightSemibold]];
+    _chipIcon.tintColor = usb ? XSPink() : XSViolet();
+    _chipText.text = usb ? @"USB" : @"Wi-Fi"; _chipText.textColor = usb ? XSPink() : XSViolet();
+    _chip.hidden = (k == XSLinkUnknown);
+    if (_connecting) { [self stopLinkAnims]; [self animateLink]; }
+}
+
+- (void)animateLink { if (_linkKind == XSLinkUSB) [self animateUSB]; else [self animateWifi]; }
+
+- (void)animateWifi {
+    for (NSUInteger i = 0; i < _fans.count; i++) {
+        CAKeyframeAnimation *op = [CAKeyframeAnimation animationWithKeyPath:@"opacity"];
+        op.values = @[@0.16, @1, @0.16]; op.keyTimes = @[@0, @0.34, @1];
+        op.duration = 1.5; op.repeatCount = HUGE_VALF;
+        op.beginTime = CACurrentMediaTime() + (i % 3) * 0.16; // inner → outer per side
+        [_fans[i] addAnimation:op forKey:@"wave"];
+    }
+    [self travelDot:_pulseV from:30 to:kLink - 30 begin:0];      // violet iPhone → Mac
+    [self travelDot:_pulseP from:kLink - 30 to:30 begin:0];      // pink Mac → iPhone, they cross
+}
+
+- (void)animateUSB {
+    [self travelDot:_usbDots[0] from:28 to:kLink - 28 begin:0];
+    [self travelDot:_usbDots[1] from:kLink - 28 to:28 begin:0.25];
+    for (NSUInteger i = 0; i < _usbPlugs.count; i++) {
+        CAKeyframeAnimation *gl = [CAKeyframeAnimation animationWithKeyPath:@"shadowOpacity"];
+        gl.values = @[@0, @0.9, @0]; gl.keyTimes = @[@0, @0.5, @1]; gl.duration = 1.3; gl.repeatCount = HUGE_VALF;
+        gl.beginTime = CACurrentMediaTime() + (i == 0 ? 0.1 : 0.7);
+        [_usbPlugs[i] addAnimation:gl forKey:@"glow"];
+    }
+}
+
+- (void)travelDot:(CALayer *)d from:(CGFloat)x0 to:(CGFloat)x1 begin:(CFTimeInterval)b {
+    CGFloat cy = kLinkH / 2;
+    CAKeyframeAnimation *op = [CAKeyframeAnimation animationWithKeyPath:@"opacity"];
+    op.values = @[@0, @1, @1, @0]; op.keyTimes = @[@0, @0.2, @0.8, @1];
+    CABasicAnimation *mv = [CABasicAnimation animationWithKeyPath:@"position.x"]; mv.fromValue = @(x0); mv.toValue = @(x1);
+    CAAnimationGroup *g = [CAAnimationGroup animation]; g.animations = @[op, mv]; g.duration = 1.7; g.repeatCount = HUGE_VALF;
+    g.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+    g.beginTime = CACurrentMediaTime() + b;
+    d.position = CGPointMake(x1, cy); [d addAnimation:g forKey:@"cross"];
+}
+
+- (void)stopLinkAnims {
+    for (CAShapeLayer *a in _fans) [a removeAnimationForKey:@"wave"];
+    [_pulseV removeAnimationForKey:@"cross"]; [_pulseP removeAnimationForKey:@"cross"];
+    for (CALayer *d in _usbDots) [d removeAnimationForKey:@"cross"];
+    for (CALayer *p in _usbPlugs) [p removeAnimationForKey:@"glow"];
 }
 
 - (void)pulseMac:(BOOL)on {
@@ -199,10 +348,10 @@ static CGFloat const kRing = 150, kRingW = 8, kNode = 54, kLink = 118;
 }
 
 - (void)heroConnectedOk:(BOOL)ok {
-    for (CALayer *d in _dots) [d removeAnimationForKey:@"flow"];
+    _connecting = NO;
+    [self stopLinkAnims];
     [self pulseMac:NO];
     UIColor *c = ok ? UIColor.systemGreenColor : UIColor.systemRedColor;
-    _baseLine.strokeColor = c.CGColor;
     _macNode.layer.borderColor = c.CGColor; if (ok) _iphNode.layer.borderColor = c.CGColor;
     _macBadge.backgroundColor = c; _macBadgeMark.text = ok ? @"✓" : @"✕"; _macBadge.hidden = NO;
     _macBadge.transform = CGAffineTransformMakeScale(0.3, 0.3);
@@ -401,4 +550,9 @@ void XSUpdateModalWorking(NSString *title, NSString *detail, double fraction) {
 void XSUpdateModalDone(NSString *title, NSString *message, BOOL ok) {
     if (![NSThread isMainThread]) { dispatch_async(dispatch_get_main_queue(), ^{ XSUpdateModalDone(title, message, ok); }); return; }
     XSRefreshModalController *vc = XSUpdateModalEnsure(); [vc doneTitle:title message:message ok:ok];
+}
+void XSSetLinkKind(XSLinkKind kind) {
+    if (![NSThread isMainThread]) { dispatch_async(dispatch_get_main_queue(), ^{ XSSetLinkKind(kind); }); return; }
+    XSLinkCurrent = kind;
+    [XSModalVC applyLinkKind:kind];
 }
