@@ -314,6 +314,11 @@ extension AppModel {
         }
         phoneOpCancels[installKey] = { waiter.cancel() } // « Annuler » in the modal stops the update
         defer { phoneOpCancels[installKey] = nil }
+        // Claim the job for the whole op (download + install) so the Mac panel shows activity and the
+        // spinner animates throughout, not only once the install's own steps start (Anthony: « aucune
+        // info dans le pannel »). Ref-counted: the install's own claim nests inside this one.
+        claim(installKey, stage: .preparing)
+        defer { release(installKey) }
         // Download first (its %), then the install steps — streamed like a refresh so the modal shows
         // « Signature / Installation… · étape X/Y », not a frozen 100% (Anthony: « ça reste bloqué à
         // 100% au lieu de voir les steps d'install »). The install claims jobs[installKey] once it
@@ -322,10 +327,10 @@ extension AppModel {
         var last: ChannelReply?
         while !box.done {
             let next: ChannelReply?
-            if jobs[installKey] != nil {
-                next = jobProgressFrame(installKey, countBackup: false) // no backup step in an update install
+            if case .step = jobs[installKey] {
+                next = jobProgressFrame(installKey, countBackup: false) // a real install step is running
             } else if let f = updateFraction[key] {
-                next = .update(state: "downloading", percent: max(0, min(100, Int((f * 100).rounded()))))
+                next = .update(state: "downloading", percent: max(0, min(100, Int((f * 100).rounded())))) // still downloading / preparing
             } else {
                 next = nil
             }

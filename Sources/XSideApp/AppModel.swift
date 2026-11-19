@@ -2277,7 +2277,7 @@ final class AppModel {
     /// Held while any row is claimed: no idle sleep, no App Nap in the middle of a job.
     @ObservationIgnored private var jobActivity: (any NSObjectProtocol)?
 
-    private func claim(_ key: JobKey, stage: JobStage = .waiting) {
+    func claim(_ key: JobKey, stage: JobStage = .waiting) {
         claims[key, default: 0] += 1
         refreshResults[key] = nil // a new run: the bar follows it
         if jobs[key] == nil { jobs[key] = stage }
@@ -2287,7 +2287,7 @@ final class AppModel {
         }
     }
 
-    private func release(_ key: JobKey) {
+    func release(_ key: JobKey) {
         let left = (claims[key] ?? 1) - 1
         claims[key] = left > 0 ? left : nil
         if left <= 0 {
