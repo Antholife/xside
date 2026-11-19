@@ -147,24 +147,17 @@ static XSLinkKind XSLinkCurrent = XSLinkUnknown; // the transport the last chann
     _iphNode = [self nodeWithSymbol:@"iphone"];
     _macNode = [self nodeWithSymbol:@"laptopcomputer"];
 
-    // badge on the Mac node (hidden until connected / error)
+    // badge for the Mac node (hidden until connected / error). It is NOT a subview of the node: a
+    // view's layer border draws above its subviews, so the node's own border line showed through the
+    // ✓ (Anthony: « on voit la bordure du cadre dans le check »). Added to the hero row below, above
+    // the node, so nothing of the node renders over it. A background-colour ring sets it off.
     _macBadge = [UIView new]; _macBadge.layer.cornerRadius = 9.5; _macBadge.hidden = YES;
-    // A ring in the background colour around the badge, so its ✓ reads as a solid disc instead of
-    // blending into the (same-coloured) node border behind it (Anthony: « le v est transparent, on
-    // voit la bordure derrière, faut un fond »). Standard iOS badge separation; adapts to dark mode.
     _macBadge.layer.borderWidth = 2; _macBadge.layer.borderColor = UIColor.systemBackgroundColor.CGColor;
     _macBadge.translatesAutoresizingMaskIntoConstraints = NO;
     _macBadgeMark = [UILabel new]; _macBadgeMark.font = [UIFont systemFontOfSize:12 weight:UIFontWeightBold];
     _macBadgeMark.textColor = UIColor.whiteColor; _macBadgeMark.textAlignment = NSTextAlignmentCenter;
     _macBadgeMark.translatesAutoresizingMaskIntoConstraints = NO;
     [_macBadge addSubview:_macBadgeMark];
-    [_macNode addSubview:_macBadge];
-    [NSLayoutConstraint activateConstraints:@[
-        [_macBadge.widthAnchor constraintEqualToConstant:19], [_macBadge.heightAnchor constraintEqualToConstant:19],
-        [_macBadge.trailingAnchor constraintEqualToAnchor:_macNode.trailingAnchor constant:5],
-        [_macBadge.bottomAnchor constraintEqualToAnchor:_macNode.bottomAnchor constant:5],
-        [_macBadgeMark.centerXAnchor constraintEqualToAnchor:_macBadge.centerXAnchor],
-        [_macBadgeMark.centerYAnchor constraintEqualToAnchor:_macBadge.centerYAnchor]]];
 
     _link = [UIView new]; _link.translatesAutoresizingMaskIntoConstraints = NO;
     _wifiLayer = [CALayer layer]; _wifiLayer.frame = CGRectMake(0, 0, kLink, kLinkH); [_link.layer addSublayer:_wifiLayer];
@@ -173,8 +166,14 @@ static XSLinkKind XSLinkCurrent = XSLinkUnknown; // the transport the last chann
 
     UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[_iphNode, _link, _macNode]];
     row.alignment = UIStackViewAlignmentCenter; row.spacing = 2;
+    [row addSubview:_macBadge]; // a plain subview, above the arranged _macNode, so the node border never crosses it
     [NSLayoutConstraint activateConstraints:@[
-        [_link.widthAnchor constraintEqualToConstant:kLink], [_link.heightAnchor constraintEqualToConstant:kLinkH]]];
+        [_link.widthAnchor constraintEqualToConstant:kLink], [_link.heightAnchor constraintEqualToConstant:kLinkH],
+        [_macBadge.widthAnchor constraintEqualToConstant:19], [_macBadge.heightAnchor constraintEqualToConstant:19],
+        [_macBadge.trailingAnchor constraintEqualToAnchor:_macNode.trailingAnchor constant:5],
+        [_macBadge.bottomAnchor constraintEqualToAnchor:_macNode.bottomAnchor constant:5],
+        [_macBadgeMark.centerXAnchor constraintEqualToAnchor:_macBadge.centerXAnchor],
+        [_macBadgeMark.centerYAnchor constraintEqualToAnchor:_macBadge.centerYAnchor]]];
     return row;
 }
 
@@ -538,10 +537,18 @@ void XSRefreshModalStep(NSString *title, NSString *detail, double fraction) {
     if (![NSThread isMainThread]) { dispatch_async(dispatch_get_main_queue(), ^{ XSRefreshModalStep(title, detail, fraction); }); return; }
     [XSModalVC stepTitle:title detail:detail fraction:fraction];
 }
+/// Uppercases the first character of a sentence shown on its own (the reason texts are authored
+/// lowercase to sit inside « X : … » pills, but a modal shows them as a standalone line, Anthony:
+/// « majuscule au début des phrases »). nil-safe.
+static NSString *XSSentenceCase(NSString *s) {
+    if (s.length == 0) return s;
+    return [[[s substringToIndex:1] uppercaseString] stringByAppendingString:[s substringFromIndex:1]];
+}
+
 void XSRefreshModalError(NSString *title, NSString *message, void (^retry)(void)) {
     if (![NSThread isMainThread]) { dispatch_async(dispatch_get_main_queue(), ^{ XSRefreshModalError(title, message, retry); }); return; }
     XSRefreshModalController *vc = XSModalEnsure(NO); // show it even if the request never opened it
-    vc.retry = retry; [vc errorTitle:title message:message];
+    vc.retry = retry; [vc errorTitle:XSSentenceCase(title) message:XSSentenceCase(message)];
 }
 void XSRefreshModalDismiss(void) {
     if (![NSThread isMainThread]) { dispatch_async(dispatch_get_main_queue(), ^{ XSRefreshModalDismiss(); }); return; }
