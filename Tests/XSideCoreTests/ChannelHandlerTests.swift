@@ -24,6 +24,12 @@ import Foundation
         #expect(update == .checkUpdatesRequested)
     }
 
+    @Test func cancelIsAcceptedAndAsksToCancel() {
+        let (reply, update) = ChannelHandler.handle(.cancelRun, installation: installation(), now: now, reminder: true)
+        #expect(reply == .accepted)
+        #expect(update == .cancelRequested)
+    }
+
     @Test func checkUpdatesRequestRoundTrips() throws {
         let env = try ChannelEnvelope.seal(.checkUpdates, installationID: "rec|dev", secret: secret, now: now, nonce: "n1")
         var seen = NonceCache()

@@ -537,7 +537,7 @@ import CryptoKit
 
     @Test func requestsRoundTripAndUseFlatJSON() throws {
         for r in [ChannelRequest.refresh, .setAutoRefresh(true), .checkIn(settings: .defaults(reminder: true, at: now), lastRefresh: nil, appVersion: nil),
-                  .checkUpdates, .installUpdate(tag: "v2.1", asset: "app.ipa"), .restore(backupID: "b-1")] {
+                  .checkUpdates, .installUpdate(tag: "v2.1", asset: "app.ipa"), .restore(backupID: "b-1"), .cancelRun] {
             let body = try ChannelEnvelope.encodeBody(r)
             #expect(try JSONDecoder.channel.decode(ChannelRequest.self, from: body) == r)
         }

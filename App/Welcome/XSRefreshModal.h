@@ -31,6 +31,10 @@ void XSUpdateModalWorking(NSString *title, NSString *_Nullable detail, double fr
 /// otherwise a red cross. For « à jour », « installée », « à regarder sur le Mac ».
 void XSUpdateModalDone(NSString *title, NSString *_Nullable message, BOOL ok);
 
+/// Sets what « Annuler » does during the working phase (nil hides the button): the operation's
+/// exchange passes a block that asks the Mac to cancel. Shown only once the modal is working.
+void XSRefreshModalSetCancel(void (^_Nullable cancel)(void));
+
 /// A plain full-screen modal with a title, a message and a single « OK » button, in XSide's look.
 /// Anthony wanted settings changes shown like the refresh modal, not as a top pill. Its own window,
 /// below the refresh modal's level, so a refresh in progress stays on top. Safe from any thread;

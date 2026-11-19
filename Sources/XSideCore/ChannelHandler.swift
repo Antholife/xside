@@ -21,6 +21,8 @@ public enum InstallationUpdate: Equatable, Sendable {
     case backupRequested
     /// Restore this installation's data from the snapshot with this id (DESTRUCTIVE).
     case restoreRequested(backupID: String)
+    /// Cancel this installation's running operation (refresh or update install), if any.
+    case cancelRequested
 }
 
 /// What became of one received request line (see the wire format in Channel.swift).
@@ -166,6 +168,10 @@ public enum ChannelHandler {
             return (.accepted, .backupRequested)
         case let .restore(backupID):
             return (.accepted, .restoreRequested(backupID: backupID))
+        case .cancelRun:
+            // Best effort: the Mac cancels the running job if there is one; the held op connection
+            // then ends it as cancelled. Always acknowledged.
+            return (.accepted, .cancelRequested)
         case .bye:
             // Only meaningful on a watch (read there, never answered); on its own connection: nothing.
             return (.accepted, .none)

@@ -305,17 +305,19 @@ extension AppModel {
         }
         let entry = AppEntry(record: record, installation: installation)
         let key = Self.updateFractionKey(recordID: recordID, tweakPackageID: nil)
+        let installKey = JobKey(recordID: recordID, deviceID: deviceID)
         let box = ModalInstallBox()
         let waiter = Task { @MainActor in
             box.result = await self.installUpdateNow(entry, tweakPackageID: nil, expectedTag: tag,
                                                      expectedAsset: asset, approved: [.notifyMode, .prerelease])
             box.done = true
         }
+        phoneOpCancels[installKey] = { waiter.cancel() } // « Annuler » in the modal stops the update
+        defer { phoneOpCancels[installKey] = nil }
         // Download first (its %), then the install steps — streamed like a refresh so the modal shows
         // « Signature / Installation… · étape X/Y », not a frozen 100% (Anthony: « ça reste bloqué à
         // 100% au lieu de voir les steps d'install »). The install claims jobs[installKey] once it
         // starts; until then we're still downloading.
-        let installKey = JobKey(recordID: recordID, deviceID: deviceID)
         var last: ChannelReply?
         while !box.done {
             let next: ChannelReply?
@@ -356,6 +358,7 @@ extension AppModel {
     /// « erreur inattendue » (Anthony: « l'installation a encore échoué »). The raw reason is logged.
     private static func updateFailureKey(_ reason: String) -> String {
         let r = reason.lowercased()
+        if r.contains("cancel") { return "cancelled" } // « Annuler » from the modal, surfaced as cancelled
         if r.hasPrefix("download") { return "updateDownloadFailed" }
         if r.hasPrefix("inspect") || r.hasPrefix("analyze") { return "updateFileUnreadable" }
         if r.hasPrefix("install") { return "installFailed" }

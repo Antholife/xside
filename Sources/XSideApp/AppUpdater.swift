@@ -85,6 +85,13 @@ extension AppModel {
         let info: AppInfo
         do {
             try fm.createDirectory(at: work, withIntermediateDirectories: true)
+            #if DEBUG
+            // Debug switch to test the modal's « Réessayer » on a download failure (Anthony): set
+            // XSIDE_FAIL_UPDATE_DOWNLOAD=1 before launching XSide and every update download fails.
+            if ProcessInfo.processInfo.environment["XSIDE_FAIL_UPDATE_DOWNLOAD"] == "1" {
+                throw XSideError.invalidIPA("forced update download failure (XSIDE_FAIL_UPDATE_DOWNLOAD)")
+            }
+            #endif
             try await UpdateApply.downloadAsset(found.asset, kind: .ipa, to: ipa, fetcher: repoFetcher, progress: progress)
         } catch {
             return .failed("download: \(error)")

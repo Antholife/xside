@@ -14,6 +14,8 @@
 @property (nonatomic, copy, nullable) NSString *titleText;
 @property (nonatomic, copy, nullable) NSString *leadText;
 @property (nonatomic, copy, nullable) void (^offerAction)(void);
+/// Set while an operation runs so « Annuler » can stop it; nil hides the button.
+@property (nonatomic, copy, nullable) void (^cancelAction)(void);
 - (void)applyLinkKind:(XSLinkKind)kind;
 @end
 
@@ -34,6 +36,7 @@
     // text
     UILabel *_title, *_lead, *_stepTitle, *_stepSub, *_pct; // _pct: the big % in the ring's centre
     UIStackView *_acts;
+    UIButton *_cancelBtn; // « Annuler » during the working phase
     double _fraction;
 }
 
@@ -82,7 +85,15 @@ static XSLinkKind XSLinkCurrent = XSLinkUnknown; // the transport the last chann
     _acts.axis = UILayoutConstraintAxisHorizontal; _acts.spacing = 9; _acts.distribution = UIStackViewDistributionFillEqually;
     _acts.hidden = YES;
 
-    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[logo, kicker, _title, _lead, hero, chip, _ringBox, _stepTitle, _stepSub, _spinner, _acts]];
+    // « Annuler » during the working phase (hidden otherwise); the exchange sets cancelAction.
+    _cancelBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    [_cancelBtn setTitle:(fr ? @"Annuler" : @"Cancel") forState:UIControlStateNormal];
+    _cancelBtn.titleLabel.font = XSScaledFont(15, UIFontWeightSemibold);
+    _cancelBtn.tintColor = UIColor.secondaryLabelColor;
+    [_cancelBtn addTarget:self action:@selector(tapCancel) forControlEvents:UIControlEventTouchUpInside];
+    _cancelBtn.hidden = YES;
+
+    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[logo, kicker, _title, _lead, hero, chip, _ringBox, _stepTitle, _stepSub, _spinner, _cancelBtn, _acts]];
     stack.axis = UILayoutConstraintAxisVertical; stack.alignment = UIStackViewAlignmentCenter;
     stack.translatesAutoresizingMaskIntoConstraints = NO;
     [stack setCustomSpacing:9 afterView:logo];
@@ -94,7 +105,8 @@ static XSLinkKind XSLinkCurrent = XSLinkUnknown; // the transport the last chann
     [stack setCustomSpacing:12 afterView:_ringBox];
     [stack setCustomSpacing:2 afterView:_stepTitle];
     [stack setCustomSpacing:16 afterView:_stepSub];
-    [stack setCustomSpacing:22 afterView:_spinner];
+    [stack setCustomSpacing:14 afterView:_spinner];
+    [stack setCustomSpacing:22 afterView:_cancelBtn];
     [self.view addSubview:stack];
     // Centred column, capped so it doesn't stretch edge to edge on a wide screen (iPhone Duo:
     // Anthony « c'est pas centré, ça prend toute la width »). On a normal phone the safe-area cap
@@ -374,6 +386,10 @@ static XSLinkKind XSLinkCurrent = XSLinkUnknown; // the transport the last chann
                      animations:^{ self->_macBadge.transform = CGAffineTransformIdentity; } completion:nil];
 }
 
+- (void)showCancel { _cancelBtn.hidden = (self.cancelAction == nil); }
+- (void)hideCancel { _cancelBtn.hidden = YES; }
+- (void)tapCancel { void (^c)(void) = self.cancelAction; _cancelBtn.hidden = YES; if (c) c(); }
+
 - (void)setRing:(double)f {
     _fraction = MAX(0, MIN(1, f));
     [CATransaction begin]; [CATransaction setAnimationDuration:0.5];
@@ -384,7 +400,7 @@ static XSLinkKind XSLinkCurrent = XSLinkUnknown; // the transport the last chann
 - (void)drawMark:(BOOL)ok {
     _connecting = NO;
     [self stopLinkAnims]; // the end: the data stops flowing
-    [_spinner stopAnimating]; _spinner.hidden = YES; _pct.hidden = YES; // the ✓/✕ takes the centre
+    [_spinner stopAnimating]; _spinner.hidden = YES; _pct.hidden = YES; [self hideCancel]; // the ✓/✕ takes the centre
     CGPoint ctr = CGPointMake(kRing/2, kRing/2);
     UIBezierPath *p = [UIBezierPath bezierPath];
     if (ok) { [p moveToPoint:CGPointMake(ctr.x-16, ctr.y+1)]; [p addLineToPoint:CGPointMake(ctr.x-5, ctr.y+12)]; [p addLineToPoint:CGPointMake(ctr.x+17, ctr.y-13)]; }
@@ -403,6 +419,7 @@ static XSLinkKind XSLinkCurrent = XSLinkUnknown; // the transport the last chann
                                       : (fr ? @"Rafraîchissement" : @"Refresh");
     _stepSub.text = fr ? @"L’app va se fermer, rouvre-la ensuite." : @"The app will close, open it again then.";
     _lead.text = @"";
+    [self showCancel];
     // No fake fill: the live steps drive the ring and its centre %. Until the first one, the bottom
     // spinner shows the work.
 }
@@ -449,12 +466,14 @@ static XSLinkKind XSLinkCurrent = XSLinkUnknown; // the transport the last chann
 - (void)workingTitle:(NSString *)t detail:(NSString *)d {
     [self heroConnectedOk:YES];
     _stepTitle.text = t; _stepSub.text = d ?: @""; _lead.text = @"";
+    [self showCancel];
     // The real fraction (download %) drives the ring when it comes; meanwhile the bottom spinner works.
 }
 
 /// An update is available: show it with a primary button (its block) and « Plus tard ».
 - (void)offerTitle:(NSString *)t message:(NSString *)m button:(NSString *)b {
     [self heroConnectedOk:YES];
+    [self hideCancel];
     if (_spinner.isAnimating) { [_spinner stopAnimating]; _spinner.hidden = YES; }
     BOOL fr = XSFrench();
     _stepTitle.text = t; _stepSub.text = m ?: @""; _lead.text = @"";
@@ -572,7 +591,10 @@ void XSUpdateModalOffer(NSString *title, NSString *message, NSString *button, vo
 }
 void XSUpdateModalWorking(NSString *title, NSString *detail, double fraction) {
     if (![NSThread isMainThread]) { dispatch_async(dispatch_get_main_queue(), ^{ XSUpdateModalWorking(title, detail, fraction); }); return; }
-    [XSModalVC workingTitle:title detail:detail]; if (fraction >= 0) [XSModalVC stepTitle:title detail:detail fraction:fraction];
+    // Ensure the modal exists: « Réessayer » dismisses it first, so a retried install must bring it
+    // back (Anthony: « le bouton réessayer marchait pas » — nothing reappeared).
+    XSRefreshModalController *vc = XSUpdateModalEnsure();
+    [vc workingTitle:title detail:detail]; if (fraction >= 0) [vc stepTitle:title detail:detail fraction:fraction];
 }
 void XSUpdateModalDone(NSString *title, NSString *message, BOOL ok) {
     if (![NSThread isMainThread]) { dispatch_async(dispatch_get_main_queue(), ^{ XSUpdateModalDone(title, message, ok); }); return; }
@@ -582,6 +604,10 @@ void XSSetLinkKind(XSLinkKind kind) {
     if (![NSThread isMainThread]) { dispatch_async(dispatch_get_main_queue(), ^{ XSSetLinkKind(kind); }); return; }
     XSLinkCurrent = kind;
     [XSModalVC applyLinkKind:kind];
+}
+void XSRefreshModalSetCancel(void (^cancel)(void)) {
+    if (![NSThread isMainThread]) { dispatch_async(dispatch_get_main_queue(), ^{ XSRefreshModalSetCancel(cancel); }); return; }
+    XSModalVC.cancelAction = cancel; // revealed once the modal enters its working state (showCancel)
 }
 
 #pragma mark - Info modal (a settings change, shown full screen with OK)

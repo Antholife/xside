@@ -180,6 +180,10 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
                previousRun: PreviousRun? = nil)
     /// On a watch, just before the phone closes it as it leaves the foreground: a clean end.
     case bye
+    /// Cancel this installation's operation running right now (a refresh or an update install the
+    /// phone started): the Mac stops the job, which ends as cancelled. Sent on its own connection
+    /// while the operation's held connection is still streaming (Anthony: « annuler depuis la modale »).
+    case cancelRun
 
     private enum CodingKeys: String, CodingKey {
         case type, settings, lastRefresh, appVersion, pollEvery, on, saysBye, previousRunEnded, previousRunSince, backupID, tag, asset
@@ -201,6 +205,7 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
                           saysBye: try c.decodeIfPresent(Bool.self, forKey: .saysBye) ?? false,
                           previousRun: try PreviousRun.decode(from: c))
         case "bye": self = .bye
+        case "cancel": self = .cancelRun
         case "refresh": self = .refresh
         case "checkUpdates": self = .checkUpdates
         case "installUpdate": self = .installUpdate(tag: try c.decode(String.self, forKey: .tag), asset: try c.decode(String.self, forKey: .asset))
@@ -230,6 +235,7 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
             if saysBye { try c.encode(true, forKey: .saysBye) }
             try previousRun?.encode(into: &c)
         case .bye: try c.encode("bye", forKey: .type)
+        case .cancelRun: try c.encode("cancel", forKey: .type)
         case .refresh: try c.encode("refresh", forKey: .type)
         case .checkUpdates: try c.encode("checkUpdates", forKey: .type)
         case let .installUpdate(tag, asset):
@@ -250,7 +256,7 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
     public var checkInReport: (settings: InAppSettings, lastRefresh: RefreshOutcome?)? {
         switch self {
         case let .checkIn(settings, lastRefresh, _, _, _), let .watch(settings, lastRefresh, _, _, _): (settings, lastRefresh)
-        case .refresh, .checkUpdates, .installUpdate, .backupNow, .restore, .setAutoRefresh, .bye: nil
+        case .refresh, .checkUpdates, .installUpdate, .backupNow, .restore, .setAutoRefresh, .bye, .cancelRun: nil
         }
     }
 
@@ -258,7 +264,7 @@ public enum ChannelRequest: Codable, Equatable, Sendable {
     public var previousRun: PreviousRun? {
         switch self {
         case let .checkIn(_, _, _, _, run), let .watch(_, _, _, _, run): run
-        case .refresh, .checkUpdates, .installUpdate, .backupNow, .restore, .setAutoRefresh, .bye: nil
+        case .refresh, .checkUpdates, .installUpdate, .backupNow, .restore, .setAutoRefresh, .bye, .cancelRun: nil
         }
     }
 

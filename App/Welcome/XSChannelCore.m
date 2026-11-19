@@ -73,6 +73,8 @@ NSData *XSSealRequest(NSDictionary *body, NSString *installationID, NSData *secr
 
 NSDictionary *XSRefreshBody(void) { return @{@"type": @"refresh"}; }
 
+NSDictionary *XSCancelBody(void) { return @{@"type": @"cancel"}; }
+
 NSDictionary *XSCheckUpdatesBody(void) { return @{@"type": @"checkUpdates"}; }
 
 NSDictionary *XSInstallUpdateBody(NSString *tag, NSString *asset) {

@@ -30,6 +30,8 @@ NSData *_Nullable XSSealRequest(NSDictionary *body, NSString *installationID, NS
 
 /// Bodies of the three requests.
 NSDictionary *XSRefreshBody(void);
+/// Cancel the installation's running operation (refresh or update install), sent from the modal.
+NSDictionary *XSCancelBody(void);
 NSDictionary *XSCheckUpdatesBody(void);
 NSDictionary *XSInstallUpdateBody(NSString *tag, NSString *asset);
 NSDictionary *XSBackupNowBody(void);

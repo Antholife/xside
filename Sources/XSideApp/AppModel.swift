@@ -168,6 +168,10 @@ final class AppModel {
     private(set) var appIDReleases: [Date] = []
     /// Current step of each running install/refresh, per app row.
     private(set) var jobs: [JobKey: JobStage] = [:]
+    /// How to cancel a phone-started operation (refresh or update install) while it runs, keyed by
+    /// the installation, so a `.cancelRequested` from the modal can stop it. Set when the held
+    /// connection starts streaming, cleared when it ends.
+    @ObservationIgnored var phoneOpCancels: [JobKey: () -> Void] = [:]
     /// Running background auto-install tasks, so the « Mises à jour » tab can cancel one.
     @ObservationIgnored var autoInstallTasks: [JobKey: Task<Applied, Never>] = [:]
     /// Entries (`AppEntry.id`) with a backup, restore or import running: the fiche shows a spinner.
@@ -1557,6 +1561,8 @@ final class AppModel {
                 // Slice 2: stream the live step to the phone's refresh modal while the pipeline runs,
                 // then the outcome. Every write stays in THIS task so the lines stay ordered; a
                 // background waiter only flips the box when the outcome (or the 2-min wait) is in.
+                phoneOpCancels[key] = { task.cancel() } // « Annuler » in the modal stops this refresh
+                defer { phoneOpCancels[key] = nil }
                 let box = RefreshOutcomeBox()
                 let waiter = Task { @MainActor in box.outcome = await self.waitForOutcome(task); box.done = true }
                 var last: ChannelReply?
@@ -1605,6 +1611,12 @@ final class AppModel {
                     Task { [weak self] in _ = await self?.restore(snap, entry) }
                 }
             }
+            await reply(.accepted)
+        case .cancelRequested:
+            Self.channelLogger.notice("channel: cancel asked for \(found.recordID) from \(job.deviceID)")
+            // Stop the running phone operation (refresh or update install) for this installation, if
+            // any; its held connection then ends it as cancelled. No-op when nothing is running.
+            phoneOpCancels[JobKey(recordID: job.recordID, deviceID: job.deviceID)]?()
             await reply(.accepted)
         }
     }
@@ -1746,6 +1758,7 @@ final class AppModel {
         case .backupNow: "backup-now"
         case .restore(let id): "restore \(id)"
         case .setAutoRefresh(let on): "automatic refresh \(on ? "on" : "off")"
+        case .cancelRun: "cancel"
         }
     }
 
