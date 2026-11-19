@@ -999,8 +999,9 @@ static void XSStartRefreshExchange(void) {
             NSString *name = XSRefreshStepName(stage, french);
             double stepFrac = pct ? pct.doubleValue / 100.0 : 0.5;
             double overall = ((idx - 1) + stepFrac) / total;
+            // The overall % now sits big in the ring's centre (XSRefreshModal); the sub just numbers
+            // the step, so the two don't show two different numbers.
             NSString *sub = [NSString stringWithFormat:(french ? @"Étape %d/%d" : @"Step %d/%d"), idx, total];
-            if (pct) sub = [sub stringByAppendingFormat:@" · %d%%", pct.intValue];
             XSRefreshModalStep(name, sub, overall);
         } else if ([type isEqual:@"refreshed"]) {
             XSRecordRefresh(YES, nil, NSDate.date); // the new app replaces this one right after

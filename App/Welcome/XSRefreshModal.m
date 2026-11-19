@@ -32,7 +32,7 @@
     UIView *_ringBox; CAShapeLayer *_ringTrack, *_ringMask; CAGradientLayer *_ringFill;
     UIActivityIndicatorView *_spinner; CAShapeLayer *_mark; // check / cross
     // text
-    UILabel *_title, *_lead, *_stepTitle, *_stepSub;
+    UILabel *_title, *_lead, *_stepTitle, *_stepSub, *_pct; // _pct: the big % in the ring's centre
     UIStackView *_acts;
     double _fraction;
 }
@@ -73,11 +73,16 @@ static XSLinkKind XSLinkCurrent = XSLinkUnknown; // the transport the last chann
     _stepSub.textAlignment = NSTextAlignmentCenter; _stepSub.numberOfLines = 0;
     _stepSub.text = fr ? @"Réseau local…" : @"Local network…";
 
+    // The work spinner now lives under the step texts (Anthony: « le spinner en bas »); the ring's
+    // centre shows the big % instead.
+    _spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+    _spinner.color = XSViolet(); [_spinner startAnimating];
+
     _acts = [[UIStackView alloc] initWithArrangedSubviews:@[]];
     _acts.axis = UILayoutConstraintAxisHorizontal; _acts.spacing = 9; _acts.distribution = UIStackViewDistributionFillEqually;
     _acts.hidden = YES;
 
-    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[logo, kicker, _title, _lead, hero, chip, _ringBox, _stepTitle, _stepSub, _acts]];
+    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[logo, kicker, _title, _lead, hero, chip, _ringBox, _stepTitle, _stepSub, _spinner, _acts]];
     stack.axis = UILayoutConstraintAxisVertical; stack.alignment = UIStackViewAlignmentCenter;
     stack.translatesAutoresizingMaskIntoConstraints = NO;
     [stack setCustomSpacing:9 afterView:logo];
@@ -88,7 +93,8 @@ static XSLinkKind XSLinkCurrent = XSLinkUnknown; // the transport the last chann
     [stack setCustomSpacing:18 afterView:chip];
     [stack setCustomSpacing:12 afterView:_ringBox];
     [stack setCustomSpacing:2 afterView:_stepTitle];
-    [stack setCustomSpacing:22 afterView:_stepSub];
+    [stack setCustomSpacing:16 afterView:_stepSub];
+    [stack setCustomSpacing:22 afterView:_spinner];
     [self.view addSubview:stack];
     [NSLayoutConstraint activateConstraints:@[
         [stack.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor],
@@ -259,10 +265,11 @@ static XSLinkKind XSLinkCurrent = XSLinkUnknown; // the transport the last chann
     _ringMask.strokeEnd = 0; _ringFill.mask = _ringMask;
     [box.layer addSublayer:_ringFill];
 
-    _spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleLarge];
-    _spinner.color = XSViolet(); _spinner.translatesAutoresizingMaskIntoConstraints = NO; [_spinner startAnimating];
-    [box addSubview:_spinner];
-    [NSLayoutConstraint activateConstraints:@[[_spinner.centerXAnchor constraintEqualToAnchor:box.centerXAnchor], [_spinner.centerYAnchor constraintEqualToAnchor:box.centerYAnchor]]];
+    _pct = [UILabel new]; _pct.translatesAutoresizingMaskIntoConstraints = NO;
+    _pct.font = [UIFont monospacedDigitSystemFontOfSize:40 weight:UIFontWeightBold];
+    _pct.textColor = UIColor.labelColor; _pct.textAlignment = NSTextAlignmentCenter; _pct.hidden = YES;
+    [box addSubview:_pct];
+    [NSLayoutConstraint activateConstraints:@[[_pct.centerXAnchor constraintEqualToAnchor:box.centerXAnchor], [_pct.centerYAnchor constraintEqualToAnchor:box.centerYAnchor]]];
     _mark = [CAShapeLayer layer]; _mark.frame = box.bounds; _mark.fillColor = nil; _mark.lineWidth = 3;
     _mark.lineCap = kCALineCapRound; _mark.lineJoin = kCALineJoinRound; _mark.strokeEnd = 0;
     [box.layer addSublayer:_mark];
@@ -357,12 +364,13 @@ static XSLinkKind XSLinkCurrent = XSLinkUnknown; // the transport the last chann
     _fraction = MAX(0, MIN(1, f));
     [CATransaction begin]; [CATransaction setAnimationDuration:0.5];
     _ringMask.strokeEnd = _fraction; [CATransaction commit];
+    _pct.hidden = NO; _pct.text = [NSString stringWithFormat:@"%d%%", (int)lround(_fraction * 100)];
 }
 
 - (void)drawMark:(BOOL)ok {
     _connecting = NO;
     [self stopLinkAnims]; // the end: the data stops flowing
-    [_spinner stopAnimating]; _spinner.hidden = YES;
+    [_spinner stopAnimating]; _spinner.hidden = YES; _pct.hidden = YES; // the ✓/✕ takes the centre
     CGPoint ctr = CGPointMake(kRing/2, kRing/2);
     UIBezierPath *p = [UIBezierPath bezierPath];
     if (ok) { [p moveToPoint:CGPointMake(ctr.x-16, ctr.y+1)]; [p addLineToPoint:CGPointMake(ctr.x-5, ctr.y+12)]; [p addLineToPoint:CGPointMake(ctr.x+17, ctr.y-13)]; }
@@ -381,12 +389,13 @@ static XSLinkKind XSLinkCurrent = XSLinkUnknown; // the transport the last chann
                                       : (fr ? @"Rafraîchissement" : @"Refresh");
     _stepSub.text = fr ? @"L’app va se fermer, rouvre-la ensuite." : @"The app will close, open it again then.";
     _lead.text = @"";
-    [self setRing:0.9];
+    // No fake fill: the live steps drive the ring and its centre %. Until the first one, the bottom
+    // spinner shows the work.
 }
 
 - (void)stepTitle:(NSString *)t detail:(NSString *)d fraction:(double)f {
     if (t) _stepTitle.text = t; _stepSub.text = d ?: @"";
-    if (f >= 0) { if (_spinner.isAnimating) { [_spinner stopAnimating]; _spinner.hidden = YES; } [self setRing:f]; }
+    if (f >= 0) [self setRing:f]; // the spinner stays, spinning at the bottom, until the end
 }
 
 - (void)errorTitle:(NSString *)t message:(NSString *)m {
@@ -426,7 +435,7 @@ static XSLinkKind XSLinkCurrent = XSLinkUnknown; // the transport the last chann
 - (void)workingTitle:(NSString *)t detail:(NSString *)d {
     [self heroConnectedOk:YES];
     _stepTitle.text = t; _stepSub.text = d ?: @""; _lead.text = @"";
-    [self setRing:0.9];
+    // The real fraction (download %) drives the ring when it comes; meanwhile the bottom spinner works.
 }
 
 /// An update is available: show it with a primary button (its block) and « Plus tard ».
