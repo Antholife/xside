@@ -18,12 +18,20 @@ extension SettingsSection {
                              connection: String = "—", lastRefresh: String = "—", releaseTag: String? = nil,
                              xsideVersion: String? = nil,
                              inApp: InAppSettings? = nil, updateRepo: String? = nil,
-                             updateFrequency: UpdateFrequency = .global, customFrequencyLabel: String? = nil,
+                             updateFrequency: UpdateFrequency = .global, customFrequencyLabels: [String: String] = [:],
                              dataBackups: [(id: String, label: String)] = [],
                              language: String = "en") -> SettingsSection {
         let s = inApp ?? InAppSettings.defaults(reminder: true, at: Date())
         let p = SettingsBundle.keyPrefix
         func title(_ name: String) -> String { p + "title." + name }
+        // The « custom » frequency title carries a dynamic interval, so it can't be a static key in
+        // `texts`. Inject it per language into the strings table under its own key, so iOS shows it in
+        // the DEVICE's language (not the Mac's): Anthony saw « Custom » on a French phone. With no
+        // labels given, fall back to the static « Personnalisé » key.
+        let customFreqKey = p + "updateFrequency.customValue"
+        let customFreqTitleKey = customFrequencyLabels.isEmpty ? (p + "updateFrequency.custom") : customFreqKey
+        var bundleStrings = texts
+        for (lang, label) in customFrequencyLabels { bundleStrings[lang, default: [:]][customFreqKey] = label }
         func choice(_ name: String, _ values: [String], _ current: String) -> Row {
             .choice(titleKey: title(name), key: name, titleKeys: values.map { p + "\(name).\($0)" },
                     values: values, defaultValue: current)
@@ -40,7 +48,7 @@ extension SettingsSection {
             }
             let page = SettingsSection(titleKey: title("menu." + name),
                                        footerKey: items.first.map { p + "footer." + $0.footer },
-                                       rows: rows, strings: texts)
+                                       rows: rows, strings: bundleStrings)
             return .childPane(titleKey: title("menu." + name), key: "pane." + name, fileSuffix: name, page: page)
         }
         func toggle(_ name: String, _ key: String, _ on: Bool) -> Row { .toggle(titleKey: title(name), key: key, defaultValue: on) }
@@ -73,7 +81,7 @@ extension SettingsSection {
             // Mac wrote (« 4 sem. ») or « Personnalisé ».
             let freqValues = UpdateFrequency.choices.map(\.rawValue) + ["custom"]
             let freqTitles = UpdateFrequency.choices.map { p + "updateFrequency.\($0.rawValue)" }
-                + [customFrequencyLabel ?? (p + "updateFrequency.custom")]
+                + [customFreqTitleKey]
             let frequencyRow: Row = .choice(titleKey: title("updateFrequency"), key: "updateFrequency",
                                             titleKeys: freqTitles, values: freqValues, defaultValue: updateFrequency.rawValue)
             return pane("updates", [
@@ -118,7 +126,7 @@ extension SettingsSection {
         // No note under « Statut » (Anthony: « enlève le texte sous Statut »); the per-option footers
         // already say when each change is taken into account.
         let menu = SettingsSection(titleKey: title("group"), footerKey: nil,
-                                   rows: [statusPage] + rest, strings: texts)
+                                   rows: [statusPage] + rest, strings: bundleStrings)
         return menu.plainText(in: language)
     }
 

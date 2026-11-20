@@ -29,6 +29,18 @@ enum IntervalLabel {
         return "\(m) min"
     }
 
+    /// Language-explicit variant, for strings baked into the iOS Settings bundle where the device's
+    /// language (not the Mac's) must decide: the Mac writes both so iOS picks the right one.
+    static func short(_ seconds: TimeInterval, french: Bool) -> String {
+        guard seconds > 0 else { return french ? "Jamais (manuel)" : "Never (manual)" }
+        let m = Int((seconds / 60).rounded())
+        if m % (60 * 24 * 30) == 0 { return "\(m / (60 * 24 * 30)) \(french ? "mois" : "mo")" }
+        if m % (60 * 24 * 7) == 0 { let w = m / (60 * 24 * 7); return french ? "\(w) sem." : "\(w) wk" }
+        if m % (60 * 24) == 0 { return "\(m / (60 * 24)) \(french ? "j" : "d")" }
+        if m % 60 == 0 { return "\(m / 60) h" }
+        return "\(m) min"
+    }
+
     /// The largest unit that divides the interval evenly, for seeding the custom editor.
     static func decompose(_ seconds: TimeInterval) -> (value: Int, unit: IntervalUnit) {
         let s = max(seconds, 60)

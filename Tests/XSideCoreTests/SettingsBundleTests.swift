@@ -372,7 +372,8 @@ struct SettingsBundleTests {
         let app = try makeApp()
         let section = SettingsSection.xside(validUntil: "12 nov.", refreshedOn: "5 nov.", version: "1.2", installedOn: "1 nov.",
                                             inApp: InAppSettings.defaults(reminder: false, at: Date(timeIntervalSince1970: 0)),
-                                            updateRepo: "o/r", updateFrequency: .custom, customFrequencyLabel: "90 min", language: "fr")
+                                            updateRepo: "o/r", updateFrequency: .custom,
+                                            customFrequencyLabels: ["fr": "Personnalisé : 90 min", "en": "Custom: 90 min"], language: "fr")
         try SettingsBundle.add(section, to: app)
         let updates = try subpage(app, "updates")
         let freq = try #require(updates.first { $0["Key"] as? String == "io.github.xside.settings.updateFrequency" })
@@ -380,9 +381,9 @@ struct SettingsBundleTests {
         #expect(freq["DefaultValue"] as? String == "custom")
         let values = try #require(freq["Values"] as? [String])
         #expect(values.last == "custom")
-        // The custom option's title is the interval the Mac wrote.
+        // The custom option's title resolves to the device-language label (fr here).
         let titles = try #require(freq["Titles"] as? [String])
-        #expect(titles.last == "90 min")
+        #expect(titles.last == "Personnalisé : 90 min")
     }
 
     /// No source: no « Mises à jour » row and no plist for it.
