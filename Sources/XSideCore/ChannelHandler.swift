@@ -305,6 +305,14 @@ extension Installation {
             result.lastDeviceRefreshWasRetry = current.lastDeviceRefreshWasRetry
         }
         if let edit = current.lastMacEdit, edit > (lastMacEdit ?? .distantPast) { result.lastMacEdit = edit }
+        // The installed-release baseline is per device and must survive a re-sign: a refresh builds the
+        // signed installation without it, so without this it dropped to nil and the load-time backfill
+        // then refilled it from the SHARED source — every device ended up on the source's tag (Anthony:
+        // « ça dit 1.1.8 sous l'iPhone comme l'iPad »). An update/reinstall sets the new tag separately
+        // (setInstalledRelease), after, so keeping the current one here never blocks a real change.
+        result.installedTag = installedTag ?? current.installedTag
+        result.installedName = installedName ?? current.installedName
+        result.installedTrigger = installedTrigger ?? current.installedTrigger
         // A choice, not an outcome: the stored one stands (it may have changed during the job).
         result.withoutXSideFeaturesHere = current.withoutXSideFeaturesHere
         if let auto = result.inApp?.autoRefresh {

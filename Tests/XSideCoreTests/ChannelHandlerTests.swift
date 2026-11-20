@@ -424,6 +424,19 @@ import Foundation
         let plain = result.keepingChannelState(of: installation(inApp: signed))
         #expect(!plain.refreshPaused && plain.pausedBy == nil && plain.inApp == signed)
     }
+
+    @Test func keepsTheInstalledBaselineAcrossAReSign() {
+        // The signed installation is built without a baseline; a re-sign (refresh) must keep the stored
+        // one, or the load-time backfill refills it from the shared source and every device ends on the
+        // source's tag (Anthony: « 1.1.8 sous l'iPhone comme l'iPad »).
+        let signed = installation() // installedTag nil, as the pipeline builds it
+        var current = installation()
+        current.installedTag = "v1.1.5"; current.installedName = "YTKACE v1.1.5"; current.installedTrigger = "trig"
+        let merged = signed.keepingChannelState(of: current)
+        #expect(merged.installedTag == "v1.1.5")
+        #expect(merged.installedName == "YTKACE v1.1.5")
+        #expect(merged.installedTrigger == "trig")
+    }
 }
 
 @Suite struct ChannelLibraryTests {
