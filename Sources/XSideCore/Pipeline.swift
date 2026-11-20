@@ -778,7 +778,10 @@ public actor SideloadPipeline {
             firstInstalledAt: previous.map { $0.firstInstalledAt ?? $0.installedAt } ?? date,
             appVersion: appVersion,
             lastRefreshOutcome: RefreshOutcome(at: date, succeeded: true),
-            lastCheckIn: previous?.lastCheckIn, signedAt: date, updateSource: updateSource, backups: backups)
+            lastCheckIn: previous?.lastCheckIn, signedAt: date, updateSource: updateSource, backups: backups,
+            // The device's own baseline (set after a previous install/update), shown in the phone's
+            // Status instead of the source's shared value.
+            installedTag: previous?.installedTag, installedName: previous?.installedName)
         facts.macEdited = macEdited
         return facts
     }

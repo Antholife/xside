@@ -339,10 +339,16 @@ public struct InstallationFacts: Sendable, Equatable {
     /// The data snapshots XSide keeps for this installation, newest first: the phone's « Données »
     /// page shows them and lets one be picked to restore.
     public var backups: [BackupSnapshot] = []
+    /// The release THIS device is on (the per-device update baseline), shown in the phone's Status
+    /// instead of the source's shared value. nil falls back to `updateSource.installedTag` (a fresh
+    /// install hasn't set it yet). Carried from the previous installation at signing.
+    public var installedTag: String?
+    public var installedName: String?
 
     public init(installationID: String, channelSecret: Data, inApp: InAppSettings, firstInstalledAt: Date,
                 appVersion: String?, lastRefreshOutcome: RefreshOutcome?, lastCheckIn: Date?, signedAt: Date? = nil,
-                updateSource: UpdateSource? = nil, backups: [BackupSnapshot] = []) {
+                updateSource: UpdateSource? = nil, backups: [BackupSnapshot] = [],
+                installedTag: String? = nil, installedName: String? = nil) {
         self.installationID = installationID
         self.channelSecret = channelSecret
         self.inApp = inApp
@@ -352,5 +358,7 @@ public struct InstallationFacts: Sendable, Equatable {
         self.lastCheckIn = lastCheckIn
         self.signedAt = signedAt
         self.updateSource = updateSource
+        self.installedTag = installedTag
+        self.installedName = installedName
     }
 }
