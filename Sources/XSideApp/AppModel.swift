@@ -446,10 +446,11 @@ final class AppModel {
             xsideVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
             inApp: facts?.inApp ?? inAppDefaults(at: now),
             updateRepo: facts?.updateSource.map { "\($0.repo.owner)/\($0.repo.repo)" },
-            updateFrequency: facts?.updateSource.map { UpdateFrequency.from($0.checkInterval) } ?? .global,
-            customFrequencyLabel: facts?.updateSource.flatMap {
-                UpdateFrequency.from($0.checkInterval) == .custom ? $0.checkInterval.map(IntervalLabel.short) : nil
-            },
+            // Per device: this device's own frequency (its inApp). A custom interval's label still
+            // comes from the source (the per-device field only names the preset).
+            updateFrequency: facts?.inApp.updateFrequency.value ?? .global,
+            customFrequencyLabel: (facts?.inApp.updateFrequency.value == .custom)
+                ? facts?.updateSource?.checkInterval.map(IntervalLabel.short) : nil,
             dataBackups: (facts?.backups ?? []).map { snap in
                 (id: snap.id, label: snap.createdAt.formatted(style) + (snap.appVersion.map { " (v\($0))" } ?? ""))
             },
@@ -1704,7 +1705,7 @@ final class AppModel {
                                       includingLegacy32: entry.record.legacy32 == true,
                                       includingICloud: installation.iCloudSignedOut == true,
                                       includingTweaks: !installation.enabledTweakIDs.isEmpty,
-                                      includingBackup: countBackup && entry.record.options.backupData != false)
+                                      includingBackup: countBackup && (entry.installation.inApp?.backupData.value ?? (entry.record.options.backupData != false)))
         let timeline = StepTimeline(steps: steps, stage: jobs[key])
         return (timeline.position, timeline.total)
     }
@@ -3253,10 +3254,18 @@ final class AppModel {
         }
     }
 
-    /// Per-app switches (nil = on): « Sauvegarder les données » and « Inclure les caches ».
-    func setBackupData(_ on: Bool, for entry: AppEntry) async { await updateOptions(entry) { $0.backupData = on } }
-    func setBackupBeforeUpdate(_ on: Bool, for entry: AppEntry) async { await updateOptions(entry) { $0.backupBeforeUpdate = on } }
-    func setBackupCaches(_ on: Bool, for entry: AppEntry) async { await updateOptions(entry) { $0.backupCaches = on } }
+    /// Per-DEVICE switches now (Anthony): « Sauvegarder les données », « Inclure les caches » and
+    /// « Sauvegarder avant une mise à jour » are each device's own, on its installation's inApp, so a
+    /// change here doesn't touch another device. (record.options stays the default for new installs.)
+    func setBackupData(_ on: Bool, for entry: AppEntry) async {
+        await editInApp(entry.id) { $0.setting(\.backupData, to: on, at: Date(), by: .mac) }
+    }
+    func setBackupBeforeUpdate(_ on: Bool, for entry: AppEntry) async {
+        await editInApp(entry.id) { $0.setting(\.backupBeforeUpdate, to: on, at: Date(), by: .mac) }
+    }
+    func setBackupCaches(_ on: Bool, for entry: AppEntry) async {
+        await editInApp(entry.id) { $0.setting(\.backupCaches, to: on, at: Date(), by: .mac) }
+    }
 
     private func updateOptions(_ entry: AppEntry, _ change: (inout InstallOptions) -> Void) async {
         guard var options = records.first(where: { $0.id == entry.record.id })?.options else { return }

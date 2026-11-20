@@ -75,6 +75,16 @@ extension AppModel {
         return targets
     }
 
+    /// The check cadence for a target: this device's own frequency (its inApp) now, falling back to
+    /// the source's shared interval (a tweak, or a device with no inApp yet). The last-check time
+    /// stays shared on the source (one look at the one repo).
+    private func targetCheckInterval(_ target: UpdateTarget) -> TimeInterval? {
+        if target.tweak == nil, let freq = target.device?.inApp?.updateFrequency.value {
+            return freq.checkInterval(current: target.source?.checkInterval)
+        }
+        return target.source?.checkInterval
+    }
+
     /// The daily pass (the engine ticks it): once per `UpdateSchedule.interval`, looks at every app
     /// and tweak with a GitHub source, installs a stable release of those on auto, and notifies the
     /// rest. Runs as a task; one failing source never stops the others. A variant to choose is
@@ -98,11 +108,12 @@ extension AppModel {
         let globalDefault = Self.updateCheckInterval
         // Each source on its own cadence (per-app override, else the global default; « never » is skipped).
         let due = records.flatMap(updateTargets(of:)).filter { target in
+            let cadence = targetCheckInterval(target) // per device now (its frequency), else the source's
             // "At refresh" sources are not on the time cadence: they are checked when the app refreshes.
-            if UpdateSchedule.checksAtRefresh(target.source?.checkInterval, default: globalDefault) { return false }
+            if UpdateSchedule.checksAtRefresh(cadence, default: globalDefault) { return false }
             let interval = Self.fastUpdateCadence
-                ? max(target.source?.checkInterval ?? globalDefault, 20) // debug: honor short intervals
-                : UpdateSchedule.effectiveInterval(target.source?.checkInterval, default: globalDefault)
+                ? max(cadence ?? globalDefault, 20) // debug: honor short intervals
+                : UpdateSchedule.effectiveInterval(cadence, default: globalDefault)
             return UpdateSchedule.isDue(lastChecked: target.source?.lastCheckedAt, interval: interval, now: now)
         }
         guard !due.isEmpty else { return }
@@ -129,7 +140,7 @@ extension AppModel {
         guard hasLoadedRecords, !updateCheckRunning, let record = records.first(where: { $0.id == recordID }) else { return }
         let globalDefault = Self.updateCheckInterval
         let targets = updateTargets(of: record).filter {
-            UpdateSchedule.checksAtRefresh($0.source?.checkInterval, default: globalDefault)
+            UpdateSchedule.checksAtRefresh(targetCheckInterval($0), default: globalDefault)
         }
         guard !targets.isEmpty else { return }
         Task { [weak self] in
@@ -266,7 +277,7 @@ extension AppModel {
         case .upToDate: return .upToDate
         case .needsVariantChoice: return .needsVariantChoice
         case .failed(let reason): return .failed(reason)
-        case .available(let found, let version, let stable):
+        case .available(let found, _, let stable):
             // The release changed since the card: nothing installs under the earlier approval.
             guard found.tag == expectedTag, found.asset.name == expectedAsset else {
                 return .changed
@@ -431,7 +442,10 @@ extension AppModel {
             return .failed(reason)
         case .available(let found, let version, let stable):
             var result = UpdateCheckResult.available(version: version, reason: stable ? .notifyMode : .prerelease, tag: found.tag, asset: found.asset.name)
-            let auto = stable && target.source?.mode == .auto
+            // Per device: this device's own « notify / auto » (its inApp), falling back to the source's
+            // shared default for a tweak or a device with no inApp yet.
+            let deviceMode = target.device?.inApp?.updateMode.value ?? target.source?.mode
+            let auto = stable && deviceMode == .auto
             if auto, let device = autoUpdateDevice(for: target) {
                 // Report progress so the « Mises à jour » tab shows it, and notify so a tap goes there.
                 let key = Self.updateFractionKey(recordID: target.record.id, tweakPackageID: target.tweak?.packageID)

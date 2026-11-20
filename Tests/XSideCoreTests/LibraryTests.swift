@@ -27,9 +27,9 @@ struct LibraryTests {
                      variant: VariantSelector(stableTokens: [], excludedTokens: []), mode: mode, checkInterval: interval)
     }
 
-    /// The update mode rides in the settings but belongs to the app's source: a phone's newer
-    /// change, delivered by a check-in, is mirrored onto the record's source (last change wins).
-    @Test func checkInPropagatesUpdateModeToTheSource() async throws {
+    /// Update mode is PER DEVICE now: a phone's change (delivered by a check-in) stays on that
+    /// installation's settings and does NOT touch the shared source (so another device is untouched).
+    @Test func checkInUpdateModeStaysPerDevice() async throws {
         let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
         let lib = AppLibrary(root: tmp.appendingPathComponent("lib"))
         let rec = try await lib.importIPA(try makeIPA(in: tmp), info: info, teamID: "TEAM123456")
@@ -37,13 +37,13 @@ struct LibraryTests {
         i.inApp = InAppSettings.defaults(reminder: true, at: Date(timeIntervalSince1970: 2_000_000))
         try await lib.upsert(i, for: rec.id)
         try await lib.setUpdateSource(Self.source(.notify), forRecord: rec.id)
-        // Dated after the source change (which re-stamps with the real clock), so the phone wins.
-        let phone = i.inApp!.setting(\.updateMode, to: .auto, at: Date().addingTimeInterval(60), by: .device)
+        let stored0 = try #require(await lib.records().first?.installations.first?.inApp)
+        let phone = stored0.setting(\.updateMode, to: .auto, at: Date().addingTimeInterval(60), by: .device)
         _ = try await lib.applyCheckIn(phone, checkIn: Date().addingTimeInterval(60), outcome: nil,
                                        recordID: rec.id, deviceID: "dev1")
-        #expect(await lib.records().first?.updateSource?.mode == .auto)
-        // Persisted.
-        #expect(await AppLibrary(root: tmp.appendingPathComponent("lib")).records().first?.updateSource?.mode == .auto)
+        // On the installation, not the shared source.
+        #expect(await lib.records().first?.installations.first?.inApp?.updateMode.value == .auto)
+        #expect(await lib.records().first?.updateSource?.mode == .notify) // unchanged
     }
 
     /// Changing the source's mode on the Mac re-stamps the installations' settings (Mac, now), so a
@@ -63,28 +63,23 @@ struct LibraryTests {
         #expect(stored.updateFrequency.changedBy == .mac)
     }
 
-    /// A phone's frequency change is mapped onto the source's checkInterval; a custom interval the
-    /// phone can't name is never clobbered.
-    @Test func checkInPropagatesFrequencyButKeepsACustomInterval() async throws {
+    /// A phone's frequency change is PER DEVICE now: it stays on the installation's settings and the
+    /// shared source's checkInterval is left as it was.
+    @Test func checkInFrequencyStaysPerDevice() async throws {
         let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
         let lib = AppLibrary(root: tmp.appendingPathComponent("lib"))
         let rec = try await lib.importIPA(try makeIPA(in: tmp), info: info, teamID: "TEAM123456")
         var i = inst("dev1")
         i.inApp = InAppSettings.defaults(reminder: true, at: Date(timeIntervalSince1970: 2_000_000))
         try await lib.upsert(i, for: rec.id)
-        // The Mac has a custom 90-minute interval the phone shows read-only.
         try await lib.setUpdateSource(Self.source(.notify, interval: 5_400), forRecord: rec.id)
-        // The phone checks in without touching the frequency (still .custom from the re-stamp).
         let stored = try #require(await lib.records().first?.installations.first?.inApp)
-        #expect(stored.updateFrequency.value == .custom)
-        _ = try await lib.applyCheckIn(stored, checkIn: Date().addingTimeInterval(60), outcome: nil,
-                                       recordID: rec.id, deviceID: "dev1")
-        #expect(await lib.records().first?.updateSource?.checkInterval == 5_400) // kept
-        // Now the phone sets it to weekly.
+        // The phone sets it to weekly.
         let weekly = stored.setting(\.updateFrequency, to: .weekly, at: Date().addingTimeInterval(120), by: .device)
         _ = try await lib.applyCheckIn(weekly, checkIn: Date().addingTimeInterval(120), outcome: nil,
                                        recordID: rec.id, deviceID: "dev1")
-        #expect(await lib.records().first?.updateSource?.checkInterval == 604_800)
+        #expect(await lib.records().first?.installations.first?.inApp?.updateFrequency.value == .weekly)
+        #expect(await lib.records().first?.updateSource?.checkInterval == 5_400) // source unchanged
     }
 
     /// Duo/iCloud are per-device install options: a phone change is mirrored onto the installation
@@ -109,24 +104,26 @@ struct LibraryTests {
 
     /// Backup options ride in the settings and belong to record.options: a phone change is mirrored
     /// onto the options, and a Mac change (setOptions) re-stamps the installation so it syncs back.
-    @Test func backupOptionsRideBothWays() async throws {
+    /// Backup options are PER DEVICE now: a phone change stays on that installation and does NOT
+    /// touch the shared record.options; a Mac options change no longer re-stamps the installations.
+    @Test func backupOptionsStayPerDevice() async throws {
         let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
         let lib = AppLibrary(root: tmp.appendingPathComponent("lib"))
         let rec = try await lib.importIPA(try makeIPA(in: tmp), info: info, teamID: "TEAM123456")
         var i = inst("dev1")
         i.inApp = InAppSettings.defaults(reminder: true, at: Date(timeIntervalSince1970: 2_000_000))
         try await lib.upsert(i, for: rec.id)
-        // Phone turns « back up data » off.
+        // Phone turns « back up data » off: on the installation only, not the shared options.
         let phone = i.inApp!.setting(\.backupData, to: false, at: Date().addingTimeInterval(60), by: .device)
         _ = try await lib.applyCheckIn(phone, checkIn: Date().addingTimeInterval(60), outcome: nil, recordID: rec.id, deviceID: "dev1")
-        #expect(await lib.records().first?.options.backupData == false)
-        // Mac turns « back up before update » off: the installation's settings carry it, stamped by the Mac.
+        #expect(await lib.records().first?.installations.first?.inApp?.backupData.value == false)
+        #expect(await lib.records().first?.options.backupData == nil) // record default unchanged
+        // The Mac changing record.options no longer re-stamps the installation (no cross-device leak).
         var opts = try #require(await lib.records().first?.options)
         opts.backupBeforeUpdate = false
         try await lib.setOptions(opts, for: rec.id)
         let stored = try #require(await lib.records().first?.installations.first?.inApp)
-        #expect(stored.backupBeforeUpdate.value == false)
-        #expect(stored.backupBeforeUpdate.changedBy == .mac)
+        #expect(stored.backupBeforeUpdate.value == true) // still the device's own (not re-stamped)
     }
 
     @Test func persistsAcrossInstances() async throws {

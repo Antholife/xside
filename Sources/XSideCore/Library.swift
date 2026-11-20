@@ -685,24 +685,10 @@ public actor AppLibrary {
         items[index].options = options
         items[index].signedBundleID = custom
             ?? BundleIdentifier.defaultSigned(original: items[index].originalBundleID, teamID: items[index].teamID)
-        // Keep the per-app backup settings in step on each installation (the phone shows and syncs
-        // them), stamped by the Mac now, so a phone's stale value can't revert a change made here.
-        let old = previous[index].options
-        let now = Date()
-        for i in items[index].installations.indices {
-            guard let base = items[index].installations[i].inApp else { continue }
-            var inApp = base
-            if (old.backupData != false) != (options.backupData != false) {
-                inApp = inApp.setting(\.backupData, to: options.backupData != false, at: now, by: .mac)
-            }
-            if (old.backupCaches != false) != (options.backupCaches != false) {
-                inApp = inApp.setting(\.backupCaches, to: options.backupCaches != false, at: now, by: .mac)
-            }
-            if (old.backupBeforeUpdate ?? true) != (options.backupBeforeUpdate ?? true) {
-                inApp = inApp.setting(\.backupBeforeUpdate, to: options.backupBeforeUpdate ?? true, at: now, by: .mac)
-            }
-            if inApp != base { items[index].installations[i].inApp = inApp }
-        }
+        // The backup settings are PER DEVICE now (on each installation's inApp): a change to the
+        // app-level options here no longer re-stamps them onto every device (that was the cross-device
+        // leak). record.options stays the DEFAULT for new installs; per-device edits go through
+        // `editInApp` / the phone, which touch one installation only.
         do { try save() } catch { items = previous; throw error }
     }
 
@@ -969,28 +955,10 @@ public actor AppLibrary {
             }
         }
         items[index].installations[i] = installation
-        // The update mode and frequency ride in the settings but belong to the app's shared source:
-        // keep the source in step (last change wins) so the background pass and the Updates tab
-        // follow what the phone now shows. The Mac's own changes re-stamp the installations (see
-        // setUpdateSource), so they win over a stale phone value through the merge above. A custom
-        // interval the phone can't name maps back to itself, so it is never clobbered.
-        if var source = items[index].updateSource {
-            var changed = false
-            if source.mode != merged.updateMode.value { source.mode = merged.updateMode.value; changed = true }
-            let interval = merged.updateFrequency.value.checkInterval(current: source.checkInterval)
-            if source.checkInterval != interval { source.checkInterval = interval; changed = true }
-            if changed { items[index].updateSource = source }
-        }
-        // The per-app data/backup options ride in the settings too but belong to record.options:
-        // mirror the phone's choice (the Mac re-stamps the installations when it changes them).
-        var opts = items[index].options
-        var optsChanged = false
-        if (opts.backupData != false) != merged.backupData.value { opts.backupData = merged.backupData.value; optsChanged = true }
-        if (opts.backupCaches != false) != merged.backupCaches.value { opts.backupCaches = merged.backupCaches.value; optsChanged = true }
-        if (opts.backupBeforeUpdate ?? true) != merged.backupBeforeUpdate.value {
-            opts.backupBeforeUpdate = merged.backupBeforeUpdate.value; optsChanged = true
-        }
-        if optsChanged { items[index].options = opts }
+        // Update mode/frequency and the data/backup options are PER DEVICE now (Anthony: changing
+        // them on one device must not touch another): they live on this installation's inApp only,
+        // never mirrored back to the shared record.options / updateSource (which would leak to the
+        // other devices). record.options / updateSource keep the app-level DEFAULTS for new installs.
         do { try save() } catch { items = previous; throw error }
         rememberConnection(bundleID: items[index].originalBundleID, deviceID: deviceID, at: checkIn)
         return change

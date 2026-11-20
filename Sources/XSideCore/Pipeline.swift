@@ -545,11 +545,15 @@ public actor SideloadPipeline {
             // page (written during this signing) already counts and lists it (Anthony: « on save
             // AVANT le refresh »). A refresh keeps the data, so the copy is the same as after the
             // re-sign; its failure never fails the refresh. Fast now: whole folders, not file by file.
-            if refresh, previous != nil, record.options.backupData != false, let backup {
+            // Per device now: this device's own « Sauvegarder les données » (its inApp), falling back
+            // to the app default for an installation with no inApp yet (older state).
+            let deviceBacksUp = previous?.inApp?.backupData.value ?? (record.options.backupData != false)
+            let deviceCaches = previous?.inApp?.backupCaches.value ?? (record.options.backupCaches != false)
+            if refresh, previous != nil, deviceBacksUp, let backup {
                 await progress(.backingUp)
                 do {
                     let snapshot = try await backup.backUp(signedBundleID: bundleID, deviceID: device.id, deviceName: device.name,
-                                                appVersion: record.version, includeCaches: record.options.backupCaches != false,
+                                                appVersion: record.version, includeCaches: deviceCaches,
                                                 cycleStartedAt: previous.flatMap { $0.firstInstalledAt ?? $0.installedAt },
                                                 retention: retention(), onlyIfChanged: true,
                                                 progress: { done, total, bytes, bytesTotal in
@@ -759,18 +763,22 @@ public actor SideloadPipeline {
         func seed<V: Equatable>(_ keyPath: WritableKeyPath<InAppSettings, Field<V>>, _ value: V) {
             if inApp[keyPath: keyPath].value != value { inApp = inApp.setting(keyPath, to: value, at: date, by: .mac) }
         }
-        if let source = updateSource {
-            seed(\.updateMode, source.mode)
-            seed(\.updateFrequency, UpdateFrequency.from(source.checkInterval))
+        // Update mode/frequency and the data/backup options are PER DEVICE: seed them from the shared
+        // app-level defaults only on a FRESH install (no previous installation). On a refresh the
+        // device's own values are kept, so a change made on one device isn't overwritten here (Anthony).
+        if previous == nil {
+            if let source = updateSource {
+                seed(\.updateMode, source.mode)
+                seed(\.updateFrequency, UpdateFrequency.from(source.checkInterval))
+            }
+            seed(\.backupData, backupData)
+            seed(\.backupCaches, backupCaches)
+            seed(\.backupBeforeUpdate, backupBeforeUpdate)
         }
         // Compatibility is a per-device install option, applied at the next signing: seed the phone's
         // « Compatibilité » page with what this signing applies.
         seed(\.duoCompatibility, duo)
         seed(\.iCloudSignedOut, iCloud)
-        // The per-app data/backup options: seed the phone's « Données » page from the app's options.
-        seed(\.backupData, backupData)
-        seed(\.backupCaches, backupCaches)
-        seed(\.backupBeforeUpdate, backupBeforeUpdate)
         var facts = InstallationFacts(
             installationID: ChannelEnvelope.installationID(recordID: recordID, deviceID: deviceID),
             channelSecret: ChannelEnvelope.newSecret(), inApp: inApp,

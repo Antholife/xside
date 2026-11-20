@@ -107,7 +107,9 @@ struct AppDataTab: View {
     private var options: InstallOptions {
         model.records.first { $0.id == entry.record.id }?.options ?? entry.record.options
     }
-    private var backupOn: Bool { options.backupData != false }
+    /// The backup switches are per device now: this installation's own values, else the app default.
+    private var inApp: InAppSettings? { (model.currentEntry(entry.id) ?? entry).installation.inApp }
+    private var backupOn: Bool { inApp?.backupData.value ?? (options.backupData != false) }
     /// The action buttons are off while busy; the Cancel button, beside them, stays live.
     private var actionsOff: Bool { working || !model.canManage(entry) }
     /// Back up and import reach the device now, so they also need it present (like « Rafraîchir »);
@@ -122,7 +124,7 @@ struct AppDataTab: View {
         case .restore: L("fiche.data.working.restore")
         }
     }
-    private var reloadID: String { "\(entry.id)/\(model.jobs[entry.id] == nil)/\(model.dataBusy.contains(entry.id))/\(options.backupData.map(String.init(describing:)) ?? "")/\(options.backupBeforeUpdate.map(String.init(describing:)) ?? "")" }
+    private var reloadID: String { "\(entry.id)/\(model.jobs[entry.id] == nil)/\(model.dataBusy.contains(entry.id))/\(backupOn)/\(inApp?.backupBeforeUpdate.value.description ?? "")" }
 
     /// A boxed row: title + explanation on the left, switch on the right (like the Correctifs tab).
     @ViewBuilder private func toggleBox(_ title: String, _ note: String, isOn: Binding<Bool>, enabled: Bool = true) -> some View {
@@ -147,10 +149,10 @@ struct AppDataTab: View {
             toggleBox(L("fiche.data.backup"), L("fiche.data.backup.note"),
                       isOn: Binding(get: { backupOn }, set: { v in Task { await model.setBackupData(v, for: entry) } }))
             toggleBox(L("fiche.data.caches"), L("fiche.data.caches.note"),
-                      isOn: Binding(get: { options.backupCaches != false }, set: { v in Task { await model.setBackupCaches(v, for: entry) } }),
+                      isOn: Binding(get: { inApp?.backupCaches.value ?? (options.backupCaches != false) }, set: { v in Task { await model.setBackupCaches(v, for: entry) } }),
                       enabled: backupOn)
             toggleBox(L("settings.appData.beforeUpdate"), L("fiche.data.beforeUpdate.note"),
-                      isOn: Binding(get: { options.backupBeforeUpdate ?? AppModel.setting(AppModel.backupBeforeUpdateDefaultKey) },
+                      isOn: Binding(get: { inApp?.backupBeforeUpdate.value ?? (options.backupBeforeUpdate ?? AppModel.setting(AppModel.backupBeforeUpdateDefaultKey)) },
                                     set: { v in Task { await model.setBackupBeforeUpdate(v, for: entry) } }),
                       enabled: backupOn)
             HStack(spacing: 8) {
