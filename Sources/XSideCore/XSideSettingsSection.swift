@@ -66,9 +66,16 @@ extension SettingsSection {
 
         // Mises à jour (only with a GitHub source): tracked repo, mode, frequency, « Vérifier maintenant ».
         let updatesPane: Row? = updateRepo.map { repo in
-            let frequencyRow: Row = updateFrequency == .custom
-                ? value("updateFrequency", "updateFreq.custom", customFrequencyLabel ?? (p + "updateFrequency.custom"))
-                : choice("updateFrequency", UpdateFrequency.choices.map(\.rawValue), updateFrequency.rawValue)
+            // One stable picker that ALWAYS includes « custom », so the current value (which can reach
+            // the phone over the channel before the bundle is re-signed) never lands on a specifier
+            // whose values don't list it — that showed an empty row (Anthony: « l'option est vide »).
+            // « custom » is a Mac-set interval the phone can't name, so its title is the interval the
+            // Mac wrote (« 4 sem. ») or « Personnalisé ».
+            let freqValues = UpdateFrequency.choices.map(\.rawValue) + ["custom"]
+            let freqTitles = UpdateFrequency.choices.map { p + "updateFrequency.\($0.rawValue)" }
+                + [customFrequencyLabel ?? (p + "updateFrequency.custom")]
+            let frequencyRow: Row = .choice(titleKey: title("updateFrequency"), key: "updateFrequency",
+                                            titleKeys: freqTitles, values: freqValues, defaultValue: updateFrequency.rawValue)
             return pane("updates", [
                 (value("updates.repo", "updates.repo", repo), "updatesRepo"),
                 (choice("updateMode", ["notify", "auto"], s.updateMode.value.rawValue), "updateMode"),

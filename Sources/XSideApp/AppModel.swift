@@ -445,11 +445,16 @@ final class AppModel {
             xsideVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
             inApp: facts?.inApp ?? inAppDefaults(at: now),
             updateRepo: facts?.updateSource.map { "\($0.repo.owner)/\($0.repo.repo)" },
-            // Per device: this device's own frequency (its inApp). A custom interval's label still
-            // comes from the source (the per-device field only names the preset).
+            // Per device: this device's own frequency (its inApp). The « custom » picker option always
+            // needs a title (it is always present now), so resolve one unconditionally: the interval the
+            // Mac wrote when the source carries a custom one, else « Personnalisé ». Never nil.
             updateFrequency: facts?.inApp.updateFrequency.value ?? .global,
-            customFrequencyLabel: (facts?.inApp.updateFrequency.value == .custom)
-                ? facts?.updateSource?.checkInterval.map(IntervalLabel.short) : nil,
+            customFrequencyLabel: {
+                if let ci = facts?.updateSource?.checkInterval, UpdateFrequency.from(ci) == .custom {
+                    return IntervalLabel.short(ci)
+                }
+                return textLanguage(facts) == "fr" ? "Personnalisé" : "Custom"
+            }(),
             dataBackups: (facts?.backups ?? []).map { snap in
                 (id: snap.id, label: snap.createdAt.formatted(style) + (snap.appVersion.map { " (v\($0))" } ?? ""))
             },

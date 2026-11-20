@@ -325,7 +325,9 @@ struct SettingsBundleTests {
         // A standard frequency is an editable choice (the presets, no « custom » value).
         let freq = try #require(updates.first { $0["Key"] as? String == "io.github.xside.settings.updateFrequency" })
         #expect(freq["Type"] as? String == "PSMultiValueSpecifier")
-        #expect(freq["Values"] as? [String] == ["global", "sixHours", "daily", "weekly", "atRefresh", "never"])
+        // « custom » is always in the picker so a value delivered over the channel never lands on a
+        // specifier that doesn't list it (which showed an empty row).
+        #expect(freq["Values"] as? [String] == ["global", "sixHours", "daily", "weekly", "atRefresh", "never", "custom"])
         #expect(freq["DefaultValue"] as? String == "global")
     }
 
@@ -364,18 +366,23 @@ struct SettingsBundleTests {
         #expect(!data.contains { $0["Key"] as? String == "io.github.xside.settings.restoreFrom" })
     }
 
-    /// A custom interval the phone can't name is shown read-only (changed from the Mac).
-    @Test func customFrequencyIsReadOnly() throws {
+    /// A custom interval the phone can't name is selected in the one frequency picker, titled with the
+    /// interval the Mac wrote (« custom » is always one of the picker's values, so it never shows empty).
+    @Test func customFrequencyIsSelectedInThePicker() throws {
         let app = try makeApp()
         let section = SettingsSection.xside(validUntil: "12 nov.", refreshedOn: "5 nov.", version: "1.2", installedOn: "1 nov.",
                                             inApp: InAppSettings.defaults(reminder: false, at: Date(timeIntervalSince1970: 0)),
                                             updateRepo: "o/r", updateFrequency: .custom, customFrequencyLabel: "90 min", language: "fr")
         try SettingsBundle.add(section, to: app)
         let updates = try subpage(app, "updates")
-        #expect(updates.first { $0["Key"] as? String == "io.github.xside.settings.updateFrequency" } == nil)
-        let row = try #require(updates.first { $0["Key"] as? String == "io.github.xside.settings.updateFreq.custom" })
-        #expect(row["Type"] as? String == "PSTitleValueSpecifier")
-        #expect(row["DefaultValue"] as? String == "90 min")
+        let freq = try #require(updates.first { $0["Key"] as? String == "io.github.xside.settings.updateFrequency" })
+        #expect(freq["Type"] as? String == "PSMultiValueSpecifier")
+        #expect(freq["DefaultValue"] as? String == "custom")
+        let values = try #require(freq["Values"] as? [String])
+        #expect(values.last == "custom")
+        // The custom option's title is the interval the Mac wrote.
+        let titles = try #require(freq["Titles"] as? [String])
+        #expect(titles.last == "90 min")
     }
 
     /// No source: no « Mises à jour » row and no plist for it.
