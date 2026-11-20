@@ -628,9 +628,18 @@ extension AppModel {
     /// record's update source. Nothing without a valid link and a chosen variant.
     func persistUpdateSource(from draft: OptionsDraft, recordID: UUID) {
         guard let repo = GitHubSource.parse(draft.updateSourceURL), let variant = draft.updateVariant else { return }
-        let source = UpdateSource(repo: repo, variant: variant, mode: draft.updateMode, lastSeenTrigger: nil,
-                                  installedTag: draft.updateInstalledTag, installedName: draft.updateInstalledName,
-                                  checkInterval: draft.updateInterval)
+        // The installed tag/name is PER DEVICE now (written on the installation by the install loop /
+        // markInstalled), so this must NOT stamp the shared source with this one device's tag: that
+        // was the leak where reinstalling the iPad at 1.1.5 changed the tag the iPhone shows. Keep the
+        // shared source's own baseline as it was, seeding it from this install only when the source is
+        // brand new (so a single-device app still has a fallback). Same for the notify/cadence bookkeeping.
+        let existing = records.first(where: { $0.id == recordID })?.updateSource
+        let source = UpdateSource(repo: repo, variant: variant, mode: draft.updateMode,
+                                  lastSeenTrigger: existing?.lastSeenTrigger,
+                                  installedTag: existing?.installedTag ?? draft.updateInstalledTag,
+                                  installedName: existing?.installedName ?? draft.updateInstalledName,
+                                  installedTrigger: existing?.installedTrigger,
+                                  checkInterval: draft.updateInterval, lastCheckedAt: existing?.lastCheckedAt)
         Task {
             do {
                 try await library.setUpdateSource(source, forRecord: recordID)
