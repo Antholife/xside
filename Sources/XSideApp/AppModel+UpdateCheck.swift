@@ -75,6 +75,13 @@ extension AppModel {
         return targets
     }
 
+    /// Groups the targets that share one update source: an app's per-device targets share the record's
+    /// source (keyed by record id), while each tweak has its own (keyed by record id + tweak id). Used
+    /// to check a whole source together and to stamp its `lastCheckedAt` once.
+    private func updateGroupKey(_ target: UpdateTarget) -> String {
+        "\(target.record.id)|\(target.tweak?.id ?? "")"
+    }
+
     /// The check cadence for a target: this device's own frequency (its inApp) now, falling back to
     /// the source's shared interval (a tweak, or a device with no inApp yet). The last-check time
     /// stays shared on the source (one look at the one repo).
@@ -106,8 +113,7 @@ extension AppModel {
         // the API at every tick, whatever each source's own cadence says.
         if let f = lastUpdateFailure, f <= now, now.timeIntervalSince(f) < UpdateSchedule.failureInterval { return }
         let globalDefault = Self.updateCheckInterval
-        // Each source on its own cadence (per-app override, else the global default; « never » is skipped).
-        let due = records.flatMap(updateTargets(of:)).filter { target in
+        func isDueNow(_ target: UpdateTarget) -> Bool {
             let cadence = targetCheckInterval(target) // per device now (its frequency), else the source's
             // "At refresh" sources are not on the time cadence: they are checked when the app refreshes.
             if UpdateSchedule.checksAtRefresh(cadence, default: globalDefault) { return false }
@@ -116,6 +122,13 @@ extension AppModel {
                 : UpdateSchedule.effectiveInterval(cadence, default: globalDefault)
             return UpdateSchedule.isDue(lastChecked: target.source?.lastCheckedAt, interval: interval, now: now)
         }
+        // A source is checked when ANY of its device-targets is due (shortest cadence wins); then ALL
+        // its device-targets are evaluated against the one fetched release list. Otherwise a device on
+        // a longer interval, sharing the source with a shorter-interval one that keeps resetting the
+        // shared lastCheckedAt, would never come due and would miss its updates.
+        let allTargets = records.flatMap(updateTargets(of:))
+        let dueGroups = Set(allTargets.filter(isDueNow).map(updateGroupKey))
+        let due = allTargets.filter { dueGroups.contains(updateGroupKey($0)) }
         guard !due.isEmpty else { return }
         updateCheckRunning = true
         Task { [weak self] in
@@ -176,18 +189,22 @@ extension AppModel {
         guard !targets.isEmpty else { return }
         let records = await library.records()
         var wrote = false
+        // One write per distinct source: an app's per-device targets all share the record's source, so
+        // without this an N-device app did N identical saves per pass.
+        var doneRecords = Set<UUID>()
+        var doneTweaks = Set<String>()
         for target in targets {
             do {
                 if let old = target.tweak {
                     guard let record = records.first(where: { $0.id == target.record.id }),
                           let tweak = record.tweaks?.first(where: { $0.packageID == old.packageID && $0.updateSource != nil }),
-                          var source = tweak.updateSource else { continue }
+                          var source = tweak.updateSource, doneTweaks.insert(tweak.id).inserted else { continue }
                     source.lastCheckedAt = now
                     try await library.setUpdateSource(source, forTweak: tweak.id, recordID: record.id)
                     wrote = true
                 } else {
                     guard let record = records.first(where: { $0.id == target.record.id }),
-                          var source = record.updateSource else { continue }
+                          var source = record.updateSource, doneRecords.insert(record.id).inserted else { continue }
                     source.lastCheckedAt = now
                     try await library.setUpdateSource(source, forRecord: record.id)
                     wrote = true
@@ -534,7 +551,9 @@ extension AppModel {
     /// Posts the "update available" notification; returns whether it was actually delivered.
     private func notify(_ target: UpdateTarget, version: String) async -> Bool {
         guard let installation = target.record.installations.first else { return false }
-        let job = RefreshJob(recordID: target.record.id, deviceID: installation.deviceID)
+        // Per-device target: route and gate the notice by THIS device, not installations.first (that
+        // sent a second device's update notice to the first, gated by the wrong device's prefs).
+        let job = RefreshJob(recordID: target.record.id, deviceID: target.device?.deviceID ?? installation.deviceID)
         return await onAppUpdateAvailable?(AppUpdateNotice(appName: target.name, version: version, job: job, id: target.noticeID)) ?? false
     }
 
@@ -550,21 +569,27 @@ extension AppModel {
     /// Auto mode but no reachable device: notify that the update is pending. Returns whether delivered.
     private func notifyAutoPending(_ target: UpdateTarget, version: String) async -> Bool {
         guard let installation = target.record.installations.first else { return false }
-        let job = RefreshJob(recordID: target.record.id, deviceID: installation.deviceID)
+        // Per-device target: route and gate the notice by THIS device, not installations.first (that
+        // sent a second device's update notice to the first, gated by the wrong device's prefs).
+        let job = RefreshJob(recordID: target.record.id, deviceID: target.device?.deviceID ?? installation.deviceID)
         return await onAppUpdatePending?(AppUpdateNotice(appName: target.name, version: version, job: job, id: target.noticeID)) ?? false
     }
 
     /// XSide started an auto-install: a notification whose tap opens the tab to watch the progress.
     private func notifyInstalling(_ target: UpdateTarget, version: String) {
         guard let installation = target.record.installations.first else { return }
-        let job = RefreshJob(recordID: target.record.id, deviceID: installation.deviceID)
+        // Per-device target: route and gate the notice by THIS device, not installations.first (that
+        // sent a second device's update notice to the first, gated by the wrong device's prefs).
+        let job = RefreshJob(recordID: target.record.id, deviceID: target.device?.deviceID ?? installation.deviceID)
         onAppInstalling?(AppUpdateNotice(appName: target.name, version: version, job: job, id: target.noticeID))
     }
 
     /// XSide auto-installed an update: a confirmation notification (it replaces the "available" one).
     private func notifyUpdated(_ target: UpdateTarget, version: String) {
         guard let installation = target.record.installations.first else { return }
-        let job = RefreshJob(recordID: target.record.id, deviceID: installation.deviceID)
+        // Per-device target: route and gate the notice by THIS device, not installations.first (that
+        // sent a second device's update notice to the first, gated by the wrong device's prefs).
+        let job = RefreshJob(recordID: target.record.id, deviceID: target.device?.deviceID ?? installation.deviceID)
         onAppUpdated?(AppUpdateNotice(appName: target.name, version: version, job: job, id: target.noticeID))
     }
 

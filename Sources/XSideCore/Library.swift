@@ -815,7 +815,15 @@ public actor AppLibrary {
         let index = try indexOf(recordID)
         guard let i = items[index].installations.firstIndex(where: { $0.deviceID == deviceID }) else { return }
         let previous = items
-        if let tag { items[index].installations[i].installedTag = tag }
+        if let tag {
+            // A new tag with no trigger given (the install flow doesn't fetch it): clear the stale
+            // trigger so the next check learns the current one fresh instead of reporting a false update
+            // for a rolling tag (same tag name, old trigger != current). An explicit trigger below wins.
+            if items[index].installations[i].installedTag != tag && trigger == nil {
+                items[index].installations[i].installedTrigger = nil
+            }
+            items[index].installations[i].installedTag = tag
+        }
         items[index].installations[i].installedName = name // may be nil (a release with no title)
         if let trigger { items[index].installations[i].installedTrigger = trigger }
         do { try save() } catch { items = previous; throw error }

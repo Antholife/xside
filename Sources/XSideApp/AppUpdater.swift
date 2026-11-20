@@ -105,7 +105,12 @@ extension AppModel {
             return .incompatible
         }
         let version = info.version ?? found.tag
-        let isAuto = record.updateSource?.mode == .auto
+        // Per device: this device's own « notify / auto » (its inApp), falling back to the shared
+        // source default. route() already honored the per-device mode to reach the auto path; without
+        // honoring it here too, a device set to auto on the phone (which no longer mirrors to
+        // source.mode) is downgraded to a notification and never auto-installs.
+        let isAuto = (record.installations.first { $0.deviceID == device.id }?.inApp?.updateMode.value
+                      ?? record.updateSource?.mode) == .auto
         let allowed = UpdateApply.autoAllowed(content: info.content, stable: stable)
         if userInitiated {
             // The click is the mode's approval; a prerelease and a suspect content each need their own.
@@ -138,10 +143,14 @@ extension AppModel {
     /// failure never blocks the update: it is logged, and shown as a toast when the person clicked.
     private func backUpBeforeUpdate(record: AppRecord, device: Device, userInitiated: Bool) async {
         let live = records.first(where: { $0.id == record.id }) ?? record
-        guard AppManagement.shouldBackUpBeforeUpdate(override: live.options.backupBeforeUpdate,
+        guard let installation = live.installations.first(where: { $0.deviceID == device.id }) else { return }
+        // Per device: this device's own « Sauvegarder avant une mise à jour » / « Sauvegarder les
+        // données » (its inApp), falling back to the shared app options. Reading only the shared value
+        // could skip the safety snapshot for a device that enabled it per-device (data-loss risk).
+        let inApp = installation.inApp
+        guard AppManagement.shouldBackUpBeforeUpdate(override: inApp?.backupBeforeUpdate.value ?? live.options.backupBeforeUpdate,
                                                      default: Self.setting(Self.backupBeforeUpdateDefaultKey),
-                                                     backupData: live.options.backupData),
-              let installation = live.installations.first(where: { $0.deviceID == device.id }) else { return }
+                                                     backupData: inApp.map { $0.backupData.value } ?? live.options.backupData) else { return }
         switch await backUpNow(AppEntry(record: live, installation: installation)) {
         case .saved, .unchanged, .cancelled: break
         case .failed:

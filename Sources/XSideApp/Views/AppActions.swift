@@ -33,8 +33,10 @@ enum AppActions {
 
     private static func confirmed(_ entry: AppEntry, app: String, deviceName: String, model: AppModel, bytes: Int,
                                   reachable: Bool, present: @escaping Present, done: @escaping @MainActor () -> Void) {
+        // Per device: this device's own « Sauvegarder les données » (its inApp), else the app option.
+        let live = model.currentEntry(entry.id) ?? entry
         let backUpDefault = AppManagement.backupFirstDefault(deviceReachable: reachable,
-                                                             backupData: model.records.first { $0.id == entry.record.id }?.options.backupData ?? entry.record.options.backupData)
+                                                             backupData: live.installation.inApp?.backupData.value ?? live.record.options.backupData)
         guard let choice = AppRowAlerts.confirmUninstall(app: app, device: deviceName, backUpFirstDefault: backUpDefault,
                                                          canBackUp: reachable, backupBytes: bytes) else { return }
         Task {

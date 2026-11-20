@@ -145,6 +145,27 @@ struct LibraryTests {
         #expect(installation.installedName == "YTKACE v1.1.8")
     }
 
+    /// Setting a new baseline tag with no trigger (the install flow doesn't fetch one) clears the old
+    /// trigger, so a rolling tag doesn't keep a stale trigger and report a false update. The same tag
+    /// (a name-only update) keeps it.
+    @Test func setInstalledReleaseClearsStaleTriggerOnTagChange() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let lib = AppLibrary(root: tmp.appendingPathComponent("lib"))
+        let rec = try await lib.importIPA(try makeIPA(in: tmp), info: info, teamID: "TEAM123456")
+        try await lib.upsert(inst("dev1"), for: rec.id)
+        try await lib.setInstalledRelease(tag: "v1", name: "R1", trigger: "v1|a|t1", recordID: rec.id, deviceID: "dev1")
+        // New tag, no trigger: the stale trigger is cleared.
+        try await lib.setInstalledRelease(tag: "v2", name: "R2", trigger: nil, recordID: rec.id, deviceID: "dev1")
+        var ins = try #require(await lib.records().first?.installations.first)
+        #expect(ins.installedTag == "v2")
+        #expect(ins.installedTrigger == nil)
+        // Same tag, no trigger (name-only): a trigger set meanwhile is kept.
+        try await lib.setInstalledRelease(tag: "v2", name: "R2", trigger: "v2|a|t2", recordID: rec.id, deviceID: "dev1")
+        try await lib.setInstalledRelease(tag: "v2", name: "R2b", trigger: nil, recordID: rec.id, deviceID: "dev1")
+        ins = try #require(await lib.records().first?.installations.first)
+        #expect(ins.installedTrigger == "v2|a|t2")
+    }
+
     @Test func persistsAcrossInstances() async throws {
         let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
         let root = tmp.appendingPathComponent("lib")
