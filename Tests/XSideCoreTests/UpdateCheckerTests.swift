@@ -43,6 +43,23 @@ import Foundation
         #expect(f.fetched == [Self.source.api])
     }
 
+    @Test func check_perDeviceBaselineOverridesTheSource() async {
+        // The source's shared baseline is the newest tag (would be up to date), but THIS device is on
+        // an older one: the override wins, so it's an update for that device (Anthony's iPhone v1 /
+        // iPad v0 case).
+        let (c, _, _) = Self.make()
+        let r = await c.check(source: src(installed: Self.newestTag), kind: .ipa, installedTag: "v1.1.7")
+        guard case .available(let found, _, _) = r else { Issue.record("\(r)"); return }
+        #expect(found.tag == Self.newestTag)
+    }
+
+    @Test func check_perDeviceOnNewestIsUpToDateEvenIfSourceIsOlder() async {
+        // The reverse: the source's shared baseline is older, but THIS device is on the newest.
+        let (c, _, _) = Self.make()
+        let r = await c.check(source: src(installed: "v1.1.7"), kind: .ipa, installedTag: Self.newestTag)
+        guard case .upToDate = r else { Issue.record("\(r)"); return }
+    }
+
     @Test func check_upToDateWhenSameTagAndSameTrigger() async {
         let (c, _, _) = Self.make()
         let r = await c.check(source: src(installed: "v1.1.8", trigger: Self.newestTrigger), kind: .ipa)

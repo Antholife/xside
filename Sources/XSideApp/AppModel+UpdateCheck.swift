@@ -37,13 +37,20 @@ struct UpdateCheckReport: Sendable, Equatable {
 extension AppModel {
     static let updateLogger = Logger(subsystem: "app.xside", category: "updates")
 
-    /// One thing to look at: an app (`.ipa`) or one of its pool tweaks (`.deb`).
+    /// One thing to look at: an app (`.ipa`) or one of its pool tweaks (`.deb`). For an app, `device`
+    /// is the installation whose per-device baseline this target checks (each device has its own, so
+    /// one target per installed device); nil for a tweak (its baseline stays on the source).
     private struct UpdateTarget {
         let record: AppRecord
         let tweak: TweakPackage?
+        var device: Installation? = nil
         var source: UpdateSource? { tweak?.updateSource ?? record.updateSource }
         var kind: ReleaseKind { tweak == nil ? .ipa : .deb }
         var installedVersion: String? { tweak == nil ? record.version : tweak?.version }
+        /// The per-device baseline (the release this device is on), falling back to the source's shared
+        /// one; a tweak uses the source's.
+        var baselineTag: String? { device?.installedTag ?? source?.installedTag }
+        var baselineTrigger: String? { device?.installedTrigger ?? source?.installedTrigger }
         var name: String {
             let app = record.options.displayName ?? record.displayName
             return tweak.map { "\($0.name) (\(app))" } ?? app
@@ -53,7 +60,15 @@ extension AppModel {
 
     private func updateTargets(of record: AppRecord) -> [UpdateTarget] {
         var targets: [UpdateTarget] = []
-        if record.updateSource != nil { targets.append(UpdateTarget(record: record, tweak: nil)) }
+        if record.updateSource != nil {
+            // One per installed device: each has its own baseline. No installation yet (just imported):
+            // one record-level target on the source's baseline.
+            if record.installations.isEmpty {
+                targets.append(UpdateTarget(record: record, tweak: nil))
+            } else {
+                for inst in record.installations { targets.append(UpdateTarget(record: record, tweak: nil, device: inst)) }
+            }
+        }
         for tweak in record.tweaks ?? [] where tweak.updateSource != nil {
             targets.append(UpdateTarget(record: record, tweak: tweak))
         }
@@ -211,12 +226,15 @@ extension AppModel {
         var reports: [UpdateCheckReport] = []
         for target in targets {
             guard let source = target.source else { continue }
-            let key = "\(source.repo.id)|\(source.variant)|\(target.kind)|\(source.installedTag ?? "")"
+            // The baseline is per device now, so it is part of the dedup key (two devices on the same
+            // tag still share one fetch).
+            let key = "\(source.repo.id)|\(source.variant)|\(target.kind)|\(target.baselineTag ?? "")|\(target.baselineTrigger ?? "")"
             let outcome: UpdateOutcome
             if let known = answers[key] {
                 outcome = known
             } else {
-                outcome = await checker.check(source: source, kind: target.kind)
+                outcome = await checker.check(source: source, kind: target.kind,
+                                              installedTag: target.baselineTag, installedTrigger: target.baselineTrigger)
                 answers[key] = outcome
             }
             reports.append(UpdateCheckReport(name: target.name, result: await route(outcome, for: target, userInitiated: userInitiated), tweakPackageID: target.tweak?.packageID))
@@ -232,7 +250,10 @@ extension AppModel {
         guard canManage(entry) else { return .failed("not allowed") }
         let record = records.first(where: { $0.id == entry.record.id }) ?? entry.record
         let tweak = tweakPackageID.flatMap { id in record.tweaks?.first { $0.packageID == id } }
-        let target = UpdateTarget(record: record, tweak: tweak)
+        // The app's baseline is this device's own (markInstalled writes it there); a tweak's stays on
+        // the source.
+        let deviceInstallation = record.installations.first { $0.deviceID == entry.installation.deviceID }
+        let target = UpdateTarget(record: record, tweak: tweak, device: tweak == nil ? deviceInstallation : nil)
         guard let source = target.source else { return .failed("no source") }
         guard let device = devices.first(where: { $0.id == entry.installation.deviceID }), device.isAvailable, device.isPaired else {
             return .failed("device unavailable")
@@ -240,7 +261,8 @@ extension AppModel {
         let work = libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent("updates-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: work) }
         let checker = UpdateChecker(fetcher: repoFetcher, workDir: work)
-        switch await checker.check(source: source, kind: target.kind) {
+        switch await checker.check(source: source, kind: target.kind,
+                                   installedTag: target.baselineTag, installedTrigger: target.baselineTrigger) {
         case .upToDate: return .upToDate
         case .needsVariantChoice: return .needsVariantChoice
         case .failed(let reason): return .failed(reason)
@@ -281,13 +303,17 @@ extension AppModel {
     /// The phone asked to check for an update (its modal is up). A pure check of the APP's source (no
     /// auto-install: the person asked, so they confirm the install), as a `ChannelReply` to stream.
     /// Tweaks and variant choices are left to the Mac (`needsMac`), where their UI already lives.
-    func modalUpdateCheckReply(recordID: UUID) async -> ChannelReply {
+    func modalUpdateCheckReply(recordID: UUID, deviceID: String) async -> ChannelReply {
         guard let record = records.first(where: { $0.id == recordID }), let source = record.updateSource else {
             return .update(state: "upToDate")
         }
+        // Check against THIS device's baseline (the asking device), not the shared source — different
+        // devices can be on different releases (Anthony).
+        let installation = record.installations.first { $0.deviceID == deviceID }
         let work = libraryRoot.appendingPathComponent(AppLibrary.stagingFolder).appendingPathComponent("updates-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: work) }
-        switch await UpdateChecker(fetcher: repoFetcher, workDir: work).check(source: source, kind: .ipa) {
+        switch await UpdateChecker(fetcher: repoFetcher, workDir: work).check(source: source, kind: .ipa,
+                                   installedTag: installation?.installedTag, installedTrigger: installation?.installedTrigger) {
         case .upToDate: return .update(state: "upToDate")
         case .needsVariantChoice: return .update(state: "needsMac")
         case .failed: return .failed(reasonKey: "updateFailed")
@@ -385,9 +411,16 @@ extension AppModel {
         switch outcome {
         case .upToDate(let trigger):
             // Learn the baseline trigger on the first check (for rolling tags like `nightly`, where
-            // the tag alone never changes): store the current release's trigger as the reference.
-            if let trigger, target.source?.installedTag?.isEmpty == false, target.source?.installedTrigger == nil {
-                await mutateSource(for: target) { $0.installedTrigger = trigger }
+            // the tag alone never changes): store the current release's trigger as the reference, on
+            // this device's baseline (or the source's, for a tweak / record-level target).
+            if let trigger, (target.baselineTag?.isEmpty == false), target.baselineTrigger == nil {
+                if target.tweak == nil, let deviceID = target.device?.deviceID {
+                    try? await library.setInstalledRelease(tag: nil, name: target.device?.installedName,
+                                                           trigger: trigger, recordID: target.record.id, deviceID: deviceID)
+                    await reloadRecords()
+                } else {
+                    await mutateSource(for: target) { $0.installedTrigger = trigger }
+                }
             }
             return .upToDate
         case .needsVariantChoice:
@@ -399,7 +432,7 @@ extension AppModel {
         case .available(let found, let version, let stable):
             var result = UpdateCheckResult.available(version: version, reason: stable ? .notifyMode : .prerelease, tag: found.tag, asset: found.asset.name)
             let auto = stable && target.source?.mode == .auto
-            if auto, let device = deviceForAutoUpdate(target.record) {
+            if auto, let device = autoUpdateDevice(for: target) {
                 // Report progress so the « Mises à jour » tab shows it, and notify so a tap goes there.
                 let key = Self.updateFractionKey(recordID: target.record.id, tweakPackageID: target.tweak?.packageID)
                 updateFraction[key] = 0
@@ -429,7 +462,7 @@ extension AppModel {
             if !userInitiated, !alreadyAnnounced, case .available(let v, _, _, _) = result {
                 // Auto mode but no reachable device: say the update is pending (it installs by itself
                 // when the device is back), rather than the plain « disponible » of notify mode.
-                let autoPending = auto && deviceForAutoUpdate(target.record) == nil
+                let autoPending = auto && autoUpdateDevice(for: target) == nil
                 let delivered = autoPending ? await notifyAutoPending(target, version: v)
                                             : await notify(target, version: v)
                 // Mark announced only when the notification was actually delivered: a dropped one
@@ -472,6 +505,16 @@ extension AppModel {
             if let d = devices.first(where: { $0.id == installation.deviceID }), d.isAvailable, d.isPaired { return d }
         }
         return nil
+    }
+
+    /// The device to auto-install a target's update on: for a per-device app target, that device (if
+    /// reachable); otherwise (a tweak / record-level target) the first reachable installed device.
+    private func autoUpdateDevice(for target: UpdateTarget) -> Device? {
+        if target.tweak == nil, let deviceID = target.device?.deviceID {
+            guard let d = devices.first(where: { $0.id == deviceID }), d.isAvailable, d.isPaired else { return nil }
+            return d
+        }
+        return deviceForAutoUpdate(target.record)
     }
 
     /// Posts the "update available" notification; returns whether it was actually delivered.
@@ -519,7 +562,14 @@ extension AppModel {
     /// XSide installed this release: it becomes the baseline, so a check is up to date until a newer
     /// release appears. Its trigger is marked announced too (no stale "available" notice).
     private func markInstalled(_ found: FoundRelease, for target: UpdateTarget) async {
-        await mutateSource(for: target) { $0.installedTag = found.tag; $0.installedName = found.name; $0.installedTrigger = found.trigger; $0.lastSeenTrigger = found.trigger }
+        if target.tweak == nil, let deviceID = target.device?.deviceID {
+            // Per-device baseline for the app: write this device's installation, not the shared source.
+            try? await library.setInstalledRelease(tag: found.tag, name: found.name, trigger: found.trigger,
+                                                   recordID: target.record.id, deviceID: deviceID)
+            await mutateSource(for: target) { $0.lastSeenTrigger = found.trigger } // shared notify-dedup
+        } else {
+            await mutateSource(for: target) { $0.installedTag = found.tag; $0.installedName = found.name; $0.installedTrigger = found.trigger; $0.lastSeenTrigger = found.trigger }
+        }
     }
 
     /// Reads the source again (an update that swapped a tweak changed its id), applies `change`, and

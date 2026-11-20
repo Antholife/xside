@@ -90,6 +90,13 @@ public struct Installation: Codable, Equatable, Sendable {
     public var pausedUntil: Date?
     /// The app's version installed there (the custom one, else the .ipa's). nil in older state.
     public var appVersion: String?
+    /// The release (GitHub tag / title / trigger) this device is on — the per-device update baseline.
+    /// The source (repo, variant, mode) is shared across devices, but the installed version is not,
+    /// so this overrides `UpdateSource.installedTag` for this device. nil falls back to the source's
+    /// shared value (older data, or never set per device).
+    public var installedTag: String?
+    public var installedName: String?
+    public var installedTrigger: String?
     /// XSide-in-app settings for this installation. nil in older state (seeded at migration).
     public var inApp: InAppSettings?
     /// Who paused the refresh (`refreshPaused`): the Mac or the device. nil when unknown.
@@ -188,7 +195,11 @@ public struct Installation: Codable, Equatable, Sendable {
                 withoutXSideFeaturesHere: Bool? = nil, signedChoices: SigningChoices? = nil,
                 tweaks: [TweakUse]? = nil, tweakResults: [String: TweakResult]? = nil,
                 embeddedDependencies: [String]? = nil, injectedTweaks: [InjectedTweak]? = nil,
-                tweakSupportImages: [String]? = nil) {
+                tweakSupportImages: [String]? = nil,
+                installedTag: String? = nil, installedName: String? = nil, installedTrigger: String? = nil) {
+        self.installedTag = installedTag
+        self.installedName = installedName
+        self.installedTrigger = installedTrigger
         self.injectedTweaks = injectedTweaks
         self.tweakSupportImages = tweakSupportImages
         self.tweaks = tweaks
@@ -237,6 +248,9 @@ public struct Installation: Codable, Equatable, Sendable {
         refreshPaused = (try? c.decodeIfPresent(Bool.self, forKey: .refreshPaused)) ?? false
         pausedUntil = try? c.decodeIfPresent(Date.self, forKey: .pausedUntil)
         appVersion = try? c.decodeIfPresent(String.self, forKey: .appVersion)
+        installedTag = try? c.decodeIfPresent(String.self, forKey: .installedTag)
+        installedName = try? c.decodeIfPresent(String.self, forKey: .installedName)
+        installedTrigger = try? c.decodeIfPresent(String.self, forKey: .installedTrigger)
         inApp = try? c.decodeIfPresent(InAppSettings.self, forKey: .inApp)
         pausedBy = try? c.decodeIfPresent(ChangeOrigin.self, forKey: .pausedBy)
         firstInstalledAt = try? c.decodeIfPresent(Date.self, forKey: .firstInstalledAt)
@@ -786,6 +800,20 @@ public actor AppLibrary {
         items[index].installations[i].pausedUntil = paused ? until : nil
         do { try save() } catch { items = previous; throw error }
         return true
+    }
+
+    /// Sets the per-device update baseline (the release this device is on): the tag, its title and
+    /// trigger. Each device has its own, since the same source can have different versions installed
+    /// on different devices. nil leaves a field unchanged. No-op when there's no such installation.
+    public func setInstalledRelease(tag: String?, name: String?, trigger: String?,
+                                    recordID: UUID, deviceID: String) throws {
+        let index = try indexOf(recordID)
+        guard let i = items[index].installations.firstIndex(where: { $0.deviceID == deviceID }) else { return }
+        let previous = items
+        if let tag { items[index].installations[i].installedTag = tag }
+        items[index].installations[i].installedName = name // may be nil (a release with no title)
+        if let trigger { items[index].installations[i].installedTrigger = trigger }
+        do { try save() } catch { items = previous; throw error }
     }
 
     /// Records the app's executable name (read at a signing, for records imported before it was

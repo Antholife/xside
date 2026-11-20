@@ -24,7 +24,13 @@ public struct UpdateChecker: Sendable {
     /// Available when the newest release matching the variant is a different tag than the one the
     /// source is on (`installedTag`). No `installedTag` yet (older data, or the baseline was never
     /// set) means we can't tell, so it reports up to date rather than a false update.
-    public func check(source: UpdateSource, kind: ReleaseKind) async -> UpdateOutcome {
+    /// `installedTag`/`installedTrigger` override the source's shared baseline with this device's own
+    /// (the per-device baseline, since a source can have different versions on different devices); nil
+    /// falls back to the source's.
+    public func check(source: UpdateSource, kind: ReleaseKind,
+                      installedTag: String? = nil, installedTrigger: String? = nil) async -> UpdateOutcome {
+        let baselineTag = installedTag ?? source.installedTag
+        let baselineTrigger = installedTrigger ?? source.installedTrigger
         let fm = FileManager.default
         do { try fm.createDirectory(at: workDir, withIntermediateDirectories: true) } catch {
             return .failed("work directory: \(error.localizedDescription)")
@@ -44,17 +50,17 @@ public struct UpdateChecker: Sendable {
             case .ambiguous: return .needsVariantChoice
             case .none: return .upToDate(trigger: source.lastSeenTrigger)
             case .found(let found):
-                guard let installedTag = source.installedTag, !installedTag.isEmpty else {
+                guard let baselineTag, !baselineTag.isEmpty else {
                     return .upToDate(trigger: found.trigger)
                 }
                 // A different tag is a new version.
-                if found.tag != installedTag {
+                if found.tag != baselineTag {
                     return .available(found, version: Self.displayTag(found.tag), stable: !found.isPrerelease)
                 }
                 // Same tag: a rolling tag (`nightly`, `latest`) can still be a fresh build. When the
                 // baseline trigger is known and differs, it is a new build; otherwise up to date (the
                 // caller learns the current trigger as the baseline).
-                if let base = source.installedTrigger, !base.isEmpty, found.trigger != base {
+                if let base = baselineTrigger, !base.isEmpty, found.trigger != base {
                     return .available(found, version: Self.displayTag(found.tag), stable: !found.isPrerelease)
                 }
                 return .upToDate(trigger: found.trigger)

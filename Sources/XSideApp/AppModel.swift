@@ -1594,7 +1594,7 @@ final class AppModel {
             // between accepted and this line, like a refresh). The person confirms any install.
             await reply(.accepted)
             await reply(linkReply(job.deviceID))
-            await reply(await modalUpdateCheckReply(recordID: job.recordID))
+            await reply(await modalUpdateCheckReply(recordID: job.recordID, deviceID: job.deviceID))
         case let .installUpdateRequested(tag, asset):
             Self.channelLogger.notice("channel: install-update \(tag) asked for \(found.recordID) from \(job.deviceID)")
             await reply(.accepted)
@@ -2715,6 +2715,13 @@ final class AppModel {
                                            }
                                        })
             flow.setStatus(.succeeded, for: deviceID)
+            // Record the release this device is now on, per device (its own update baseline, since the
+            // source is shared but the installed version is not): Anthony's iPhone v1 / iPad v0 case.
+            if let tag = flow.draft.updateInstalledTag, !tag.isEmpty {
+                try? await library.setInstalledRelease(tag: tag, name: flow.draft.updateInstalledName, trigger: nil,
+                                                       recordID: installed.id, deviceID: deviceID)
+                await reloadRecords()
+            }
             if installed.installations.first(where: { $0.deviceID == deviceID })?.duoCompatibilityMissing == true,
                let i = flow.runs.firstIndex(where: { $0.deviceID == deviceID }) {
                 flow.runs[i].duoMissing = true
