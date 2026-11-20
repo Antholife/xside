@@ -1729,9 +1729,17 @@ final class AppModel {
             let pct = backupFraction[key].map { max(0, min(100, Int(($0 * 100).rounded()))) }
             return .progress(stageKey: ProgressStep.backingUp.key, index: 1, total: total, percent: pct)
         }
-        guard case let .step(step) = jobs[key] else { return nil }
-        return .progress(stageKey: ProgressStep(step).key, index: base.index + (preBackup ? 1 : 0),
-                         total: total, percent: stepPercent[key])
+        switch jobs[key] {
+        case let .step(step):
+            return .progress(stageKey: ProgressStep(step).key, index: base.index + (preBackup ? 1 : 0),
+                             total: total, percent: stepPercent[key])
+        case .preparing, .waiting:
+            // Post-download: the IPA is being inspected / the job queued before the first resign step.
+            // Show « Préparation » (ring near 0), never a frozen « download 100% » that looks hung.
+            return .progress(stageKey: ProgressStep.preparing.key, index: 1, total: total, percent: nil)
+        case .none:
+            return nil
+        }
     }
 
     /// Holds a refresh's outcome across the streaming loop and its background waiter. Only ever

@@ -391,17 +391,17 @@ extension AppModel {
         var last: ChannelReply?
         while !box.done {
             let next: ChannelReply?
-            if case .step = jobs[installKey] {
-                next = updateModalFrame(installKey, preBackup: preBackup, backing: false) // a real resign step
-            } else if dataBusy.contains(installKey) {
-                // The pre-update safety backup runs before the resign (jobs still « preparing »): show it
-                // as the leading step with its own %, not a frozen « download 100% » (Anthony: « bloqué à
-                // 100% au téléchargement »). It didn't run before backup settings became per device.
+            if dataBusy.contains(installKey) {
+                // The pre-update safety backup runs before the resign: show it as the leading step.
                 next = updateModalFrame(installKey, preBackup: preBackup, backing: true)
-            } else if let f = updateFraction[key] {
-                next = .update(state: "downloading", percent: max(0, min(100, Int((f * 100).rounded())))) // still downloading / preparing
+            } else if case .step = jobs[installKey] {
+                next = updateModalFrame(installKey, preBackup: preBackup, backing: false) // a real resign step
+            } else if let f = updateFraction[key], f < 1 {
+                next = .update(state: "downloading", percent: max(0, min(99, Int((f * 100).rounded())))) // still downloading
             } else {
-                next = nil
+                // Download done, resign not yet reporting a step (inspecting the IPA / queued): show
+                // « Préparation », not a frozen « download 100% » that made Anthony cancel every time.
+                next = updateModalFrame(installKey, preBackup: preBackup, backing: false)
             }
             if let next, next != last { await frame(next); last = next; AppModel.debugTrace("stream frame: \(next) (jobs=\(String(describing: jobs[installKey])))") }
             try? await Task.sleep(for: .milliseconds(150))
