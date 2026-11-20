@@ -1717,6 +1717,23 @@ final class AppModel {
         return (timeline.position, timeline.total)
     }
 
+    /// A progress frame for the phone's UPDATE modal. The pre-update safety backup runs BEFORE the
+    /// resign (unlike a refresh, where the backup sits mid-pipeline), so it is shown as a leading step
+    /// (index 1) and the resign's own steps are shifted after it — otherwise the ring filled to 100%
+    /// during the backup then reset. `backing`: the backup is running now; else a real resign step is.
+    /// The resign's pipeline has no backup step of its own, so its places come from `countBackup: false`.
+    func updateModalFrame(_ key: JobKey, preBackup: Bool, backing: Bool) -> ChannelReply? {
+        let base = jobStepPlace(key, countBackup: false)
+        let total = base.total + (preBackup ? 1 : 0)
+        if backing {
+            let pct = backupFraction[key].map { max(0, min(100, Int(($0 * 100).rounded()))) }
+            return .progress(stageKey: ProgressStep.backingUp.key, index: 1, total: total, percent: pct)
+        }
+        guard case let .step(step) = jobs[key] else { return nil }
+        return .progress(stageKey: ProgressStep(step).key, index: base.index + (preBackup ? 1 : 0),
+                         total: total, percent: stepPercent[key])
+    }
+
     /// Holds a refresh's outcome across the streaming loop and its background waiter. Only ever
     /// touched on the main actor (the loop and the waiter both run there), so the race is only apparent.
     private final class RefreshOutcomeBox: @unchecked Sendable {

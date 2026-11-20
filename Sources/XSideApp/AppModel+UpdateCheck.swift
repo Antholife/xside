@@ -381,12 +381,23 @@ extension AppModel {
         // « Signature / Installation… · étape X/Y », not a frozen 100% (Anthony: « ça reste bloqué à
         // 100% au lieu de voir les steps d'install »). The install claims jobs[installKey] once it
         // starts; until then we're still downloading.
+        // This device's own pre-update safety backup decision (per device): whether « Sauvegarder avant
+        // une mise à jour » runs before the resign. Counted as the first step so « étape X/Y » is right.
+        let preBackup = AppManagement.shouldBackUpBeforeUpdate(
+            override: installation.inApp?.backupBeforeUpdate.value ?? record.options.backupBeforeUpdate,
+            default: Self.setting(Self.backupBeforeUpdateDefaultKey),
+            backupData: installation.inApp.map { $0.backupData.value } ?? record.options.backupData)
         AppModel.debugTrace("install-stream start key=\(installKey.recordID)|\(installKey.deviceID)")
         var last: ChannelReply?
         while !box.done {
             let next: ChannelReply?
             if case .step = jobs[installKey] {
-                next = jobProgressFrame(installKey, countBackup: false) // a real install step is running
+                next = updateModalFrame(installKey, preBackup: preBackup, backing: false) // a real resign step
+            } else if dataBusy.contains(installKey) {
+                // The pre-update safety backup runs before the resign (jobs still « preparing »): show it
+                // as the leading step with its own %, not a frozen « download 100% » (Anthony: « bloqué à
+                // 100% au téléchargement »). It didn't run before backup settings became per device.
+                next = updateModalFrame(installKey, preBackup: preBackup, backing: true)
             } else if let f = updateFraction[key] {
                 next = .update(state: "downloading", percent: max(0, min(100, Int((f * 100).rounded())))) // still downloading / preparing
             } else {
