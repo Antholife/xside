@@ -446,14 +446,17 @@ final class AppModel {
             inApp: facts?.inApp ?? inAppDefaults(at: now),
             updateRepo: facts?.updateSource.map { "\($0.repo.owner)/\($0.repo.repo)" },
             // Per device: this device's own frequency (its inApp). The « custom » picker option always
-            // needs a title (it is always present now), so resolve one unconditionally: the interval the
-            // Mac wrote when the source carries a custom one, else « Personnalisé ». Never nil.
+            // needs a title (it is always present now). A custom interval can't be typed on the phone,
+            // so it reads « Personnalisé depuis XSide : 4 sem. » (the interval the Mac wrote); the footer
+            // says where to change it. With no custom interval on the source, just « Personnalisé ».
             updateFrequency: facts?.inApp.updateFrequency.value ?? .global,
             customFrequencyLabel: {
+                let fr = textLanguage(facts) == "fr"
                 if let ci = facts?.updateSource?.checkInterval, UpdateFrequency.from(ci) == .custom {
-                    return IntervalLabel.short(ci)
+                    let interval = IntervalLabel.short(ci)
+                    return fr ? "Personnalisé depuis XSide : \(interval)" : "Custom from XSide: \(interval)"
                 }
-                return textLanguage(facts) == "fr" ? "Personnalisé" : "Custom"
+                return fr ? "Personnalisé" : "Custom"
             }(),
             dataBackups: (facts?.backups ?? []).map { snap in
                 (id: snap.id, label: snap.createdAt.formatted(style) + (snap.appVersion.map { " (v\($0))" } ?? ""))
