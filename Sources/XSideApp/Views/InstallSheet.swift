@@ -209,7 +209,8 @@ struct InstallSheet: View {
         .sheet(isPresented: Binding(get: { flow.promptForTag }, set: { flow.promptForTag = $0 })) {
             if let repo = GitHubSource.parse(flow.draft.updateSourceURL), let variant = flow.draft.updateVariant {
                 ConfirmReleaseSheet(model: model, flow: flow, repo: repo, variant: variant,
-                                    previousTag: flow.existing?.updateSource?.installedTag) {
+                                    previousTag: flow.existing?.installations.first { flow.deviceIDs.contains($0.deviceID) }?.installedTag
+                                        ?? flow.existing?.updateSource?.installedTag) {
                     if flow.step == InstallFlow.optionsStep && flow.step < flow.stepCount - 1 {
                         withAnimation(.smooth(duration: 0.2)) { flow.go(to: flow.step + 1) }
                     }
