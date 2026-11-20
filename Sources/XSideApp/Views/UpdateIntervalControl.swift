@@ -18,27 +18,44 @@ enum IntervalUnit: String, CaseIterable, Identifiable {
 
 /// Compact labels for an interval in seconds, used in the menus and summaries.
 enum IntervalLabel {
+    /// The largest whole unit that divides the interval evenly, as (count, unit) — the one ladder both
+    /// `short` variants format, so a threshold change lives in one place.
+    private enum ShortUnit { case never, months, weeks, days, hours, minutes }
+    private static func shortParts(_ seconds: TimeInterval) -> (n: Int, unit: ShortUnit) {
+        guard seconds > 0 else { return (0, .never) }
+        let m = Int((seconds / 60).rounded())
+        if m % (60 * 24 * 30) == 0 { return (m / (60 * 24 * 30), .months) }
+        if m % (60 * 24 * 7) == 0 { return (m / (60 * 24 * 7), .weeks) }
+        if m % (60 * 24) == 0 { return (m / (60 * 24), .days) }
+        if m % 60 == 0 { return (m / 60, .hours) }
+        return (m, .minutes)
+    }
+
     /// "6 h", "1 j", "1 sem.", "90 min", "2 mois", or "Jamais (manuel)" for `<= 0`.
     static func short(_ seconds: TimeInterval) -> String {
-        guard seconds > 0 else { return L("update.interval.never") }
-        let m = Int((seconds / 60).rounded())
-        if m % (60 * 24 * 30) == 0 { return "\(m / (60 * 24 * 30)) \(L("update.interval.unit.months"))" }
-        if m % (60 * 24 * 7) == 0 { return L("update.interval.week", m / (60 * 24 * 7)) }
-        if m % (60 * 24) == 0 { return "\(m / (60 * 24)) j" }
-        if m % 60 == 0 { return "\(m / 60) h" }
-        return "\(m) min"
+        let (n, unit) = shortParts(seconds)
+        switch unit {
+        case .never: return L("update.interval.never")
+        case .months: return "\(n) \(L("update.interval.unit.months"))"
+        case .weeks: return L("update.interval.week", n)
+        case .days: return "\(n) j"
+        case .hours: return "\(n) h"
+        case .minutes: return "\(n) min"
+        }
     }
 
     /// Language-explicit variant, for strings baked into the iOS Settings bundle where the device's
     /// language (not the Mac's) must decide: the Mac writes both so iOS picks the right one.
     static func short(_ seconds: TimeInterval, french: Bool) -> String {
-        guard seconds > 0 else { return french ? "Jamais (manuel)" : "Never (manual)" }
-        let m = Int((seconds / 60).rounded())
-        if m % (60 * 24 * 30) == 0 { return "\(m / (60 * 24 * 30)) \(french ? "mois" : "mo")" }
-        if m % (60 * 24 * 7) == 0 { let w = m / (60 * 24 * 7); return french ? "\(w) sem." : "\(w) wk" }
-        if m % (60 * 24) == 0 { return "\(m / (60 * 24)) \(french ? "j" : "d")" }
-        if m % 60 == 0 { return "\(m / 60) h" }
-        return "\(m) min"
+        let (n, unit) = shortParts(seconds)
+        switch unit {
+        case .never: return french ? "Jamais (manuel)" : "Never (manual)"
+        case .months: return "\(n) \(french ? "mois" : "mo")"
+        case .weeks: return french ? "\(n) sem." : "\(n) wk"
+        case .days: return "\(n) \(french ? "j" : "d")"
+        case .hours: return "\(n) h"
+        case .minutes: return "\(n) min"
+        }
     }
 
     /// The largest unit that divides the interval evenly, for seeding the custom editor.
