@@ -126,6 +126,25 @@ struct LibraryTests {
         #expect(stored.backupBeforeUpdate.value == true) // still the device's own (not re-stamped)
     }
 
+    /// The installed baseline used to live only on the shared source; it is per device now. On load, a
+    /// device with no baseline of its own is seeded from the source's old shared value, so each device
+    /// carries its own and nothing falls back to a shared value (the cross-device tag leak).
+    @Test func backfillsPerDeviceBaselineFromSharedSourceOnLoad() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let root = tmp.appendingPathComponent("lib")
+        let lib = AppLibrary(root: root)
+        let rec = try await lib.importIPA(try makeIPA(in: tmp), info: info, teamID: "TEAM123456")
+        try await lib.upsert(inst("dev1"), for: rec.id) // an installation with no baseline of its own
+        var src = Self.source(.notify)
+        src.installedTag = "v1.1.8"; src.installedName = "YTKACE v1.1.8"
+        try await lib.setUpdateSource(src, forRecord: rec.id)
+        // A fresh instance reloads from disk and runs the backfill.
+        let reloaded = AppLibrary(root: root)
+        let installation = try #require(await reloaded.records().first?.installations.first)
+        #expect(installation.installedTag == "v1.1.8")
+        #expect(installation.installedName == "YTKACE v1.1.8")
+    }
+
     @Test func persistsAcrossInstances() async throws {
         let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
         let root = tmp.appendingPathComponent("lib")

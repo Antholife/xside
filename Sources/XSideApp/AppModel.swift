@@ -441,8 +441,7 @@ final class AppModel {
             installedOn: (facts?.firstInstalledAt ?? now).formatted(style),
             connection: facts?.lastCheckIn.map { "✓ " + $0.formatted(style) } ?? "—",
             lastRefresh: outcome.map { ($0.succeeded ? "✓ " : "✕ ") + $0.at.formatted(style) } ?? "—",
-            releaseTag: facts.flatMap { $0.installedName ?? $0.installedTag } // this device's baseline…
-                ?? facts?.updateSource.flatMap { $0.installedName ?? $0.installedTag }, // …else the source's shared one
+            releaseTag: facts.flatMap { $0.installedName ?? $0.installedTag }, // this device's own baseline (per device; no shared fallback)
             xsideVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
             inApp: facts?.inApp ?? inAppDefaults(at: now),
             updateRepo: facts?.updateSource.map { "\($0.repo.owner)/\($0.repo.repo)" },

@@ -446,6 +446,7 @@ public actor AppLibrary {
         self.root = root
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         (items, loadIssue) = Self.load(root: root)
+        items = Self.backfillInstalledBaseline(items)
         connections = Self.loadConnections(root: root, records: items)
         Self.sweepLeftovers(root: root, temporaryDirectory: temporaryDirectory)
     }
@@ -513,6 +514,24 @@ public actor AppLibrary {
     public static func readRecords(root: URL) -> [AppRecord]? {
         guard let data = try? Data(contentsOf: root.appendingPathComponent("state.json")) else { return nil }
         return decode(data)?.records
+    }
+
+    /// The installed release (tag/name/trigger) used to live on the shared `UpdateSource`; it is per
+    /// device now. Seed any installation that has no tag of its own yet from the source's old shared
+    /// value, so every device carries its OWN baseline and nothing ever falls back to a shared value
+    /// again (that fallback was the cross-device leak). Idempotent: it only fills gaps, never touches a
+    /// device that already has its own baseline, so it is safe to run on every load.
+    private static func backfillInstalledBaseline(_ records: [AppRecord]) -> [AppRecord] {
+        records.map { record in
+            guard let source = record.updateSource, source.installedTag != nil else { return record }
+            var r = record
+            for i in r.installations.indices where r.installations[i].installedTag == nil {
+                r.installations[i].installedTag = source.installedTag
+                r.installations[i].installedName = source.installedName
+                r.installations[i].installedTrigger = source.installedTrigger
+            }
+            return r
+        }
     }
 
     private static func load(root: URL) -> ([AppRecord], LibraryLoadIssue?) {

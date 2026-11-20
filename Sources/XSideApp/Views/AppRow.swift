@@ -202,8 +202,11 @@ struct AppRow: View {
                 }
                 // The tracked release (title or tag, e.g. « YTKACE v1.1.8 ») on its own line, under
                 // the name and version (Anthony: « met-le en dessous du nom et de sa version »).
-                if let src = entry.record.updateSource,
-                   let label = entry.installation.installedName ?? entry.installation.installedTag ?? src.installedName ?? src.installedTag,
+                // Per device only: this device's own installed release, never a shared fallback (a
+                // reinstall of another device must not change what this one shows). Legacy devices got
+                // their own baseline seeded at load (backfillInstalledBaseline).
+                if entry.record.updateSource != nil,
+                   let label = entry.installation.installedName ?? entry.installation.installedTag,
                    !label.isEmpty {
                     Text(label)
                         .font(.system(size: 9.5, weight: .semibold, design: .rounded))
