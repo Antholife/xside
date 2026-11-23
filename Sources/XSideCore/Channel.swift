@@ -320,6 +320,21 @@ public struct PreviousRun: Equatable, Sendable {
 }
 
 /// XSide's answer to a request.
+/// What a Mac-initiated action (refresh, update install, backup, restore) is doing right now, pushed
+/// on an open watch so the app shows the same full-screen modal as a phone-started action, live
+/// (« … · initié depuis ton Mac »). `stageKey` is a `ProgressStep.key`; `index`/`total` its place;
+/// `percent` its 0…100 when known. It clears (the `.live` carries none) when the action ends — a
+/// refresh/install replaces the app, so the modal usually just ends with it. Rides on `.live`.
+public struct WatchActivity: Codable, Equatable, Sendable {
+    public var stageKey: String
+    public var index: Int
+    public var total: Int
+    public var percent: Int?
+    public init(stageKey: String, index: Int, total: Int, percent: Int? = nil) {
+        self.stageKey = stageKey; self.index = index; self.total = total; self.percent = percent
+    }
+}
+
 public enum ChannelReply: Codable, Equatable, Sendable {
     /// The installation's settings and, when known, its newest refresh outcome.
     /// `pausedUntil`: the end of a pause of a while made on the Mac (see the header).
@@ -337,7 +352,8 @@ public enum ChannelReply: Codable, Equatable, Sendable {
     case rejected
     /// On a watch: the installation's settings and newest refresh outcome changed on the Mac.
     /// `seq`: this line's number on the connection (1, 2, 3…, shared with `alive`).
-    case live(seq: Int, InAppSettings, lastRefresh: RefreshOutcome? = nil, pausedUntil: Date? = nil, backupCount: Int? = nil)
+    case live(seq: Int, InAppSettings, lastRefresh: RefreshOutcome? = nil, pausedUntil: Date? = nil, backupCount: Int? = nil,
+              activity: WatchActivity? = nil)
     /// On a watch: nothing to say for a while, the connection is alive.
     case alive(seq: Int)
     /// While a phone-asked refresh runs, the live step for its modal (Slice 2): `stageKey` is a
@@ -361,7 +377,7 @@ public enum ChannelReply: Codable, Equatable, Sendable {
     case link(transport: String)
 
     private enum CodingKeys: String, CodingKey {
-        case type, settings, lastRefresh, reasonKey, by, seq, pausedUntil, stageKey, index, total, percent, state, version, tag, asset, downloadDir, transport, backupCount
+        case type, settings, lastRefresh, reasonKey, by, seq, pausedUntil, stageKey, index, total, percent, state, version, tag, asset, downloadDir, transport, backupCount, activity
     }
 
     public init(from decoder: Decoder) throws {
@@ -383,7 +399,8 @@ public enum ChannelReply: Codable, Equatable, Sendable {
             self = .live(seq: try c.decode(Int.self, forKey: .seq), try c.decode(InAppSettings.self, forKey: .settings),
                          lastRefresh: try c.decodeIfPresent(RefreshOutcome.self, forKey: .lastRefresh),
                          pausedUntil: try c.decodeIfPresent(Date.self, forKey: .pausedUntil),
-                         backupCount: try c.decodeIfPresent(Int.self, forKey: .backupCount))
+                         backupCount: try c.decodeIfPresent(Int.self, forKey: .backupCount),
+                         activity: try c.decodeIfPresent(WatchActivity.self, forKey: .activity))
         case "alive": self = .alive(seq: try c.decode(Int.self, forKey: .seq))
         case "progress":
             self = .progress(stageKey: try c.decode(String.self, forKey: .stageKey),
@@ -427,13 +444,14 @@ public enum ChannelReply: Codable, Equatable, Sendable {
             try c.encode("paused", forKey: .type)
             try c.encode(by, forKey: .by)
         case .rejected: try c.encode("rejected", forKey: .type)
-        case let .live(seq, s, lastRefresh, pausedUntil, backupCount):
+        case let .live(seq, s, lastRefresh, pausedUntil, backupCount, activity):
             try c.encode("live", forKey: .type)
             try c.encode(seq, forKey: .seq)
             try c.encode(s, forKey: .settings)
             try c.encodeIfPresent(lastRefresh, forKey: .lastRefresh)
             try c.encodeIfPresent(pausedUntil.flatMap(channelClamped), forKey: .pausedUntil)
             try c.encodeIfPresent(backupCount, forKey: .backupCount)
+            try c.encodeIfPresent(activity, forKey: .activity)
         case let .alive(seq):
             try c.encode("alive", forKey: .type)
             try c.encode(seq, forKey: .seq)
@@ -457,7 +475,7 @@ public enum ChannelReply: Codable, Equatable, Sendable {
     /// The line number of a watch line (`live`, `alive`), nil for the other replies.
     public var watchSeq: Int? {
         switch self {
-        case let .live(seq, _, _, _, _), let .alive(seq): seq
+        case let .live(seq, _, _, _, _, _), let .alive(seq): seq
         default: nil
         }
     }

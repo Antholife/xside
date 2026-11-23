@@ -6,11 +6,16 @@ public struct ChannelWatchState: Equatable, Sendable {
     public var lastRefresh: RefreshOutcome?
     /// The end of a pause of a while made on the Mac (review D–G, minor 7).
     public var pausedUntil: Date?
+    /// A Mac-initiated action running for this installation now (nil when none): the watch carries it
+    /// so the app shows the same full-screen modal live (« … · initié depuis ton Mac »).
+    public var activity: WatchActivity?
 
-    public init(settings: InAppSettings, lastRefresh: RefreshOutcome?, pausedUntil: Date? = nil) {
+    public init(settings: InAppSettings, lastRefresh: RefreshOutcome?, pausedUntil: Date? = nil,
+                activity: WatchActivity? = nil) {
         self.settings = settings
         self.lastRefresh = lastRefresh
         self.pausedUntil = pausedUntil
+        self.activity = activity
     }
 
     /// The installation as stored (its settings carry the pause, as automatic refresh), nil while
@@ -75,8 +80,8 @@ public final class ChannelWatches<Token: Hashable> {
     public func update(_ installationID: String, to state: ChannelWatchState, now: Date) -> Bool {
         guard var watch = watches[installationID], watch.state != state else { return false }
         watch.state = state
-        return write(.live(seq: watch.seq + 1, state.settings, lastRefresh: state.lastRefresh, pausedUntil: state.pausedUntil), to: &watch,
-                     installationID: installationID, now: now)
+        return write(.live(seq: watch.seq + 1, state.settings, lastRefresh: state.lastRefresh, pausedUntil: state.pausedUntil,
+                           activity: state.activity), to: &watch, installationID: installationID, now: now)
     }
 
     /// An `alive` line on each watch that wrote nothing for `keepAliveInterval`.

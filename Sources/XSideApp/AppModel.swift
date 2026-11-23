@@ -1383,7 +1383,8 @@ final class AppModel {
         let now = Date()
         for id in channelWatches.installationIDs {
             guard let found = Self.installation(channelID: id, in: records),
-                  let state = ChannelWatchState(found.installation) else { continue }
+                  var state = ChannelWatchState(found.installation) else { continue }
+            state.activity = watchActivity(JobKey(recordID: found.recordID, deviceID: found.installation.deviceID))
             if channelWatches.update(id, to: state, now: now) {
                 Self.channelLogger.notice("channel: live update written to the watch of \(found.recordID) on \(found.installation.deviceID)")
             }
@@ -1719,6 +1720,20 @@ final class AppModel {
     /// A `progress` frame for a running job's modal (refresh or a phone update install). `countBackup`
     /// false for an update install, whose pipeline has no backup step (the pre-update snapshot is
     /// separate), so « étape X/Y » counts right.
+    /// The live activity of a Mac-initiated job for `key`, for an open watch to show its modal; nil
+    /// when nothing runs. A refresh/install step wins; else a standalone backup/restore (dataBusy).
+    func watchActivity(_ key: JobKey) -> WatchActivity? {
+        if case let .progress(stage, index, total, percent)? = jobProgressFrame(key) {
+            return WatchActivity(stageKey: stage, index: index, total: total, percent: percent)
+        }
+        if dataBusy.contains(key) {
+            let pct = backupFraction[key].map { max(0, min(100, Int(($0 * 100).rounded()))) }
+            return WatchActivity(stageKey: restoringApps.contains(key) ? ProgressStep.restoring.key : ProgressStep.backingUp.key,
+                                 index: 1, total: 1, percent: pct)
+        }
+        return nil
+    }
+
     func jobProgressFrame(_ key: JobKey, countBackup: Bool = true) -> ChannelReply? {
         let stageKey: String
         let percent: Int?
@@ -2146,6 +2161,7 @@ final class AppModel {
         if jobs[key] == .step(.backingUp), let shown = stepPercent[key], percent < shown { return }
         stepPercent[key] = percent
         updateDockBadge()
+        pushToWatches() // live % to an open watch's modal
     }
 
     /// The current step's percentage of the install in `flow` (its device being installed now).
@@ -2357,6 +2373,7 @@ final class AppModel {
         claims[key, default: 0] += 1
         refreshResults[key] = nil // a new run: the bar follows it
         if jobs[key] == nil { jobs[key] = stage }
+        pushToWatches() // a Mac action started: an open watch opens its modal (« initié depuis ton Mac »)
         if jobActivity == nil {
             jobActivity = ProcessInfo.processInfo.beginActivity(
                 options: [.userInitiated, .idleSystemSleepDisabled], reason: "Installing or refreshing an app")
@@ -2371,6 +2388,7 @@ final class AppModel {
             stepPercent[key] = nil
             stepStarted[key] = nil
             updateDockBadge()
+            pushToWatches() // the job ended: clear the watch's live activity (its modal closes)
         }
         if claims.isEmpty, let activity = jobActivity {
             ProcessInfo.processInfo.endActivity(activity)
@@ -2422,6 +2440,7 @@ final class AppModel {
                         self.stepPercent[key] = nil // a new step starts from nothing
                         self.stepStarted[key] = Date()
                         self.updateDockBadge()
+                        self.pushToWatches() // live step to an open watch's modal
                         progress(.step(step))
                     }
                 }, duoOutcome: { outcome in
@@ -3177,7 +3196,7 @@ final class AppModel {
         let count = await backupStore.list(signedBundleID: backupBundleID(e), deviceID: deviceID).count
         switch reply {
         case let .settings(s, lr, pu, _): return .settings(s, lastRefresh: lr, pausedUntil: pu, backupCount: count)
-        case let .live(seq, s, lr, pu, _): return .live(seq: seq, s, lastRefresh: lr, pausedUntil: pu, backupCount: count)
+        case let .live(seq, s, lr, pu, _, act): return .live(seq: seq, s, lastRefresh: lr, pausedUntil: pu, backupCount: count, activity: act)
         default: return reply
         }
     }
@@ -3217,13 +3236,15 @@ final class AppModel {
     func backUpNow(_ entry: AppEntry) async -> BackupOutcome {
         let key = entry.id
         dataBusy.insert(key)
-        defer { dataBusy.remove(key); backupFraction[key] = nil }
+        pushToWatches() // a Mac-side backup: an open watch shows it live
+        defer { dataBusy.remove(key); backupFraction[key] = nil; pushToWatches() }
         // Called off the main actor, once per pulled file: hop to main, and drop a late report.
         let report: @Sendable (Int, Int, Int64, Int64) -> Void = { [weak self] done, total, bytes, bytesTotal in
             let f = BackupProgress.fraction(filesDone: done, filesTotal: total, bytesDone: bytes, bytesTotal: bytesTotal)
             Task { @MainActor in
                 guard let self, self.dataBusy.contains(key) else { return }
                 self.backupFraction[key] = BackupProgress.monotonic(current: self.backupFraction[key], new: f)
+                self.pushToWatches()
             }
         }
         // The live record and installation: the entry's own copy predates a toggle, or a reinstall
@@ -3258,7 +3279,8 @@ final class AppModel {
     func restore(_ snapshot: BackupSnapshot, _ entry: AppEntry) async -> Bool {
         dataBusy.insert(entry.id)
         restoringApps.insert(entry.id) // so the panel says « Restauration… », not « Sauvegarde… »
-        defer { dataBusy.remove(entry.id); restoringApps.remove(entry.id) }
+        pushToWatches() // a Mac-side restore: an open watch shows it live
+        defer { dataBusy.remove(entry.id); restoringApps.remove(entry.id); pushToWatches() }
         // The live record and installation, as in backUpNow: the entry's copy may be stale.
         let liveRecord = records.first { $0.id == entry.record.id }
         let install = liveRecord?.installations.first { $0.deviceID == entry.installation.deviceID } ?? entry.installation

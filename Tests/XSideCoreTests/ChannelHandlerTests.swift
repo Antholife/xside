@@ -117,6 +117,18 @@ import Foundation
         #expect(live.contains("\"backupCount\":5"))
     }
 
+    /// A Mac action's live step rides on `.live` (`activity`) so the phone's modal can follow a
+    /// Mac-started action; omitted when there's none.
+    @Test func watchActivityRoundTripsOnLive() throws {
+        let s = InAppSettings.defaults(reminder: true, at: now)
+        let act = WatchActivity(stageKey: "signing", index: 3, total: 5, percent: 42)
+        let body = try ChannelReply.live(seq: 2, s, activity: act).encodedBody()
+        #expect(String(decoding: body, as: UTF8.self).contains("\"activity\""))
+        guard case let .live(_, _, _, _, _, a) = try ChannelReply.decode(body: body) else { Issue.record("not live"); return }
+        #expect(a == act)
+        #expect(!String(decoding: try ChannelReply.live(seq: 2, s).encodedBody(), as: UTF8.self).contains("activity"))
+    }
+
     /// InstallationFacts kept its `backups` — its init used to accept the parameter and silently drop
     /// it, so the phone's « Restaurer depuis… » list and the static « Données » count were always empty.
     @Test func installationFactsKeepsItsBackups() {

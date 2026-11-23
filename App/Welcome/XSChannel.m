@@ -668,6 +668,31 @@ static void XSTellLiveChange(NSArray<NSString *> *byMac, NSString *how) {
     XSShowMacSettingsChange(byMac);
 }
 
+static void XSShowProgressFrame(NSDictionary *reply, BOOL french); // defined below
+
+/// A Mac-initiated action's live modal is up, driven by the watch (not a phone-started action).
+static BOOL XSMacActionModalShown;
+
+/// A watch line's `activity` (a Mac-started refresh/install/backup/restore running for this
+/// installation): open the same full-screen modal and show its step live (Anthony: « temps réel pour
+/// une action lancée depuis le Mac »). No `activity` → close it if it was up. A phone-started action
+/// (XSRefreshRunning) owns the modal, so leave it alone then.
+static void XSHandleWatchActivity(NSDictionary *reply) {
+    id activity = reply[@"activity"];
+    if (![activity isKindOfClass:NSDictionary.class]) {
+        if (XSMacActionModalShown) { XSMacActionModalShown = NO; XSRefreshModalDismiss(); }
+        return;
+    }
+    if (XSRefreshRunning) return; // a phone-started action owns the modal
+    BOOL fr = XSFrench();
+    if (!XSMacActionModalShown) {
+        XSMacActionModalShown = YES;
+        XSRefreshModalShowTitled(NO, fr ? @"Opération depuis ton Mac" : @"Running from your Mac",
+                                 fr ? @"Lancée depuis XSide sur ton Mac." : @"Started from XSide on your Mac.");
+    }
+    XSShowProgressFrame(activity, fr); // the activity dict carries stageKey/index/total/percent
+}
+
 static void XSOpenWatch(void) {
     XSCheckInRunning = YES; // its first line is a check-in's answer (see XSCheckInEnded)
     NSDate *opened = NSDate.date;
@@ -685,10 +710,12 @@ static void XSOpenWatch(void) {
             NSArray<NSString *> *byMac = answered ? XSAdoptCheckInReply(result, reply) : nil;
             NSLog(@"XSide: watch: %@ (result %ld)", answered ? @"open" : @"not open, polling", (long)result);
             XSTellLiveChange(byMac, @"watch");
+            if (answered) XSHandleWatchActivity(reply); // a Mac action already running when the watch opened
         } else if (result == XSChannelReplied) {
             // A change made on the Mac, written on the watch as it was stored.
             NSArray<NSString *> *byMac = XSAdoptCheckInReply(result, reply);
             XSTellLiveChange(byMac, @"watch");
+            XSHandleWatchActivity(reply); // a Mac action's live step (or its end)
             // Confirmed with an ordinary check-in, so the Mac can say the device has it.
             if (byMac.count) {
                 XSRunCheckIn(3, NO, ^(XSChannelResult r, NSArray *more) { XSTellLiveChange(more, @"confirm"); });
@@ -698,6 +725,8 @@ static void XSOpenWatch(void) {
         XSChannelExchange *ended = weakExchange;
         if (ended && XSWatch != ended) return; // closed by the app (left the foreground)
         XSWatch = nil;
+        // The watch ended (a refresh replaced the app, the network went): drop a Mac-action modal.
+        if (XSMacActionModalShown) { XSMacActionModalShown = NO; XSRefreshModalDismiss(); }
         NSTimeInterval lived = -[opened timeIntervalSinceNow];
         NSTimeInterval delay = XSWatchRetryDelay(answered, lived);
         NSLog(@"XSide: watch: ended after %.0f s (result %ld), next in %.0f s", lived, (long)result, delay);

@@ -74,7 +74,7 @@ import Foundation
         #expect(reader.open(line: line(try settingsReply.encodedLine())) == nil)
         #expect(reader.lastSeq == 0)
         // The real one opens.
-        guard case let .live(1, received, _, _, _)? = reader.open(line: real) else { Issue.record("real line refused"); return }
+        guard case let .live(1, received, _, _, _, _)? = reader.open(line: real) else { Issue.record("real line refused"); return }
         #expect(received.reminder.value == false)
     }
 
@@ -102,7 +102,7 @@ import Foundation
         // To another installation: refused.
         var elsewhere = ChannelWatchReader(installationID: "REC|other", nonce: "w1", secret: secret)
         #expect(elsewhere.open(line: live1) == nil)
-        guard case .live(3, _, _, _, _)? = reader.open(line: live3) else { Issue.record("live 3 refused"); return }
+        guard case .live(3, _, _, _, _, _)? = reader.open(line: live3) else { Issue.record("live 3 refused"); return }
     }
 
     // MARK: the Mac's side
@@ -225,8 +225,8 @@ import Foundation
         #expect(sink.lines.count == 3)
         // The phone opens them in order and sees each change, stamped by the Mac.
         var reader = ChannelWatchReader(installationID: channelID, nonce: "w1", secret: secret)
-        guard case let .live(1, a, _, _, _)? = reader.open(line: line(sink.lines[1])),
-              case let .live(2, b, _, _, _)? = reader.open(line: line(sink.lines[2])) else { Issue.record("lines refused"); return }
+        guard case let .live(1, a, _, _, _, _)? = reader.open(line: line(sink.lines[1])),
+              case let .live(2, b, _, _, _, _)? = reader.open(line: line(sink.lines[2])) else { Issue.record("lines refused"); return }
         #expect(a.refreshCard.value == false && a.refreshCard.changedBy == .mac)
         #expect(b.autoRefresh.value == false && b.autoRefresh.changedBy == .mac)
         #expect(ChannelHandler.fieldsChanged(for: first, by: a) == [.refreshCard])

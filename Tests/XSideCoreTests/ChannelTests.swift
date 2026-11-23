@@ -45,7 +45,7 @@ import CryptoKit
         for reply in [ChannelReply.settings(settings, pausedUntil: far), .live(seq: 1, settings, pausedUntil: far)] {
             let decoded = try ChannelReply.decode(body: try reply.encodedBody())
             switch decoded {
-            case let .settings(_, _, until, _), let .live(_, _, _, until, _): #expect(until == max)
+            case let .settings(_, _, until, _), let .live(_, _, _, until, _, _): #expect(until == max)
             default: Issue.record("wrong reply \(decoded)")
             }
         }
