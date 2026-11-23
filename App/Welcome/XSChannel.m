@@ -1315,13 +1315,51 @@ void XSRequestBackup(void) {
     }); });
 }
 
+/// The restore, streamed to the full-screen modal like a refresh (Anthony: « modale dynamique, pas
+/// direct le check »): « connexion… » → « Restauration des données… » while the Mac works, then the
+/// outcome. The Mac terminates this app to replace its data, so the modal usually shows the work and
+/// then the app closes (« rouvre-la ensuite »); no step list (restore is one phase).
+static void XSStartRestoreExchange(NSString *backupID) {
+    BOOL fr0 = XSFrench();
+    XSRefreshModalShowTitled(NO, fr0 ? @"Restauration des données" : @"Restoring the data",
+                             fr0 ? @"Les données actuelles seront remplacées." : @"The current data will be replaced.");
+    XSCancelFromPhone = NO;
+    XSRefreshModalSetCancel(^{ XSRequestCancel(); });
+    [XSPatientExchange(XSRestoreBody(backupID), YES, ^(XSChannelResult result, NSDictionary *reply, BOOL final) {
+        BOOL fr = XSFrench();
+        NSString *type = reply[@"type"];
+        void (^retry)(void) = ^{ XSRequestRestore(backupID); };
+        if (result == XSChannelWaiting) { return; } // the modal already shows « connexion… »
+        if (result == XSChannelNoOutcome) { return; } // the app is being terminated to swap its data
+        if (result != XSChannelReplied) {
+            XSPillContent *u = XSRefreshUnansweredPill(result);
+            XSRefreshModalError(u.lead, u.hint, retry);
+            return;
+        }
+        if ([type isEqual:@"accepted"]) {
+            XSRefreshModalWorking();
+        } else if ([type isEqual:@"link"]) {
+            // The hero's transport, already applied by the reply reader.
+        } else if ([type isEqual:@"progress"]) {
+            XSShowProgressFrame(reply, fr);
+        } else if ([type isEqual:@"refreshed"]) {
+            XSRefreshModalStep(fr ? @"Restauré ✓" : @"Restored ✓",
+                               fr ? @"L'app va se fermer, rouvre-la ensuite." : @"The app will close, open it again then.", 1.0);
+        } else if ([type isEqual:@"failed"]) {
+            NSString *reason = [reply[@"reasonKey"] isKindOfClass:NSString.class] ? reply[@"reasonKey"] : @"unknown";
+            if ([reason isEqual:@"cancelled"]) XSUpdateModalDone(XSCancelTitle(fr), nil, NO);
+            else XSRefreshModalError(fr ? @"La restauration a échoué" : @"The restore failed", XSReasonText(reason, fr), retry);
+        } else if ([type isEqual:@"busy"]) {
+            XSRefreshModalError(fr ? @"XSide est occupé" : @"XSide is busy",
+                                fr ? @"Réessaie dans un instant." : @"Try again in a moment.", retry);
+        } else if ([type isEqual:@"deviceUnreachable"] || [type isEqual:@"rejected"]) {
+            XSPillContent *u = XSRefreshUnansweredPill(XSChannelNotFound);
+            XSRefreshModalError(u.lead, u.hint, retry);
+        }
+    }) start];
+}
+
 void XSRequestRestore(NSString *backupID) {
     if (!XSInstallationID() || !XSChannelSecret() || backupID.length == 0) return;
-    NSDictionary *body = XSRestoreBody(backupID);
-    XSAfterSheet(^{ XSExplainNetworkThen(^{
-        XSRequestDataActionNow(body, @"Restauration des données…", @"Restoring the data…",
-                               @"Restauration demandée à ton Mac", @"Restore asked of your Mac",
-                               @"Les données actuelles vont être remplacées par la sauvegarde choisie.",
-                               @"The current data will be replaced by the chosen backup.");
-    }); });
+    XSAfterSheet(^{ XSExplainNetworkThen(^{ XSStartRestoreExchange(backupID); }); });
 }

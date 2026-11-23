@@ -1634,13 +1634,31 @@ final class AppModel {
             Self.channelLogger.notice("channel: restore \(backupID) asked for \(found.recordID) from \(job.deviceID)")
             // Scope to THIS installation's own snapshots: the channel authenticates one installation,
             // so a request (crafted or replayed) must not reach another device's data of the app.
-            if let entry = entry(recordID: job.recordID, deviceID: job.deviceID) {
-                let own = await backupStore.list(signedBundleID: backupBundleID(entry), deviceID: job.deviceID)
-                if let snap = own.first(where: { $0.id == backupID }) {
-                    Task { [weak self] in _ = await self?.restore(snap, entry) }
-                }
+            guard let entry = entry(recordID: job.recordID, deviceID: job.deviceID),
+                  let snap = await backupStore.list(signedBundleID: backupBundleID(entry), deviceID: job.deviceID)
+                      .first(where: { $0.id == backupID }) else {
+                await reply(.rejected)
+                return
             }
             await reply(.accepted)
+            await reply(linkReply(job.deviceID))
+            // Stream « Restauration… » while it runs, then the outcome, so the phone shows the live
+            // modal (Anthony), not an instant ✓. One phase (no sub-steps / fraction): a single frame.
+            let box = RefreshOutcomeBox()
+            let work = Task { @MainActor in
+                box.outcome = await self.restore(snap, entry) ? .refreshed : .failed(reasonKey: "unknown")
+                box.done = true
+            }
+            phoneOpCancels[key] = { work.cancel() }
+            defer { phoneOpCancels[key] = nil }
+            var lastRestoreFrame: ChannelReply?
+            while !box.done {
+                let f: ChannelReply = .progress(stageKey: ProgressStep.restoring.key, index: 1, total: 1, percent: nil)
+                if f != lastRestoreFrame { await reply(f); lastRestoreFrame = f }
+                try? await Task.sleep(for: .milliseconds(150))
+            }
+            _ = await work.value
+            if let outcome = box.outcome { await reply(outcome) }
         case .cancelRequested:
             Self.channelLogger.notice("channel: cancel asked for \(found.recordID) from \(job.deviceID)")
             // Stop the running phone operation (refresh or update install) for this installation, if
