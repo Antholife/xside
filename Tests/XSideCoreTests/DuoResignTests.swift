@@ -109,6 +109,15 @@ private actor CallOrder {
     func add(_ s: String) { items.append(s) }
 }
 
+/// Captures the `duoFixedReason` the resigner hands the settings-section closure (a sync @Sendable
+/// closure, so no actor).
+private final class ReasonBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var captured: (called: Bool, reason: String?) = (false, nil)
+    func set(_ reason: String?) { lock.lock(); captured = (true, reason); lock.unlock() }
+    var value: (called: Bool, reason: String?) { lock.lock(); defer { lock.unlock() }; return captured }
+}
+
 struct DuoResignTests {
     @Test func raisesTheSDKAndNamesTheAppsSceneDelegate() async throws {
         let f = try await DuoFixture(executable: realExecutable("duo-objc-fat"))
@@ -128,6 +137,24 @@ struct DuoResignTests {
         // Nothing of the patch's own files is left in the bundle.
         let items = try FileManager.default.contentsOfDirectory(atPath: app.path)
         #expect(!items.contains { $0.hasPrefix("duo-") })
+    }
+
+    @Test func theDuoRowStaysAToggleWhenXSideAppliedTheOptionItself() async throws {
+        // Turning Duo on raises the app's SDK to 27.1; the phone's Settings must keep a toggle so the
+        // user can turn it off, not read the raised SDK as « already supported » (which locked it).
+        let f = try await DuoFixture(executable: realExecutable("duo-objc-fat"))
+        let box = ReasonBox()
+        let resigner = Resigner(runner: RoutingRunner(fake: f.fake), welcomeDylib: f.welcome,
+                                settingsSection: { _, _, reason in
+                                    box.set(reason)
+                                    return SettingsSection(titleKey: "t", footerKey: nil, rows: [], strings: [:])
+                                },
+                                iCloudLibrary: f.iCloud, duoLegacyLibrary: f.legacy)
+        _ = try await resigner.resign(ipa: f.ipa, workDir: f.work, bundleID: "com.example.new",
+                                      options: InstallOptions(duoCompatibility: true), iconURL: nil,
+                                      profileURL: f.profileURL, profile: profile(), identitySHA1: "SHA", facts: nil)
+        #expect(box.value.called)
+        #expect(box.value.reason == nil)
     }
 
     @Test func legacySlicesAreRemovedBeforeThePatchSoTheSDKCheckOnlySeesModernCode() async throws {

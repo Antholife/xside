@@ -338,7 +338,11 @@ public struct Resigner: Sendable {
         if let settingsSection {
             // Mirror the Mac's greyed Duo option: when it can't be turned on, the phone's Settings
             // shows a read-only row with the reason instead of a toggle (iOS can't disable one).
-            let duoFixedReason = hasLibrary ? duoOptionFixedReason(app, executable: executableURL) : nil
+            // Only when the app supports the Duo NATIVELY: applying the option ourselves raises the
+            // SDK to 27.1, which would then read as « already supported » and lock the toggle so the
+            // user couldn't turn it back off. So with the option on, keep the toggle.
+            let duoFixedReason = (hasLibrary && options.duoCompatibility != true)
+                ? duoOptionFixedReason(app, executable: executableURL) : nil
             let section = hasLibrary ? settingsSection(profile, facts, duoFixedReason) : nil
             let tweaks = TweaksPane.make(phoneTweaks, language: textLanguage(facts))
             // Never fails the install: the app keeps its page as it was.
