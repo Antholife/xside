@@ -678,12 +678,12 @@ static BOOL XSMacActionModalShown;
 /// une action lancée depuis le Mac »). No `activity` → close it if it was up. A phone-started action
 /// (XSRefreshRunning) owns the modal, so leave it alone then.
 static void XSHandleWatchActivity(NSDictionary *reply) {
+    if (XSRefreshRunning) return; // a phone-started action owns the modal: the watch never touches it
     id activity = reply[@"activity"];
     if (![activity isKindOfClass:NSDictionary.class]) {
         if (XSMacActionModalShown) { XSMacActionModalShown = NO; XSRefreshModalDismiss(); }
         return;
     }
-    if (XSRefreshRunning) return; // a phone-started action owns the modal
     BOOL fr = XSFrench();
     if (!XSMacActionModalShown) {
         XSMacActionModalShown = YES;
@@ -725,8 +725,10 @@ static void XSOpenWatch(void) {
         XSChannelExchange *ended = weakExchange;
         if (ended && XSWatch != ended) return; // closed by the app (left the foreground)
         XSWatch = nil;
-        // The watch ended (a refresh replaced the app, the network went): drop a Mac-action modal.
-        if (XSMacActionModalShown) { XSMacActionModalShown = NO; XSRefreshModalDismiss(); }
+        // NB: a Mac-action modal is NOT dismissed here. The watch ends at its 300 s lifetime mid-action
+        // too, and a reopen follows at once — dismissing here made it flicker. A finished action clears
+        // via the next line's empty activity (a reopened watch's first check-in carries none); a killed
+        // app takes its modal with it, and the static resets next launch.
         NSTimeInterval lived = -[opened timeIntervalSinceNow];
         NSTimeInterval delay = XSWatchRetryDelay(answered, lived);
         NSLog(@"XSide: watch: ended after %.0f s (result %ld), next in %.0f s", lived, (long)result, delay);
@@ -1255,7 +1257,10 @@ static void XSRequestCheckUpdatesNow(BOOL silent) {
                 if (!silent) XSUpdateModalDone(f ? @"À regarder sur ton Mac" : @"Look on your Mac",
                                   f ? @"Un choix de version ou une mise à jour t'attend dans XSide sur le Mac." : @"A version choice or an update is waiting in XSide on the Mac.", YES);
             } else if ([state isEqual:@"available"]) {
-                if (silent && XSRefreshRunning) return; // don't clash with a running action's modal
+                // A silent launch check must not clobber a modal already on screen — a launch
+                // restore/backup/install, or the watch-driven Mac-action modal, none of which set
+                // XSRefreshRunning. If anything is up, drop this check (the next launch re-checks).
+                if (silent && (XSRefreshRunning || XSMacActionModalShown || XSRefreshModalIsShowing())) return;
                 if (silent) XSUpdateModalShow(); // now there's something worth showing
                 NSString *tag = [reply[@"tag"] isKindOfClass:NSString.class] ? reply[@"tag"] : @"";
                 NSString *asset = [reply[@"asset"] isKindOfClass:NSString.class] ? reply[@"asset"] : @"";

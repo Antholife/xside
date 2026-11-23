@@ -584,6 +584,7 @@ void XSRefreshModalDismiss(void) {
     if (![NSThread isMainThread]) { dispatch_async(dispatch_get_main_queue(), ^{ XSRefreshModalDismiss(); }); return; }
     XSModalWindow.hidden = YES; XSModalWindow = nil;
 }
+BOOL XSRefreshModalIsShowing(void) { return XSModalWindow != nil; }
 void XSUpdateModalShow(void) {
     if (![NSThread isMainThread]) { dispatch_async(dispatch_get_main_queue(), ^{ XSUpdateModalShow(); }); return; }
     XSUpdateModalEnsure();

@@ -21,6 +21,8 @@ void XSRefreshModalStep(NSString *title, NSString *_Nullable detail, double frac
 void XSRefreshModalError(NSString *title, NSString *_Nullable message, void (^_Nullable retry)(void));
 /// Remove the modal (nothing if it isn't up).
 void XSRefreshModalDismiss(void);
+/// Whether a full-screen modal is on screen now (refresh, update, data action, or Mac-action).
+BOOL XSRefreshModalIsShowing(void);
 
 // Update flow (Slice 3): the same modal, worded for « Mise à jour ». Reuses Step/Error/Dismiss above.
 /// Show it in its « checking the repo on your Mac » state.

@@ -125,8 +125,9 @@ public struct AppDataContainer: Sendable {
     /// Runs a `devicectl copy`, retrying a failed one a few times (force-quitting the app mid-backup
     /// interrupts the running copy, but the container is still readable once the app is dead, so the
     /// retry finishes — killing the app must not cut the operation). A cancelled copy is never
-    /// retried. The copy writes into a fresh destination each attempt's caller set up, so re-running
-    /// it is safe.
+    /// retried. Re-running is safe because `devicectl copy` merges/overwrites into the destination
+    /// directory (the same reason the backup copies whole dirs into existing ones), so a partial
+    /// transfer left by the interrupted attempt is simply overwritten by the retry.
     private func copy(_ arguments: [String]) async throws {
         var lastError: Error = XSideError.commandFailed(tool: "devicectl", status: 1)
         for attempt in 0..<Self.copyAttempts {
