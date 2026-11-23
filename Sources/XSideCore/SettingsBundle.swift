@@ -254,15 +254,19 @@ public enum SettingsBundle {
         if !table.isEmpty, !table.contains("/"), !table.contains("..") {
             let info = (try? Data(contentsOf: app.appendingPathComponent("Info.plist")))
                 .flatMap { try? PropertyListSerialization.propertyList(from: $0, format: nil) as? [String: Any] }
-            // Translations in the languages the app already has, never more (its localization set
-            // stays as it was). In the app's own table, an entry it already has for the same text wins.
-            let appLanguages = ((try? fm.contentsOfDirectory(atPath: app.path)) ?? []).filter { $0.hasSuffix(".lproj") }.sorted()
+            // In the app's own table, an entry it already has for the same text wins. The app's own
+            // localization set (its main bundle) is never touched; only the Settings.bundle gets lprojs.
+            let appLanguages = ((try? fm.contentsOfDirectory(atPath: app.path)) ?? []).filter { $0.hasSuffix(".lproj") }
             var texts = section?.allStrings ?? [:]
             texts.merge(tweaks?.strings ?? [:]) { $0.merging($1) { mine, _ in mine } }
             let ownKeys = table == ownTable ? [] : Set(texts.values.flatMap(\.keys))
+            // Mirror the app's own languages AND XSide's own (fr, en), so a phone whose language the
+            // app doesn't ship still gets XSide's section in its language (Anthony: an English-only
+            // app showed XSide in English on a French phone). Dedup by locale is done in `merge`.
+            let xsideLprojs = texts.keys.map { "\($0).lproj" }
             LocalizedStrings.merge(texts, into: bundle, table: table, keepExisting: ownKeys,
                                    developmentRegion: info?["CFBundleDevelopmentRegion"] as? String,
-                                   mirroring: appLanguages)
+                                   mirroring: (appLanguages + xsideLprojs).sorted())
         }
     }
 }

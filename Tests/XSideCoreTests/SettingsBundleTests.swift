@@ -218,9 +218,11 @@ struct SettingsBundleTests {
         Set(((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).filter { $0.hasSuffix(".lproj") })
     }
 
-    /// Final review Important 2: titles are plain text in the installation's language, shown as they
-    /// are when nothing translates them; an app without localizations gets no lproj at all.
-    @Test func titlesArePlainTextAndNoLanguageIsAdded() throws {
+    /// Titles are plain text in the installation's language. XSide writes its OWN fr + en tables in
+    /// the Settings.bundle even for an app with no localization of its own, so the phone's language
+    /// decides (Anthony: an English-only app showed XSide in English on a French phone); the app's
+    /// own localization set (its main bundle) is never touched.
+    @Test func titlesArePlainTextAndXSideAddsItsOwnLanguages() throws {
         let app = try makeApp()
         try SettingsBundle.add(xsideSection(language: "fr"), to: app)
         #expect(try specifiers(app)[1]["Title"] as? String == "Réglages XSide")
@@ -236,8 +238,12 @@ struct SettingsBundleTests {
         // Read-only rows moved into the Statut sub-page; the action's footer into Rafraîchissement.
         #expect(try subpage(app, "status").first { $0["Key"] as? String == "io.github.xside.settings.validUntil" }?["Title"] as? String == "Valable jusqu'au")
         #expect(try subpage(app, "refresh")[0]["FooterText"] as? String == Self.refreshFooterFR)
-        #expect(lprojs(app.appendingPathComponent("Settings.bundle")).isEmpty)
-        #expect(lprojs(app).isEmpty)
+        let bundle = app.appendingPathComponent("Settings.bundle")
+        #expect(lprojs(bundle) == ["fr.lproj", "en.lproj"]) // XSide's own, so the phone's language decides
+        #expect(lprojs(app).isEmpty) // the app's own localization set is left as it was
+        // The en table maps the French plist key to English, so an English phone reads English.
+        #expect(try strings(bundle.appendingPathComponent("en.lproj/XSide.strings"))["Compatibilité iPhone Duo"]
+                == "iPhone Duo compatibility")
         let en = try makeApp()
         try SettingsBundle.add(xsideSection(language: "en"), to: en)
         #expect(try specifiers(en)[1]["Title"] as? String == "XSide Settings")
