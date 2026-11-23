@@ -419,13 +419,17 @@ struct SettingsBundleTests {
         #expect(data.compactMap { $0["FooterText"] as? String }.contains { $0.contains("Sauvegarder les données » est activé") })
     }
 
-    /// No backups: no « Restaurer depuis… » row, the count shows « Aucune ».
+    /// No backups: « Restaurer depuis… » still appears (Anthony: it must always show), with only the
+    /// « Aucune » entry; the count shows « 0 ».
     @Test func dataSubPageWithoutBackups() throws {
         let app = try makeApp()
         try SettingsBundle.add(xsideSection(language: "fr"), to: app)
         let data = try subpage(app, "data")
         #expect(data.first { $0["Key"] as? String == "io.github.xside.settings.data.count" }?["DefaultValue"] as? String == "0")
-        #expect(!data.contains { $0["Key"] as? String == "io.github.xside.settings.restoreFrom" })
+        let restore = try #require(data.first { $0["Key"] as? String == "io.github.xside.settings.restoreFrom" })
+        #expect(restore["Type"] as? String == "PSMultiValueSpecifier")
+        #expect(restore["Values"] as? [String] == [""])
+        #expect((restore["Titles"] as? [String])?.first == "Aucune")
     }
 
     /// A custom interval the phone can't name is selected in the one frequency picker, titled with the

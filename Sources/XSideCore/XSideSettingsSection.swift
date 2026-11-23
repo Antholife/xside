@@ -127,11 +127,11 @@ extension SettingsSection {
             (cachesRow, backupOn ? "backupCaches" : "backupNeedsData"),
             (beforeUpdateRow, backupOn ? "backupBeforeUpdate" : "backupNeedsData"),
             (toggle("backupNow", "backupNowOnLaunch", false), "backupNow")]
-        if !dataBackups.isEmpty {
-            dataItems.append((.choice(titleKey: title("restoreFrom"), key: "restoreFrom",
-                                      titleKeys: [p + "data.none"] + dataBackups.map(\.label),
-                                      values: [""] + dataBackups.map(\.id), defaultValue: ""), "restore"))
-        }
+        // Always shown (Anthony: « elle doit s'afficher »), even with no snapshot yet (only « Aucune »).
+        // The list is as of the last signing (a static picker can't be rebuilt live like the count).
+        dataItems.append((.choice(titleKey: title("restoreFrom"), key: "restoreFrom",
+                                  titleKeys: [p + "data.none"] + dataBackups.map(\.label),
+                                  values: [""] + dataBackups.map(\.id), defaultValue: ""), "restore"))
         let dataPane = pane("data", dataItems)
 
         // Affichage dans l'app: how XSide shows up in the app, and the messages' language.
