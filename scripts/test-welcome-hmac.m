@@ -539,6 +539,19 @@ int main(int argc, const char *argv[]) {
         check(!XSFieldsIncludeCompat(@[@"backupData", @"reminder"]) && !XSFieldsIncludeCompat(@[]) && !XSFieldsIncludeCompat(nil),
               @"non-compat fields do not");
 
+        // The compat-triggered refresh modal names the action by option and direction.
+        NSDictionary *duoOn = XSSettingsSetting(fixtureSettings(), @"duoCompatibility", @YES, ms(1), @"device");
+        NSDictionary *duoOff = XSSettingsSetting(fixtureSettings(), @"duoCompatibility", @NO, ms(1), @"device");
+        NSDictionary *icloudOn = XSSettingsSetting(fixtureSettings(), @"iCloudSignedOut", @YES, ms(1), @"device");
+        check([XSCompatRefreshTitle(@[@"duoCompatibility"], duoOn, YES) isEqual:@"Activation de la compatibilité iPhone Duo"]
+              && [XSCompatRefreshTitle(@[@"duoCompatibility"], duoOff, NO) isEqual:@"Turning off iPhone Duo compatibility"],
+              @"compat refresh title: Duo on/off");
+        check([XSCompatRefreshTitle(@[@"iCloudSignedOut"], icloudOn, YES) isEqual:@"Activation de « Simuler iCloud déconnecté »"],
+              @"compat refresh title: iCloud on");
+        check([XSCompatRefreshTitle(@[@"duoCompatibility", @"iCloudSignedOut"], duoOn, YES) isEqual:@"Application des réglages de compatibilité"]
+              && [XSCompatRefreshTitle(@[@"duoCompatibility", @"iCloudSignedOut"], duoOn, NO) isEqual:@"Applying compatibility settings"],
+              @"compat refresh title: both fields");
+
         // Which pills show: none at all with every message off; the Mac's news under the refresh card.
         check(!XSShowsPills(S(NO, NO, NO, NO)) && XSShowsPills(S(NO, NO, NO, YES)) && XSShowsPills(S(YES, NO, NO, NO)),
               @"pills: only \"Aucun\" silences them all");

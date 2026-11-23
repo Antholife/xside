@@ -870,16 +870,28 @@ static void XSStartRefreshExchange(void);
 
 static void XSRequestRefreshNow(void);
 
+// A compat-triggered refresh names the action in the modal; set just before XSRequestRefresh and
+// consumed by XSStartRefresh. A plain refresh leaves them nil (generic title).
+static NSString *XSCompatModalTitle;
+static NSString *XSCompatModalLead;
+
 void XSRequestRefresh(void) {
     // Never over the first-launch sheet (a quick action at the first launch): after it, the
     // notification prompt and then the local network one each come after their page.
     XSAfterSheet(^{ XSRequestRefreshNow(); });
 }
 
+void XSRequestRefreshForCompat(NSString *title, NSString *lead) {
+    XSCompatModalTitle = [title copy];
+    XSCompatModalLead = [lead copy];
+    XSRequestRefresh();
+}
+
 static void XSRequestRefreshNow(void) {
     if (XSRefreshRunning) return;
     BOOL fr = XSFrench();
     if (!XSInstallationID() || !XSChannelSecret()) {
+        XSCompatModalTitle = nil; XSCompatModalLead = nil; // nothing happens; don't leak to the next refresh
         XSShowAnswer(XSPill(fr ? @"Pas encore de lien avec XSide" : @"No link with XSide yet",
                           fr ? @"Rafraîchis-la une fois depuis XSide sur ton Mac pour pouvoir le faire d'ici."
                              : @"Refresh it once from XSide on your Mac to be able to do it from here.", XSPillToneNeutral, 6));
@@ -930,7 +942,8 @@ static void XSStartRefresh(void) {
     XSExplainNetworkThenOr(^{
         // A real modal (Anthony): connexion à ton Mac → sauvegarde (si activée) → rafraîchissement.
         BOOL backs = XSSettingBool(XSCurrentSettings(), @"backupData");
-        XSRefreshModalShow(backs);
+        XSRefreshModalShowTitled(backs, XSCompatModalTitle, XSCompatModalLead);
+        XSCompatModalTitle = nil; XSCompatModalLead = nil;
         XSStartRefreshExchange();
     }, ^{
         // Its "Réseau local" page had no screen: no refresh asked, the next Refresh can start

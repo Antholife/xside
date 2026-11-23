@@ -83,6 +83,12 @@ BOOL XSSettingBool(NSDictionary *s, NSString *field);
 /// signing, so a change to one means the launch must refresh the app to apply it.
 BOOL XSFieldsIncludeCompat(NSArray<NSString *> *_Nullable fields);
 
+/// The title of the full-screen modal for a refresh triggered by a compat change: it names the
+/// action instead of the generic « tu as demandé un refresh » (Anthony). One compat field in
+/// `fields` → « Activation / Désactivation de <option> » by its current value in `settings`; both
+/// compat fields → a general « Application des réglages de compatibilité ».
+NSString *XSCompatRefreshTitle(NSArray<NSString *> *fields, NSDictionary *settings, BOOL french);
+
 // MARK: Level and visibility: the port of InAppSettings' helpers (spec §1 matrix, each switch
 // for itself). Tested on the Swift side (InAppSettingsTests) and here.
 

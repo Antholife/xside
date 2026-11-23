@@ -10,6 +10,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// Show the modal in its « connecting to your Mac » state. `willBackUp`: the refresh snapshots the
 /// data first, so the work step is announced as « Sauvegarde et rafraîchissement ».
 void XSRefreshModalShow(BOOL willBackUp);
+/// Same, with a custom title/lead (nil keeps the default « Tu as demandé un rafraîchissement »): a
+/// refresh triggered by a compat change names the action instead (« Activation de la compatibilité… »).
+void XSRefreshModalShowTitled(BOOL willBackUp, NSString *_Nullable title, NSString *_Nullable lead);
 /// The Mac accepted: the connection is made, move to the work phase (« l'app va se fermer »).
 void XSRefreshModalWorking(void);
 /// A named progress step with a fraction 0...1, or < 0 for indeterminate (Slice 2: live streaming).

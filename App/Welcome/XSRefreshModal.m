@@ -555,6 +555,10 @@ void XSRefreshModalShow(BOOL willBackUp) {
     if (![NSThread isMainThread]) { dispatch_async(dispatch_get_main_queue(), ^{ XSRefreshModalShow(willBackUp); }); return; }
     XSModalEnsure(willBackUp);
 }
+void XSRefreshModalShowTitled(BOOL willBackUp, NSString *title, NSString *lead) {
+    if (![NSThread isMainThread]) { dispatch_async(dispatch_get_main_queue(), ^{ XSRefreshModalShowTitled(willBackUp, title, lead); }); return; }
+    XSModalEnsureCore(willBackUp, title, lead);
+}
 void XSRefreshModalWorking(void) {
     if (![NSThread isMainThread]) { dispatch_async(dispatch_get_main_queue(), ^{ XSRefreshModalWorking(); }); return; }
     [XSModalVC goWorking];

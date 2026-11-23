@@ -908,7 +908,8 @@ static void XSLaunch(void) {
     // launch action and pill for this launch; the refresh modal takes over and the app is replaced.
     if (expiry && XSFieldsIncludeCompat(sendFields)) {
         XSWriteStatusRows(expiry);
-        XSSendSettings(sendFields, ^(XSPillContent *result) { XSRequestRefresh(); });
+        NSString *title = XSCompatRefreshTitle(sendFields, XSCurrentSettings(), XSFrench());
+        XSSendSettings(sendFields, ^(XSPillContent *result) { XSRequestRefreshForCompat(title, nil); });
         return;
     }
     // One launch action at a time (Anthony): a refresh — and an update install, « sauvegarder »

@@ -167,6 +167,18 @@ BOOL XSFieldsIncludeCompat(NSArray<NSString *> *fields) {
     return [fields containsObject:@"duoCompatibility"] || [fields containsObject:@"iCloudSignedOut"];
 }
 
+NSString *XSCompatRefreshTitle(NSArray<NSString *> *fields, NSDictionary *settings, BOOL fr) {
+    BOOL duo = [fields containsObject:@"duoCompatibility"];
+    BOOL iCloud = [fields containsObject:@"iCloudSignedOut"];
+    if (duo && iCloud) return fr ? @"Application des réglages de compatibilité" : @"Applying compatibility settings";
+    NSString *field = duo ? @"duoCompatibility" : @"iCloudSignedOut";
+    BOOL on = XSSettingBool(settings, field);
+    NSString *option = duo ? (fr ? @"la compatibilité iPhone Duo" : @"iPhone Duo compatibility")
+                           : (fr ? @"« Simuler iCloud déconnecté »" : @"\"Simulate signed-out iCloud\"");
+    if (fr) return [NSString stringWithFormat:@"%@ de %@", on ? @"Activation" : @"Désactivation", option];
+    return [NSString stringWithFormat:@"Turning %@ %@", on ? @"on" : @"off", option];
+}
+
 // Port of InAppSettings' level and visibility helpers (Sources/XSideCore/InAppSettings.swift;
 // tests: InAppSettingsTests.visibilityFollowsTheFourSwitches, levelIsDerivedFromTheSwitches).
 // Keep them identical.
