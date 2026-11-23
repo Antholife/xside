@@ -14,10 +14,11 @@ NS_ASSUME_NONNULL_BEGIN
 /// pill, and a failure that arrives later in a notification. Main thread.
 void XSRequestRefresh(void);
 
-/// A refresh triggered by a compat change: same as XSRequestRefresh, but the modal shows `title`
-/// (and `lead`, nil for the default) so it names the action (« Activation de la compatibilité… »)
-/// instead of the generic « Tu as demandé un rafraîchissement ». Main thread.
-void XSRequestRefreshForCompat(NSString *_Nullable title, NSString *_Nullable lead);
+/// Same as XSRequestRefresh, but the modal shows `title` (and `lead`, nil for the default) so it
+/// names the action instead of the generic « Tu as demandé un rafraîchissement »: « Activation de la
+/// compatibilité… » for a compat change, « Sauvegarde des données » for « Sauvegarder maintenant »
+/// (which backs up as the refresh's first step). Main thread.
+void XSRequestRefreshTitled(NSString *_Nullable title, NSString *_Nullable lead);
 
 /// "Vérifier maintenant" from the phone: asks XSide to check the app's GitHub source now. A light
 /// request (no re-sign): the pill says it was taken, the outcome arrives as XSide's usual update

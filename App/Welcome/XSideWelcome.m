@@ -880,7 +880,12 @@ static void XSRunOneLaunchAction(NSTimeInterval delay) {
         dispatch_async(dispatch_get_main_queue(), ^{ XSWhenForeground(delay, ^{ XSRequestCheckUpdates(); }); });
     } else if (XSHasBackupOnLaunch()) {
         XSTakeBackupOnLaunch();
-        dispatch_async(dispatch_get_main_queue(), ^{ XSWhenForeground(delay, ^{ XSRequestBackup(); }); });
+        // « Sauvegarder maintenant » goes through the streamed refresh (it backs up as its first
+        // step) so the phone shows the live modal, not a frozen pill (Anthony: « faut la modale
+        // dynamique, pas direct le check »). The live count then updates on the next check-in.
+        BOOL fr = XSFrench();
+        NSString *title = fr ? @"Sauvegarde des données" : @"Backing up the data";
+        dispatch_async(dispatch_get_main_queue(), ^{ XSWhenForeground(delay, ^{ XSRequestRefreshTitled(title, nil); }); });
     } else {
         NSString *restoreID = XSPeekRestoreFrom();
         if (restoreID) {
@@ -909,7 +914,7 @@ static void XSLaunch(void) {
     if (expiry && XSFieldsNeedResign(sendFields)) {
         XSWriteStatusRows(expiry);
         NSString *title = XSResignTitle(sendFields, XSCurrentSettings(), XSFrench());
-        XSSendSettings(sendFields, ^(XSPillContent *result) { XSRequestRefreshForCompat(title, nil); });
+        XSSendSettings(sendFields, ^(XSPillContent *result) { XSRequestRefreshTitled(title, nil); });
         return;
     }
     // One launch action at a time (Anthony): a refresh — and an update install, « sauvegarder »
@@ -997,7 +1002,7 @@ static void XSReturn(void) {
     if (XSFieldsNeedResign(sendFields) && XSExpirationDate() && XSChannelGranted()) {
         NSString *title = XSResignTitle(sendFields, XSCurrentSettings(), XSFrench());
         XSWhenForeground(0.5, ^{ XSAfterSheet(^{
-            XSSendSettings(sendFields, ^(XSPillContent *result) { XSRequestRefreshForCompat(title, nil); });
+            XSSendSettings(sendFields, ^(XSPillContent *result) { XSRequestRefreshTitled(title, nil); });
         }); });
         return;
     }

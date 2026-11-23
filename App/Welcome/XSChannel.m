@@ -885,7 +885,7 @@ void XSRequestRefresh(void) {
     XSAfterSheet(^{ XSRequestRefreshNow(); });
 }
 
-void XSRequestRefreshForCompat(NSString *title, NSString *lead) {
+void XSRequestRefreshTitled(NSString *title, NSString *lead) {
     XSCompatModalTitle = [title copy];
     XSCompatModalLead = [lead copy];
     XSRequestRefresh();
