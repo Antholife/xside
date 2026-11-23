@@ -1205,7 +1205,15 @@ void XSRequestCheckUpdatesSilent(void) {
     XSAfterSheet(^{ XSRequestCheckUpdatesNow(YES); }); // network is already up (the channel uses it)
 }
 
-static void XSStartInstallUpdateExchange(NSString *tag, NSString *asset);
+static void XSStartInstallUpdateExchange(NSString *tag, NSString *asset, NSString *version, BOOL autoInstall);
+
+/// The modal's persistent header while an update installs: the detected version, so the person
+/// always sees WHAT is being installed (Anthony: « ça dit pas quoi; faut "nouvelle version X
+/// détectée" »), and that it started on its own when auto.
+static NSString *XSUpdateHeader(NSString *version, BOOL french) {
+    if (version.length) return [NSString stringWithFormat:(french ? @"Nouvelle version %@ détectée" : @"New version %@ detected"), version];
+    return french ? @"Mise à jour détectée" : @"Update detected";
+}
 
 static void XSRequestCheckUpdatesNow(BOOL silent) {
     // A real modal (Slice 3), like the refresh: connexion → recherche → « à jour » / une version
@@ -1268,12 +1276,12 @@ static void XSRequestCheckUpdatesNow(BOOL silent) {
                 // offers it instead. The install flow has its own « Annuler ».
                 BOOL autoInstall = silent && [XSSettingValue(XSCurrentSettings(), @"updateMode") isEqual:@"auto"];
                 if (autoInstall) {
-                    XSUpdateModalWorking(title, f ? @"Mise à jour lancée automatiquement…" : @"Update started automatically…", -1);
-                    XSStartInstallUpdateExchange(tag, asset);
+                    XSUpdateModalWorking(XSUpdateHeader(version, f), f ? @"Installation automatique activée · démarrage…" : @"Auto-install on · starting…", -1);
+                    XSStartInstallUpdateExchange(tag, asset, version, YES);
                 } else {
                     XSUpdateModalOffer(title, msg,
                         f ? @"Télécharger et installer" : @"Download and install",
-                        ^{ XSStartInstallUpdateExchange(tag, asset); });
+                        ^{ XSStartInstallUpdateExchange(tag, asset, version, NO); });
                 }
             }
             return;
@@ -1281,13 +1289,17 @@ static void XSRequestCheckUpdatesNow(BOOL silent) {
     }) start];
 }
 
-static void XSStartInstallUpdateExchange(NSString *tag, NSString *asset) {
+static void XSStartInstallUpdateExchange(NSString *tag, NSString *asset, NSString *version, BOOL autoInstall) {
     XSCancelFromPhone = NO;
     XSRefreshModalSetCancel(^{ XSRequestCancel(); });
     [XSPatientExchange(XSInstallUpdateBody(tag, asset), YES, ^(XSChannelResult result, NSDictionary *reply, BOOL final) {
         BOOL f = XSFrench();
         NSString *type = reply[@"type"];
-        void (^retry)(void) = ^{ XSStartInstallUpdateExchange(tag, asset); };
+        NSString *header = XSUpdateHeader(version, f); // stays on top: WHAT is installing
+        // The download phase's sub-line: says it's downloading, and that it's automatic when it is.
+        NSString *dl = autoInstall ? (f ? @"Installation auto activée · téléchargement…" : @"Auto-install on · downloading…")
+                                   : (f ? @"Téléchargement…" : @"Downloading…");
+        void (^retry)(void) = ^{ XSStartInstallUpdateExchange(tag, asset, version, autoInstall); };
         if (result == XSChannelWaiting) { return; }
         if (result == XSChannelNoOutcome) {
             // The app is likely being replaced (success kills it); otherwise the next launch tells.
@@ -1301,7 +1313,7 @@ static void XSStartInstallUpdateExchange(NSString *tag, NSString *asset) {
             return;
         }
         if ([type isEqual:@"busy"]) { XSUpdateModalDone(f ? @"XSide est occupé" : @"XSide is busy", f ? @"Réessaie dans un instant." : @"Try again in a moment.", NO); return; }
-        if ([type isEqual:@"accepted"]) { XSUpdateModalWorking(f ? @"Téléchargement…" : @"Downloading…", nil, 0); return; }
+        if ([type isEqual:@"accepted"]) { XSUpdateModalWorking(header, dl, 0); return; }
         if ([type isEqual:@"progress"]) { XSShowProgressFrame(reply, f); return; } // the install steps, after the download
         if ([type isEqual:@"failed"]) {
             NSString *r = [reply[@"reasonKey"] isKindOfClass:NSString.class] ? reply[@"reasonKey"] : @"unknown";
@@ -1311,14 +1323,14 @@ static void XSStartInstallUpdateExchange(NSString *tag, NSString *asset) {
         }
         if ([type isEqual:@"update"]) {
             NSString *state = reply[@"state"];
-            NSString *version = [reply[@"version"] isKindOfClass:NSString.class] ? reply[@"version"] : nil;
+            NSString *installedVersion = [reply[@"version"] isKindOfClass:NSString.class] ? reply[@"version"] : version;
             if ([state isEqual:@"downloading"]) {
                 NSNumber *pct = [reply[@"percent"] isKindOfClass:NSNumber.class] ? reply[@"percent"] : nil;
-                XSUpdateModalWorking(f ? @"Téléchargement…" : @"Downloading…", nil, pct ? pct.doubleValue / 100.0 : -1);
+                XSUpdateModalWorking(header, dl, pct ? pct.doubleValue / 100.0 : -1);
             } else if ([state isEqual:@"installing"]) {
-                XSUpdateModalWorking(f ? @"Installation…" : @"Installing…", f ? @"L'app va se fermer." : @"The app will close.", -1);
+                XSUpdateModalWorking(header, f ? @"Installation… · l'app va se fermer" : @"Installing… · the app will close", -1);
             } else if ([state isEqual:@"installed"]) {
-                XSUpdateModalDone(version ? [NSString stringWithFormat:(f ? @"Version %@ installée" : @"Version %@ installed"), version] : (f ? @"Installée" : @"Installed"),
+                XSUpdateModalDone(installedVersion ? [NSString stringWithFormat:(f ? @"Version %@ installée" : @"Version %@ installed"), installedVersion] : (f ? @"Installée" : @"Installed"),
                                   f ? @"L'app va se fermer, rouvre-la ensuite." : @"The app will close, open it again then.", YES);
             } else if ([state isEqual:@"needsMac"]) {
                 XSUpdateModalDone(f ? @"À regarder sur ton Mac" : @"Look on your Mac", nil, YES);
