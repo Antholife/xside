@@ -14,6 +14,7 @@ struct FullBackupSheet: View {
     @State private var available: [String: BackupAspects] = [:]
     @State private var ipaBytes: [String: Int] = [:]
     @State private var running: Double?
+    @State private var status = "" // the app being backed up now
 
     private var entries: [AppEntry] { model.deviceGroups.flatMap(\.apps) }
     private func key(_ e: AppEntry) -> String { "\(e.record.id)-\(e.installation.deviceID)" }
@@ -133,7 +134,8 @@ struct FullBackupSheet: View {
         HStack(spacing: 10) {
             if let running {
                 ProgressView(value: running).frame(width: 140)
-                Text(L("backup.full.working")).font(.system(size: 12)).foregroundStyle(.secondary)
+                Text("\(Int((running * 100).rounded())) %" + (status.isEmpty ? "" : " · \(status)"))
+                    .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
             }
             Button(L("install.cancel"), action: dismiss).controlSize(.large).keyboardShortcut(.cancelAction)
                 .disabled(running != nil)
@@ -203,10 +205,10 @@ struct FullBackupSheet: View {
         }
         running = 0
         Task {
-            let result = await model.makeFullBackup(selections: selections, includeCaches: includeCaches, to: dest) { f in
-                Task { @MainActor in running = f }
+            let result = await model.makeFullBackup(selections: selections, includeCaches: includeCaches, to: dest) { f, name in
+                Task { @MainActor in running = f; status = name }
             }
-            running = nil
+            running = nil; status = ""
             if result.saved > 0 {
                 model.showToast(L("backup.full.done", result.saved))
                 dismiss()

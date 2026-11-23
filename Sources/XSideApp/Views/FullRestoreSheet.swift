@@ -13,6 +13,7 @@ struct FullRestoreSheet: View {
     @State private var targetDeviceID: String = ""
     @State private var choices: [String: BackupAspects] = [:]
     @State private var running: Double?
+    @State private var status = "" // the app being restored now
 
     private var entries: [BackupAppEntry] { manifest.apps }
     private func key(_ e: BackupAppEntry) -> String { "\(e.recordID)-\(e.installation.sourceDeviceID)" }
@@ -129,7 +130,8 @@ struct FullRestoreSheet: View {
         HStack(spacing: 10) {
             if let running {
                 ProgressView(value: running).frame(width: 140)
-                Text(L("backup.restore.working")).font(.system(size: 12)).foregroundStyle(.secondary)
+                Text("\(Int((running * 100).rounded())) %" + (status.isEmpty ? "" : " · \(status)"))
+                    .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
             }
             Button(L("install.cancel"), action: dismiss).controlSize(.large).keyboardShortcut(.cancelAction)
                 .disabled(running != nil)
@@ -174,10 +176,10 @@ struct FullRestoreSheet: View {
         }
         running = 0
         Task {
-            let result = await model.restoreFullBackup(archive: archive, selections: selections, targetDeviceID: targetDeviceID) { f in
-                Task { @MainActor in running = f }
+            let result = await model.restoreFullBackup(archive: archive, selections: selections, targetDeviceID: targetDeviceID) { f, name in
+                Task { @MainActor in running = f; status = name }
             }
-            running = nil
+            running = nil; status = ""
             if result.restored > 0 {
                 model.showToast(L("backup.restore.done", result.restored))
                 dismiss()

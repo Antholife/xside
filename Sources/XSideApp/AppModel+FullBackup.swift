@@ -24,7 +24,7 @@ extension AppModel {
     /// from a fresh data capture for each app whose Données is chosen. Best-effort per app: a failure
     /// is collected, never aborts the rest.
     func makeFullBackup(selections: [(entry: AppEntry, chosen: BackupAspects)], includeCaches: Bool,
-                        to dest: URL, progress: @escaping @Sendable (Double) -> Void = { _ in }) async -> FullBackupResult {
+                        to dest: URL, progress: @escaping @Sendable (_ fraction: Double, _ status: String) -> Void = { _, _ in }) async -> FullBackupResult {
         let fm = FileManager.default
         let staging = libraryRoot.appendingPathComponent(AppLibrary.stagingFolder)
             .appendingPathComponent("fullbackup-\(UUID().uuidString)", isDirectory: true)
@@ -38,10 +38,11 @@ extension AppModel {
         let total = max(selections.count, 1)
 
         for (i, sel) in selections.enumerated() {
-            defer { progress(Double(i + 1) / Double(total)) }
             let record = records.first { $0.id == sel.entry.record.id } ?? sel.entry.record
             let installation = record.installations.first { $0.deviceID == sel.entry.installation.deviceID } ?? sel.entry.installation
             let name = record.options.displayName ?? record.displayName
+            progress(Double(i) / Double(total), name) // this app starts (the bar names it)
+            defer { progress(Double(i + 1) / Double(total), name) }
             let avail = fullBackupAvailability(record: record, installation: installation, dataReachable: isReachable(sel.entry))
             let inc = FullBackup.backupInclusion(available: avail, chosen: sel.chosen)
             guard FullBackup.isIncluded(inc) else { continue }
@@ -81,7 +82,8 @@ extension AppModel {
             }
 
             var hasData = false, dataBytes = 0, dataCaches = includeCaches
-            if inc.data, let (zip, snap) = await captureDataForBackup(record: record, installation: installation, includeCaches: includeCaches) {
+            if inc.data, let (zip, snap) = await captureDataForBackup(record: record, installation: installation, includeCaches: includeCaches,
+                                                                      progress: { inner in progress((Double(i) + inner) / Double(total), name) }) {
                 if (try? fm.copyItem(at: zip, to: appDir.appendingPathComponent("data.zip"))) != nil {
                     hasData = true; dataBytes = snap.byteSize; dataCaches = snap.includedCaches
                 }
@@ -121,7 +123,7 @@ extension AppModel {
     /// tweaks through the normal install pipeline, then reinjects the data. Best-effort per app.
     func restoreFullBackup(archive: URL, selections: [(entry: BackupAppEntry, chosen: BackupAspects)],
                            targetDeviceID: String,
-                           progress: @escaping @Sendable (Double) -> Void = { _ in }) async -> FullRestoreResult {
+                           progress: @escaping @Sendable (_ fraction: Double, _ status: String) -> Void = { _, _ in }) async -> FullRestoreResult {
         let fm = FileManager.default
         let names = selections.map { $0.entry.displayName }
         let work = libraryRoot.appendingPathComponent(AppLibrary.stagingFolder)
@@ -136,8 +138,9 @@ extension AppModel {
         var failed: [String] = []
         let total = max(selections.count, 1)
         for (i, sel) in selections.enumerated() {
-            defer { progress(Double(i + 1) / Double(total)) }
             let e = sel.entry
+            progress(Double(i) / Double(total), e.displayName) // this app starts (the bar names it)
+            defer { progress(Double(i + 1) / Double(total), e.displayName) }
             let action = FullBackup.restoreAction(available: e.availableAspects, chosen: sel.chosen)
             // The manifest comes from a file the person picked: a crafted sourceDeviceID must not let
             // the path escape the extracted folder. recordID is a decoded UUID, so already safe.
@@ -227,7 +230,8 @@ extension AppModel {
     /// Captures the app's data now (a fresh snapshot, caches per the toggle) and exports it to a zip.
     /// Returns the zip and its snapshot, or nil when the device can't be reached.
     private func captureDataForBackup(record: AppRecord, installation: Installation,
-                                      includeCaches: Bool) async -> (URL, BackupSnapshot)? {
+                                      includeCaches: Bool,
+                                      progress: @escaping @Sendable (Double) -> Void = { _ in }) async -> (URL, BackupSnapshot)? {
         let signed = installation.signedBundleID ?? record.signedBundleID
         do {
             let snap = try await withKnownXcode {
@@ -235,7 +239,12 @@ extension AppModel {
                                                     deviceName: self.deviceDisplayName(installation.deviceID),
                                                     appVersion: record.version, includeCaches: includeCaches,
                                                     cycleStartedAt: installation.firstInstalledAt ?? installation.installedAt,
-                                                    retention: Self.backupRetention, onlyIfChanged: false)
+                                                    retention: Self.backupRetention, onlyIfChanged: false,
+                                                    progress: { done, total, bytes, bytesTotal in
+                                                        if let f = BackupProgress.fraction(filesDone: done, filesTotal: total, bytesDone: bytes, bytesTotal: bytesTotal) {
+                                                            progress(f)
+                                                        }
+                                                    })
             }
             guard let snap, let zip = await exportBackup(snap.id) else { return nil }
             return (zip, snap)
