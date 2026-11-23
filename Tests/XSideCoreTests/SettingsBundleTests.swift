@@ -357,6 +357,22 @@ struct SettingsBundleTests {
         #expect((restore["Titles"] as? [String])?.contains("17 nov. 10:00") == true)
     }
 
+    /// The compat footers say changing an option refreshes the app now (it triggers a re-sign),
+    /// not that it waits for the next scheduled refresh.
+    @Test func compatFootersSayRefreshingAppliesTheOption() throws {
+        let appFR = try makeApp()
+        try SettingsBundle.add(xsideSection(language: "fr"), to: appFR)
+        let footersFR = try subpage(appFR, "compat").compactMap { $0["FooterText"] as? String }
+        #expect(footersFR.contains { $0.contains("Rafraîchit l'app pour l'appliquer") })
+        #expect(!footersFR.contains { $0.contains("prochain rafraîchissement") })
+
+        let appEN = try makeApp()
+        try SettingsBundle.add(xsideSection(language: "en"), to: appEN)
+        let footersEN = try subpage(appEN, "compat").compactMap { $0["FooterText"] as? String }
+        #expect(footersEN.contains { $0.contains("Refreshes the app to apply it") })
+        #expect(!footersEN.contains { $0.contains("at the next refresh") })
+    }
+
     /// No backups: no « Restaurer depuis… » row, the count shows « Aucune ».
     @Test func dataSubPageWithoutBackups() throws {
         let app = try makeApp()
