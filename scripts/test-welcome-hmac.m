@@ -619,12 +619,14 @@ int main(int argc, const char *argv[]) {
         check([XSChangeTexts(@[@"reminder", @"autoRefresh"], two, YES, NO)[@"list"]
                   isEqual:@"Reminder before expiry: off · Automatic refresh: on"], @"change pill: the list in English");
         // Phone -> Mac: the confirmation says what XSide now knows.
+        // A single phone change: the bare phrase; the origin (« modifié depuis ton Mac » + « Synchronisé
+        // avec XSide ») is the modal's title and footer now (38ba94b), not part of this lead.
         check([XSChangeTexts(@[@"autoRefresh"], offed, NO, YES)[@"lead"]
-                  isEqual:@"Rafraîchissement automatique désactivé : XSide sur ton Mac est au courant"]
+                  isEqual:@"Rafraîchissement automatique désactivé"]
               && [XSChangeTexts(@[@"autoRefresh"], one, NO, NO)[@"lead"]
-                  isEqual:@"Automatic refresh turned back on: XSide on your Mac knows"], @"confirmation: automatic refresh");
+                  isEqual:@"Automatic refresh turned back on"], @"confirmation: automatic refresh");
         check([XSChangeTexts(@[@"reminder"], rem, NO, YES)[@"lead"]
-                  isEqual:@"« Rappel avant l'expiration » désactivé : XSide sur ton Mac est au courant"],
+                  isEqual:@"« Rappel avant l'expiration » désactivé"],
               @"confirmation: one switch");
         check([XSChangeTexts(@[@"reminder", @"autoRefresh"], two, NO, YES)[@"lead"] isEqual:@"Réglages envoyés à XSide sur ton Mac"]
               && [XSChangeTexts(@[], two, NO, NO)[@"lead"] isEqual:@"Settings sent to XSide on your Mac"]
