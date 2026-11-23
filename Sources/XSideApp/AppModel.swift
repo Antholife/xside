@@ -1513,6 +1513,10 @@ final class AppModel {
             case .nothing:
                 break
             }
+            // A fresh run (the run marker rides only the first contact of a launch): check this app's
+            // update sources now and auto-install where set. Anthony: « recherche de MAJ au lancement
+            // de l'app » on the iPhone. The floor inside skips a source checked in the last 10 min.
+            checkUpdatesForRecordAtLaunch(recordID: found.recordID)
         }
         let reply: (ChannelReply) async -> Void = { answer in
             do {

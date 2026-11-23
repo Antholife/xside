@@ -178,6 +178,31 @@ extension AppModel {
         }
     }
 
+    /// An app was just launched on the phone (the first check-in of a new run, carrying the run
+    /// marker): check THIS app's sources for an update now and auto-install where set, like the
+    /// background pass. A source checked in the last `launchRecheckFloor` is skipped, so quickly
+    /// reopening the app doesn't hammer the GitHub API. Anthony: « recherche de MAJ au lancement de
+    /// l'app » (sur l'iPhone, pas au lancement de XSide).
+    func checkUpdatesForRecordAtLaunch(recordID: UUID) {
+        guard hasLoadedRecords, !updateCheckRunning, let record = records.first(where: { $0.id == recordID }) else { return }
+        let now = Date()
+        let targets = updateTargets(of: record).filter { target in
+            guard let last = target.source?.lastCheckedAt else { return true }
+            return now.timeIntervalSince(last) >= Self.launchRecheckFloor
+        }
+        guard !targets.isEmpty else { return }
+        updateCheckRunning = true
+        Task { [weak self] in
+            guard let self else { return }
+            defer { updateCheckRunning = false }
+            let reports = await runUpdateChecks(targets)
+            let reached = zip(targets, reports).compactMap { t, r -> UpdateTarget? in
+                if case .failed = r.result { nil } else { t }
+            }
+            await markChecked(reached, at: now)
+        }
+    }
+
     /// « Vérifier maintenant » asked from the iPhone: check every source of this record now, whatever
     /// its cadence, and notify / auto-install like the background pass.
     func checkUpdatesForRecord(recordID: UUID) {
