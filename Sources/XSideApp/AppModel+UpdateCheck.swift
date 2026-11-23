@@ -106,7 +106,15 @@ extension AppModel {
         #endif
     }()
 
-    func checkUpdatesIfDue() {
+    /// Shortest gap between two update checks of the same source on a launch check (`atLaunch`): a
+    /// fresh check when XSide opens, but not again if it was checked in the last few minutes (a quick
+    /// restart shouldn't hammer the GitHub API).
+    static var launchRecheckFloor: TimeInterval { 10 * 60 }
+
+    /// `atLaunch`: run once when XSide starts — check every source (ignoring its cadence) so opening
+    /// XSide gives fresh results and auto-installs where set, skipping only a source checked in the
+    /// last `launchRecheckFloor`. Otherwise the periodic tick: each source on its own cadence.
+    func checkUpdatesIfDue(atLaunch: Bool = false) {
         let now = Date()
         guard hasLoadedRecords, !updateCheckRunning else { return }
         // Global back-off after a pass where everything failed (offline, rate limited): don't hammer
@@ -117,6 +125,10 @@ extension AppModel {
             let cadence = targetCheckInterval(target) // per device now (its frequency), else the source's
             // "At refresh" sources are not on the time cadence: they are checked when the app refreshes.
             if UpdateSchedule.checksAtRefresh(cadence, default: globalDefault) { return false }
+            if atLaunch {
+                guard let last = target.source?.lastCheckedAt else { return true }
+                return now.timeIntervalSince(last) >= Self.launchRecheckFloor
+            }
             let interval = Self.fastUpdateCadence
                 ? max(cadence ?? globalDefault, 20) // debug: honor short intervals
                 : UpdateSchedule.effectiveInterval(cadence, default: globalDefault)

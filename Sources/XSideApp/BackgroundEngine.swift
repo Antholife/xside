@@ -29,6 +29,9 @@ final class BackgroundEngine {
     private var lastPoll = ContinuousClock.now
     /// The expiry reminders were reconciled with the library once since launch.
     private var remindersReconciled = false
+    /// The one launch-time update check has run (checks every source once XSide is up, not only the
+    /// ones due on their cadence; auto-mode apps then install).
+    private var launchUpdateCheckDone = false
     /// Periodic ticks since the last reconciliation (redone hourly: notifications may have been
     /// allowed since, or the clock changed).
     private var ticksSinceReconcile = 0
@@ -162,10 +165,21 @@ final class BackgroundEngine {
 
     // MARK: - Triggers
 
+    /// The periodic update check, except the first one once records are loaded is a launch check
+    /// (every source, not only those due on their cadence; auto-mode apps then install).
+    private func tickUpdateCheck() {
+        if !launchUpdateCheckDone, model.hasLoadedRecords {
+            launchUpdateCheckDone = true
+            model.checkUpdatesIfDue(atLaunch: true)
+            return
+        }
+        model.checkUpdatesIfDue()
+    }
+
     private func pollTick() async {
         // The crash logs' own schedule (every 2 min, 15 s after an install or a check-in).
         model.scanCrashesIfDue()
-        model.checkUpdatesIfDue()
+        tickUpdateCheck()
         let interval = DevicePolling.interval(panelOpen: model.isPopoverOpen, myAppsShown: model.isMyAppsShown)
         // Small tolerance so a 60 s poll isn't pushed to 75 s by tick jitter.
         guard ContinuousClock.now - lastPoll >= interval - .seconds(1) else { return }
@@ -216,7 +230,7 @@ final class BackgroundEngine {
         reportMacBeta()
         checkPresence()
         model.scanCrashesIfDue()
-        model.checkUpdatesIfDue()
+        tickUpdateCheck()
         reportUnreachable()
         reportNeedsUSB()
         // Environment broken (or not probed yet): nothing can be refreshed. `reportEnvironment`
