@@ -78,16 +78,17 @@ NSArray<NSString *> *XSFieldsChangedByMac(NSDictionary *before, NSDictionary *af
 id _Nullable XSSettingValue(NSDictionary *s, NSString *field);
 BOOL XSSettingBool(NSDictionary *s, NSString *field);
 
-/// Whether `fields` (field names, as XSChangedFields / XSTakeSettingsChangedOnPhone return them)
-/// includes a compatibility option (duoCompatibility or iCloudSignedOut). Those apply only at
-/// signing, so a change to one means the launch must refresh the app to apply it.
-BOOL XSFieldsIncludeCompat(NSArray<NSString *> *_Nullable fields);
+/// Whether a change to one of `fields` (field names, as XSChangedFields / XSTakeSettingsChangedOnPhone
+/// return them) needs the app re-signed to take effect: the compatibility options (duoCompatibility,
+/// iCloudSignedOut, which only apply at signing) and backupData (whose sub-options' read-only state in
+/// the Settings bundle is baked at signing, so toggling it must re-sign to (un)grey them, Anthony).
+BOOL XSFieldsNeedResign(NSArray<NSString *> *_Nullable fields);
 
-/// The title of the full-screen modal for a refresh triggered by a compat change: it names the
-/// action instead of the generic « tu as demandé un refresh » (Anthony). One compat field in
-/// `fields` → « Activation / Désactivation de <option> » by its current value in `settings`; both
-/// compat fields → a general « Application des réglages de compatibilité ».
-NSString *XSCompatRefreshTitle(NSArray<NSString *> *fields, NSDictionary *settings, BOOL french);
+/// The title of the full-screen modal for a refresh triggered by such a change: it names the action
+/// instead of the generic « tu as demandé un refresh » (Anthony). One compat field → « Activation /
+/// Désactivation de <option> » by its value in `settings`; both compat fields → « Application des
+/// réglages de compatibilité »; backupData only → « Application des réglages de sauvegarde ».
+NSString *XSResignTitle(NSArray<NSString *> *fields, NSDictionary *settings, BOOL french);
 
 // MARK: Level and visibility: the port of InAppSettings' helpers (spec §1 matrix, each switch
 // for itself). Tested on the Swift side (InAppSettingsTests) and here.

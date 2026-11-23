@@ -906,9 +906,9 @@ static void XSLaunch(void) {
     // signing, so deliver it to the Mac first, THEN refresh to apply it (the refresh carries no
     // settings, so the re-sign reads what the check-in just stored). This supersedes the normal
     // launch action and pill for this launch; the refresh modal takes over and the app is replaced.
-    if (expiry && XSFieldsIncludeCompat(sendFields)) {
+    if (expiry && XSFieldsNeedResign(sendFields)) {
         XSWriteStatusRows(expiry);
-        NSString *title = XSCompatRefreshTitle(sendFields, XSCurrentSettings(), XSFrench());
+        NSString *title = XSResignTitle(sendFields, XSCurrentSettings(), XSFrench());
         XSSendSettings(sendFields, ^(XSPillContent *result) { XSRequestRefreshForCompat(title, nil); });
         return;
     }
@@ -994,8 +994,8 @@ static void XSReturn(void) {
     // launch (XSLaunch) — deliver it to the Mac, then refresh to apply it (it applies only at
     // signing). Without this, returning to a still-running app only synced it (Anthony: « ça a pas
     // refresh »). The refresh's modal names the action.
-    if (XSFieldsIncludeCompat(sendFields) && XSExpirationDate() && XSChannelGranted()) {
-        NSString *title = XSCompatRefreshTitle(sendFields, XSCurrentSettings(), XSFrench());
+    if (XSFieldsNeedResign(sendFields) && XSExpirationDate() && XSChannelGranted()) {
+        NSString *title = XSResignTitle(sendFields, XSCurrentSettings(), XSFrench());
         XSWhenForeground(0.5, ^{ XSAfterSheet(^{
             XSSendSettings(sendFields, ^(XSPillContent *result) { XSRequestRefreshForCompat(title, nil); });
         }); });

@@ -533,24 +533,28 @@ int main(int argc, const char *argv[]) {
         check(XSFieldsChangedByMac(adopted, adopted).count == 0 && XSChangedFields(adopted, again).count == 0,
               @"nothing changed: no field");
 
-        // A compat field in the changed list means the launch must refresh to apply it; nothing else does.
-        check(XSFieldsIncludeCompat(@[@"duoCompatibility"]) && XSFieldsIncludeCompat(@[@"iCloudSignedOut"])
-              && XSFieldsIncludeCompat(@[@"reminder", @"iCloudSignedOut"]), @"compat fields trigger a refresh");
-        check(!XSFieldsIncludeCompat(@[@"backupData", @"reminder"]) && !XSFieldsIncludeCompat(@[]) && !XSFieldsIncludeCompat(nil),
-              @"non-compat fields do not");
+        // A change needing a re-sign to take effect (compat, or backupData for its sub-options' greying).
+        check(XSFieldsNeedResign(@[@"duoCompatibility"]) && XSFieldsNeedResign(@[@"iCloudSignedOut"])
+              && XSFieldsNeedResign(@[@"backupData"]) && XSFieldsNeedResign(@[@"reminder", @"iCloudSignedOut"]),
+              @"compat/backup fields trigger a refresh");
+        check(!XSFieldsNeedResign(@[@"backupCaches", @"reminder"]) && !XSFieldsNeedResign(@[]) && !XSFieldsNeedResign(nil),
+              @"other fields do not");
 
-        // The compat-triggered refresh modal names the action by option and direction.
+        // The re-sign modal names the action by option and direction.
         NSDictionary *duoOn = XSSettingsSetting(fixtureSettings(), @"duoCompatibility", @YES, ms(1), @"device");
         NSDictionary *duoOff = XSSettingsSetting(fixtureSettings(), @"duoCompatibility", @NO, ms(1), @"device");
         NSDictionary *icloudOn = XSSettingsSetting(fixtureSettings(), @"iCloudSignedOut", @YES, ms(1), @"device");
-        check([XSCompatRefreshTitle(@[@"duoCompatibility"], duoOn, YES) isEqual:@"Activation de la compatibilité iPhone Duo"]
-              && [XSCompatRefreshTitle(@[@"duoCompatibility"], duoOff, NO) isEqual:@"Turning off iPhone Duo compatibility"],
-              @"compat refresh title: Duo on/off");
-        check([XSCompatRefreshTitle(@[@"iCloudSignedOut"], icloudOn, YES) isEqual:@"Activation de « Simuler iCloud déconnecté »"],
-              @"compat refresh title: iCloud on");
-        check([XSCompatRefreshTitle(@[@"duoCompatibility", @"iCloudSignedOut"], duoOn, YES) isEqual:@"Application des réglages de compatibilité"]
-              && [XSCompatRefreshTitle(@[@"duoCompatibility", @"iCloudSignedOut"], duoOn, NO) isEqual:@"Applying compatibility settings"],
-              @"compat refresh title: both fields");
+        check([XSResignTitle(@[@"duoCompatibility"], duoOn, YES) isEqual:@"Activation de la compatibilité iPhone Duo"]
+              && [XSResignTitle(@[@"duoCompatibility"], duoOff, NO) isEqual:@"Turning off iPhone Duo compatibility"],
+              @"resign title: Duo on/off");
+        check([XSResignTitle(@[@"iCloudSignedOut"], icloudOn, YES) isEqual:@"Activation de « Simuler iCloud déconnecté »"],
+              @"resign title: iCloud on");
+        check([XSResignTitle(@[@"duoCompatibility", @"iCloudSignedOut"], duoOn, YES) isEqual:@"Application des réglages de compatibilité"]
+              && [XSResignTitle(@[@"duoCompatibility", @"iCloudSignedOut"], duoOn, NO) isEqual:@"Applying compatibility settings"],
+              @"resign title: both compat fields");
+        check([XSResignTitle(@[@"backupData"], fixtureSettings(), YES) isEqual:@"Application des réglages de sauvegarde"]
+              && [XSResignTitle(@[@"backupData"], fixtureSettings(), NO) isEqual:@"Applying backup settings"],
+              @"resign title: backup settings");
 
         // Which pills show: none at all with every message off; the Mac's news under the refresh card.
         check(!XSShowsPills(S(NO, NO, NO, NO)) && XSShowsPills(S(NO, NO, NO, YES)) && XSShowsPills(S(YES, NO, NO, NO)),

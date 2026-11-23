@@ -163,13 +163,15 @@ BOOL XSSettingBool(NSDictionary *s, NSString *field) {
     return [v isKindOfClass:NSNumber.class] && [v boolValue];
 }
 
-BOOL XSFieldsIncludeCompat(NSArray<NSString *> *fields) {
-    return [fields containsObject:@"duoCompatibility"] || [fields containsObject:@"iCloudSignedOut"];
+BOOL XSFieldsNeedResign(NSArray<NSString *> *fields) {
+    return [fields containsObject:@"duoCompatibility"] || [fields containsObject:@"iCloudSignedOut"]
+        || [fields containsObject:@"backupData"];
 }
 
-NSString *XSCompatRefreshTitle(NSArray<NSString *> *fields, NSDictionary *settings, BOOL fr) {
+NSString *XSResignTitle(NSArray<NSString *> *fields, NSDictionary *settings, BOOL fr) {
     BOOL duo = [fields containsObject:@"duoCompatibility"];
     BOOL iCloud = [fields containsObject:@"iCloudSignedOut"];
+    if (!duo && !iCloud) return fr ? @"Application des réglages de sauvegarde" : @"Applying backup settings";
     if (duo && iCloud) return fr ? @"Application des réglages de compatibilité" : @"Applying compatibility settings";
     NSString *field = duo ? @"duoCompatibility" : @"iCloudSignedOut";
     BOOL on = XSSettingBool(settings, field);
