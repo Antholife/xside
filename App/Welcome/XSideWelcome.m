@@ -990,6 +990,17 @@ static void XSReturn(void) {
     // after asking XSide how it went.
     BOOL pending = XSPendingFailure() != nil;
     NSArray<NSString *> *sendFields = XSTakeSettingsChangedOnPhone();
+    // A compat option changed in iOS Settings while the app was in the background: same as a cold
+    // launch (XSLaunch) — deliver it to the Mac, then refresh to apply it (it applies only at
+    // signing). Without this, returning to a still-running app only synced it (Anthony: « ça a pas
+    // refresh »). The refresh's modal names the action.
+    if (XSFieldsIncludeCompat(sendFields) && XSExpirationDate() && XSChannelGranted()) {
+        NSString *title = XSCompatRefreshTitle(sendFields, XSCurrentSettings(), XSFrench());
+        XSWhenForeground(0.5, ^{ XSAfterSheet(^{
+            XSSendSettings(sendFields, ^(XSPillContent *result) { XSRequestRefreshForCompat(title, nil); });
+        }); });
+        return;
+    }
     if (XSTakeAutoRefreshChangedOnPhone()) {
         XSWhenForeground(0.5, ^{ XSTellAutoRefreshChange(); });
         return;
