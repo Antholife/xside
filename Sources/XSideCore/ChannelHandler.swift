@@ -366,6 +366,7 @@ public struct InstallationFacts: Sendable, Equatable {
         self.lastCheckIn = lastCheckIn
         self.signedAt = signedAt
         self.updateSource = updateSource
+        self.backups = backups
         self.installedTag = installedTag
         self.installedName = installedName
     }

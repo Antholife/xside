@@ -117,6 +117,19 @@ import Foundation
         #expect(live.contains("\"backupCount\":5"))
     }
 
+    /// InstallationFacts kept its `backups` — its init used to accept the parameter and silently drop
+    /// it, so the phone's « Restaurer depuis… » list and the static « Données » count were always empty.
+    @Test func installationFactsKeepsItsBackups() {
+        let snap = BackupSnapshot(id: "2026-11-23T10-00-00Z", signedBundleID: "com.x.app.TEAM", deviceID: "D1",
+                                  deviceName: "iPhone", createdAt: Date(timeIntervalSince1970: 1), byteSize: 1,
+                                  fileCount: 1, includedCaches: true, appVersion: "1.0")
+        let facts = InstallationFacts(installationID: "r|D1", channelSecret: Data(),
+                                      inApp: InAppSettings.defaults(reminder: true, at: Date(timeIntervalSince1970: 0)),
+                                      firstInstalledAt: Date(), appVersion: "1.0", lastRefreshOutcome: nil,
+                                      lastCheckIn: nil, backups: [snap])
+        #expect(facts.backups == [snap])
+    }
+
     /// The phone learns how a refresh it asked for ended, even if it was suspended meanwhile:
     /// the check-in answer carries the newest outcome the Mac knows (its own or the phone's).
     @Test func checkInReplyCarriesTheNewestRefreshOutcome() {
