@@ -179,14 +179,17 @@ extension AppModel {
     }
 
     /// An app was just launched on the phone (the first check-in of a new run, carrying the run
-    /// marker): check THIS app's sources for an update now and auto-install where set, like the
-    /// background pass. A source checked in the last `launchRecheckFloor` is skipped, so quickly
-    /// reopening the app doesn't hammer the GitHub API. Anthony: « recherche de MAJ au lancement de
-    /// l'app » (sur l'iPhone, pas au lancement de XSide).
+    /// marker): check THIS app's AUTO-mode sources for an update now and install it, like the
+    /// background pass. Notify-mode sources are left to the app itself, which shows a « mise à jour
+    /// disponible » modal at launch (Anthony chose: auto installs on its own, notify offers via the
+    /// modal — so checking notify here too would double it with a notification). A source checked in
+    /// the last `launchRecheckFloor` is skipped, so quickly reopening the app doesn't hammer the API.
     func checkUpdatesForRecordAtLaunch(recordID: UUID) {
         guard hasLoadedRecords, !updateCheckRunning, let record = records.first(where: { $0.id == recordID }) else { return }
         let now = Date()
         let targets = updateTargets(of: record).filter { target in
+            // Auto-mode only (per device, else the source's shared mode): notify is the dylib's modal.
+            guard (target.device?.inApp?.updateMode.value ?? target.source?.mode) == .auto else { return false }
             guard let last = target.source?.lastCheckedAt else { return true }
             return now.timeIntervalSince(last) >= Self.launchRecheckFloor
         }

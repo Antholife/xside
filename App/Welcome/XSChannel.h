@@ -24,6 +24,8 @@ void XSRequestRefreshTitled(NSString *_Nullable title, NSString *_Nullable lead)
 /// request (no re-sign): the pill says it was taken, the outcome arrives as XSide's usual update
 /// notification. Main thread.
 void XSRequestCheckUpdates(void);
+/// A silent launch check (notify-mode apps): shows the update modal only if a version is available.
+void XSRequestCheckUpdatesSilent(void);
 
 /// "Sauvegarder maintenant" from the phone: asks XSide to pull a data snapshot now. Main thread.
 void XSRequestBackup(void);

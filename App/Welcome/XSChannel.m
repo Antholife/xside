@@ -1189,40 +1189,51 @@ static void XSResumeAutoRefreshNow(void) {
     }) start];
 }
 
-static void XSRequestCheckUpdatesNow(void);
+static void XSRequestCheckUpdatesNow(BOOL silent);
 
 void XSRequestCheckUpdates(void) {
     if (!XSInstallationID() || !XSChannelSecret()) return; // no link with XSide yet: nothing to ask
-    XSAfterSheet(^{ XSExplainNetworkThen(^{ XSRequestCheckUpdatesNow(); }); });
+    XSAfterSheet(^{ XSExplainNetworkThen(^{ XSRequestCheckUpdatesNow(NO); }); });
+}
+
+/// A silent check at launch for a notify-mode app: no modal while it looks, and no « tu es à jour »
+/// at the end — the modal appears ONLY when a version is actually available (Anthony: « une modale
+/// de maj quand j'ouvre l'app pour me dire qu'il y en a une »). Auto-mode apps install on their own
+/// (handled on the Mac), so this runs for notify mode only.
+void XSRequestCheckUpdatesSilent(void) {
+    if (!XSInstallationID() || !XSChannelSecret()) return;
+    XSAfterSheet(^{ XSRequestCheckUpdatesNow(YES); }); // network is already up (the channel uses it)
 }
 
 static void XSStartInstallUpdateExchange(NSString *tag, NSString *asset);
 
-static void XSRequestCheckUpdatesNow(void) {
+static void XSRequestCheckUpdatesNow(BOOL silent) {
     // A real modal (Slice 3), like the refresh: connexion → recherche → « à jour » / une version
-    // proposée (« Télécharger et installer ») / « à regarder sur le Mac ».
-    XSUpdateModalShow();
+    // proposée (« Télécharger et installer ») / « à regarder sur le Mac ». When `silent` (a launch
+    // check), nothing is shown until a version is available: no « connexion… », no « à jour ».
+    if (!silent) XSUpdateModalShow();
     [XSPatientExchange(XSCheckUpdatesBody(), YES, ^(XSChannelResult result, NSDictionary *reply, BOOL final) {
         BOOL f = XSFrench();
         NSString *type = reply[@"type"];
         if (result == XSChannelWaiting) { return; } // the modal already shows « connexion… »
         if (result == XSChannelNoOutcome) {
-            XSUpdateModalDone(f ? @"Pas de réponse de ton Mac" : @"No answer from your Mac",
+            if (!silent) XSUpdateModalDone(f ? @"Pas de réponse de ton Mac" : @"No answer from your Mac",
                               f ? @"Réessaie dans un instant." : @"Try again in a moment.", NO);
             return;
         }
         if (result != XSChannelReplied) {
+            if (silent) return; // a launch check stays quiet on a hiccup
             XSPillContent *u = XSUnansweredPill(result);
             XSRefreshModalError(u.lead, u.hint, ^{ XSRequestCheckUpdates(); });
             return;
         }
         if ([type isEqual:@"busy"]) {
-            XSUpdateModalDone(f ? @"XSide est occupé" : @"XSide is busy",
+            if (!silent) XSUpdateModalDone(f ? @"XSide est occupé" : @"XSide is busy",
                               f ? @"Réessaie dans un instant." : @"Try again in a moment.", NO);
             return;
         }
         if ([type isEqual:@"accepted"]) {
-            XSUpdateModalWorking(f ? @"Recherche de mises à jour…" : @"Checking for updates…",
+            if (!silent) XSUpdateModalWorking(f ? @"Recherche de mises à jour…" : @"Checking for updates…",
                                  f ? @"XSide regarde le dépôt suivi." : @"XSide is checking the tracked repo.", -1);
             return;
         }
@@ -1230,12 +1241,14 @@ static void XSRequestCheckUpdatesNow(void) {
             NSString *state = reply[@"state"];
             NSString *version = [reply[@"version"] isKindOfClass:NSString.class] ? reply[@"version"] : nil;
             if ([state isEqual:@"upToDate"]) {
-                XSUpdateModalDone(f ? @"Tu es à jour" : @"You're up to date",
+                if (!silent) XSUpdateModalDone(f ? @"Tu es à jour" : @"You're up to date",
                                   f ? @"Tu as déjà la dernière version." : @"You already have the latest version.", YES);
             } else if ([state isEqual:@"needsMac"]) {
-                XSUpdateModalDone(f ? @"À regarder sur ton Mac" : @"Look on your Mac",
+                if (!silent) XSUpdateModalDone(f ? @"À regarder sur ton Mac" : @"Look on your Mac",
                                   f ? @"Un choix de version ou une mise à jour t'attend dans XSide sur le Mac." : @"A version choice or an update is waiting in XSide on the Mac.", YES);
             } else if ([state isEqual:@"available"]) {
+                if (silent && XSRefreshRunning) return; // don't clash with a running action's modal
+                if (silent) XSUpdateModalShow(); // now there's something worth showing
                 NSString *tag = [reply[@"tag"] isKindOfClass:NSString.class] ? reply[@"tag"] : @"";
                 NSString *asset = [reply[@"asset"] isKindOfClass:NSString.class] ? reply[@"asset"] : @"";
                 NSString *dir = [reply[@"downloadDir"] isKindOfClass:NSString.class] ? reply[@"downloadDir"] : nil;
