@@ -127,7 +127,7 @@ extension AppModel {
         do {
             // No `importedInto`: that would reinstall the stored (old) IPA. Without it the new IPA is
             // imported over the record found by bundle id (same id, options and data kept).
-            let updated = try await importAndInstall(ipa, on: device)
+            let updated = try await importAndInstall(ipa, on: device, isUpdate: true)
             guard UpdateApply.applied(storedVersion: updated.version, expected: info.version) else {
                 return .failed("update not applied: stored \(updated.version ?? "nil") != \(info.version ?? "nil")")
             }

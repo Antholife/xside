@@ -1206,7 +1206,7 @@ final class AppModel {
     @discardableResult
     func importAndInstall(_ ipa: URL, on device: Device, options: InstallOptions? = nil,
                           inApp: InAppDraft? = nil, duoCompatibility: Bool? = nil, iCloudSignedOut: Bool? = nil,
-                          tweaks: [TweakUse]? = nil, restore: RestoreRequest? = nil,
+                          tweaks: [TweakUse]? = nil, restore: RestoreRequest? = nil, isUpdate: Bool = false,
                           importedInto recordID: UUID? = nil,
                           imported: @MainActor (UUID) -> Void = { _ in },
                           progress: @escaping @MainActor @Sendable (JobStage) -> Void = { _ in },
@@ -1247,7 +1247,7 @@ final class AppModel {
         if jobs[key] == .preparing { jobs[key] = .waiting }
         progress(jobs[key] ?? .waiting) // never replaces a real step another holder already reported
         do {
-            try await run(key: key, device: device, inApp: inApp, duoCompatibility: duoCompatibility,
+            try await run(key: key, device: device, isUpdate: isUpdate, inApp: inApp, duoCompatibility: duoCompatibility,
                           iCloudSignedOut: iCloudSignedOut, tweaks: tweaks, restore: restore,
                           progress: progress, duoOutcome: duoOutcome)
         } catch {
@@ -2412,7 +2412,7 @@ final class AppModel {
     }
 
     /// The caller must hold a claim on `key`. `refresh`: see `SideloadPipeline.install`.
-    private func run(key: JobKey, device: Device, refresh: Bool = false,
+    private func run(key: JobKey, device: Device, refresh: Bool = false, isUpdate: Bool = false,
                      automatic: Bool = false, inApp: InAppDraft? = nil, duoCompatibility: Bool? = nil,
                      iCloudSignedOut: Bool? = nil, tweaks: [TweakUse]? = nil, restore: RestoreRequest? = nil,
                      progress: @escaping @MainActor @Sendable (JobStage) -> Void = { _ in },
@@ -2421,6 +2421,11 @@ final class AppModel {
         // A refresh renews an existing installation; a first install is shown by the install window.
         let wasRefresh = records.first { $0.id == key.recordID }?
             .installations.contains { $0.deviceID == key.deviceID } ?? false
+        // An update reinstalls an existing installation too, so `wasRefresh` is true — but it is a new
+        // version, not a re-sign: it must NOT be reported as « rafraîchi » (the update has its own
+        // feedback: the phone's install modal, or the auto-update notification). Anthony: « ça dit XXX
+        // rafraîchi alors que c'est la mise à jour qui s'est finie ».
+        let reportAsRefresh = wasRefresh && !isUpdate
         let backedUp = BackedUpFlag()
         do {
             let environment: @Sendable () async throws -> SigningEnvironment = { [weak self] in
@@ -2452,20 +2457,20 @@ final class AppModel {
             }
         } catch {
             await reloadRecords()
-            if wasRefresh { refreshResults[key] = .failed(Self.refreshFailureText(error, deviceName: deviceName(key.deviceID))) }
-            onJobFinished?(job, error, automatic, wasRefresh, false)
+            if reportAsRefresh { refreshResults[key] = .failed(Self.refreshFailureText(error, deviceName: deviceName(key.deviceID))) }
+            onJobFinished?(job, error, automatic, reportAsRefresh, false)
             // Deleted from the device: the pipeline dropped the installation; its reminder and
             // notification state go too (after the notification above, which reads the record).
             if error as? XSideError == .appRemovedFromDevice { await installationRemoved(key) }
             throw error
         }
         await reloadRecords()
-        if wasRefresh { showRefreshDone(key) }
+        if reportAsRefresh { showRefreshDone(key) }
         // A crash flagged before this install or refresh waits for the next check to go.
         changeCrashWatch { $0.installed(recordID: key.recordID, deviceID: key.deviceID, at: Date()) }
         // Just installed (and opened, for an install from the window): a crash is most likely now.
         crashSchedule.boost(deviceID: key.deviceID, now: Date())
-        onJobFinished?(job, nil, automatic, wasRefresh, backedUp.value)
+        onJobFinished?(job, nil, automatic, reportAsRefresh, backedUp.value)
         await updateAppIDCounter()
     }
 
