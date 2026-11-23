@@ -127,10 +127,14 @@ extension SettingsSection {
             (cachesRow, backupOn ? "backupCaches" : "backupNeedsData"),
             (beforeUpdateRow, backupOn ? "backupBeforeUpdate" : "backupNeedsData"),
             (toggle("backupNow", "backupNowOnLaunch", false), "backupNow")]
-        // Always shown (Anthony: « elle doit s'afficher »), even with no snapshot yet (only « Aucune »).
-        // The list is as of the last signing (a static picker can't be rebuilt live like the count).
+        // Always shown (Anthony: « elle doit s'afficher »), even with no snapshot yet. The collapsed
+        // picker shows its selected value: with backups it reads « Choisir une sauvegarde » (they're
+        // listed when tapped), not « Aucune », which read as empty even when there were backups
+        // (Anthony: « affiche Aucune alors qu'il y en a »). The list is as of the last signing (a
+        // static picker can't be rebuilt live like the count).
+        let restorePlaceholder = dataBackups.isEmpty ? "data.none" : "data.chooseBackup"
         dataItems.append((.choice(titleKey: title("restoreFrom"), key: "restoreFrom",
-                                  titleKeys: [p + "data.none"] + dataBackups.map(\.label),
+                                  titleKeys: [p + restorePlaceholder] + dataBackups.map(\.label),
                                   values: [""] + dataBackups.map(\.id), defaultValue: ""), "restore"))
         let dataPane = pane("data", dataItems)
 
@@ -163,7 +167,7 @@ extension SettingsSection {
             ("title.menu.status", "Statut"), ("title.menu.refresh", "Rafraîchissement"),
             ("title.menu.updates", "Mises à jour"), ("title.menu.compat", "Compatibilité"),
             ("title.menu.data", "Données"), ("title.menu.display", "Affichage dans l'app"),
-            ("title.data.count", "Sauvegardes"), ("data.none", "Aucune"),
+            ("title.data.count", "Sauvegardes"), ("data.none", "Aucune"), ("data.chooseBackup", "Choisir une sauvegarde"),
             ("title.backupData", "Sauvegarder les données"), ("title.backupCaches", "Inclure les caches"),
             ("title.backupBeforeUpdate", "Sauvegarder avant une mise à jour"),
             ("title.backupNow", "Sauvegarder maintenant"),
@@ -232,7 +236,7 @@ extension SettingsSection {
             ("title.menu.status", "Status"), ("title.menu.refresh", "Refresh"),
             ("title.menu.updates", "Updates"), ("title.menu.compat", "Compatibility"),
             ("title.menu.data", "Data"), ("title.menu.display", "In-app display"),
-            ("title.data.count", "Backups"), ("data.none", "None"),
+            ("title.data.count", "Backups"), ("data.none", "None"), ("data.chooseBackup", "Choose a backup"),
             ("title.backupData", "Back up data"), ("title.backupCaches", "Include caches"),
             ("title.backupBeforeUpdate", "Back up before an update"),
             ("title.backupNow", "Back up now"),

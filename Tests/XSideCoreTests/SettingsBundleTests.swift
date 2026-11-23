@@ -361,7 +361,7 @@ struct SettingsBundleTests {
         let restore = try #require(data.first { $0["Key"] as? String == p + "restoreFrom" })
         #expect(restore["Type"] as? String == "PSMultiValueSpecifier")
         #expect(restore["Values"] as? [String] == ["", "2026-11-17T10:00:00Z", "2026-11-10T09:00:00Z"])
-        #expect((restore["Titles"] as? [String])?.first == "Aucune")
+        #expect((restore["Titles"] as? [String])?.first == "Choisir une sauvegarde") // the collapsed label, not « Aucune »
         #expect((restore["Titles"] as? [String])?.contains("17 nov. 10:00") == true)
     }
 
