@@ -400,3 +400,9 @@ void XSWriteStatusRows(NSDate *expiry) {
         if (![[d objectForKey:full] isEqual:value]) [d setObject:value forKey:full];
     }];
 }
+
+void XSWriteBackupCount(NSInteger count) {
+    NSString *key = [XSRowPrefix stringByAppendingString:@"data.count"];
+    NSString *value = [@(MAX(0, count)) stringValue];
+    if (![[XSDefaults() objectForKey:key] isEqual:value]) [XSDefaults() setObject:value forKey:key];
+}

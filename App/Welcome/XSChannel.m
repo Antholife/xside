@@ -519,6 +519,10 @@ static NSArray<NSString *> *XSAdoptCheckInReply(XSChannelResult result, NSDictio
     XSSettingsBeforeAdopt = before;
     XSAdoptSettings(settings);
     XSRecordCheckIn(NSDate.date);
+    // The live number of data snapshots the Mac holds: keep the « Données » count row current,
+    // instead of the figure frozen in the Settings bundle at signing (it only moves on a re-sign).
+    id backupCount = reply[@"backupCount"];
+    if ([backupCount isKindOfClass:NSNumber.class]) XSWriteBackupCount([backupCount integerValue]);
     XSMacPauseEnd = XSPausedUntilFromReply(reply);
     // How the last refresh went, as XSide knows it (it may have ended while the app was away).
     NSDictionary *outcome = XSRefreshOutcomeFromJSONObject(reply[@"lastRefresh"]);
@@ -1277,19 +1281,24 @@ static void XSStartInstallUpdateExchange(NSString *tag, NSString *asset) {
 // work (it pulls or pushes the data over its own tools); the pill just says the request was taken.
 static void XSRequestDataActionNow(NSDictionary *body, NSString *askFR, NSString *askEN,
                                    NSString *okFR, NSString *okEN, NSString *hintFR, NSString *hintEN) {
-    XSPillContent *asking = XSPill(XSFrench() ? askFR : askEN, nil, XSPillToneNeutral, 0);
-    asking.busy = YES;
-    XSShowAnswer(asking);
+    // A full-screen modal, like a refresh (Anthony: « faut des modales quand on save »). The Mac
+    // answers « accepted » then backs up and refreshes on its own (the app is replaced), so the
+    // modal goes from « connexion… » to a final « demandé » card rather than streaming steps.
+    XSRefreshModalShowTitled(NO, XSFrench() ? askFR : askEN, nil);
     [XSPatientExchange(body, NO, ^(XSChannelResult result, NSDictionary *reply, BOOL final) {
         BOOL f = XSFrench();
-        if (result == XSChannelWaiting) { XSShowWaitingPill(YES); return; }
-        if (result != XSChannelReplied) { XSShowAnswer(XSUnansweredPill(result)); return; }
-        if ([reply[@"type"] isEqual:@"busy"]) {
-            XSShowAnswer(XSPill(f ? @"XSide est occupé" : @"XSide is busy",
-                                f ? @"Réessaie dans un instant." : @"Try again in a moment.", XSPillToneNeutral, 6));
+        if (result == XSChannelWaiting) { return; } // the modal already shows « connexion… »
+        if (result != XSChannelReplied) {
+            XSPillContent *u = XSUnansweredPill(result);
+            XSRefreshModalError(u.lead, u.hint, nil);
             return;
         }
-        XSShowAnswer(XSPill(f ? okFR : okEN, f ? hintFR : hintEN, XSPillToneNeutral, 7));
+        if ([reply[@"type"] isEqual:@"busy"]) {
+            XSRefreshModalError(f ? @"XSide est occupé" : @"XSide is busy",
+                                f ? @"Réessaie dans un instant." : @"Try again in a moment.", nil);
+            return;
+        }
+        XSUpdateModalDone(f ? okFR : okEN, f ? hintFR : hintEN, YES);
     }) start];
 }
 

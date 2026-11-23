@@ -1512,7 +1512,8 @@ final class AppModel {
         }
         let reply: (ChannelReply) async -> Void = { answer in
             do {
-                await send(try ChannelHandler.replyLine(answer, installationID: installationID, requestNonce: nonce, secret: secret,
+                let filled = await self.withBackupCount(answer, recordID: job.recordID, deviceID: job.deviceID)
+                await send(try ChannelHandler.replyLine(filled, installationID: installationID, requestNonce: nonce, secret: secret,
                                                         version: version))
             } catch {
                 Self.channelLogger.error("channel: reply not sealed: \(String(describing: error))")
@@ -1528,7 +1529,7 @@ final class AppModel {
             await reply(answer)
         case let .merged(settings, checkIn, outcome):
             // What this reply changes on the phone (device feedback 3, E2): a Mac edit shows here.
-            if let sent = request.checkInReport?.settings, case let .settings(replied, _, _) = answer {
+            if let sent = request.checkInReport?.settings, case let .settings(replied, _, _, _) = answer {
                 let changed = ChannelHandler.fieldsChanged(for: sent, by: replied)
                 Self.channelLogger.notice("channel: settings reply for \(found.recordID) on \(job.deviceID): changed fields \(changed.isEmpty ? "none" : changed.map { "\($0.rawValue)=\(Self.describe(replied, $0))" }.joined(separator: ", "))")
             }
@@ -1541,7 +1542,7 @@ final class AppModel {
                 Self.channelLogger.error("channel: check-in not stored: \(String(describing: error))")
             }
             // A watch (only ever an authenticated one) stays open; refused, it is a plain check-in.
-            if ChannelHandler.watchRequested(received) != nil, case let .settings(first, lastRefresh, pausedUntil) = answer,
+            if ChannelHandler.watchRequested(received) != nil, case let .settings(first, lastRefresh, pausedUntil, _) = answer,
                await holdWatch(installationID: installationID, nonce: nonce, secret: secret, version: version,
                                first: ChannelWatchState(settings: first, lastRefresh: lastRefresh, pausedUntil: pausedUntil),
                                key: key, saysBye: request.saysBye, hold: hold) {
@@ -3137,6 +3138,19 @@ final class AppModel {
     // MARK: App data backups
 
     private func backupBundleID(_ e: AppEntry) -> String { e.installation.signedBundleID ?? e.record.signedBundleID }
+
+    /// Fills a `settings`/`live` reply's `backupCount` with the snapshots the Mac holds for this
+    /// installation now, so the phone's « Données » count is live (the Settings bundle's own value is
+    /// frozen at signing). Other replies pass through.
+    private func withBackupCount(_ reply: ChannelReply, recordID: UUID, deviceID: String) async -> ChannelReply {
+        guard let e = entry(recordID: recordID, deviceID: deviceID) else { return reply }
+        let count = await backupStore.list(signedBundleID: backupBundleID(e), deviceID: deviceID).count
+        switch reply {
+        case let .settings(s, lr, pu, _): return .settings(s, lastRefresh: lr, pausedUntil: pu, backupCount: count)
+        case let .live(seq, s, lr, pu, _): return .live(seq: seq, s, lastRefresh: lr, pausedUntil: pu, backupCount: count)
+        default: return reply
+        }
+    }
 
     func deviceDisplayName(_ id: String) -> String {
         devices.first { $0.id == id }?.name ?? cachedNames[id] ?? id

@@ -301,7 +301,7 @@ import CryptoKit
         let first = try ChannelReplyEnvelopeV2.decode(line: sink.lines[0].dropLast())
         #expect(first.open(secret: secret, expectedNonce: "w1") == .settings(settings))
         var reader = ChannelWatchReader(installationID: id, nonce: "w1", secret: secret, version: .v2)
-        guard case .live(1, _, _, _)? = reader.open(line: sink.lines[1].dropLast()) else { Issue.record("live refused"); return }
+        guard case .live(1, _, _, _, _)? = reader.open(line: sink.lines[1].dropLast()) else { Issue.record("live refused"); return }
         #expect(reader.open(line: sink.lines[1].dropLast()) == nil) // replayed
         #expect(reader.open(line: sink.lines[2].dropLast()) == .alive(seq: 2))
         // A v1 reader (or a v1 line on a v2 watch) takes none of it.

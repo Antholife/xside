@@ -136,6 +136,11 @@ void XSAdoptRefreshOutcome(NSDictionary *outcome);
 void XSNoteSignature(NSDate *expiry);
 /// Rewrites the read-only rows (dates, connection, last refresh) in the device's locale.
 void XSWriteStatusRows(NSDate *_Nullable expiry);
+
+/// Writes the live number of data snapshots the Mac holds (from a check-in reply's `backupCount`)
+/// into the « Données » count row, so iOS Settings shows the real figure instead of the one frozen
+/// in the Settings bundle at signing.
+void XSWriteBackupCount(NSInteger count);
 /// The "Rafraîchir à la prochaine ouverture" switch was on: turns it back off and returns YES.
 BOOL XSWantsRefreshOnLaunch(void);
 /// The "Vérifier maintenant" switch was on: consumes it (turns it back off) and returns YES.

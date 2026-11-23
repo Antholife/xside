@@ -323,7 +323,9 @@ public struct PreviousRun: Equatable, Sendable {
 public enum ChannelReply: Codable, Equatable, Sendable {
     /// The installation's settings and, when known, its newest refresh outcome.
     /// `pausedUntil`: the end of a pause of a while made on the Mac (see the header).
-    case settings(InAppSettings, lastRefresh: RefreshOutcome? = nil, pausedUntil: Date? = nil)
+    /// `backupCount`: how many data snapshots the Mac holds for this installation right now, so the
+    /// phone's « Données » count is live (it is static in the Settings bundle, written at signing).
+    case settings(InAppSettings, lastRefresh: RefreshOutcome? = nil, pausedUntil: Date? = nil, backupCount: Int? = nil)
     /// Refresh queued; the app will be replaced, so it closes.
     case accepted
     case refreshed
@@ -335,7 +337,7 @@ public enum ChannelReply: Codable, Equatable, Sendable {
     case rejected
     /// On a watch: the installation's settings and newest refresh outcome changed on the Mac.
     /// `seq`: this line's number on the connection (1, 2, 3…, shared with `alive`).
-    case live(seq: Int, InAppSettings, lastRefresh: RefreshOutcome? = nil, pausedUntil: Date? = nil)
+    case live(seq: Int, InAppSettings, lastRefresh: RefreshOutcome? = nil, pausedUntil: Date? = nil, backupCount: Int? = nil)
     /// On a watch: nothing to say for a while, the connection is alive.
     case alive(seq: Int)
     /// While a phone-asked refresh runs, the live step for its modal (Slice 2): `stageKey` is a
@@ -359,7 +361,7 @@ public enum ChannelReply: Codable, Equatable, Sendable {
     case link(transport: String)
 
     private enum CodingKeys: String, CodingKey {
-        case type, settings, lastRefresh, reasonKey, by, seq, pausedUntil, stageKey, index, total, percent, state, version, tag, asset, downloadDir, transport
+        case type, settings, lastRefresh, reasonKey, by, seq, pausedUntil, stageKey, index, total, percent, state, version, tag, asset, downloadDir, transport, backupCount
     }
 
     public init(from decoder: Decoder) throws {
@@ -368,7 +370,8 @@ public enum ChannelReply: Codable, Equatable, Sendable {
         case "settings":
             self = .settings(try c.decode(InAppSettings.self, forKey: .settings),
                              lastRefresh: try c.decodeIfPresent(RefreshOutcome.self, forKey: .lastRefresh),
-                             pausedUntil: try c.decodeIfPresent(Date.self, forKey: .pausedUntil))
+                             pausedUntil: try c.decodeIfPresent(Date.self, forKey: .pausedUntil),
+                             backupCount: try c.decodeIfPresent(Int.self, forKey: .backupCount))
         case "accepted": self = .accepted
         case "refreshed": self = .refreshed
         case "failed": self = .failed(reasonKey: try c.decode(String.self, forKey: .reasonKey))
@@ -379,7 +382,8 @@ public enum ChannelReply: Codable, Equatable, Sendable {
         case "live":
             self = .live(seq: try c.decode(Int.self, forKey: .seq), try c.decode(InAppSettings.self, forKey: .settings),
                          lastRefresh: try c.decodeIfPresent(RefreshOutcome.self, forKey: .lastRefresh),
-                         pausedUntil: try c.decodeIfPresent(Date.self, forKey: .pausedUntil))
+                         pausedUntil: try c.decodeIfPresent(Date.self, forKey: .pausedUntil),
+                         backupCount: try c.decodeIfPresent(Int.self, forKey: .backupCount))
         case "alive": self = .alive(seq: try c.decode(Int.self, forKey: .seq))
         case "progress":
             self = .progress(stageKey: try c.decode(String.self, forKey: .stageKey),
@@ -403,11 +407,12 @@ public enum ChannelReply: Codable, Equatable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case let .settings(s, lastRefresh, pausedUntil):
+        case let .settings(s, lastRefresh, pausedUntil, backupCount):
             try c.encode("settings", forKey: .type)
             try c.encode(s, forKey: .settings)
             try c.encodeIfPresent(lastRefresh, forKey: .lastRefresh)
             try c.encodeIfPresent(pausedUntil.flatMap(channelClamped), forKey: .pausedUntil)
+            try c.encodeIfPresent(backupCount, forKey: .backupCount)
         case .accepted: try c.encode("accepted", forKey: .type)
         case let .link(transport):
             try c.encode("link", forKey: .type)
@@ -422,12 +427,13 @@ public enum ChannelReply: Codable, Equatable, Sendable {
             try c.encode("paused", forKey: .type)
             try c.encode(by, forKey: .by)
         case .rejected: try c.encode("rejected", forKey: .type)
-        case let .live(seq, s, lastRefresh, pausedUntil):
+        case let .live(seq, s, lastRefresh, pausedUntil, backupCount):
             try c.encode("live", forKey: .type)
             try c.encode(seq, forKey: .seq)
             try c.encode(s, forKey: .settings)
             try c.encodeIfPresent(lastRefresh, forKey: .lastRefresh)
             try c.encodeIfPresent(pausedUntil.flatMap(channelClamped), forKey: .pausedUntil)
+            try c.encodeIfPresent(backupCount, forKey: .backupCount)
         case let .alive(seq):
             try c.encode("alive", forKey: .type)
             try c.encode(seq, forKey: .seq)
@@ -451,7 +457,7 @@ public enum ChannelReply: Codable, Equatable, Sendable {
     /// The line number of a watch line (`live`, `alive`), nil for the other replies.
     public var watchSeq: Int? {
         switch self {
-        case let .live(seq, _, _, _), let .alive(seq): seq
+        case let .live(seq, _, _, _, _), let .alive(seq): seq
         default: nil
         }
     }
