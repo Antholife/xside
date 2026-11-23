@@ -2,7 +2,7 @@
 
 All notable changes to XSide. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.3.0-beta] - 2026-11-23
 
 ### Changed
 
@@ -12,11 +12,21 @@ All notable changes to XSide. The format follows [Keep a Changelog](https://keep
 - **Sauvegarder et restaurer les données depuis l'iPhone, et régler les options de sauvegarde.** La sous-page « Données » règle « Sauvegarder les données », « Inclure les caches » et « Sauvegarder avant une mise à jour » (synchro avec le Mac), liste les sauvegardes, « Sauvegarder maintenant » en crée une, et « Restaurer depuis… » remet une sauvegarde choisie (à la prochaine ouverture ; remplace les données actuelles, prévenu dans les réglages). L'export et l'import d'archives restent sur le Mac.
 - **Un texte explicatif sous chaque option** de la page « Réglages XSide » de l'iPhone.
 - **Choisir depuis l'iPhone ce que XSide fait quand une version sort, et à quelle fréquence vérifier.** Pour une app qui suit un dépôt GitHub, la sous-page « Mises à jour » montre le dépôt suivi et laisse régler « Quand une version sort » (Me prévenir / Installer seul) et « Vérifier » (Réglage global, 6 h, 1 jour, 1 semaine, à chaque rafraîchissement, jamais) ; les deux se synchronisent avec le Mac comme les autres réglages (le dernier changement gagne). Une fréquence personnalisée réglée sur le Mac s'affiche en lecture seule. Le dépôt et la variante restent pilotés depuis le Mac.
+- **La sauvegarde et la restauration complètes affichent un pourcentage et l'app en cours**, et la barre avance en continu pendant la capture des données de chaque app (fichiers et octets), au lieu de sauter d'une app à l'autre.
 
 ### Added
 
+- **La modale plein écran s'affiche aussi pour une action lancée depuis le Mac.** Quand une app est ouverte sur l'iPhone et que tu lances un rafraîchissement, une mise à jour, une sauvegarde ou une restauration depuis le Mac, l'iPhone montre la même modale plein écran en direct (étapes, pourcentage), intitulée « Opération depuis ton Mac ». Une action lancée depuis l'iPhone garde la priorité.
+- **Recherche de mise à jour à l'ouverture de l'app.** À chaque ouverture d'une app qui suit un dépôt GitHub, XSide vérifie discrètement s'il existe une nouvelle version : en mode « Installer seul » elle s'installe aussitôt, avec la modale d'installation (version détectée, téléchargement, pourcentage) ; en mode « Me prévenir » une modale propose de l'installer. Rien ne s'affiche quand tu es déjà à jour.
+- **Recherche de mise à jour au démarrage de XSide.** Au lancement de l'app sur le Mac, XSide vérifie toutes les sources suivies, et installe celles réglées sur « Installer seul ».
+
 - **Sauvegarde et restauration complètes (repartir au propre).** Dans *Réglages > Données des apps*, sauvegarde toutes tes apps XSide dans une seule archive `.xsbak` avant un clean total, un changement d'appareil ou une réinstallation d'iOS. Par app tu choisis ce que tu embarques : l'app (IPA), la compatibilité (Duo, iCloud), les réglages XSide in-app, les tweaks et les données (capturées sur le moment, avec ou sans caches). La restauration, façon Time Machine, liste les apps de l'archive et te laisse choisir quoi remettre, et sur quel appareil : elle réinstalle chaque app avec ses options, sa source de mise à jour, sa compatibilité, ses réglages in-app et ses tweaks, puis réinjecte les données.
 - **Suivre un dépôt GitHub pour les mises à jour d'une app.** Colle le lien d'un dépôt à l'install (ou depuis l'onglet *Mises à jour* d'une app) : XSide repère la variante à suivre, te demande quelle version tu installes, puis surveille les nouvelles releases en comparant les tags (pas les numéros de version de l'app, qui ne bougent pas toujours). Il te prévient ou installe seul les versions stables, après un contrôle du contenu, à la fréquence que tu choisis (globale, par app, ou à l'install : minutes, heures, jours, mois, ou jamais). Si le fichier que tu installes n'est pas la dernière release, XSide propose de télécharger et d'installer la plus récente à la place. Une option *Conserver les IPA téléchargés* copie chaque IPA téléchargé dans un dossier à toi.
+
+### Fixed
+
+- **Fermer l'app pendant une sauvegarde ne la fait plus échouer** : la copie des données est reprise automatiquement, l'app une fois fermée restant lisible.
+- **Une mise à jour d'app ou de tweak n'est plus annoncée comme « rafraîchie ».** Elle affiche son propre résultat (« Version X installée » dans la modale, ou la notification de mise à jour) ; seul un vrai rafraîchissement (re-signature pour prolonger) dit « rafraîchie ».
 
 ## [1.2.0-beta] - 2026-11-10
 
