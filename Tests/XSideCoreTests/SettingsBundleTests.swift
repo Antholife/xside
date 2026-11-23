@@ -232,9 +232,10 @@ struct SettingsBundleTests {
         #expect(menu[1]["Title"] as? String == "Statut")
         #expect((menu[2]["FooterText"] as? String)?.hasPrefix("✦ Installée avec XSide") == true)
         #expect(menu[3]["Title"] as? String == "Rafraîchissement")
-        #expect(menu[4]["Title"] as? String == "Compatibilité")
-        #expect(menu[5]["Title"] as? String == "Données")
-        #expect(menu[6]["Title"] as? String == "Affichage dans l'app")
+        #expect(menu[4]["Title"] as? String == "Mises à jour")
+        #expect(menu[5]["Title"] as? String == "Compatibilité")
+        #expect(menu[6]["Title"] as? String == "Données")
+        #expect(menu[7]["Title"] as? String == "Affichage dans l'app")
         // Read-only rows moved into the Statut sub-page; the action's footer into Rafraîchissement.
         #expect(try subpage(app, "status").first { $0["Key"] as? String == "io.github.xside.settings.validUntil" }?["Title"] as? String == "Valable jusqu'au")
         #expect(try subpage(app, "refresh")[0]["FooterText"] as? String == Self.refreshFooterFR)
@@ -248,7 +249,7 @@ struct SettingsBundleTests {
         try SettingsBundle.add(xsideSection(language: "en"), to: en)
         #expect(try specifiers(en)[1]["Title"] as? String == "XSide Settings")
         #expect(try childItems(en)[1]["Title"] as? String == "Status")
-        #expect(try childItems(en)[6]["Title"] as? String == "In-app display")
+        #expect(try childItems(en)[7]["Title"] as? String == "In-app display")
     }
 
     @Test func settingsSectionIsAMasterDetailMenu() throws {
@@ -258,7 +259,7 @@ struct SettingsBundleTests {
         // The menu: a leading group with « Status » alone, then a group (the "installed with XSide"
         // footer under it) with « Refresh » and « In-app display », each a child pane of its own.
         let menu = try childItems(app)
-        #expect(menu.count == 7)
+        #expect(menu.count == 8)
         #expect(menu[0]["Type"] as? String == "PSGroupSpecifier")
         #expect(menu[0]["Key"] as? String == p + "section")
         // No note under « Status » any more (Anthony): the per-option footers carry that instead.
@@ -273,10 +274,11 @@ struct SettingsBundleTests {
         #expect((menu[2]["FooterText"] as? String)?.hasPrefix("✦ Installed with XSide") == true)
         #expect(menu[3]["File"] as? String == "XSide-refresh")
         #expect(menu[3]["Title"] as? String == "Refresh")
-        #expect(menu[4]["File"] as? String == "XSide-compat")
-        #expect(menu[5]["File"] as? String == "XSide-data")
-        #expect(menu[6]["File"] as? String == "XSide-display")
-        #expect(menu[6]["Title"] as? String == "In-app display")
+        #expect(menu[4]["File"] as? String == "XSide-updates")
+        #expect(menu[5]["File"] as? String == "XSide-compat")
+        #expect(menu[6]["File"] as? String == "XSide-data")
+        #expect(menu[7]["File"] as? String == "XSide-display")
+        #expect(menu[7]["Title"] as? String == "In-app display")
         // Compatibilité sub-page: the two per-device install-option switches.
         let compat = try subpage(app, "compat")
         #expect(compat.contains { $0["Key"] as? String == p + "duoCompatibility" && $0["Type"] as? String == "PSToggleSwitchSpecifier" })
@@ -427,13 +429,19 @@ struct SettingsBundleTests {
         #expect(titles.last == "Personnalisé : 90 min")
     }
 
-    /// No source: no « Mises à jour » row and no plist for it.
-    @Test func noUpdatesSubPageWithoutASource() throws {
+    /// No source: the « Mises à jour » pane still appears (Anthony: always shown), with a message and
+    /// no mode/frequency/check rows.
+    @Test func updatesSubPageAppearsWithoutASourceWithAMessage() throws {
         let app = try makeApp()
-        try SettingsBundle.add(xsideSection(), to: app)
-        #expect(!FileManager.default.fileExists(atPath: app.appendingPathComponent("Settings.bundle/XSide-updates.plist").path))
+        try SettingsBundle.add(xsideSection(), to: app) // default "en", no updateRepo
         let panes = try childItems(app).filter { $0["Type"] as? String == "PSChildPaneSpecifier" }.compactMap { $0["File"] as? String }
-        #expect(panes == ["XSide-status", "XSide-refresh", "XSide-compat", "XSide-data", "XSide-display"])
+        #expect(panes == ["XSide-status", "XSide-refresh", "XSide-updates", "XSide-compat", "XSide-data", "XSide-display"])
+        let updates = try subpage(app, "updates")
+        let p = "io.github.xside.settings."
+        #expect(!updates.contains { $0["Key"] as? String == p + "updateMode" })
+        #expect(!updates.contains { $0["Key"] as? String == p + "updateFrequency" })
+        #expect(!updates.contains { $0["Key"] as? String == p + "checkUpdatesOnLaunch" })
+        #expect(updates.compactMap { $0["FooterText"] as? String }.contains { $0.contains("no update source") })
     }
 
     /// The app is localized in French and English: Settings.bundle gets those two folders (and
@@ -573,14 +581,14 @@ struct SettingsBundleTests {
         #expect(items[1]["Key"] as? String == "io.github.xside.settings.pane")
         // The menu's rows, then the « Tweaks » group and its row at the end.
         let child = try childItems(app)
-        #expect(child.count == 9)
-        #expect(child[7]["Type"] as? String == "PSGroupSpecifier")
-        #expect(child[7]["Title"] as? String == "Tweaks")
-        #expect(child[7]["Key"] as? String == "io.github.xside.settings.tweaks.group")
-        #expect(child[8]["Type"] as? String == "PSChildPaneSpecifier")
-        #expect(child[8]["Title"] as? String == "Tweaks · 2")
-        #expect(child[8]["File"] as? String == "XSideTweaks")
-        #expect(child[8]["Key"] as? String == "io.github.xside.settings.tweaks")
+        #expect(child.count == 10)
+        #expect(child[8]["Type"] as? String == "PSGroupSpecifier")
+        #expect(child[8]["Title"] as? String == "Tweaks")
+        #expect(child[8]["Key"] as? String == "io.github.xside.settings.tweaks.group")
+        #expect(child[9]["Type"] as? String == "PSChildPaneSpecifier")
+        #expect(child[9]["Title"] as? String == "Tweaks · 2")
+        #expect(child[9]["File"] as? String == "XSideTweaks")
+        #expect(child[9]["Key"] as? String == "io.github.xside.settings.tweaks")
         #expect(Set(child.compactMap { $0["Key"] as? String }).count == child.count)
         let page = try tweaksPage(app)
         #expect(page["Title"] as? String == "Tweaks")
@@ -636,7 +644,7 @@ struct SettingsBundleTests {
         // Tweaks gone, module kept: XSide's page without its « Tweaks » group.
         try SettingsBundle.add(xsideSection(), tweaks: pane, to: app)
         try SettingsBundle.add(xsideSection(), tweaks: nil, to: app)
-        #expect(try childItems(app).count == 7)
+        #expect(try childItems(app).count == 8)
         #expect(!FileManager.default.fileExists(atPath: app.appendingPathComponent("Settings.bundle/XSideTweaks.plist").path))
     }
 

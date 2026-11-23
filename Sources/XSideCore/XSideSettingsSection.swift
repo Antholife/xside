@@ -73,8 +73,10 @@ extension SettingsSection {
             (toggle("refreshOnLaunch", "refreshOnLaunch", false), "refreshOnLaunch"),
             (toggle("autoRefresh", "autoRefresh", s.autoRefresh.value), "autoRefresh")])
 
-        // Mises à jour (only with a GitHub source): tracked repo, mode, frequency, « Vérifier maintenant ».
-        let updatesPane: Row? = updateRepo.map { repo in
+        // Mises à jour: always shown (Anthony). With a GitHub source: tracked repo, mode, frequency,
+        // « Vérifier maintenant ». Without one: a read-only row and a footer saying there is no source.
+        let updatesPane: Row
+        if let repo = updateRepo {
             // One stable picker that ALWAYS includes « custom », so the current value (which can reach
             // the phone over the channel before the bundle is re-signed) never lands on a specifier
             // whose values don't list it — that showed an empty row (Anthony: « l'option est vide »).
@@ -85,11 +87,13 @@ extension SettingsSection {
                 + [customFreqTitleKey]
             let frequencyRow: Row = .choice(titleKey: title("updateFrequency"), key: "updateFrequency",
                                             titleKeys: freqTitles, values: freqValues, defaultValue: updateFrequency.rawValue)
-            return pane("updates", [
+            updatesPane = pane("updates", [
                 (value("updates.repo", "updates.repo", repo), "updatesRepo"),
                 (choice("updateMode", ["notify", "auto"], s.updateMode.value.rawValue), "updateMode"),
                 (frequencyRow, "updateFrequency"),
                 (toggle("checkUpdates", "checkUpdatesOnLaunch", false), "checkUpdates")])
+        } else {
+            updatesPane = pane("updates", [(value("updates.repo", "updates.repo.none", "—"), "updatesNone")])
         }
 
         // Compatibilité: the per-device install options. Duo can be greyed on the Mac (the app
@@ -131,7 +135,7 @@ extension SettingsSection {
 
         // The menu: « Statut » alone at the top, then the rest, the "installed with XSide" footer below.
         var rest: [Row] = [.group(key: "menu.rest", footerKey: p + "footer"), refreshPane]
-        if let updatesPane { rest.append(updatesPane) }
+        rest.append(updatesPane)
         rest.append(contentsOf: [compatPane, dataPane, displayPane])
         // No note under « Statut » (Anthony: « enlève le texte sous Statut »); the per-option footers
         // already say when each change is taken into account.
@@ -173,6 +177,7 @@ extension SettingsSection {
             ("footer.status", "Rafraîchi par ton Mac. Ces infos sont réécrites dans ta langue à l'ouverture de l'app."),
             ("footer.autoRefresh", "Activé : XSide rafraîchit l'app avant qu'elle expire. Désactivé : elle expirera à sa date."),
             ("footer.updatesRepo", "Le dépôt GitHub d'où viennent les mises à jour. Pour en changer, passe par ton Mac."),
+            ("footer.updatesNone", "Cette app n'a pas de source de mise à jour. Ajoutes-en une depuis XSide sur ton Mac."),
             ("footer.updateMode", "Me prévenir : une notification quand une version sort. Installer seul : XSide l'installe tout seul, après un contrôle du contenu."),
             ("footer.updateFrequency", "À quelle fréquence XSide regarde si une nouvelle version est sortie. La valeur « Personnalisé » se règle depuis XSide sur le Mac : fiche de l'app > Mises à jour."),
             ("footer.duoCompatibility", "Adapte l'app aux deux écrans de l'iPhone Duo. Rafraîchit l'app pour l'appliquer."),
@@ -240,6 +245,7 @@ extension SettingsSection {
             ("footer.status", "Refreshed by your Mac. These are rewritten in your language when you open the app."),
             ("footer.autoRefresh", "On: XSide refreshes the app before it expires. Off: it will expire on its date."),
             ("footer.updatesRepo", "The GitHub repo updates come from. To change it, use your Mac."),
+            ("footer.updatesNone", "This app has no update source. Add one from XSide on your Mac."),
             ("footer.updateMode", "Notify me: a notification when a version is out. Install on its own: XSide installs it for you, after a content check."),
             ("footer.updateFrequency", "How often XSide checks whether a new version is out. The « Custom » value is set from XSide on your Mac: the app's page > Updates."),
             ("footer.duoCompatibility", "Adapts the app to the iPhone Duo's two screens. Refreshes the app to apply it."),
