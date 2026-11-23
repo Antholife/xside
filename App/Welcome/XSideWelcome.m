@@ -884,7 +884,10 @@ static void XSRunOneLaunchAction(NSTimeInterval delay) {
         // step) so the phone shows the live modal, not a frozen pill (Anthony: « faut la modale
         // dynamique, pas direct le check »). The live count then updates on the next check-in.
         BOOL fr = XSFrench();
-        NSString *title = fr ? @"Sauvegarde des données" : @"Backing up the data";
+        // Title it « Sauvegarde » only when a snapshot will actually be taken (backupData on); with
+        // it off the refresh won't back up, so don't mislabel it (review M4).
+        BOOL backs = XSSettingBool(XSCurrentSettings(), @"backupData");
+        NSString *title = backs ? (fr ? @"Sauvegarde des données" : @"Backing up the data") : nil;
         dispatch_async(dispatch_get_main_queue(), ^{ XSWhenForeground(delay, ^{ XSRequestRefreshTitled(title, nil); }); });
     } else {
         NSString *restoreID = XSPeekRestoreFrom();
@@ -991,9 +994,6 @@ static void XSLaunch(void) {
 /// from the panel) must reach an app that was only in the background, not only a cold launch
 /// (device feedback 2026-11-08). Not again within a few seconds of the last check-in.
 static void XSReturn(void) {
-    // Coming back from iOS Settings right after turning it on is the usual way to use it. One action
-    // at a time, by priority (see XSRunOneLaunchAction): a restart would lose the others.
-    XSRunOneLaunchAction(0.5);
     BOOL changed = XSLoadSettings();
     // The answer to a Refresh that came while the person was away (final review minor 6).
     XSWhenForeground(0.3, ^{ XSShowKeptAnswer(); });
@@ -1016,6 +1016,9 @@ static void XSReturn(void) {
         }); });
         return;
     }
+    // One launch action at a time (refresh/check/backup/restore), AFTER the compat branch (like
+    // XSLaunch), so a compat refresh and another queued action can't race (review M2).
+    XSRunOneLaunchAction(0.5);
     if (XSTakeAutoRefreshChangedOnPhone()) {
         XSWhenForeground(0.5, ^{ XSTellAutoRefreshChange(); });
         return;
