@@ -1260,13 +1260,14 @@ final class AppModel {
 
     /// Starts a refresh of one row unless it is already running. Returns false when nothing started.
     @discardableResult
-    func refreshNow(_ job: RefreshJob, automatic: Bool = false) -> Bool {
-        startRefresh(job, automatic: automatic) != nil
+    func refreshNow(_ job: RefreshJob, automatic: Bool = false, isUpdate: Bool = false) -> Bool {
+        startRefresh(job, automatic: automatic, isUpdate: isUpdate) != nil
     }
 
     /// `refreshNow`, returning the running job: its value is the error it failed with, nil on
-    /// success. Nil when nothing started.
-    private func startRefresh(_ job: RefreshJob, automatic: Bool) -> Task<(any Error)?, Never>? {
+    /// success. Nil when nothing started. `isUpdate`: this reinstall applies a new tweak version, so
+    /// it isn't reported as « rafraîchi » (the tweak update has its own feedback).
+    private func startRefresh(_ job: RefreshJob, automatic: Bool, isUpdate: Bool = false) -> Task<(any Error)?, Never>? {
         let key = JobKey(recordID: job.recordID, deviceID: job.deviceID)
         guard signingEnvironment != nil, jobs[key] == nil, !removingDevices.contains(job.deviceID),
               !isPaused(job), let device = devices.first(where: { $0.id == job.deviceID }) else { return nil }
@@ -1274,7 +1275,7 @@ final class AppModel {
         return Task {
             defer { release(key) }
             do {
-                try await run(key: key, device: device, refresh: true, automatic: automatic)
+                try await run(key: key, device: device, refresh: true, isUpdate: isUpdate, automatic: automatic)
                 return nil
             } catch {
                 return error

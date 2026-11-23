@@ -67,7 +67,7 @@ extension AppModel {
             guard replacing != nil else { return .upToDate(version: version) }
             try await library.replaceTweak(old.id, with: package, recordID: recordID)
             await reloadRecords()
-            refreshNow(RefreshJob(recordID: recordID, deviceID: device.id))
+            refreshNow(RefreshJob(recordID: recordID, deviceID: device.id), isUpdate: true)
             return .installed(version: version)
         } catch {
             return .failed("install: \(error)")
