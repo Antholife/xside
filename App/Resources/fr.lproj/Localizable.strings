@@ -1475,6 +1475,7 @@
 "install.step.restoring" = "Restauration des données";
 "install.step.backingUp" = "Sauvegarde des données";
 "menuBar.working.data" = "Sauvegarde…";
+"menuBar.working.restore" = "Restauration…";
 
 "fiche.data.delete" = "Supprimer";
 "fiche.data.delete.title" = "Supprimer cette sauvegarde ?";

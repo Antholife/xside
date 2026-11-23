@@ -195,6 +195,7 @@ private struct PopoverContent: View {
                                    canActOnDevice: model.canActOnDevice(entry),
                                    isUninstalling: model.uninstalling.contains(entry.id),
                                    isDataBusy: model.dataBusy.contains(entry.id),
+                                   isRestoring: model.restoringApps.contains(entry.id),
                                    needsUSB: group.needsUSB, deviceName: group.name,
                                    percent: model.stepPercent[entry.id],
                                    isHighlighted: model.highlightedRow == entry.id,

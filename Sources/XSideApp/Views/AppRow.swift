@@ -16,6 +16,7 @@ struct AppRow: View {
     let isUninstalling: Bool
     /// A data backup, restore or import is running for this row.
     var isDataBusy = false
+    var isRestoring = false
     /// Wi-Fi refresh is off and the device is only on Wi-Fi.
     let needsUSB: Bool
     let deviceName: String
@@ -287,7 +288,7 @@ struct AppRow: View {
 
     private func subtitle(validity: Validity, now: Date) -> String {
         if isUninstalling { return L("popover.app.uninstalling") }
-        if isDataBusy { return L("fiche.data.working") }
+        if isDataBusy { return L(isRestoring ? "fiche.data.working.restore" : "fiche.data.working") }
         if case .step(.backingUp)? = step { return L("fiche.data.working") }
         if let step { return percent.map { "\(step.rowText) \(percentText($0))" } ?? step.rowText }
         // A pause of a while names its end, unless the app expired meanwhile (mega review U11).

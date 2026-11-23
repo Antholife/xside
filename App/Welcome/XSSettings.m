@@ -406,3 +406,16 @@ void XSWriteBackupCount(NSInteger count) {
     NSString *value = [@(MAX(0, count)) stringValue];
     if (![[XSDefaults() objectForKey:key] isEqual:value]) [XSDefaults() setObject:value forKey:key];
 }
+
+static NSString *const XSRestorePendingKey = @"io.github.xside.welcome.restorePending";
+
+void XSSetRestorePending(BOOL pending) {
+    if (pending) [XSDefaults() setBool:YES forKey:XSRestorePendingKey];
+    else [XSDefaults() removeObjectForKey:XSRestorePendingKey];
+}
+
+BOOL XSTakeRestorePending(void) {
+    BOOL pending = [XSDefaults() boolForKey:XSRestorePendingKey];
+    if (pending) [XSDefaults() removeObjectForKey:XSRestorePendingKey];
+    return pending;
+}

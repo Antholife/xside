@@ -141,6 +141,12 @@ void XSWriteStatusRows(NSDate *_Nullable expiry);
 /// into the « Données » count row, so iOS Settings shows the real figure instead of the one frozen
 /// in the Settings bundle at signing.
 void XSWriteBackupCount(NSInteger count);
+
+/// A restore replaces the app's data and XSide terminates the app to do it, so the modal can't show
+/// the end. `XSSetRestorePending(YES)` is set when a restore is accepted (cleared on failure); the
+/// next launch reads `XSTakeRestorePending` and tells the person the data was restored.
+void XSSetRestorePending(BOOL pending);
+BOOL XSTakeRestorePending(void);
 /// The "Rafraîchir à la prochaine ouverture" switch was on: turns it back off and returns YES.
 BOOL XSWantsRefreshOnLaunch(void);
 /// The "Vérifier maintenant" switch was on: consumes it (turns it back off) and returns YES.

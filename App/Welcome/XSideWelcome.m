@@ -900,6 +900,16 @@ static void XSRunOneLaunchAction(NSTimeInterval delay) {
 static void XSLaunch(void) {
     XSLoadSettings(); // what the person changed in iOS Settings applies from this launch on
     XSRemoveLeftoverShortcuts(); // XSide's are static now (device feedback 3, E1)
+    // The app was terminated mid-restore to swap its data; now that it's back, confirm it (Anthony).
+    if (XSTakeRestorePending()) {
+        BOOL fr = XSFrench();
+        XSPillContent *restored = [XSPillContent new];
+        restored.lead = fr ? @"Données restaurées" : @"Data restored";
+        restored.hint = fr ? @"La sauvegarde choisie a été remise en place." : @"The chosen backup was put back.";
+        restored.tone = XSPillToneNeutral;
+        restored.duration = 6;
+        XSShowPillWhenFree(restored);
+    }
     BOOL tellAutoRefresh = XSTakeAutoRefreshChangedOnPhone();
     NSArray<NSString *> *sendFields = XSTakeSettingsChangedOnPhone();
     // A confirmed refresh (the app came back with a new signature) clears « Rafraîchir à la prochaine

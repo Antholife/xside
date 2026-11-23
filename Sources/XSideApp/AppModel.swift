@@ -188,6 +188,9 @@ final class AppModel {
     @ObservationIgnored var autoInstallTasks: [JobKey: Task<Applied, Never>] = [:]
     /// Entries (`AppEntry.id`) with a backup, restore or import running: the fiche shows a spinner.
     private(set) var dataBusy: Set<JobKey> = []
+    /// Apps whose `dataBusy` is a RESTORE (not a backup/import), so the panel and menu bar say
+    /// « Restauration… » instead of « Sauvegarde… » (Anthony).
+    private(set) var restoringApps: Set<JobKey> = []
     /// A running manual/pre-update backup's progress (0...1) per row; absent while the total is unknown.
     private(set) var backupFraction: [JobKey: Double] = [:]
     /// A running « Télécharger et installer » update's download progress (0...1), keyed by
@@ -3249,7 +3252,8 @@ final class AppModel {
     /// by id, so an id shared across devices can't redirect the restore to a sibling's data).
     func restore(_ snapshot: BackupSnapshot, _ entry: AppEntry) async -> Bool {
         dataBusy.insert(entry.id)
-        defer { dataBusy.remove(entry.id) }
+        restoringApps.insert(entry.id) // so the panel says « Restauration… », not « Sauvegarde… »
+        defer { dataBusy.remove(entry.id); restoringApps.remove(entry.id) }
         // The live record and installation, as in backUpNow: the entry's copy may be stale.
         let liveRecord = records.first { $0.id == entry.record.id }
         let install = liveRecord?.installations.first { $0.deviceID == entry.installation.deviceID } ?? entry.installation
@@ -3993,7 +3997,9 @@ extension AppModel {
             items.append(L("menuBar.working.install", flow.info?.name ?? flow.ipa.deletingPathExtension().lastPathComponent))
         }
         if items.isEmpty, isCreatingCertificate { items.append(L("menuBar.working.certificate")) }
-        if items.isEmpty, !dataBusy.isEmpty { items.append(L("menuBar.working.data")) }
+        if items.isEmpty, !dataBusy.isEmpty {
+            items.append(L(dataBusy.allSatisfy { restoringApps.contains($0) } ? "menuBar.working.restore" : "menuBar.working.data"))
+        }
         guard let first = items.first else { return nil }
         return items.count > 1 ? L("menuBar.working.more", first, items.count - 1) : first
     }

@@ -1332,11 +1332,15 @@ static void XSStartRestoreExchange(NSString *backupID) {
         if (result == XSChannelWaiting) { return; } // the modal already shows « connexion… »
         if (result == XSChannelNoOutcome) { return; } // the app is being terminated to swap its data
         if (result != XSChannelReplied) {
+            XSSetRestorePending(NO);
             XSPillContent *u = XSRefreshUnansweredPill(result);
             XSRefreshModalError(u.lead, u.hint, retry);
             return;
         }
         if ([type isEqual:@"accepted"]) {
+            // The Mac will terminate the app to swap its data, so the modal can't show the end: mark
+            // it so the next launch tells the person the data was restored.
+            XSSetRestorePending(YES);
             XSRefreshModalWorking();
         } else if ([type isEqual:@"link"]) {
             // The hero's transport, already applied by the reply reader.
@@ -1346,13 +1350,16 @@ static void XSStartRestoreExchange(NSString *backupID) {
             XSRefreshModalStep(fr ? @"Restauré ✓" : @"Restored ✓",
                                fr ? @"L'app va se fermer, rouvre-la ensuite." : @"The app will close, open it again then.", 1.0);
         } else if ([type isEqual:@"failed"]) {
+            XSSetRestorePending(NO);
             NSString *reason = [reply[@"reasonKey"] isKindOfClass:NSString.class] ? reply[@"reasonKey"] : @"unknown";
             if ([reason isEqual:@"cancelled"]) XSUpdateModalDone(XSCancelTitle(fr), nil, NO);
             else XSRefreshModalError(fr ? @"La restauration a échoué" : @"The restore failed", XSReasonText(reason, fr), retry);
         } else if ([type isEqual:@"busy"]) {
+            XSSetRestorePending(NO);
             XSRefreshModalError(fr ? @"XSide est occupé" : @"XSide is busy",
                                 fr ? @"Réessaie dans un instant." : @"Try again in a moment.", retry);
         } else if ([type isEqual:@"deviceUnreachable"] || [type isEqual:@"rejected"]) {
+            XSSetRestorePending(NO);
             XSPillContent *u = XSRefreshUnansweredPill(XSChannelNotFound);
             XSRefreshModalError(u.lead, u.hint, retry);
         }
