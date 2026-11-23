@@ -1262,9 +1262,19 @@ static void XSRequestCheckUpdatesNow(BOOL silent) {
                                                     : @"XSide downloads it, installs it, and keeps a copy in:\n%@\nThe app closes at the end."), dir]
                     : (f ? @"XSide la télécharge, l'installe, et ne garde rien. L'app se fermera à la fin."
                          : @"XSide downloads it, installs it, and keeps nothing. The app closes at the end.");
-                XSUpdateModalOffer(title, msg,
-                    f ? @"Télécharger et installer" : @"Download and install",
-                    ^{ XSStartInstallUpdateExchange(tag, asset); });
+                // A silent launch check in auto mode installs by itself and shows the install modal
+                // live (the new version + its progress), rather than waiting for a tap — the person
+                // asked for auto, and still wants to SEE it (Anthony). Notify (and every manual check)
+                // offers it instead. The install flow has its own « Annuler ».
+                BOOL autoInstall = silent && [XSSettingValue(XSCurrentSettings(), @"updateMode") isEqual:@"auto"];
+                if (autoInstall) {
+                    XSUpdateModalWorking(title, f ? @"Mise à jour lancée automatiquement…" : @"Update started automatically…", -1);
+                    XSStartInstallUpdateExchange(tag, asset);
+                } else {
+                    XSUpdateModalOffer(title, msg,
+                        f ? @"Télécharger et installer" : @"Download and install",
+                        ^{ XSStartInstallUpdateExchange(tag, asset); });
+                }
             }
             return;
         }

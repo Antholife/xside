@@ -178,34 +178,6 @@ extension AppModel {
         }
     }
 
-    /// An app was just launched on the phone (the first check-in of a new run, carrying the run
-    /// marker): check THIS app's AUTO-mode sources for an update now and install it, like the
-    /// background pass. Notify-mode sources are left to the app itself, which shows a « mise à jour
-    /// disponible » modal at launch (Anthony chose: auto installs on its own, notify offers via the
-    /// modal — so checking notify here too would double it with a notification). A source checked in
-    /// the last `launchRecheckFloor` is skipped, so quickly reopening the app doesn't hammer the API.
-    func checkUpdatesForRecordAtLaunch(recordID: UUID) {
-        guard hasLoadedRecords, !updateCheckRunning, let record = records.first(where: { $0.id == recordID }) else { return }
-        let now = Date()
-        let targets = updateTargets(of: record).filter { target in
-            // Auto-mode only (per device, else the source's shared mode): notify is the dylib's modal.
-            guard (target.device?.inApp?.updateMode.value ?? target.source?.mode) == .auto else { return false }
-            guard let last = target.source?.lastCheckedAt else { return true }
-            return now.timeIntervalSince(last) >= Self.launchRecheckFloor
-        }
-        guard !targets.isEmpty else { return }
-        updateCheckRunning = true
-        Task { [weak self] in
-            guard let self else { return }
-            defer { updateCheckRunning = false }
-            let reports = await runUpdateChecks(targets)
-            let reached = zip(targets, reports).compactMap { t, r -> UpdateTarget? in
-                if case .failed = r.result { nil } else { t }
-            }
-            await markChecked(reached, at: now)
-        }
-    }
-
     /// « Vérifier maintenant » asked from the iPhone: check every source of this record now, whatever
     /// its cadence, and notify / auto-install like the background pass.
     func checkUpdatesForRecord(recordID: UUID) {

@@ -1513,10 +1513,9 @@ final class AppModel {
             case .nothing:
                 break
             }
-            // A fresh run (the run marker rides only the first contact of a launch): check this app's
-            // update sources now and auto-install where set. Anthony: « recherche de MAJ au lancement
-            // de l'app » on the iPhone. The floor inside skips a source checked in the last 10 min.
-            checkUpdatesForRecordAtLaunch(recordID: found.recordID)
+            // NB: the app's own update check at launch (auto installs with a live modal, notify offers
+            // one) is driven by the dylib at launch, not here — so the person sees the modal. See
+            // XSRequestCheckUpdatesSilent in the module.
         }
         let reply: (ChannelReply) async -> Void = { answer in
             do {

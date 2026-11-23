@@ -902,12 +902,11 @@ static void XSRunOneLaunchAction(NSTimeInterval delay) {
 /// allow it), else the pill; never both (spec §1).
 static void XSLaunch(void) {
     XSLoadSettings(); // what the person changed in iOS Settings applies from this launch on
-    // Notify-mode apps: a silent update check a moment after launch; the modal appears only if a
-    // version is out (auto-mode installs on its own, on the Mac). Scheduled here, before the launch's
-    // own early returns, so it runs on every cold launch; it holds back if an action's modal is up.
-    if ([XSSettingValue(XSCurrentSettings(), @"updateMode") isEqual:@"notify"]) {
-        dispatch_async(dispatch_get_main_queue(), ^{ XSWhenForeground(2.5, ^{ XSRequestCheckUpdatesSilent(); }); });
-    }
+    // A silent update check a moment after launch: nothing shows unless a version is out, and then
+    // the modal installs it by itself (auto) or offers it (notify). Scheduled here, before the
+    // launch's own early returns, so it runs on every cold launch; it holds back if an action's
+    // modal is already up (Anthony: « faut voir la modale d'install quand je lance l'app »).
+    dispatch_async(dispatch_get_main_queue(), ^{ XSWhenForeground(2.5, ^{ XSRequestCheckUpdatesSilent(); }); });
     XSRemoveLeftoverShortcuts(); // XSide's are static now (device feedback 3, E1)
     // The app was terminated mid-restore to swap its data; now that it's back, confirm it (Anthony).
     if (XSTakeRestorePending()) {
