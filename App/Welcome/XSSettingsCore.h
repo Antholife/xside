@@ -78,6 +78,11 @@ NSArray<NSString *> *XSFieldsChangedByMac(NSDictionary *before, NSDictionary *af
 id _Nullable XSSettingValue(NSDictionary *s, NSString *field);
 BOOL XSSettingBool(NSDictionary *s, NSString *field);
 
+/// Whether `fields` (field names, as XSChangedFields / XSTakeSettingsChangedOnPhone return them)
+/// includes a compatibility option (duoCompatibility or iCloudSignedOut). Those apply only at
+/// signing, so a change to one means the launch must refresh the app to apply it.
+BOOL XSFieldsIncludeCompat(NSArray<NSString *> *_Nullable fields);
+
 // MARK: Level and visibility: the port of InAppSettings' helpers (spec §1 matrix, each switch
 // for itself). Tested on the Swift side (InAppSettingsTests) and here.
 

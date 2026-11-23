@@ -163,6 +163,10 @@ BOOL XSSettingBool(NSDictionary *s, NSString *field) {
     return [v isKindOfClass:NSNumber.class] && [v boolValue];
 }
 
+BOOL XSFieldsIncludeCompat(NSArray<NSString *> *fields) {
+    return [fields containsObject:@"duoCompatibility"] || [fields containsObject:@"iCloudSignedOut"];
+}
+
 // Port of InAppSettings' level and visibility helpers (Sources/XSideCore/InAppSettings.swift;
 // tests: InAppSettingsTests.visibilityFollowsTheFourSwitches, levelIsDerivedFromTheSwitches).
 // Keep them identical.

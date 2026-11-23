@@ -533,6 +533,12 @@ int main(int argc, const char *argv[]) {
         check(XSFieldsChangedByMac(adopted, adopted).count == 0 && XSChangedFields(adopted, again).count == 0,
               @"nothing changed: no field");
 
+        // A compat field in the changed list means the launch must refresh to apply it; nothing else does.
+        check(XSFieldsIncludeCompat(@[@"duoCompatibility"]) && XSFieldsIncludeCompat(@[@"iCloudSignedOut"])
+              && XSFieldsIncludeCompat(@[@"reminder", @"iCloudSignedOut"]), @"compat fields trigger a refresh");
+        check(!XSFieldsIncludeCompat(@[@"backupData", @"reminder"]) && !XSFieldsIncludeCompat(@[]) && !XSFieldsIncludeCompat(nil),
+              @"non-compat fields do not");
+
         // Which pills show: none at all with every message off; the Mac's news under the refresh card.
         check(!XSShowsPills(S(NO, NO, NO, NO)) && XSShowsPills(S(NO, NO, NO, YES)) && XSShowsPills(S(YES, NO, NO, NO)),
               @"pills: only \"Aucun\" silences them all");

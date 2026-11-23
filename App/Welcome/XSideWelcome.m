@@ -902,6 +902,15 @@ static void XSLaunch(void) {
     // not ask for another one (which the Mac would refuse as too soon). Same for the other actions.
     NSDate *expiry = XSExpirationDate();
     if (expiry) XSNoteSignature(expiry);
+    // A compatibility option (Duo / signed-out iCloud) changed in iOS Settings: it applies only at
+    // signing, so deliver it to the Mac first, THEN refresh to apply it (the refresh carries no
+    // settings, so the re-sign reads what the check-in just stored). This supersedes the normal
+    // launch action and pill for this launch; the refresh modal takes over and the app is replaced.
+    if (expiry && XSFieldsIncludeCompat(sendFields)) {
+        XSWriteStatusRows(expiry);
+        XSSendSettings(sendFields, ^(XSPillContent *result) { XSRequestRefresh(); });
+        return;
+    }
     // One launch action at a time (Anthony): a refresh — and an update install, « sauvegarder »
     // (which refreshes after) and « restaurer » — RESTARTS the app, so anything queued behind it
     // would be lost. Run the top-priority pending one; the others keep their flag and run on a later
