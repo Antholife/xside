@@ -20,6 +20,7 @@ extension SettingsSection {
                              inApp: InAppSettings? = nil, updateRepo: String? = nil,
                              updateFrequency: UpdateFrequency = .global, customFrequencyLabels: [String: String] = [:],
                              dataBackups: [(id: String, label: String)] = [],
+                             duoFixedReason: String? = nil,
                              language: String = "en") -> SettingsSection {
         let s = inApp ?? InAppSettings.defaults(reminder: true, at: Date())
         let p = SettingsBundle.keyPrefix
@@ -91,9 +92,18 @@ extension SettingsSection {
                 (toggle("checkUpdates", "checkUpdatesOnLaunch", false), "checkUpdates")])
         }
 
-        // Compatibilité: the per-device install options, applied at the next refresh.
+        // Compatibilité: the per-device install options. Duo can be greyed on the Mac (the app
+        // already supports it, or it isn't possible); iOS can't disable a static toggle, so the Duo
+        // row becomes a read-only info row (distinct key, no value) with the reason in its footer.
+        // iCloud has no greyed state (always usable), so it stays a toggle.
+        let duoRow: Row = duoFixedReason == nil
+            ? toggle("duoCompatibility", "duoCompatibility", s.duoCompatibility.value)
+            : value("duoCompatibility", "duoCompatibility.state", "")
+        let duoFooter = duoFixedReason == "alreadySupported" ? "duoAlreadySupported"
+                      : duoFixedReason == "unavailable" ? "duoUnavailable"
+                      : "duoCompatibility"
         let compatPane = pane("compat", [
-            (toggle("duoCompatibility", "duoCompatibility", s.duoCompatibility.value), "duoCompatibility"),
+            (duoRow, duoFooter),
             (toggle("iCloudSignedOut", "iCloudSignedOut", s.iCloudSignedOut.value), "iCloudSignedOut")])
 
         // Données: the backup options, « Sauvegarder maintenant », and « Restaurer depuis… » when there
@@ -166,6 +176,8 @@ extension SettingsSection {
             ("footer.updateMode", "Me prévenir : une notification quand une version sort. Installer seul : XSide l'installe tout seul, après un contrôle du contenu."),
             ("footer.updateFrequency", "À quelle fréquence XSide regarde si une nouvelle version est sortie. La valeur « Personnalisé » se règle depuis XSide sur le Mac : fiche de l'app > Mises à jour."),
             ("footer.duoCompatibility", "Adapte l'app aux deux écrans de l'iPhone Duo. Rafraîchit l'app pour l'appliquer."),
+            ("footer.duoAlreadySupported", "Déjà prise en charge par l'app : rien à faire."),
+            ("footer.duoUnavailable", "Non disponible pour cette app."),
             ("footer.iCloudSignedOut", "Fait croire à l'app qu'iCloud est déconnecté. Rafraîchit l'app pour l'appliquer."),
             ("footer.dataCount", "Sauvegardes gardées sur ton Mac (compte à jour au dernier rafraîchissement de l'app)."),
             ("footer.backupData", "XSide garde une copie des données sur ton Mac, à chaque rafraîchissement si elles ont changé."),
@@ -231,6 +243,8 @@ extension SettingsSection {
             ("footer.updateMode", "Notify me: a notification when a version is out. Install on its own: XSide installs it for you, after a content check."),
             ("footer.updateFrequency", "How often XSide checks whether a new version is out. The « Custom » value is set from XSide on your Mac: the app's page > Updates."),
             ("footer.duoCompatibility", "Adapts the app to the iPhone Duo's two screens. Refreshes the app to apply it."),
+            ("footer.duoAlreadySupported", "Already supported by the app: nothing to do."),
+            ("footer.duoUnavailable", "Not available for this app."),
             ("footer.iCloudSignedOut", "Makes the app think iCloud is signed out. Refreshes the app to apply it."),
             ("footer.dataCount", "Backups kept on your Mac (count as of the app's last refresh)."),
             ("footer.backupData", "XSide keeps a copy of the data on your Mac, at each refresh if it changed."),

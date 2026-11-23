@@ -373,6 +373,25 @@ struct SettingsBundleTests {
         #expect(!footersEN.contains { $0.contains("at the next refresh") })
     }
 
+    /// When the app already supports the Duo (or it's not possible), the Mac greys the option; iOS
+    /// can't disable a static toggle, so the Duo row becomes a read-only info row with the reason in
+    /// its footer. iCloud has no such state and stays a toggle.
+    @Test func duoRowIsReadOnlyWhenTheOptionCannotBeTurnedOn() throws {
+        let app = try makeApp()
+        let section = SettingsSection.xside(validUntil: "12 nov.", refreshedOn: "5 nov.", version: "1.2", installedOn: "1 nov.",
+                                            inApp: InAppSettings.defaults(reminder: false, at: Date(timeIntervalSince1970: 0)),
+                                            duoFixedReason: "alreadySupported", language: "fr")
+        try SettingsBundle.add(section, to: app)
+        let compat = try subpage(app, "compat")
+        let duoName = "Compatibilité iPhone Duo"
+        #expect(!compat.contains { ($0["Title"] as? String) == duoName && ($0["Type"] as? String) == "PSToggleSwitchSpecifier" })
+        #expect(compat.contains { ($0["Title"] as? String) == duoName && ($0["Type"] as? String) == "PSTitleValueSpecifier" })
+        #expect(compat.contains { ($0["Key"] as? String) == "io.github.xside.settings.iCloudSignedOut"
+                                  && ($0["Type"] as? String) == "PSToggleSwitchSpecifier" })
+        let footers = compat.compactMap { $0["FooterText"] as? String }
+        #expect(footers.contains { $0.contains("Déjà prise en charge") })
+    }
+
     /// No backups: no « Restaurer depuis… » row, the count shows « Aucune ».
     @Test func dataSubPageWithoutBackups() throws {
         let app = try makeApp()

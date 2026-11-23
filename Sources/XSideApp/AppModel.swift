@@ -431,7 +431,8 @@ final class AppModel {
     /// installation's language, translated by iOS in the languages the app already has. Written at each install and refresh, from the installation's
     /// own values (`facts`, given by the pipeline). The texts are the Mac's; the library rewrites
     /// them in the device's language at launch.
-    nonisolated static func settingsSection(_ profile: ProvisioningProfile, _ facts: InstallationFacts?) -> SettingsSection {
+    nonisolated static func settingsSection(_ profile: ProvisioningProfile, _ facts: InstallationFacts?,
+                                             _ duoFixedReason: String?) -> SettingsSection {
         let style = Date.FormatStyle(date: .abbreviated, time: .shortened).locale(appLocale)
         let now = Date()
         let outcome = facts?.lastRefreshOutcome
@@ -461,6 +462,7 @@ final class AppModel {
             dataBackups: (facts?.backups ?? []).map { snap in
                 (id: snap.id, label: snap.createdAt.formatted(style) + (snap.appVersion.map { " (v\($0))" } ?? ""))
             },
+            duoFixedReason: duoFixedReason,
             language: textLanguage(facts))
     }
 

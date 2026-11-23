@@ -216,7 +216,7 @@ private struct TweakFixture {
     }
 
     var resigner: Resigner {
-        var section: (@Sendable (ProvisioningProfile, InstallationFacts?) -> SettingsSection)?
+        var section: (@Sendable (ProvisioningProfile, InstallationFacts?, String?) -> SettingsSection)?
         var payload: @Sendable (ProvisioningProfile) -> WelcomePayload? = { _ in nil }
         if settings {
             section = fixtureSection
@@ -249,7 +249,7 @@ private struct TweakFixture {
     }
 }
 
-private let fixtureSection: @Sendable (ProvisioningProfile, InstallationFacts?) -> SettingsSection = { _, _ in
+private let fixtureSection: @Sendable (ProvisioningProfile, InstallationFacts?, String?) -> SettingsSection = { _, _, _ in
     SettingsSection.xside(validUntil: "12 nov.", refreshedOn: "5 nov.", version: "1.0", installedOn: "1 nov.")
 }
 

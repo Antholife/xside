@@ -150,7 +150,7 @@ public struct Resigner: Sendable {
     private let duoLegacyLibrary: URL?
     /// The section added to the app's iOS Settings page, built from the profile it's signed with
     /// and the installation's facts (nil when the caller has none).
-    private let settingsSection: (@Sendable (ProvisioningProfile, InstallationFacts?) -> SettingsSection)?
+    private let settingsSection: (@Sendable (ProvisioningProfile, InstallationFacts?, _ duoFixedReason: String?) -> SettingsSection)?
     /// Written as the Info.plist key `XSideWelcome`, which the library reads at launch (keys in
     /// `WelcomePayload`). Nil: no payload. The installation's own values (settings, channel
     /// credentials, first install date) come from the `facts` given to `resign`, not from here.
@@ -174,7 +174,7 @@ public struct Resigner: Sendable {
     static let welcomeLoadPath = "@executable_path/Frameworks/\(welcomeName)"
 
     public init(runner: CommandRunning, welcomeDylib: URL? = nil,
-                settingsSection: (@Sendable (ProvisioningProfile, InstallationFacts?) -> SettingsSection)? = nil,
+                settingsSection: (@Sendable (ProvisioningProfile, InstallationFacts?, _ duoFixedReason: String?) -> SettingsSection)? = nil,
                 welcome: @escaping @Sendable (ProvisioningProfile) -> WelcomePayload? = { _ in nil },
                 textLanguage: @escaping @Sendable (InstallationFacts?) -> String = { _ in "en" },
                 iCloudLibrary: URL? = nil, duoLegacyLibrary: URL? = nil,
@@ -336,7 +336,10 @@ public struct Resigner: Sendable {
         // list is static text: it goes in with XSide's features off too (an app the caller gives
         // no section gets neither).
         if let settingsSection {
-            let section = hasLibrary ? settingsSection(profile, facts) : nil
+            // Mirror the Mac's greyed Duo option: when it can't be turned on, the phone's Settings
+            // shows a read-only row with the reason instead of a toggle (iOS can't disable one).
+            let duoFixedReason = hasLibrary ? duoOptionFixedReason(app, executable: executableURL) : nil
+            let section = hasLibrary ? settingsSection(profile, facts, duoFixedReason) : nil
             let tweaks = TweaksPane.make(phoneTweaks, language: textLanguage(facts))
             // Never fails the install: the app keeps its page as it was.
             do { try SettingsBundle.add(section, tweaks: tweaks, to: app) } catch {
@@ -1057,6 +1060,22 @@ public struct Resigner: Sendable {
 
     /// Whether the signed `app` fills an iPhone Duo's screens: its executable declares SDK 27.1 or
     /// later (patched, or built so), and holds the compatibility module when its manifest names it.
+    /// Why the Duo compatibility option can't be turned on for this `app` (so the phone's Settings
+    /// shows a read-only row instead of a toggle, mirroring the Mac's greyed option): "alreadySupported"
+    /// (built with SDK 27.1+) or "unavailable" (no scene path and this build has no legacy module);
+    /// nil when it can be toggled. Device-independent (SDK / scene based), so right for every device.
+    func duoOptionFixedReason(_ app: URL, executable: URL) -> String? {
+        guard let data = try? IPAInspector.infoPlistData(of: app),
+              let plist = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any]
+        else { return nil }
+        let info = DuoAppInfo.read(executable: executable, plist: plist)
+        switch DuoCompatibility.optionState(isDuo: true, app: info, legacyModuleAvailable: duoLegacyLibrary != nil) {
+        case .alreadySupported: return "alreadySupported"
+        case .unavailable: return "unavailable"
+        default: return nil
+        }
+    }
+
     public func hasDuoCompatibility(_ app: URL) -> Bool {
         guard let info = try? IPAInspector.info(of: app),
               DuoCompatibility.supportsDuo(sdk: MachOBuildInfo.sdkVersion(of: app.appendingPathComponent(info.executable)))
