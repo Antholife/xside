@@ -1646,18 +1646,23 @@ final class AppModel {
             await reply(.accepted)
             await reply(linkReply(job.deviceID))
             // Stream « Restauration… » while it runs, then the outcome, so the phone shows the live
-            // modal (Anthony), not an instant ✓. One phase (no sub-steps / fraction): a single frame.
+            // modal (Anthony), not an instant ✓. One phase (no sub-steps / fraction). Not cancellable:
+            // a restore terminates the app and overwrites its data; stopping mid-copy could corrupt it,
+            // so no « Annuler » is offered (no phoneOpCancels entry).
             let box = RefreshOutcomeBox()
             let work = Task { @MainActor in
                 box.outcome = await self.restore(snap, entry) ? .refreshed : .failed(reasonKey: "unknown")
                 box.done = true
             }
-            phoneOpCancels[key] = { work.cancel() }
-            defer { phoneOpCancels[key] = nil }
-            var lastRestoreFrame: ChannelReply?
+            var lastRestoreSent = Date.distantPast
             while !box.done {
-                let f: ChannelReply = .progress(stageKey: ProgressStep.restoring.key, index: 1, total: 1, percent: nil)
-                if f != lastRestoreFrame { await reply(f); lastRestoreFrame = f }
+                // Re-send the « restoring » frame as a keepalive (every ~5 s), so the phone's held
+                // connection doesn't hit its no-outcome timeout on a long restore and the modal doesn't
+                // freeze; a single frame used to go silent after one line.
+                if Date().timeIntervalSince(lastRestoreSent) > 5 {
+                    await reply(.progress(stageKey: ProgressStep.restoring.key, index: 1, total: 1, percent: nil))
+                    lastRestoreSent = Date()
+                }
                 try? await Task.sleep(for: .milliseconds(150))
             }
             _ = await work.value

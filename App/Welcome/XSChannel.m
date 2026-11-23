@@ -1323,8 +1323,8 @@ static void XSStartRestoreExchange(NSString *backupID) {
     BOOL fr0 = XSFrench();
     XSRefreshModalShowTitled(NO, fr0 ? @"Restauration des données" : @"Restoring the data",
                              fr0 ? @"Les données actuelles seront remplacées." : @"The current data will be replaced.");
-    XSCancelFromPhone = NO;
-    XSRefreshModalSetCancel(^{ XSRequestCancel(); });
+    // No « Annuler »: a restore overwrites the app's data (and terminates the app to do it); stopping
+    // mid-copy could corrupt it. The Mac runs it to completion, so the modal has no cancel button.
     [XSPatientExchange(XSRestoreBody(backupID), YES, ^(XSChannelResult result, NSDictionary *reply, BOOL final) {
         BOOL fr = XSFrench();
         NSString *type = reply[@"type"];
