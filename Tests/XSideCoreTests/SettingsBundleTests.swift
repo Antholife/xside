@@ -400,6 +400,25 @@ struct SettingsBundleTests {
         #expect(footers.contains { $0.contains("Déjà prise en charge") })
     }
 
+    /// When « Sauvegarder les données » is off, its sub-options (caches, before-update) are read-only
+    /// rows with a reason (Anthony chose the frozen greying): iOS can't disable a toggle live.
+    @Test func backupSubOptionsAreReadOnlyWhenBackupIsOff() throws {
+        let app = try makeApp()
+        var inApp = InAppSettings.defaults(reminder: false, at: Date(timeIntervalSince1970: 0))
+        inApp.backupData = Field(value: false, changedAt: Date(timeIntervalSince1970: 0), changedBy: .device)
+        let section = SettingsSection.xside(validUntil: "12 nov.", refreshedOn: "5 nov.", version: "1.2", installedOn: "1 nov.",
+                                            inApp: inApp, language: "fr")
+        try SettingsBundle.add(section, to: app)
+        let data = try subpage(app, "data")
+        let p = "io.github.xside.settings."
+        // Backup itself stays a toggle; its two sub-options become read-only.
+        #expect(data.contains { $0["Key"] as? String == p + "backupData" && $0["Type"] as? String == "PSToggleSwitchSpecifier" })
+        #expect(!data.contains { $0["Key"] as? String == p + "backupCaches" && $0["Type"] as? String == "PSToggleSwitchSpecifier" })
+        #expect(data.contains { ($0["Title"] as? String) == "Inclure les caches" && $0["Type"] as? String == "PSTitleValueSpecifier" })
+        #expect(data.contains { ($0["Title"] as? String) == "Sauvegarder avant une mise à jour" && $0["Type"] as? String == "PSTitleValueSpecifier" })
+        #expect(data.compactMap { $0["FooterText"] as? String }.contains { $0.contains("Sauvegarder les données » est activé") })
+    }
+
     /// No backups: no « Restaurer depuis… » row, the count shows « Aucune ».
     @Test func dataSubPageWithoutBackups() throws {
         let app = try makeApp()

@@ -112,11 +112,20 @@ extension SettingsSection {
 
         // Données: the backup options, « Sauvegarder maintenant », and « Restaurer depuis… » when there
         // are snapshots. The count and the restore list are as of the last refresh (static page).
+        // « Inclure les caches » and « Sauvegarder avant une mise à jour » only mean something when
+        // « Sauvegarder les données » is on. iOS can't disable a static toggle from another's value,
+        // so with backup off they become read-only rows with a reason (Anthony chose the frozen
+        // greying; it reflects the value at signing, not a live toggle in iOS Settings).
+        let backupOn = s.backupData.value
+        let cachesRow: Row = backupOn ? toggle("backupCaches", "backupCaches", s.backupCaches.value)
+                                      : value("backupCaches", "backupCaches.state", "")
+        let beforeUpdateRow: Row = backupOn ? toggle("backupBeforeUpdate", "backupBeforeUpdate", s.backupBeforeUpdate.value)
+                                            : value("backupBeforeUpdate", "backupBeforeUpdate.state", "")
         var dataItems: [(row: Row, footer: String)] = [
             (value("data.count", "data.count", "\(dataBackups.count)"), "dataCount"),
             (toggle("backupData", "backupData", s.backupData.value), "backupData"),
-            (toggle("backupCaches", "backupCaches", s.backupCaches.value), "backupCaches"),
-            (toggle("backupBeforeUpdate", "backupBeforeUpdate", s.backupBeforeUpdate.value), "backupBeforeUpdate"),
+            (cachesRow, backupOn ? "backupCaches" : "backupNeedsData"),
+            (beforeUpdateRow, backupOn ? "backupBeforeUpdate" : "backupNeedsData"),
             (toggle("backupNow", "backupNowOnLaunch", false), "backupNow")]
         if !dataBackups.isEmpty {
             dataItems.append((.choice(titleKey: title("restoreFrom"), key: "restoreFrom",
@@ -188,6 +197,7 @@ extension SettingsSection {
             ("footer.backupData", "XSide garde une copie des données sur ton Mac, à chaque rafraîchissement si elles ont changé."),
             ("footer.backupCaches", "Inclut les dossiers Caches et tmp dans les sauvegardes."),
             ("footer.backupBeforeUpdate", "Sauvegarde les données juste avant qu'une mise à jour s'installe."),
+            ("footer.backupNeedsData", "Disponible seulement si « Sauvegarder les données » est activé."),
             ("footer.showValidity", "Affiche combien de temps l'app reste valable, à son ouverture."),
             ("footer.alertLate", "Prévient si XSide n'a pas pu rafraîchir l'app à temps."),
             ("footer.refreshCard", "Affiche une carte dans l'app après un rafraîchissement."),
@@ -256,6 +266,7 @@ extension SettingsSection {
             ("footer.backupData", "XSide keeps a copy of the data on your Mac, at each refresh if it changed."),
             ("footer.backupCaches", "Includes the Caches and tmp folders in the backups."),
             ("footer.backupBeforeUpdate", "Backs up the data just before an update installs."),
+            ("footer.backupNeedsData", "Available only if « Back up data » is on."),
             ("footer.showValidity", "Shows how long the app stays valid, when you open it."),
             ("footer.alertLate", "Warns if XSide couldn't refresh the app in time."),
             ("footer.refreshCard", "Shows a card in the app after a refresh."),
