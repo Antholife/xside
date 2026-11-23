@@ -20,14 +20,22 @@ public struct ContainerEntry: Equatable, Sendable {
 public struct AppDataContainer: Sendable {
     private let runner: CommandRunning
     private let scratchRoot: URL
+    /// How long to wait before retrying a copy that failed: a `devicectl copy` is interrupted when the
+    /// app is force-quit mid-transfer, and the pause lets the device settle (the app finishes dying)
+    /// before the retry, which reads the now-stable container. Tests pass `.zero`.
+    private let copyRetryDelay: Duration
 
     /// Left out of a backup: the app's temporary files.
     static let excludedPrefixes = ["tmp/"]
     static let cachesPrefix = "Library/Caches/"
+    /// A copy is tried this many times total before giving up (one try plus retries).
+    static let copyAttempts = 3
 
-    public init(runner: CommandRunning, scratchRoot: URL = FileManager.default.temporaryDirectory) {
+    public init(runner: CommandRunning, scratchRoot: URL = FileManager.default.temporaryDirectory,
+                copyRetryDelay: Duration = .seconds(2)) {
         self.runner = runner
         self.scratchRoot = scratchRoot
+        self.copyRetryDelay = copyRetryDelay
     }
 
     /// The container's entries; nil when the listing isn't available or readable (the signal to
@@ -114,12 +122,33 @@ public struct AppDataContainer: Sendable {
         }
     }
 
+    /// Runs a `devicectl copy`, retrying a failed one a few times (force-quitting the app mid-backup
+    /// interrupts the running copy, but the container is still readable once the app is dead, so the
+    /// retry finishes — killing the app must not cut the operation). A cancelled copy is never
+    /// retried. The copy writes into a fresh destination each attempt's caller set up, so re-running
+    /// it is safe.
     private func copy(_ arguments: [String]) async throws {
-        let result = try await runner.run("/usr/bin/xcrun", arguments, cwd: nil, timeout: CommandTimeout.deviceInstall)
-        guard result.status == 0 else {
-            let mapped = Installer.mapError(String(decoding: result.stdout, as: UTF8.self) + "\n" + result.stderr)
-            if case .commandFailed = mapped { throw XSideError.commandFailed(tool: "devicectl", status: result.status) }
-            throw mapped
+        var lastError: Error = XSideError.commandFailed(tool: "devicectl", status: 1)
+        for attempt in 0..<Self.copyAttempts {
+            if attempt > 0 {
+                try Task.checkCancellation() // a cancelled backup/restore doesn't retry
+                if copyRetryDelay > .zero { try? await Task.sleep(for: copyRetryDelay) }
+                try Task.checkCancellation()
+            }
+            do {
+                let result = try await runner.run("/usr/bin/xcrun", arguments, cwd: nil, timeout: CommandTimeout.deviceInstall)
+                guard result.status == 0 else {
+                    let mapped = Installer.mapError(String(decoding: result.stdout, as: UTF8.self) + "\n" + result.stderr)
+                    if case .commandFailed = mapped { throw XSideError.commandFailed(tool: "devicectl", status: result.status) }
+                    throw mapped
+                }
+                return
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                lastError = error
+            }
         }
+        throw lastError
     }
 }

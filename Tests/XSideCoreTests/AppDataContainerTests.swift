@@ -8,6 +8,9 @@ private final class ContainerRunner: CommandRunning, @unchecked Sendable {
     var result = CommandResult(status: 0, stdout: Data(), stderr: "")
     var processesResult = CommandResult(status: 0, stdout: Data(), stderr: "")
     var processes = Data()
+    /// The first N `copy` calls fail (status 1), as when the app is force-quit mid-transfer; the rest
+    /// succeed. The copy is retried, so a transient interruption still finishes.
+    var copyFailuresRemaining = 0
     private let lock = NSLock()
     private(set) var calls: [[String]] = []
 
@@ -27,12 +30,21 @@ private final class ContainerRunner: CommandRunning, @unchecked Sendable {
             }
             return processesResult
         }
+        if arguments.starts(with: ["devicectl", "device", "copy"]) {
+            let fail = lock.withLock { () -> Bool in
+                if copyFailuresRemaining > 0 { copyFailuresRemaining -= 1; return true }
+                return false
+            }
+            if fail { return CommandResult(status: 1, stdout: Data(), stderr: "ERROR: copy interrupted") }
+        }
         return result
     }
 }
 
 @Suite struct AppDataContainerTests {
-    private func container(_ runner: ContainerRunner) -> AppDataContainer { AppDataContainer(runner: runner) }
+    private func container(_ runner: ContainerRunner) -> AppDataContainer {
+        AppDataContainer(runner: runner, copyRetryDelay: .zero) // no sleeping in tests
+    }
 
     @Test func listFiles_parsesEntriesWithSizeAndDate() async throws {
         let runner = ContainerRunner()
@@ -81,6 +93,27 @@ private final class ContainerRunner: CommandRunning, @unchecked Sendable {
         await #expect(throws: XSideError.self) {
             try await container(runner).pull(signedBundleID: "b", deviceID: "D1", relativePath: "a", to: URL(fileURLWithPath: "/tmp/a"))
         }
+    }
+
+    /// Force-quitting the app mid-backup interrupts the running `devicectl copy`; the container stays
+    /// readable once the app is dead, so the copy is retried and the backup finishes (Anthony: killing
+    /// the app must not cut the operation).
+    @Test func pull_retriesAnInterruptedCopy() async throws {
+        let runner = ContainerRunner()
+        runner.copyFailuresRemaining = 1 // the kill interrupts the first attempt
+        try await container(runner).pull(signedBundleID: "b.T", deviceID: "D1", relativePath: "Library", to: URL(fileURLWithPath: "/tmp/x"))
+        let copies = runner.calls.filter { $0.starts(with: ["devicectl", "device", "copy"]) }
+        #expect(copies.count == 2) // failed once, retried, succeeded
+    }
+
+    @Test func pull_givesUpAfterRepeatedFailures() async {
+        let runner = ContainerRunner()
+        runner.copyFailuresRemaining = 99 // never recovers
+        await #expect(throws: XSideError.self) {
+            try await container(runner).pull(signedBundleID: "b", deviceID: "D1", relativePath: "a", to: URL(fileURLWithPath: "/tmp/a"))
+        }
+        let copies = runner.calls.filter { $0.starts(with: ["devicectl", "device", "copy"]) }
+        #expect(copies.count == 3) // bounded: one try plus two retries
     }
 
     private func processList(_ items: [(String, Int)]) -> Data {
