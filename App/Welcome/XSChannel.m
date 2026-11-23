@@ -971,6 +971,7 @@ static NSString *XSRefreshStepName(NSString *stage, BOOL french) {
     if ([stage isEqual:@"signing"]) return french ? @"Signature" : @"Signing";
     if ([stage isEqual:@"installing"]) return french ? @"Installation" : @"Installing";
     if ([stage isEqual:@"restoring"]) return french ? @"Restauration des données" : @"Restoring data";
+    if ([stage isEqual:@"waiting"]) return french ? @"En attente d'une autre opération XSide" : @"Waiting for another XSide operation";
     return french ? @"Préparation" : @"Preparing"; // preparing, or an unknown key
 }
 

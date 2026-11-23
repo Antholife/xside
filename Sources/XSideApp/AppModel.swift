@@ -1698,7 +1698,8 @@ final class AppModel {
         let percent: Int?
         switch jobs[key] {
         case let .step(step): stageKey = ProgressStep(step).key; percent = stepPercent[key]
-        case .preparing, .waiting: stageKey = ProgressStep.preparing.key; percent = nil // « Préparation » shows early
+        case .preparing: stageKey = ProgressStep.preparing.key; percent = nil // « Préparation » shows early
+        case .waiting: stageKey = "waiting"; percent = nil // queued behind another op: « En attente d'une autre opération XSide »
         case .none: return nil
         }
         let place = jobStepPlace(key, countBackup: countBackup)
@@ -1736,10 +1737,13 @@ final class AppModel {
         case let .step(step):
             return .progress(stageKey: ProgressStep(step).key, index: base.index + (preBackup ? 1 : 0),
                              total: total, percent: stepPercent[key])
-        case .preparing, .waiting:
+        case .preparing:
             // Post-download: the IPA is being inspected / the job queued before the first resign step.
             // Show « Préparation » (ring near 0), never a frozen « download 100% » that looks hung.
             return .progress(stageKey: ProgressStep.preparing.key, index: 1, total: total, percent: nil)
+        case .waiting:
+            // Queued behind another XSide operation: say so, like the Mac panel (Anthony).
+            return .progress(stageKey: "waiting", index: 1, total: total, percent: nil)
         case .none:
             return nil
         }
